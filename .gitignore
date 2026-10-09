@@ -1,0 +1,78 @@
+# ── 依赖（绝不提交）────────────────────────────────────────────
+node_modules/
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+.venvs/
+venv/
+env/
+ENV/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ── 大文件：模型权重与视频（GitHub 有单文件与仓库大小限制）──────
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.safetensors
+*.h5
+*.pb
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.flv
+*.wmv
+
+# ── 大文件：数据集与标注产物 ────────────────────────────────────
+datasets/
+data/raw/
+data/processed/
+annotations/
+labels/
+*.zip
+*.tar
+*.tar.gz
+*.7z
+*.rar
+
+# ── 构建产物与日志 ──────────────────────────────────────────────
+dist/
+build/
+out/
+output/
+*.log
+logs/
+
+# ── 交付件（文档成品不进代码仓库）────────────────────────────────
+*.docx
+*.pdf
+*.pptx
+*.xlsx
+~$*
+
+# ── 编辑器与系统 ────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.bak
+*.swp
+
+# ── 本地环境变量（含密钥，绝不提交）──────────────────────────────
+.env
+.env.local
+.env.*.local
+*_key.txt
+
+# ── 例外：站点配置与契约是小文本，必须进仓库 ─────────────────────
+!stations/**/*.json
+!stations/**/*.yaml
+!docs/**/*.md
