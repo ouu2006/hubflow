@@ -31,6 +31,25 @@
 - 同一输入连续跑三次，判级结果**完全一致**，且至少覆盖两个等级；
 - 至少一条路段能产出平均车速与排队长度的**时间序列**（帧数 ≥ 60）。
 
+## 开工须知（2026-10-09）
+
+**第 0 步硬前置已完成**：`weights/mindyolo/yolov8n.ckpt` 已生成并通过前向数值比对（最差相对误差 2.875e-06）。**默认后端 `mindspore` 可直接跑，不需要旁路。**
+
+用上游环境跑：
+
+```bash
+cd ../agentic-traffic-management/traffic-core-mindspore
+.venvs/traffic-ms311/Scripts/python.exe demo_cli.py track     # 基线：9 条轨迹 {2: 9}
+.venvs/traffic-ms311/Scripts/python.exe demo_cli.py count     # 基线：count=1
+```
+
+**两条实测踩坑提醒**（详见 [`../assembly/现状核实.md`](../assembly/现状核实.md) 4.3）：
+
+1. **`image` 模式在中文路径下必失败**——OpenCV 的 `imwrite`/`imread` 不支持中文绝对路径。你若要跑 `demo_cli.py image`，先把仓库放到纯英文路径，或改用 `cv2.imencode` / `np.fromfile` 绕过。
+2. **`track` / `count` 的输出目录 `video_output/` 不存在时静默失败**——命令报成功但视频没生成。**先 `mkdir video_output`**，并且**别只信退出码，要检查产物文件真的在**。
+
+**上游代码的既有约定**（别改坏）：`core/tracking.py` 的轨迹输出是 `{track_id: [{"x": px, "y": px, "c": cls}]}`——**没时间戳、没米制尺度、没车道归属**，这三样要补上。改动 `core/` 属上游仓改动，按流程走。
+
 ## 大文件
 
 样本视频放共享盘，**不要提交**（`.gitignore` 已拦住 `*.mp4`）。
