@@ -5,6 +5,11 @@
 #
 # 规则见 docs/协作规范.md 第 4 节。
 #
+# ⚠️ 生效时机：**GitHub 只认「目标分支」上的 CODEOWNERS**。
+#    本文件合并进 main 之前，对指向 main 的 PR 不产生约束；
+#    合并进 main 之后，改动下列路径的 PR 会自动要求对应 owner 的 approve。
+#    （main 分支保护已开启 require_code_owner_reviews = true）
+#
 # ⚠️ 当前只有 2 个 GitHub 账号（ouu2006 / YONEK0）。
 #    四个技术位置的账号拿到后，把下面 TODO 处替换成真实账号，并把 TODO 行删掉。
 #    在替换之前，**所有 PR 一律由 @YONEK0 审**（因为他不是开发组成员，天然独立）。
