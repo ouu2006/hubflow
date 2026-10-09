@@ -125,17 +125,28 @@ AI_SYSTEM_PROMPT = """你是 hubflow 项目的代码审查者。hubflow 是"高�
 
 # ── 工具函数 ────────────────────────────────────────────────────────────────
 
+# git ref 的白名单。用来挡"参数注入"：形如 `--upload-pack=...` 的字符串
+# 交给 git 会被当成选项而不是 ref，所以先校验再拼命令行。
+_REF_RE = re.compile(r"^[A-Za-z0-9._/@{}^~:-]+$")
+
+
+def safe_ref(ref: str) -> str:
+    """校验 git ref。非法就抛异常，不把它交给 git。"""
+    if not ref or ref.startswith("-") or not _REF_RE.match(ref):
+        raise RuntimeError(f"非法的 git ref：{ref!r}")
+    return ref
+
+
 def sh(cmd: list[str]) -> str:
-    """跑一条命令，返回 stdout（失败抛异常）。"""
+    """跑一条命令，返回 stdout（失败抛异常）。
+
+    以 list 传参（不经过 shell），所以不存在 shell 注入；
+    调用方须用 `safe_ref()` 预先校验来自命令行的 ref。
+    """
     r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if r.returncode != 0:
         raise RuntimeError(f"命令失败：{' '.join(cmd)}\n{r.stderr.strip()}")
     return r.stdout
-
-
-def sh_ok(cmd: list[str]) -> bool:
-    """跑一条命令，只关心成败。"""
-    return subprocess.run(cmd, capture_output=True).returncode == 0
 
 
 class Report:
@@ -435,21 +446,24 @@ def main() -> int:
     args = ap.parse_args()
 
     try:
-        branch = args.branch or sh(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
-        files = changed_files(args.base, args.head)
+        # ref 来自命令行/CI 变量，先校验再交给 git（挡 `--upload-pack=...` 这类参数注入）
+        base = safe_ref(args.base)
+        head = safe_ref(args.head)
+        branch = args.branch.strip() or sh(["git", "rev-parse", "--abbrev-ref", "HEAD"]).strip()
+        files = changed_files(base, head)
     except RuntimeError as e:
         print(f"[error] {e}", file=sys.stderr)
         return 2
 
     rep = Report()
     check_forbidden_files(files, rep)
-    check_secrets(args.base, args.head, files, rep)
+    check_secrets(base, head, files, rep)
     check_ownership(files, branch, rep)
-    check_cross_import(args.base, args.head, files, rep)
-    check_json_valid(args.base, args.head, files, rep)
-    check_contract_sync(args.base, args.head, files, rep)
+    check_cross_import(base, head, files, rep)
+    check_json_valid(base, head, files, rep)
+    check_contract_sync(base, head, files, rep)
 
-    ai_text, ai_status = (None, "已按参数跳过") if args.no_ai else ai_review(collect_diff(args.base, args.head))
+    ai_text, ai_status = (None, "已按参数跳过") if args.no_ai else ai_review(collect_diff(base, head))
 
     report = build_report(rep, ai_text, ai_status, branch, files)
     print(report)
