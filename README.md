@@ -41,9 +41,13 @@
 | [`work/frontend/`](work/frontend/) | 前端 | 管理端页面 + 鸿蒙 App |
 | [`work/assembly/`](work/assembly/) | 后端 | `run_all.py` + 接口层 |
 | [`stations/`](stations/) | 站点配置（点位标签、路网、阈值、配时） | 换站只改配置 |
-| [`docs/`](docs/) | 技术手册、数据契约、协作规范 | — |
+| [`docs/`](docs/) | 技术手册、数据契约、协作规范、**开发规范** | — |
 
 > **规则：每个人只改自己目录里的东西。** 需要跨目录的改动，先开 Issue 说一声。
+
+**开工前先读两份规范**：[`docs/协作规范.md`](docs/协作规范.md)（怎么不打架）+ [`docs/开发规范.md`](docs/开发规范.md)（代码长什么样、Key 怎么放）。
+
+**当前进度**：仓库骨架已建，**代码量仍为 0**。第 0 步硬前置（`.ckpt` 权重、Python 环境）尚未完成，实测台账见 [`work/assembly/现状核实.md`](work/assembly/现状核实.md)。
 
 ## 怎么开始
 
