@@ -5,43 +5,56 @@
 #
 # 规则见 docs/协作规范.md 第 4 节。
 #
+# ── V2.0 审核口径（2026-10-10）────────────────────────────────
+# **代码互审：A 审 B、B 审 C、C 审 A；队长兜底看"有没有影响别人 + 口径"。**
+#   · 开发A 的目录（work/twin、work/perception）→ 由 **开发C** 审
+#   · 开发B 的目录（work/engine、stations）      → 由 **开发A** 审
+#   · 开发C 的目录（work/frontend、work/assembly）→ 由 **开发B** 审
+#   · 公共文件 / 计划类文档 / 技术手册            → **队长复核**
+# 注意：CODEOWNERS 里**只列"审的人"，不列"作者自己"**——GitHub 不认作者自己的 approve。
+#
 # ⚠️ 生效时机：**GitHub 只认「目标分支」上的 CODEOWNERS**。
 #    本文件合并进 main 之前，对指向 main 的 PR 不产生约束；
 #    合并进 main 之后，改动下列路径的 PR 会自动要求对应 owner 的 approve。
 #    （main 分支保护已开启 require_code_owner_reviews = true）
 #
-# ⚠️ 当前只有 2 个 GitHub 账号（ouu2006 / YONEK0）。
-#    四个技术位置的账号拿到后，把下面 TODO 处替换成真实账号，并把 TODO 行删掉。
-#    在替换之前，**所有 PR 一律由 @YONEK0 审**（因为他不是开发组成员，天然独立）。
+# ⚠️ 当前团队只有 2 个 GitHub 账号（@ouu2006 / @YONEK0）。
+#    3 名开发的账号拿到后，把下面 TODO 处替换成真实账号，并把 TODO 行删掉。
+#    **在替换之前，所有 PR 一律由 @YONEK0 审**（队长由 7 人中的 1 人兼任、不碰业务代码，对代码天然独立；建议由 N4 文档演示与合规员兼任）。
 
-# ── 默认：整仓任何改动都需要队长过一眼 ──────────────────────────
+# ── 默认：整仓任何改动都需要队长过一眼（兜底）──────────────────
 *                       @YONEK0
 
-# ── 公共文件：只有后端能改，但必须队长复核 ──────────────────────
-# （公共文件清单见 docs/协作规范.md 第 1 节）
-/README.md              @YONEK0
-/.gitignore             @YONEK0
-/.gitattributes         @YONEK0
-/.env.example           @YONEK0
-/.github/               @YONEK0
-/docs/数据契约.md         @YONEK0
-/docs/协作规范.md         @YONEK0
-/docs/开发规范.md         @YONEK0
-/docs/分工表.md           @YONEK0
+# ── 计划类文档 + 公共文件：队长复核 ────────────────────────────
+# 计划类文档由队长维护（可请开发C 代提交），改动一律队长复核。
+/README.md                       @YONEK0
+/.gitignore                      @YONEK0
+/.gitattributes                  @YONEK0
+/.env.example                    @YONEK0
+/.github/                        @YONEK0
+/docs/全流程计划.md                @YONEK0
+/docs/分工表.md                    @YONEK0
+/docs/协作规范.md                  @YONEK0
+/docs/开发规范.md                  @YONEK0
+/docs/技术方案与实施手册.md         @YONEK0
+/docs/表格模板说明.md              @YONEK0
+# 公共文件：开发C 改，队长复核
+/docs/数据契约.md                  @YONEK0
 
-# ── 技术手册：两份拷贝必须同步改，改动一律队长复核 ──────────────
-/docs/技术方案与实施手册.md   @YONEK0
+# ── 开发A 的目录：由开发C 互审 + 队长兜底 ──────────────────────
+# TODO: 开发C 账号到位后，取消下面注释并把 TODO-frontend-account 换成真实账号
+# /work/twin/            TODO-frontend-account   @YONEK0
+# /work/perception/      TODO-frontend-account   @YONEK0
 
-# ── 各位置目录：账号到位后取消注释并填真实账号 ──────────────────
-# 感知线
-# /work/perception/       TODO-perception-account @YONEK0
-# 决策线（站点包结构也归这里）
-# /work/engine/           TODO-engine-account     @YONEK0
-# /stations/              TODO-engine-account     @YONEK0
-# 前端
-# /work/frontend/         TODO-frontend-account   @YONEK0
-# 后端（公共文件也在其目录外，故公共文件单独列在上方）
-# /work/assembly/         TODO-backend-account    @YONEK0
+# ── 开发B 的目录：由开发A 互审 + 队长兜底 ──────────────────────
+# TODO: 开发A 账号到位后，取消下面注释并把 TODO-twin-account 换成真实账号
+# /work/engine/          TODO-twin-account       @YONEK0
+# /stations/             TODO-twin-account       @YONEK0
+
+# ── 开发C 的目录：由开发B 互审 + 队长兜底 ──────────────────────
+# TODO: 开发B 账号到位后，取消下面注释并把 TODO-engine-account 换成真实账号
+# /work/frontend/        TODO-engine-account     @YONEK0
+# /work/assembly/        TODO-engine-account     @YONEK0
 
 # ── 队长自己的开工核对台账：队长维护 ────────────────────────────
 /work/assembly/现状核实.md   @YONEK0
