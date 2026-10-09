@@ -48,6 +48,10 @@
 | `ui-vue/src/router/index.ts` | 新增路由（hash 路由） |
 | `ui-vue/src/mock/*` | 扩充为交通业务 mock |
 
+**开工须知（2026-10-09 实测）**：上游 Vue 工程结构已核实——`ui-vue/src/{api,mock,router,views,stores,shared}`，路由确为 `createWebHashHistory()`（`router/index.ts:21`），依赖含 `element-plus`；`api/` 下有 `http.ts` / `sse.ts` / `upload.ts`，`mock/` 下有 `db.ts` / `sse-writer.ts` / `util.ts`。**mock 模式可直接跑，不必等后端接口。**
+
+**备选条数口径（v1.0 冻结）**：司机端每屏**备选 ≥2 条**（+ 推荐 1 条 = 合计 ≥3 条方案），与领导版承诺的"至少两条备选"一致。唯一候选时后端返回 `no_alternative: true`，此时页面要**如实说明原因**，不要显示空白。
+
 ## 大文件
 
 `node_modules/` 不进仓库（`.gitignore` 已拦住）。鸿蒙工程按官方结构提交源码即可。
