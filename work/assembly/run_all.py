@@ -49,10 +49,20 @@ class ArtifactCheckError(RuntimeError):
 
 
 def prepare_run_dir(scenario: str) -> Path:
-    """为本次运行隔离出一个全新的输出目录，并保证 logs/ 存在。"""
+    """为本次运行隔离出一个全新的输出目录，并保证 logs/ 存在。
+
+    时间戳只精确到秒：同秒内再次运行（如快速双击 demo.bat）加序号后缀重试。
+    """
     run_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     run_dir = OUT_DIR / f"{scenario}_{run_ts}"
-    run_dir.mkdir(parents=True, exist_ok=False)
+    seq = 1
+    while True:
+        try:
+            run_dir.mkdir(parents=True, exist_ok=False)
+            break
+        except FileExistsError:
+            seq += 1
+            run_dir = OUT_DIR / f"{scenario}_{run_ts}_{seq}"
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     return run_dir
 
