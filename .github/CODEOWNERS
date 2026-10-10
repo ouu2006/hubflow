@@ -7,11 +7,11 @@
 # 规则见 docs/协作规范.md 第 4 节。
 #
 # ── V2.0 审核口径（2026-10-10）────────────────────────────────
-# **代码互审：A 审 B、B 审 C、C 审 A；队长兜底看"有没有影响别人 + 口径"。**
+# **代码互审：A 审 B、B 审 C、C 审 A；兜底审（三个账号任一）看"有没有影响别人 + 口径"。**
 #   · 开发A 的目录（work/twin、work/perception（**不含 level.py**））→ 由 **开发C** 审
 #   · 开发B 的目录（work/engine、stations、**work/perception/level.py**）→ 由 **开发A** 审
 #   · 开发C 的目录（work/frontend、work/assembly）→ 由 **开发B** 审
-#   · 公共文件 / 计划类文档 / 技术手册            → **队长复核**
+#   · 公共文件 / 计划类文档 / 技术手册            → **兜底审（三人任一）复核**
 # 注意：CODEOWNERS 里**只列"审的人"，不列"作者自己"**——GitHub 不认作者自己的 approve。
 #
 # ⚠️ **唯一例外：`work/perception/level.py`（判级）归开发B**（2026-10-10 裁定）。
@@ -28,16 +28,18 @@
 #    与 `@YONEK0` / `2652201498w-wq` / `xixixi-114514` / `Yan6791` / `xixiu-dev` / `liguang-e`（均 write），
 #    清单见 docs/仓库设置清单.md 第 2 节。**角色 ↔ 账号的映射仍待补**（不能猜）：
 #    3 名开发的账号确认后，把下面 TODO 处替换成真实账号，并把 TODO 行删掉。
-#    **在替换之前，所有 PR 一律由 @YONEK0 审**（队长由 7 人中的 1 人兼任、不碰业务代码，对代码天然独立；建议由承担合规 / 文档的那位成员兼任）。
+#    **在 3 名开发账号替换进下面的目录行之前**，所有 PR 由**兜底审三人任一**过一眼（默认 `@YONEK0`；队长由 7 人中的 1 人兼任、不碰业务代码，对代码天然独立；建议由承担合规 / 文档的那位成员兼任）。
 
-# ── 默认：整仓任何改动都需要队长过一眼（兜底）──────────────────
-# 两个 owner：`@YONEK0`（队长）+ `@ouu2006`（仓库 admin）——按 docs/仓库设置清单.md 第 2 节
-# "`*` 这一行给出至少两个 owner"落地；**取消 approve 要求后这条不再是死锁问题**，只是让
-# "自动带 Reviewer"总能带到人。**队长可随时按实际分工增删本行。**
-*                       @YONEK0 @ouu2006
+# ── 默认：整仓任何改动都需要"兜底审"过一眼（2026-10-10）──────────
+# **兜底审 = 三个账号任一**：`@YONEK0`（队长）/ `@ouu2006`（仓库 admin）/ `@2652201498w-wq`。
+# 按 docs/仓库设置清单.md 第 2 节落地；**取消 approve 要求后这条不再是死锁问题**，只是让
+# "自动带 Reviewer"总能带到人——**三个里任一人审过即可，不必三个都审**。
+# ⚠️ **作者不得审 / 合并自己的 PR**：若作者正是上面三人之一，由另外两人之一兜底。
+# **队长可随时按实际分工增删本行。**
+*                       @YONEK0 @ouu2006 @2652201498w-wq
 
-# ── 计划类文档 + 公共文件：队长复核 ────────────────────────────
-# 计划类文档由队长维护（可请开发C 代提交），改动一律队长复核。
+# ── 计划类文档 + 公共文件：兜底审（三人任一）复核 ──────────────
+# 计划类文档由队长维护（可请开发C 代提交），改动一律**兜底审三人任一**复核。
 /README.md                       @YONEK0
 /.gitignore                      @YONEK0
 /.gitattributes                  @YONEK0
@@ -49,19 +51,19 @@
 /docs/开发规范.md                  @YONEK0
 /docs/技术方案与实施手册.md         @YONEK0
 /docs/表格模板说明.md              @YONEK0
-# 公共文件：开发C 改，队长复核
+# 公共文件：开发C 改，兜底审（三人任一）复核
 /docs/数据契约.md                  @YONEK0
-# 门禁脚本：改它等于改所有人的准入线，队长复核（见 docs/开发规范.md 第 3 节）
+# 门禁脚本：改它等于改所有人的准入线，兜底审（三人任一）复核（见 docs/开发规范.md 第 3 节）
 /scripts/                        @YONEK0
 
-# ── 开发A 的目录：由开发C 互审 + 队长兜底 ──────────────────────
+# ── 开发A 的目录：由开发C 互审 + 兜底审（三人任一）──────────────
 # TODO: 开发C 账号到位后，取消下面注释并把 TODO-frontend-account 换成真实账号
 # /work/twin/            TODO-frontend-account   @YONEK0
 # /work/perception/      TODO-frontend-account   @YONEK0
 #   ⚠️ **level.py 例外：判级归开发B** —— `work/perception/` 是全仓唯一的「一目录两写手」目录，
 #      **除 `work/perception/level.py` 外全部归开发A**（该文件的 owner 见下面开发B 段）。
 
-# ── 开发B 的目录：由开发A 互审 + 队长兜底 ──────────────────────
+# ── 开发B 的目录：由开发A 互审 + 兜底审（三人任一）──────────────
 # TODO: 开发A 账号到位后，取消下面注释并把 TODO-twin-account 换成真实账号
 # /work/engine/          TODO-twin-account       @YONEK0
 # /stations/             TODO-twin-account       @YONEK0
@@ -71,7 +73,7 @@
 # /tools/                TODO-twin-account       @YONEK0
 # /contracts/            TODO-twin-account       @YONEK0
 
-# ── 开发C 的目录：由开发B 互审 + 队长兜底 ──────────────────────
+# ── 开发C 的目录：由开发B 互审 + 兜底审（三人任一）──────────────
 # TODO: 开发B 账号到位后，取消下面注释并把 TODO-engine-account 换成真实账号
 # /work/frontend/        TODO-engine-account     @YONEK0
 # /work/assembly/        TODO-engine-account     @YONEK0
