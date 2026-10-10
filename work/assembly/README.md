@@ -80,15 +80,16 @@ python run_all.py --stress       # 压力测试：连续 3 轮
 | 1 | **OpenCV 不支持中文绝对路径**——`cv2.imwrite` / `cv2.imread` 传中文绝对路径直接失败，而 `image` 模式的输出目录由 `REPO_ROOT` 拼出，**必为中文绝对路径** | ① 把两个仓库放到纯英文路径（如 `D:\work\`，**推荐**，根因消除）；或 ② 写出改 `cv2.imencode` + `open(...,'wb')`、读入改 `np.fromfile` + `cv2.imdecode` |
 | 2 | **`track` / `count` 的输出目录不存在时静默失败**——`_write_frames()` 既不 `makedirs` 也不检查 `isOpened()`，**命令照样打印"轨迹条数: 9"但视频文件根本没生成** | `run_all.py` 里先 `os.makedirs(..., exist_ok=True)`；**压测脚本里加一条"产物文件存在性"断言**，别只信退出码 |
 
-> **一期口径**：这两个缺陷在**视频链路**上，一期不投入视频（D1），**所以不阻塞一期主链路**；但
-> ① **"产物存在性断言"这条纪律一期照用**（孪生输出、快照文件、时序数据都可能出现同类假通过）；
-> ② **二期接视频链路前必须先修这两个缺陷**。
+> **一期口径（D1′）**：这两个缺陷正好落在**视频感知链路**上——**一期就要跑视频（6 段样本视频 + YOLO），所以一期必须先处理**：
+> ① **中文路径**：仓库与上游**已迁到纯英文路径**（`D:\work\hubflow` / `D:\work\agentic-traffic-management`），根因消除；代码层 `imencode + imdecode` 作为二期加固项；
+> ② **输出目录静默失败**：`run_all.py` 与演示脚本**先 `os.makedirs(..., exist_ok=True)`**，并加"产物存在性断言"——**别只信退出码**。
+> 这条纪律**两条链路都照用**（孪生输出、快照文件、时序数据都会出现同类假通过）。
 
 ## 七、硬前置与上游资产（**状态已按 V2.0 更新**）
 
 **0-1 ~ 0-3 已完成**（2026-10-09）：`.ckpt` 已生成（`yolov8n.ckpt`，12.7 MB）并通过前向数值比对（最差相对误差 2.875e-06）；环境已按 `requirements-mindspore.txt` 重建（CPython 3.11.17 + MindSpore 2.8.0）。
 
-> **这些是"技术可行性证据"，按 D1 归二期资产**，一期不再投入；一期开工前置改为 **SUMO 安装与许可核查 + 站点范围 OSM 路网 + 表格模板下发**（见 [`../twin/README.md`](../twin/README.md) 与 [`docs/全流程计划.md`](../../docs/全流程计划.md) 阶段 0）。
+> **按 D1′，`.ckpt` 与 MindSpore 推理链路一期即投入使用**（视频感知链路：`demo_cli.py image / track / count` → 像素轨迹 → 透视标定 → 四项指标）；一期开工前置为 **0-6 视频链路跑通 + SUMO 安装与许可核查 + 站点范围 OSM 路网 + 表格模板下发**（见 [`docs/全流程计划.md`](../../docs/全流程计划.md) 阶段 0 与手册第 1.4 节）。
 
 **换机器重建环境时注意**：依赖清单**未覆盖**两个包，要补装——`setuptools`（`mindyolo` 里有 `import pkg_resources`）与 `ultralytics`（`verify` 步要 `torch.load` 原 `.pt`，其 pickle 引用 ultralytics 类）。建议按流程补进上游 `requirements-mindspore.txt`。
 
