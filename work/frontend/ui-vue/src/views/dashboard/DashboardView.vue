@@ -11,7 +11,7 @@ import {
   postRouteRecommend,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import type { RecommendResult, RoutePath, SegmentRecord, VehicleRecord } from '../../shared/traffic'
+import type { AlternativePath, RecommendResult, RoutePath, SegmentRecord, VehicleRecord } from '../../shared/traffic'
 import NetMap from './components/NetMap.vue'
 import RoutePanel from './components/RoutePanel.vue'
 import SegmentDetailPanel from './components/SegmentDetailPanel.vue'
@@ -85,7 +85,7 @@ const selected = computed<SegmentRecord | null>(
 const routeSegments = computed<string[]>(() => {
   const p = plan.value
   if (!p || !activePathId.value) return []
-  const all: RoutePath[] = [p.arrival_route, ...p.alternatives]
+  const all: (RoutePath | AlternativePath)[] = [p.arrival_route, ...p.alternatives]
   if (p.departure_route) all.push(p.departure_route)
   return all.find((r) => r.path_id === activePathId.value)?.segments ?? []
 })

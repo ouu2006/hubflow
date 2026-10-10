@@ -60,6 +60,10 @@ export interface SegmentsSnapshot {
 
 export type DriverType = 'D1' | 'D2' | 'D3'
 
+// 契约 §四:state 取值集合封闭,新增状态要先改契约
+export type VehicleState = '行驶' | '排队' | '落客服务' | '候客' | '违停' | '已离开'
+
+// 契约 §四:is_simulated 只写在信封层(顶层),车辆元素不重复放该字段
 export interface VehicleRecord {
   vehicle_id: string
   driver_type: DriverType
@@ -67,9 +71,11 @@ export interface VehicleRecord {
   offset_m: number
   lon: number
   lat: number
-  state: string
-  is_demo_bound?: boolean
-  is_simulated: true
+  state: VehicleState
+  /** 是否已被引导(采纳率与前后车协同举证用) */
+  guided: boolean
+  /** 是否演示绑定车(同一时刻最多一辆 true) */
+  is_demo_bound: boolean
 }
 
 export interface VehiclesSnapshot {
@@ -86,9 +92,20 @@ export interface RoutePath {
   walk_min?: number
 }
 
+/** 备选:契约示例在 path_id / eta_min 之外必带 reason;segments 等渲染字段与 arrival_route 同族 */
+export interface AlternativePath {
+  path_id: string
+  eta_min: number
+  reason: string
+  segments?: string[]
+  dropoff_point?: string
+  walk_min?: number
+}
+
+// 契约 §2.1:预约格数 / 租约秒数(默认 90s,未确认采纳即释放)
 export interface ReservationBlock {
-  slots?: string[]
-  lease_min?: number
+  slots_reserved: number
+  lease_expire_s: number
   harm_check?: { max_eta_increase_s: number; max_slot_x: number; passed: boolean }
 }
 
@@ -103,7 +120,7 @@ export interface RecommendResult {
   arrival_route: RoutePath
   departure_route: RoutePath | null
   pickup_route: RoutePath | null
-  alternatives: RoutePath[] // 契约:备选 ≥2 条
+  alternatives: AlternativePath[] // 契约:备选 ≥2 条
   reservation: ReservationBlock
   why: string
   is_simulated: true

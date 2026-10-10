@@ -19,7 +19,7 @@
 | `src/mock/index.ts` | 开头加 `handleTraffic` 转发(约 6 行),traffic 路径不匹配时仍走原 404 |
 | `src/shared/traffic.ts` `src/shared/demoNetwork.ts` | 新增:契约 v2.0 类型 + 四级编码 + 示例路网(非实测) |
 | `src/api/traffic.ts` | 新增:traffic 只读调用面(与 harness 冻结 8 端点的 `api/index.ts` 相互独立) |
-| `src/mock/traffic.ts` | 新增:traffic mock(端点形状照抄 `work/assembly/traffic.py`)+ `traffic_snapshot` SSE 假流 |
+| `src/mock/traffic.ts` | 新增:traffic mock(端点清单见 `work/assembly/README.md` 第二节,实现基准 = PR #51 分支上的 `work/assembly/traffic.py`)+ `traffic_snapshot` SSE 假流 |
 | `src/views/dashboard/` | 新增:态势大屏页(左栏路段/线路 · 中央 SVG 路网 · 右栏详情) |
 
 真路网由 #36(`netbuild.py` → `sumo/*.net.xml`)与 #37(`map_ingest.py` → `network.json`)落地后替换 `src/shared/demoNetwork.ts`。

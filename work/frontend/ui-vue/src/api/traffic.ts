@@ -1,5 +1,6 @@
 // traffic 态势大屏访问面(Issue #52):只读快照 + SSE,不做任何业务计算。
-// 与 harness 冻结的 8 端点调用面(api/index.ts)相互独立;端点形状照抄 work/assembly/traffic.py。
+// 与 harness 冻结的 8 端点调用面(api/index.ts)相互独立;端点清单见 work/assembly/README.md 第二节,
+// 实现基准 = PR #51 分支上的 work/assembly/traffic.py。
 // 一期 mock 演示:M1 全部数据 is_simulated=true,页面显著标注"示例数据"。
 
 import type {
