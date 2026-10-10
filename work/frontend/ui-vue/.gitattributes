@@ -1,0 +1,2 @@
+# shell 脚本 CRLF 护栏(总控 §4:WSL 工作模式要求)
+*.sh text eol=lf

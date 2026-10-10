@@ -91,3 +91,19 @@
 
 `node_modules/` 不进仓库（`.gitignore` 已拦住）。鸿蒙工程按官方结构提交源码即可。
 **视频、录屏、截图数据集不进仓库**（`.gitignore` 已拦住 `*.mp4`）——演示物料放共享盘。
+
+## 七、ui-vue 工程落位与态势大屏 M1(Issue #52,2026-10-11)
+
+**工程落位**:上游 `harness-core/ui-vue` 已整体拷贝进本目录 `work/frontend/ui-vue/`(harness 四页保留 = 决策层可视化;来源与改动清单见 [`ui-vue/SOURCE.md`](ui-vue/SOURCE.md))。**上游仓零改动**。
+
+**态势大屏运行方式**:
+
+```bash
+cd work/frontend/ui-vue
+npm install        # 仅首次;或 mklink /J node_modules 指向上游已装好的 node_modules
+npm run dev        # 浏览器打开 http://localhost:5173/#/dashboard(公开访问,免登录)
+```
+
+**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点形状对齐 `work/assembly/traffic.py`(segments / segments/{id} / vehicles / route/recommend + SSE `traffic_snapshot`)。
+
+**口径**:页面数据全部 `is_simulated = true` 示例数据;底图为**示例路网(非实测)**,待 #36/#37 站点包产物替换 `ui-vue/src/shared/demoNetwork.ts`;一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。
