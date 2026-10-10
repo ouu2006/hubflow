@@ -166,7 +166,7 @@ locate(session_id, position, heading, ts) → {
 
 | 事项 | 做法 |
 |---|---|
-| 路网拓扑 | **OSM 站点切片 → `netconvert`**（转换脚本由本模块负责，产物落 `stations/sumo/` 与 `stations/network.json`） |
+| 路网拓扑 | **OSM 站点切片 → `netconvert`**：**`netconvert` 与 `netedit` 补画归开发A**（产出 `stations/sumo/*.net.xml`）；**本模块只负责 `map_ingest.py`——把 OSM 与 `sumo/*.net.xml` 转成统一图结构 `stations/network.json`（`{nodes, edges, attributes}`）**，并在 T2 补录后写回。**两边不重叠：A 不写 `network.json`，B 不重跑 `netconvert`、不写 `sumo/`** |
 | 人工核对 | N1 拿**高德底图**逐条比对补录（T2 路段属性核对表），过 **TC-15** |
 | 管理端渲染 | 用地图 JS API **在线**显示底图 + 路网着色；**保留审图号与「高德地图」标识**（高德 7.7 / 百度 6.6） |
 | 坐标系 | 站点包统一存 **WGS-84**；与高德转 GCJ-02、与百度转 BD-09（经 GCJ-02 中转）。**不转的话车的位置会整体偏一条街** |
