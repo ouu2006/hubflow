@@ -225,7 +225,7 @@ python work/twin/loop.py --scenario scenario_2
 ### 9.3 一期范围与怎么跑
 
 - **范围（一期）**：至少 **1 个边界断面**（**M1-10**）；二期扩到**全部边界断面在线闭环 + 熔断**（**M2-9**）。
-- **配置从哪来**：开关在 `stations/scenarios.json` 的 **`assimilation`**（`enabled` / `edges` / `period_s` / `gate`），映射在 `stations/points.json` 的 **`role` + `sumo_edge_id`**；**`edges` 里只许出现 `boundary` 断面映射出来的 edge**，写进 `internal` 的 edge 视为配置错误、脚本**报错退出**（见 [`../../docs/数据契约.md`](../../docs/数据契约.md) 第 5.1 / 5.2 节）。
+- **配置从哪来**：开关在 `stations/scenarios.json` 的 **`assimilation`**（`enabled` / `edges` / `period_s` / `gate`），映射在 `stations/points.json` 的 **`role` + `sumo_edge_id`**；**`edges` 里只许出现 `boundary` 断面映射出来的 edge**，写进 `internal` 的 edge 视为配置错误、脚本**报错退出**（见 [`../../docs/数据契约.md`](../../docs/数据契约.md) 第 6.1 / 6.2 节）。
 - **怎么跑**：`loop.py` 每 60 s 调一次 `calibrate.py`；开 / 关对照靠 `assimilation.enabled`。
 
 ```text
