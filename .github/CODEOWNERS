@@ -1,7 +1,8 @@
 # 审核归属（CODEOWNERS）
 #
 # 作用：PR 提交后，GitHub 会**自动把对应路径的 owner 加为 Reviewer**，
-# 不用每次手动选人。配合 `main` 分支保护（要求 1 个 approve）使用。
+# 不用每次手动选人。配合 `main` 分支保护使用——**它只负责"带人"，不阻塞合并**
+# （2026-10-10 起 `main` 不再要求人工 approve，见 docs/仓库设置清单.md）。
 #
 # 规则见 docs/协作规范.md 第 4 节。
 #
@@ -15,8 +16,8 @@
 #
 # ⚠️ 生效时机：**GitHub 只认「目标分支」上的 CODEOWNERS**。
 #    本文件合并进 main 之前，对指向 main 的 PR 不产生约束；
-#    合并进 main 之后，改动下列路径的 PR 会自动要求对应 owner 的 approve。
-#    （main 分支保护已开启 require_code_owner_reviews = true）
+#    合并进 main 之后，改动下列路径的 PR 会自动把对应 owner 带上 Reviewer。
+#    （2026-10-10 起 `require_code_owner_reviews = false`：**带人但不阻塞合并**）
 #
 # ⚠️ 当前团队只有 2 个 GitHub 账号（@ouu2006 / @YONEK0）。
 #    3 名开发的账号拿到后，把下面 TODO 处替换成真实账号，并把 TODO 行删掉。
