@@ -1,0 +1,34 @@
+name: CI
+
+# 本仓库的门禁（口径见 docs/协作规范.md 第 4 节、docs/开发规范.md 第 11 节）：
+#   * 本地与 CI 跑的是**同一条命令**：`python scripts/doc_gate.py` —— 避免"本地绿、CI 红"；
+#   * 检查名固定为 **`ci`**：`main` 分支保护里要 require 的就是这个名字（见 docs/仓库设置清单.md）；
+#   * 现在仓库里只有文档与配置，所以只有一个 job。等第一批代码（`work/**`）落地后，
+#     在下面按目录追加 job（或按改动范围裁剪），**不要改 `ci` 这个 job 名**，否则分支保护会失配。
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # 手动触发的语义是"我不确定，全都跑一遍"。
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # 不装 setup-python：ubuntu-latest 自带 python3，少一个版本变量。
+      - name: 文档与契约门禁
+        run: python3 scripts/doc_gate.py
+
+      # 以后加代码时，把这几步加进来（与 README 的最小启动路径同一口径）：
+      #   - name: 依赖
+      #     run: pip install -r requirements.txt
+      #   - name: 模块自跑（--sample）
+      #     run: python work/<目录>/run.py --sample
