@@ -26,7 +26,10 @@
 #    **在替换之前，所有 PR 一律由 @YONEK0 审**（队长由 7 人中的 1 人兼任、不碰业务代码，对代码天然独立；建议由 N4 文档演示与合规员兼任）。
 
 # ── 默认：整仓任何改动都需要队长过一眼（兜底）──────────────────
-*                       @YONEK0
+# 两个 owner：`@YONEK0`（队长）+ `@ouu2006`（仓库 admin）——按 docs/仓库设置清单.md 第 2 节
+# "`*` 这一行给出至少两个 owner"落地；**取消 approve 要求后这条不再是死锁问题**，只是让
+# "自动带 Reviewer"总能带到人。**队长可随时按实际分工增删本行。**
+*                       @YONEK0 @ouu2006
 
 # ── 计划类文档 + 公共文件：队长复核 ────────────────────────────
 # 计划类文档由队长维护（可请开发C 代提交），改动一律队长复核。
@@ -43,6 +46,8 @@
 /docs/表格模板说明.md              @YONEK0
 # 公共文件：开发C 改，队长复核
 /docs/数据契约.md                  @YONEK0
+# 门禁脚本：改它等于改所有人的准入线，队长复核（见 docs/开发规范.md 第 3 节）
+/scripts/                        @YONEK0
 
 # ── 开发A 的目录：由开发C 互审 + 队长兜底 ──────────────────────
 # TODO: 开发C 账号到位后，取消下面注释并把 TODO-frontend-account 换成真实账号
@@ -53,6 +58,9 @@
 # TODO: 开发A 账号到位后，取消下面注释并把 TODO-twin-account 换成真实账号
 # /work/engine/          TODO-twin-account       @YONEK0
 # /stations/             TODO-twin-account       @YONEK0
+# 契约 schema / 校验脚本 / 金样例：开发B 是唯一裁定人（见 docs/开发规范.md 第 3 节）
+# /tools/                TODO-twin-account       @YONEK0
+# /contracts/            TODO-twin-account       @YONEK0
 
 # ── 开发C 的目录：由开发B 互审 + 队长兜底 ──────────────────────
 # TODO: 开发B 账号到位后，取消下面注释并把 TODO-engine-account 换成真实账号

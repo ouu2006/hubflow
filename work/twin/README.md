@@ -7,7 +7,9 @@
 ## 一、负责什么
 
 ```text
-站点 OSM 切片 ──netconvert──► stations/sumo/*.net.xml + stations/network.json
+站点 OSM 切片 ──netconvert──► stations/sumo/*.net.xml
+                                        │
+                                        ├──► stations/network.json（开发B 的 map_ingest.py 产出）
                                         │
 stations/{points,demand,factors,scenarios,signal_plan}.json
                                         │
@@ -23,7 +25,7 @@ stations/{points,demand,factors,scenarios,signal_plan}.json
 
 | 职责 | 一句话 | 交付物 |
 |---|---|---|
-| **路网转换** | 把站点 OSM 用 `netconvert` 转成 SUMO 路网，并生成统一图结构 | `stations/sumo/*.net.xml`、`stations/network.json` |
+| **路网转换** | 把站点 OSM 用 `netconvert` 转成 SUMO 路网（**`sumo/*.net.xml` 与 `network.json` 都是本步骤的产物，但只有 `.net.xml` 归本模块交付**——见下） | `stations/sumo/*.net.xml` |
 | **场景** | 按 `scenarios.json` 开关组装四个演示场景（常态 / 峰值 / 突发 / 多因素） | 可复现的场景入口 |
 | **司机行为体** | 三类虚拟司机（D1 送客 / D2 接客 / D3 往返）的选择与停靠行为 | `driver.py` |
 | **虚拟检测器** | 在二期摄像头将来的位置布断面，输出**路段级聚合数**（只数车、不认车） | `detector.py` → 交感知 |
@@ -41,18 +43,20 @@ stations/{points,demand,factors,scenarios,signal_plan}.json
 work/twin/
 ├─ README.md              # 本文件
 ├─ loop.py                # 主循环入口：--scenario / --seed / --duration
-├─ netbuild.py            # OSM → netconvert → stations/sumo/ + network.json
+├─ netbuild.py            # OSM → netconvert → stations/sumo/*.net.xml（network.json 不在这里，见下）
 ├─ scenario.py            # 读 stations/scenarios.json，组装场景（开关 / 注入事件 / 种子）
 ├─ driver.py              # 三类司机行为体（跟驰交给 SUMO，决策走 TraCI）
 ├─ detector.py            # 虚拟检测器：按检测断面聚合流量 / 车速 / 排队
 ├─ calibrate.py           # 数据同化：边界断面实测 → traci.calibrator.setFlow（每 60 s、带门控）
 ├─ factors.py             # 因素注入接口（读 stations/factors.json）
 ├─ demand.py              # 读 stations/demand.json 生成车流（列车到达 → 放量）
-├─ sample/                # 样例输入（无 SUMO 也能跑通判级/引擎链路）
+├─ samples/               # 样例输入（无 SUMO 也能跑通判级/引擎链路）
 └─ out/                   # 运行输出（已 gitignore；**脚本必须先建目录**）
 ```
 
-> **`sample/` 是给别人用的**：开发B、开发C 不该等你把 SUMO 装好才能开工——把一份**最小可用样例**（几段路 + 几条车辆记录 + 一个快照）放在这里，他们就能单独跑通自己的模块。
+> **`samples/` 是给别人用的**：开发B、开发C 不该等你把 SUMO 装好才能开工——把一份**最小可用样例**（几段路 + 几条车辆记录 + 一个快照）放在这里，他们就能单独跑通自己的模块。**目录名统一用 `samples/`、文件名用 `<名字>_sample.json`**（[`docs/开发规范.md`](../../docs/开发规范.md) 第 6 节），不要写成 `sample/`。
+
+> ⚠️ **`network.json` 不在本模块的交付物里**：本模块只产出 `stations/sumo/*.net.xml`（SUMO 路网）。**统一图结构 `network.json` 由开发B 的 `map_ingest.py` 产出**（[`../engine/README.md`](../engine/README.md) 第五 / 七节、手册第 8.3 节）——本模块需要图结构时**读**它，不写它。两边都写同一个文件必然互相覆盖。
 
 ## 三、SUMO 安装与 TraCI
 
@@ -138,7 +142,7 @@ python work/twin/loop.py --scenario scenario_2
 | `--seed` | 随机种子，**固定才能复现** | 写进 `scenarios.json` |
 | `--duration` | 仿真时长（秒 / 分钟） | 满足 M1-2 的 ≥ 60 个统计点 |
 | `--out` | 输出目录 | `work/twin/out/` |
-| `--no-sumo` | 用 `sample/` 样例数据跳过 SUMO，仅串链路 | 关 |
+| `--no-sumo` | 用 `samples/` 样例数据跳过 SUMO，仅串链路 | 关 |
 
 **每一步做什么**：
 
@@ -259,5 +263,5 @@ python work/twin/loop.py --scenario scenario_2
 
 ## 十一、大文件
 
-- **能进仓库**：`stations/sumo/*.net.xml`（小文本、可重建）、`sample/` 里的最小样例；
+- **能进仓库**：`stations/sumo/*.net.xml`（小文本、可重建）、`samples/` 里的最小样例；
 - **不能进**：OSM 原始大文件、地图瓦片、仿真录屏、`out/` 运行产物 —— 放共享盘或 `.gitignore`。
