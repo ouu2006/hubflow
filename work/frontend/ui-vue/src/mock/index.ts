@@ -7,6 +7,7 @@ import type { Connect, Plugin } from 'vite'
 import { MAX_UPLOAD_BYTES } from '../shared/protocol.ts'
 import { addUploadedDoc, db, newSessionId, newToken, resolveTrace } from './db.ts'
 import { runFakeChatStream, SseWriter } from './sse-writer.ts'
+import { handleTraffic } from './traffic.ts'
 import {
   bearerToken,
   errShape,
@@ -61,6 +62,13 @@ async function handle(
   const method = (req.method ?? 'GET').toUpperCase()
   const url = new URL(req.url ?? '/', 'http://mock.local')
   const path = url.pathname.replace(/\/+$/, '') || '/'
+
+  // ---- traffic 态势大屏端点(Issue #52;公开访问,形状照抄 work/assembly/traffic.py)----
+
+  if (path.startsWith('/traffic/')) {
+    const handled = await handleTraffic(path, method, req, res)
+    if (handled) return
+  }
 
   // ---- 开放端点:health / login ----
 

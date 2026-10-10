@@ -33,7 +33,8 @@ onUnmounted(() => {
   if (timer) clearInterval(timer)
 })
 
-const showChrome = computed(() => route.path !== '/login')
+// 大屏(Issue #52)全屏沉浸、自带顶栏,同样不显示管理台壳。
+const showChrome = computed(() => route.path !== '/login' && route.path !== '/dashboard')
 const healthText = computed(() =>
   healthDead.value ? '不可达' : health.value ? `内核 ${health.value.kernel} · DB ${health.value.db}` : '检测中…',
 )
