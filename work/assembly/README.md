@@ -97,3 +97,24 @@ python run_all.py --stress       # 压力测试：连续 3 轮
 ## 八、大文件
 
 压测日志、运行产物放 `logs/` 与 `out/`（已 gitignore）。模型权重、视频放共享盘。
+
+## 九、路由注册现状说明（**Issue #40，2026-10-11 实测**）
+
+**上游 `harness-core/host-fastapi` 的注册现状**：`app/main.py` 的 `create_app()` **只注册一个 router**（`app.include_router(router)`，来自 `app/api/routes.py`），无其他路由注册点。既有 **8 个端点**：
+
+| 方法 | 路径 |
+|---|---|
+| POST | `/auth/login` |
+| POST | `/sessions` |
+| POST | `/sessions/{session_id}/chat`（SSE 流式） |
+| GET | `/kb/documents` |
+| POST | `/kb/documents`（上传，201） |
+| DELETE | `/kb/documents/{doc_id}`（204） |
+| GET | `/answers/{answer_id}/trace` |
+| GET | `/health` |
+
+**C-1 底线**：对上游仓的改动，`app/main.py` 的 diff **只允许包含"新增注册"**（例如新增 `include_router` 一行），**既有 8 端点的代码零改动**。本仓接口层是**独立的 `traffic.py`**（默认 `127.0.0.1:8090`），不反向依赖上游宿主；管理端通过 Vite 代理或同源挂载接入（`ui-vue/vite.config.ts` 的 `/api` 代理目标 `VITE_API_BASE`）。
+
+**公共文件清单（重申）**：根 `README.md`、`.gitignore`、`.github/`、`docs/数据契约.md`、路由注册——**只由开发C 一人改、队长复核，其他人只提 Issue 不动手**。
+
+**接口层骨架现状**（2026-10-11）：`traffic.py`（读快照端点可用 / 引擎类端点 501 并标注归属）、`run_all.py`（步骤编排 + 产物断言 harness，`--dry-run` 自检通过，能抓住 258 B 空壳 mp4 与残留 ts 两类假通过）、`demo.bat`（双击即跑）。上游 Vue 管理端 `npm run dev` mock 8/8 端点挂载、登录 → 对话页全链路可用（运行记录见 Issue #40）。
