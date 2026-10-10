@@ -8,11 +8,16 @@
 #
 # ── V2.0 审核口径（2026-10-10）────────────────────────────────
 # **代码互审：A 审 B、B 审 C、C 审 A；队长兜底看"有没有影响别人 + 口径"。**
-#   · 开发A 的目录（work/twin、work/perception）→ 由 **开发C** 审
-#   · 开发B 的目录（work/engine、stations）      → 由 **开发A** 审
+#   · 开发A 的目录（work/twin、work/perception（**不含 level.py**））→ 由 **开发C** 审
+#   · 开发B 的目录（work/engine、stations、**work/perception/level.py**）→ 由 **开发A** 审
 #   · 开发C 的目录（work/frontend、work/assembly）→ 由 **开发B** 审
 #   · 公共文件 / 计划类文档 / 技术手册            → **队长复核**
 # 注意：CODEOWNERS 里**只列"审的人"，不列"作者自己"**——GitHub 不认作者自己的 approve。
+#
+# ⚠️ **唯一例外：`work/perception/level.py`（判级）归开发B**（2026-10-10 裁定）。
+#    `work/perception/` 是全仓唯一的「一目录两写手」目录：**除 `level.py` 外全部归开发A**。
+#    例外的是**文件**，不是"同一文件两组"；`thresholds.json`（判级组 + 决策组）归开发B，
+#    该文件**只有一个写手**，**不构成例外**。
 #
 # ⚠️ 生效时机：**GitHub 只认「目标分支」上的 CODEOWNERS**。
 #    本文件合并进 main 之前，对指向 main 的 PR 不产生约束；
@@ -23,7 +28,7 @@
 #    与 `@YONEK0` / `2652201498w-wq` / `xixixi-114514` / `Yan6791` / `xixiu-dev`（均 write），
 #    清单见 docs/仓库设置清单.md 第 2 节。**角色 ↔ 账号的映射仍待补**（不能猜）：
 #    3 名开发的账号确认后，把下面 TODO 处替换成真实账号，并把 TODO 行删掉。
-#    **在替换之前，所有 PR 一律由 @YONEK0 审**（队长由 7 人中的 1 人兼任、不碰业务代码，对代码天然独立；建议由 N4 文档演示与合规员兼任）。
+#    **在替换之前，所有 PR 一律由 @YONEK0 审**（队长由 7 人中的 1 人兼任、不碰业务代码，对代码天然独立；建议由承担合规 / 文档的那位成员兼任）。
 
 # ── 默认：整仓任何改动都需要队长过一眼（兜底）──────────────────
 # 两个 owner：`@YONEK0`（队长）+ `@ouu2006`（仓库 admin）——按 docs/仓库设置清单.md 第 2 节
@@ -53,11 +58,15 @@
 # TODO: 开发C 账号到位后，取消下面注释并把 TODO-frontend-account 换成真实账号
 # /work/twin/            TODO-frontend-account   @YONEK0
 # /work/perception/      TODO-frontend-account   @YONEK0
+#   ⚠️ **level.py 例外：判级归开发B** —— `work/perception/` 是全仓唯一的「一目录两写手」目录，
+#      **除 `work/perception/level.py` 外全部归开发A**（该文件的 owner 见下面开发B 段）。
 
 # ── 开发B 的目录：由开发A 互审 + 队长兜底 ──────────────────────
 # TODO: 开发A 账号到位后，取消下面注释并把 TODO-twin-account 换成真实账号
 # /work/engine/          TODO-twin-account       @YONEK0
 # /stations/             TODO-twin-account       @YONEK0
+# 判级例外：`work/perception/level.py` 归开发B（连同 thresholds.json 的判级参数组）
+# /work/perception/level.py  TODO-twin-account   @YONEK0
 # 契约 schema / 校验脚本 / 金样例：开发B 是唯一裁定人（见 docs/开发规范.md 第 3 节）
 # /tools/                TODO-twin-account       @YONEK0
 # /contracts/            TODO-twin-account       @YONEK0

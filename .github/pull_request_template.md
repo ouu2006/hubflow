@@ -83,7 +83,7 @@
 | 情况 | 谁审 |
 |---|---|
 | 现在（开发账号未齐） | **一律队长 `@YONEK0`** |
-| `work/twin/`、`work/perception/`（开发A） | **开发C 互审** + 队长兜底 |
+| `work/twin/`、`work/perception/`（开发A；**例外：`work/perception/level.py` 判级归开发B**） | **开发C 互审** + 队长兜底（`level.py` 的改动由**开发A** 互审） |
 | `work/engine/`、`stations/`（开发B） | **开发A 互审** + 队长兜底 |
 | `work/frontend/`、`work/assembly/`（开发C） | **开发B 互审** + 队长兜底 |
 | 改了公共文件 / **契约字段** / 计划类文档 / 技术手册 | **必须队长过一眼** |
