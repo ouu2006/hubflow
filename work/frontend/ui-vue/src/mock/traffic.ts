@@ -1,4 +1,5 @@
-// traffic 大屏 mock(仅 M1,Issue #52):端点形状照抄 work/assembly/traffic.py(PR #51),
+// traffic 大屏 mock(仅 M1,Issue #52):端点与 SSE 事件名依据 work/assembly/README.md 第二节
+// 的端点清单;实现基准 = PR #51 分支上的 work/assembly/traffic.py(未并入 main 前以该分支为准),
 // 字段名对照 docs/数据契约.md v2.0。口径铁律:
 //   ① 所有数据 is_simulated=true,示例数据、非实测;
 //   ② 只读快照、不算业务——数值是预置基线加抖动,不是任何模型的输出;
@@ -312,23 +313,24 @@ interface VehicleBase {
   segment_id: string
   offset_m: number
   speed_mps: number
-  state: string
+  state: VehicleRecord['state']
+  guided: boolean
   is_demo_bound?: boolean
 }
 
 const VEHICLE_BASES: VehicleBase[] = [
-  { vehicle_id: 'twin-0001', driver_type: 'D1', segment_id: 'SEG-001', offset_m: 60, speed_mps: 7.5, state: '行驶', is_demo_bound: true },
-  { vehicle_id: 'twin-0002', driver_type: 'D1', segment_id: 'SEG-002', offset_m: 120, speed_mps: 9.8, state: '行驶' },
-  { vehicle_id: 'twin-0003', driver_type: 'D1', segment_id: 'SEG-003', offset_m: 40, speed_mps: 1.2, state: '落客' },
-  { vehicle_id: 'twin-0004', driver_type: 'D2', segment_id: 'SEG-003', offset_m: 210, speed_mps: 0.8, state: '排队' },
-  { vehicle_id: 'twin-0005', driver_type: 'D1', segment_id: 'SEG-004', offset_m: 300, speed_mps: 6.4, state: '行驶' },
-  { vehicle_id: 'twin-0006', driver_type: 'D2', segment_id: 'SEG-005', offset_m: 150, speed_mps: 10.6, state: '行驶' },
-  { vehicle_id: 'twin-0007', driver_type: 'D2', segment_id: 'SEG-005', offset_m: 380, speed_mps: 9.9, state: '行驶' },
-  { vehicle_id: 'twin-0008', driver_type: 'D1', segment_id: 'SEG-007', offset_m: 90, speed_mps: 3.4, state: '行驶' },
-  { vehicle_id: 'twin-0009', driver_type: 'D2', segment_id: 'SEG-008', offset_m: 60, speed_mps: 1.6, state: '排队' },
-  { vehicle_id: 'twin-0010', driver_type: 'D1', segment_id: 'SEG-009', offset_m: 200, speed_mps: 5.2, state: '行驶' },
-  { vehicle_id: 'twin-0011', driver_type: 'D2', segment_id: 'SEG-002', offset_m: 420, speed_mps: 8.8, state: '行驶' },
-  { vehicle_id: 'twin-0012', driver_type: 'D1', segment_id: 'SEG-006', offset_m: 110, speed_mps: 11.2, state: '行驶' },
+  { vehicle_id: 'twin-0001', driver_type: 'D1', segment_id: 'SEG-001', offset_m: 60, speed_mps: 7.5, state: '行驶', guided: true, is_demo_bound: true },
+  { vehicle_id: 'twin-0002', driver_type: 'D1', segment_id: 'SEG-002', offset_m: 120, speed_mps: 9.8, state: '行驶', guided: true },
+  { vehicle_id: 'twin-0003', driver_type: 'D1', segment_id: 'SEG-003', offset_m: 40, speed_mps: 1.2, state: '落客服务', guided: true },
+  { vehicle_id: 'twin-0004', driver_type: 'D2', segment_id: 'SEG-003', offset_m: 210, speed_mps: 0.8, state: '排队', guided: false },
+  { vehicle_id: 'twin-0005', driver_type: 'D1', segment_id: 'SEG-004', offset_m: 300, speed_mps: 6.4, state: '行驶', guided: true },
+  { vehicle_id: 'twin-0006', driver_type: 'D2', segment_id: 'SEG-005', offset_m: 150, speed_mps: 10.6, state: '行驶', guided: false },
+  { vehicle_id: 'twin-0007', driver_type: 'D2', segment_id: 'SEG-005', offset_m: 380, speed_mps: 9.9, state: '行驶', guided: true },
+  { vehicle_id: 'twin-0008', driver_type: 'D1', segment_id: 'SEG-007', offset_m: 90, speed_mps: 3.4, state: '行驶', guided: false },
+  { vehicle_id: 'twin-0009', driver_type: 'D2', segment_id: 'SEG-008', offset_m: 60, speed_mps: 1.6, state: '排队', guided: false },
+  { vehicle_id: 'twin-0010', driver_type: 'D1', segment_id: 'SEG-009', offset_m: 200, speed_mps: 5.2, state: '行驶', guided: true },
+  { vehicle_id: 'twin-0011', driver_type: 'D2', segment_id: 'SEG-002', offset_m: 420, speed_mps: 8.8, state: '行驶', guided: false },
+  { vehicle_id: 'twin-0012', driver_type: 'D1', segment_id: 'SEG-006', offset_m: 110, speed_mps: 11.2, state: '行驶', guided: false },
 ]
 
 // ---------- 快照构造(tick 驱动抖动;数值是演示基线,不是模型输出) ----------
@@ -393,8 +395,8 @@ function buildVehiclesSnapshot(): VehiclesSnapshot {
       lon: round(lon, 6),
       lat: round(lat, 6),
       state: v.state,
-      ...(v.is_demo_bound ? { is_demo_bound: true } : {}),
-      is_simulated: true,
+      guided: v.guided,
+      is_demo_bound: v.is_demo_bound === true,
     })
   }
   return { ts: localIso(new Date()), is_simulated: true, vehicles }
@@ -419,12 +421,26 @@ function buildRecommend(): RecommendResult {
     departure_route: { path_id: 'P-2-D', segments: ['SEG-004', 'SEG-006'], eta_min: 5.2 },
     pickup_route: null,
     alternatives: [
-      { path_id: 'P-1', segments: ['SEG-001', 'SEG-009', 'SEG-003'], eta_min: 7.8, dropoff_point: 'DROP-03', walk_min: 1.6 },
-      { path_id: 'P-5', segments: ['SEG-005', 'SEG-008'], eta_min: 8.9, dropoff_point: 'DROP-05', walk_min: 3.4 },
+      {
+        path_id: 'P-1',
+        eta_min: 7.8,
+        reason: '经到达层通道,少 0.5 分钟步行,但到达层排队更多',
+        segments: ['SEG-001', 'SEG-009', 'SEG-003'],
+        dropoff_point: 'DROP-03',
+        walk_min: 1.6,
+      },
+      {
+        path_id: 'P-5',
+        eta_min: 8.9,
+        reason: '南进站路更空,但落客点离出站口远、步行长',
+        segments: ['SEG-005', 'SEG-008'],
+        dropoff_point: 'DROP-05',
+        walk_min: 3.4,
+      },
     ],
     reservation: {
-      slots: ['P-2'],
-      lease_min: 15,
+      slots_reserved: 9,
+      lease_expire_s: 90,
       harm_check: { max_eta_increase_s: 12, max_slot_x: 0.81, passed: true },
     },
     why: 'P-2 预计 6.4 分钟,比备选少 1.4 分钟;落客平台(SEG-003)严重拥堵,推荐走环道南侧落客;预约未伤及前车(最大 +12 秒)。',

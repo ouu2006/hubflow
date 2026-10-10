@@ -104,6 +104,6 @@ npm install        # 仅首次;或 mklink /J node_modules 指向上游已装好�
 npm run dev        # 浏览器打开 http://localhost:5173/#/dashboard(公开访问,免登录)
 ```
 
-**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点形状对齐 `work/assembly/traffic.py`(segments / segments/{id} / vehicles / route/recommend + SSE `traffic_snapshot`)。
+**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 对齐 PR #51 分支上的 `work/assembly/traffic.py`(端点清单见 [`../assembly/README.md`](../assembly/README.md) 第二节;vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
 
 **口径**:页面数据全部 `is_simulated = true` 示例数据;底图为**示例路网(非实测)**,待 #36/#37 站点包产物替换 `ui-vue/src/shared/demoNetwork.ts`;一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。

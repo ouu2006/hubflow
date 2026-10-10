@@ -2,7 +2,7 @@
 // 左栏·线路方案:推荐 / 备选 / 离站路线(契约 routes.json 形状,备选 ≥2 条)。
 // 点击行切换地图上的高亮路线;why(推荐理由)原样展示。
 import { computed } from 'vue'
-import type { RecommendResult, RoutePath } from '../../../shared/traffic'
+import type { AlternativePath, RecommendResult, RoutePath } from '../../../shared/traffic'
 
 const props = defineProps<{
   plan: RecommendResult | null
@@ -12,7 +12,7 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'select', pathId: string): void }>()
 
 interface Row {
-  path: RoutePath
+  path: RoutePath | AlternativePath
   tag: string
   why?: string
 }
@@ -21,7 +21,7 @@ const rows = computed<Row[]>(() => {
   const p = props.plan
   if (!p) return []
   const list: Row[] = [{ path: p.arrival_route, tag: '推荐', why: p.why }]
-  for (const alt of p.alternatives) list.push({ path: alt, tag: '备选' })
+  for (const alt of p.alternatives) list.push({ path: alt, tag: '备选', why: alt.reason })
   if (p.departure_route) list.push({ path: p.departure_route, tag: '离站' })
   return list
 })
@@ -44,7 +44,7 @@ const rows = computed<Row[]>(() => {
           <span class="eta">{{ row.path.eta_min }} 分钟</span>
         </div>
         <div class="sub">
-          {{ row.path.segments.join(' → ') }}
+          {{ row.path.segments?.join(' → ') ?? '路段组成待引擎返回' }}
           <template v-if="row.path.dropoff_point"> · 落客 {{ row.path.dropoff_point }}</template>
           <template v-if="row.path.walk_min !== undefined"> · 步行 {{ row.path.walk_min }} 分钟</template>
         </div>
