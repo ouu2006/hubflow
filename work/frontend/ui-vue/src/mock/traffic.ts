@@ -488,7 +488,8 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
   return false
 }
 
-// SSE 假流:每 2 秒推一次 traffic_snapshot 轻量事件,页面收到后重新拉快照(只读快照口径)
+// SSE 假流:每 2 秒推一次 traffic_snapshot 轻量事件,页面收到后重新拉快照(只读快照口径)。
+// 清理挂 res 'close'(响应侧:连接断开或流结束都触发),配一次性护栏防止重复清理。
 function streamSnapshots(req: MockReq, res: MockRes): void {
   const sse = new SseWriter(res)
   sse.open()
@@ -502,8 +503,13 @@ function streamSnapshots(req: MockReq, res: MockRes): void {
   }
   send()
   const timer = setInterval(send, 2000)
-  req.on('close', () => {
+  let cleaned = false
+  const cleanup = (): void => {
+    if (cleaned) return
+    cleaned = true
     clearInterval(timer)
     sse.close()
-  })
+  }
+  res.on('close', cleanup)
+  req.on('error', cleanup)
 }
