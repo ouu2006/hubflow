@@ -30,7 +30,7 @@
 >
 > ⚠️ **`thresholds.json` 只有一个写手：开发B**——**判级参数组与决策参数组都归开发B**（含两组顶层键名），**判级 `level.py` 也归开发B**（[`../docs/开发规范.md`](../docs/开发规范.md) 第 3 / 3.1 节、[`../docs/数据契约.md`](../docs/数据契约.md) 第六节）。**全仓"一个文件只许一个写手"，没有例外**：开发A 既不碰 `level.py`，也不碰本文件的任何一组参数。
 
-> **表格 → 配置的对应关系**见 [`../docs/分工表.md`](../docs/分工表.md) 与 [`../docs/表格模板说明.md`](../docs/表格模板说明.md)：T1 点位表 → `points.json`、T2 路段属性核对表 → `network.json`、T3/T4 → `demand.json`、T5 → `factors.json`、T6 → `scenarios.json`。**转换脚本由开发写，池·S / 池·P 只填表格；任务由对应 owner 在 GitHub Issues 发布、协作成员认领（细则见 [`../docs/hubflow-plan/04-协作任务池规程.md`](../docs/hubflow-plan/04-协作任务池规程.md)）。**
+> **表格 → 配置的对应关系**见 [`../docs/分工表.md`](../docs/分工表.md) 与 [`../docs/表格模板说明.md`](../docs/表格模板说明.md)：T1 点位表 → `points.json`、T2 路段属性核对表 → `network.json`、T3/T4 → `demand.json`、T5 → `factors.json`、T6 → `scenarios.json`。**转换脚本由开发写，池·S / 池·P 只填表格；任务由区域 owner 拆活后在 GitHub Issues 发布、协作成员认领（只发布、不点名；细则见 [`../docs/hubflow-plan/04-协作任务池规程.md`](../docs/hubflow-plan/04-协作任务池规程.md)）。**
 
 ### `sumo/`（脚本生成，可重建）
 
