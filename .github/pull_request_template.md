@@ -7,7 +7,7 @@
 <!-- 不要写"能跑"，写你实际跑了什么、看到了什么（命令 + 产物 + 关键数字） -->
 
 - [ ] 本地门禁过了：`python scripts/doc_gate.py`（CI 里就是这一步，检查名 `ci`）
-- [ ] 我这个模块**能单独用样例文件跑通**（`work/twin/` 的 `sample/`、`work/engine/` 的 `--sample`、`work/frontend/` 的 mock 模式）
+- [ ] 我这个模块**能单独用样例文件跑通**（`work/twin/` 的 `samples/`、`work/engine/` 的 `--sample`、`work/frontend/` 的 mock 模式）
 - [ ] 输出 JSON **字段名 / 必填字段对照过 [`docs/数据契约.md`](../docs/数据契约.md) v2.0**
 - [ ] **产物存在性断言**过了：产物文件真的在、不是 0 字节、`ts` 是本次运行的时间戳（**别只信退出码**）
 - [ ] 同一输入连续跑 3 次，结果一致（判级类改动尤其要跑）
