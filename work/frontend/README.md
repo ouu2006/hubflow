@@ -119,7 +119,7 @@ npm run dev        # 浏览器打开 http://localhost:5173/#/dashboard(公开访
 | 溯源引用 | `#/trace/:answerId` | ✅ 高亮关键词;3 条引用(doc-0004/0006/0001,得分 0.920/0.850/0.730);「跳转文档」按钮在 |
 | 文档管理 | `#/documents` | ✅ 种子 6 条覆盖三种状态(就绪/处理中/失败);真实上传「决策层核验-测试上传.txt」成功(doc-0007,processing → 刷新后 ready),确认弹窗删除成功(toast「已删除:doc-0007」) |
 
-说明:① 上传经由页面文件输入以 DataTransfer 程序化注入触发——浏览器自动化不支持原生文件选择器,上传链路(前端预检 → `POST /api/kb/documents` → 2.5 秒后 ready)真实走到 mock 端点;② 四页源码**零改动**(本分支 diff 只含本节 README);③ 运行截图存 `work/frontend/logs/`(gitignore,不进仓库),另贴 PR 描述。
+说明:① 上传经由页面文件输入以 DataTransfer 程序化注入触发——浏览器自动化不支持原生文件选择器,上传链路(前端预检 → `POST /api/kb/documents` → 2.5 秒后 ready)真实走到 mock 端点;② 四页源码**零改动**(本分支 diff 只含本节 README);③ 运行截图存 `work/frontend/logs/`(gitignore,不进仓库;PR 描述以本节文字为核验记录)。
 
 ### 管理端三层路由总览
 
