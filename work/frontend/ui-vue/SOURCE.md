@@ -8,6 +8,7 @@
 | 基线 | `main` 分支 commit `356361d`;工作树相对该 commit 仅有 `package-lock.json` 一处未提交修改(随拷贝带入)与若干 docs 层未提交删除(与本工程无关,未拷贝) |
 | 拷贝排除 | `node_modules/`、`dist/`、`.env`(门禁禁入名单;内容只是 `VITE_USE_MOCK=1` 开关,缺省行为见 `.env.mock`) |
 | 拷贝后修改 | `tsconfig.app.json` / `tsconfig.node.json` 去掉 JSONC 注释(仓库门禁对受管 JSON 做严格解析,注释会报红;编译行为不变) |
+| 健壮性加固(2026-10-11,AI 审查清单逐条落地,均不改变页面结构与端点契约) | ① `api/http.ts` 导出 `onUnauthorized`,`api/sse.ts` / `api/upload.ts` 401 同样清登录态回登录页;② `api/sse.ts` 流 EOF 未见 finish/error 时显式发 `STREAM_INTERRUPTED` error,中断不再伪装成完整回答;③ `mock/db.ts` `pickDocs` 只取 `ready` 文档、种子 `doc-0004` 4s 收敛到 ready(文档页轮询可终止)、新增 `buildAnswerWithTrace` 保证回答与溯源同池;④ `mock/sse-writer.ts` 改用 `buildAnswerWithTrace`;⑤ `views/ChatView.vue` / `TraceView.vue` 问题文本改走 sessionStorage,不再进 URL(旧 `?q=` 链接仍兜底可用);⑥ `scripts/verify-mock.sh` `TMP` 前置初始化、`scripts/wsl-build.sh` 开 `pipefail`;⑦ `package-lock.json` `source-map-js` 升 1.2.2(CVE-2026-93749) |
 | 本仓库内的新增/改动 | 见下表,harness 四页(登录/问答/文档/溯源)原样保留 |
 
 ## 相对上游基线的改动(Issue #52 · M1)

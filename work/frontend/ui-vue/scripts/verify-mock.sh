@@ -6,6 +6,7 @@
 set -u
 BASE="${BASE:-http://localhost:5173}"
 ERROR_INJECT="${ERROR_INJECT:-0}"
+TMP="${TMPDIR:-/tmp}" # 全脚本共用:chat 请求体(第 6 步)早于 upload 段的赋值,set -u 下必须先初始化
 fail=0
 say() { printf '%s\n' "$*"; }
 ck() { # ck <名称> <实际> <期望子串>
@@ -63,7 +64,6 @@ if [ "$ERROR_INJECT" = "1" ]; then
   say "== [8-11] 注入模式:upload/delete/trace 正向断言跳过(500 即预期)=="
 else
 say "== [8] POST /api/kb/documents 上传(小文件)+ 版本态收敛 =="
-TMP="${TMPDIR:-/tmp}"
 printf 'mock upload content for verify\n' > "$TMP/vu-upload.txt"
 UP=$(curl -s -m 15 -X POST "$BASE/api/kb/documents" -H "$AUTH" -F "file=@$TMP/vu-upload.txt")
 ck upload "$UP" '"doc_id":"'

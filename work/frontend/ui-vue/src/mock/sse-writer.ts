@@ -10,7 +10,7 @@ import {
   type SseErrorPayload,
   type UsagePayload,
 } from '../shared/protocol.ts'
-import { buildAnswer, buildTrace, db, newAnswerId } from './db.ts'
+import { buildAnswerWithTrace, db, newAnswerId } from './db.ts'
 import type { MockRes } from './util.ts'
 
 export class SseWriter {
@@ -55,7 +55,8 @@ export interface FakeChatOptions {
 export function runFakeChatStream(sse: SseWriter, opts: FakeChatOptions): () => void {
   const { question, errorInject } = opts
   const answerId = newAnswerId()
-  const answerText = buildAnswer(question)
+  // 回答与溯源取同一批文档快照,流式期间文档库增删不影响引用一致性
+  const { answer: answerText, trace } = buildAnswerWithTrace(question)
   const promptTokens = 48 + question.length
   const completionTokens = Math.ceil(answerText.length / 2)
   let i = 0
@@ -75,7 +76,7 @@ export function runFakeChatStream(sse: SseWriter, opts: FakeChatOptions): () => 
     const fin: FinishPayload = { answer_id: answerId }
     sse.send(SSE_EVENT.finish, fin)
     sse.close()
-    db.traces.set(answerId, { question, items: buildTrace(question) })
+    db.traces.set(answerId, { question, items: trace })
   }
 
   const step = (): void => {

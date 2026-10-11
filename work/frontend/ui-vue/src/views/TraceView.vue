@@ -7,7 +7,8 @@ import { getTrace } from '../api'
 import { extractKeywords, type TraceItem } from '../shared/protocol'
 
 // 任务 D:按 answer_id 拉取溯源列表(doc_id/snippet/score/source),
-// 片段高亮(以对话页带来的问题关键词 ?q= 为锚)+ 跳转文档(doc_id → 文档管理页定位)。
+// 片段高亮(以对话页带来的问题关键词为锚)+ 跳转文档(doc_id → 文档管理页定位)。
+// 问题文本优先读 sessionStorage(对话页 traceJump 写入),URL ?q= 仅作旧链接兜底——提问内容不进 URL。
 
 const route = useRoute()
 const router = useRouter()
@@ -17,7 +18,11 @@ const loading = ref(false)
 const failed = ref('')
 
 const answerId = computed(() => String(route.params.answerId ?? ''))
-const question = computed(() => (typeof route.query.q === 'string' ? route.query.q : ''))
+const question = computed(() => {
+  const stored = sessionStorage.getItem(`harness-ui.trace.${answerId.value}`)
+  if (stored !== null) return stored
+  return typeof route.query.q === 'string' ? route.query.q : ''
+})
 const keywords = computed(() => extractKeywords(question.value))
 
 async function load(): Promise<void> {

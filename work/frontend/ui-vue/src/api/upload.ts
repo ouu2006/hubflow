@@ -2,7 +2,7 @@
 
 import { getToken } from '../stores/auth'
 import type { UploadResult } from '../shared/protocol'
-import { ApiError } from './http'
+import { ApiError, onUnauthorized } from './http'
 
 export interface UploadHooks {
   onProgress?: (percent: number) => void
@@ -36,6 +36,8 @@ export function uploadDocument(file: File, hooks: UploadHooks = {}): Promise<Upl
     }
     xhr.onload = () => {
       cleanup()
+      // 与 REST request() 同一 401 语义:清登录态并回登录页
+      if (xhr.status === 401 && token) onUnauthorized()
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           resolve(JSON.parse(xhr.responseText) as UploadResult)
