@@ -1,0 +1,47 @@
+/* 全局基础样式(页面级样式在各自 SFC 内) */
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+#app {
+  height: 100%;
+  font-family:
+    'Helvetica Neue',
+    Helvetica,
+    'PingFang SC',
+    'Hiragino Sans GB',
+    'Microsoft YaHei',
+    '微软雅黑',
+    Arial,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  color: #303133;
+  font-size: 14px;
+}
+
+/* 三页共用的页面容器与标题行(由 Login 之外的视图复用) */
+.page {
+  padding: 16px 20px;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.page-head h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #1f2d3d;
+}
