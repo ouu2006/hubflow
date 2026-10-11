@@ -171,7 +171,7 @@ function pushTrail(d: Detection): void {
     trails.set(tid, pts)
   }
   pts.push(((d[0] + d[2]) / 2), d[3])
-  if (pts.length > 80) pts.splice(0, pts.length - 80)
+  if (pts.length > 120) pts.splice(0, pts.length - 120)
 }
 
 // ≤i 的最近检测帧(二分;比维护游标对回退/跳转更稳)
@@ -408,7 +408,7 @@ onUnmounted(() => {
 
     <div class="main">
       <section class="panel monitor-panel">
-        <div class="panel-head">监控画面 · 样本视频回放(YOLO 逐帧检测框 + 轨迹叠加)</div>
+        <div class="panel-head">监控画面 · 固定机位样本回放(YOLO 车辆轨迹跟踪)</div>
 
         <div v-if="pStatus === 'error'" class="pstate err">
           <p>{{ pError }}</p>
@@ -421,7 +421,7 @@ onUnmounted(() => {
             <canvas ref="canvasRef" class="scene" />
             <div class="hud hud-tl">
               <span class="rec-dot" />
-              回放 · 样本通道 {{ streamIndex + 1 }}({{ curMeta.source_file }})
+              回放 · 固定机位 {{ streamIndex + 1 }}({{ curMeta.source_file }})
             </div>
             <div class="hud hud-tr">YOLOv8n · MindSpore</div>
             <div class="hud hud-bl">
@@ -461,7 +461,8 @@ onUnmounted(() => {
           </div>
 
           <p class="frame-meta">
-            检测链路:MindSpore(MindYOLO yolov8n.ckpt)逐帧检测 + ByteTrack 跟踪(离线导出,回放);
+            监控形态:固定机位对固定路段的车辆轨迹跟踪——MindSpore(MindYOLO yolov8n.ckpt)逐帧检测 +
+            ByteTrack 跟踪,琥珀色轨迹线为各车辆已走过的历史轨迹(离线导出回放);
             检测框/轨迹 ID/置信度为逐帧真实推理输出。路段指标快照(下)为契约 v2.0 mock 数据。
           </p>
         </template>
@@ -469,7 +470,7 @@ onUnmounted(() => {
 
       <aside class="col">
         <section class="panel">
-          <div class="panel-head">检测通道(样本视频)</div>
+          <div class="panel-head">监控通道(固定机位 · 样本视频)</div>
           <div class="ch-list">
             <button
               v-for="(s, i) in streams"
@@ -479,7 +480,7 @@ onUnmounted(() => {
               :class="{ on: s.stream_id === curId }"
               @click="loadStream(s.stream_id)"
             >
-              <span class="ch-name">样本通道 {{ i + 1 }} · {{ s.source_file }}</span>
+              <span class="ch-name">固定机位 {{ i + 1 }} · {{ s.source_file }}</span>
               <span class="ch-meta">
                 {{ s.duration_s ?? '—' }}s · {{ s.width }}×{{ s.height }} · {{ s.track_total }} 条轨迹
               </span>
