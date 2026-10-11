@@ -554,6 +554,16 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
     return true
   }
 
+  // 契约 L440 预留端点的 GET:当前生效因素清单(含预置演示因素与人工置位,
+  // 从 segments 快照展平——POST 置位 / reset 复位后此处随动)。
+  if (path === '/traffic/factors' && method === 'GET') {
+    const factors = buildSegmentsSnapshot().segments.flatMap((s) =>
+      (s.factors_applied ?? []).map((f) => ({ ...f, segment_id: s.segment_id })),
+    )
+    json(res, 200, { ts: localIso(new Date()), is_simulated: true, factors })
+    return true
+  }
+
   if (path === '/traffic/factors' && method === 'POST') {
     const body = (await readJson(req)) as Partial<ManualFactorInput>
     const seg = SEGMENT_BASES.find((s) => s.base.segment_id === body.segment_id)
