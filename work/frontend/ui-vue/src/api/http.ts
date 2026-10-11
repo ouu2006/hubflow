@@ -1,8 +1,6 @@
 // REST 访问面:fetch 封装。同源相对路径(浏览器端不读 VITE_API_BASE——
-// dev 走 vite 代理/mock 中间件,集成期走 FastAPI StaticFiles 同源挂载)。
-// token 附加 Authorization: Bearer(04 任务书 §6:登录框 + token 附加请求头即可)。
-
-import { clearAuth, getToken } from '../stores/auth'
+// dev 走 vite 代理/mock 中间件,集成方式待新后端规划定稿)。
+// 鉴权方案未定(随接口面重新规划),当前所有端点公开访问。
 
 export class ApiError extends Error {
   status: number
@@ -16,27 +14,14 @@ export class ApiError extends Error {
   }
 }
 
-// 401 统一处置:清登录态并回登录页(SSE / 上传路径与 REST 保持同一行为)
-export function onUnauthorized(): void {
-  clearAuth()
-  // hash 路由:直接改 hash 不引入 api→router 依赖环
-  window.location.hash = '#/login'
-}
-
 export interface RequestOptions {
   body?: unknown
-  auth?: boolean
   signal?: AbortSignal
 }
 
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
-  const withAuth = opts.auth ?? true
   const headers: Record<string, string> = {}
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
-  if (withAuth) {
-    const token = getToken()
-    if (token) headers.Authorization = `Bearer ${token}`
-  }
   let res: Response
   try {
     res = await fetch(path, {
@@ -47,10 +32,8 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
     })
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') throw e
-    throw new ApiError(0, 'NETWORK', '网络错误:后端不可达(联调模式请确认 FastAPI dev server 已启动)')
+    throw new ApiError(0, 'NETWORK', '网络错误:后端不可达(mock 模式请确认 vite dev server 已启动)')
   }
-
-  if (res.status === 401 && withAuth) onUnauthorized()
 
   if (!res.ok) {
     let code = `HTTP_${res.status}`

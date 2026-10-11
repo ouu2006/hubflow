@@ -1,5 +1,5 @@
-// traffic 大屏 mock(仅 M1,Issue #52):端点与 SSE 事件名依据 work/assembly/README.md 第二节
-// 的端点清单;实现基准 = PR #51 分支上的 work/assembly/traffic.py(未并入 main 前以该分支为准),
+// traffic 大屏 mock(仅 M1,Issue #52):端点与 SSE 事件名暂沿 work/assembly/README.md 第二节
+// 的历史清单——2026-10-11 架构裁定后接口面待按前端页面重新规划,原实现基准 PR #51 骨架已收回,
 // 字段名对照 docs/数据契约.md v2.0。口径铁律:
 //   ① 所有数据 is_simulated=true,示例数据、非实测;
 //   ② 只读快照、不算业务——数值是预置基线加抖动,不是任何模型的输出;
