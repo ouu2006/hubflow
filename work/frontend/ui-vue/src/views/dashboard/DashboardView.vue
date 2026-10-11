@@ -12,12 +12,14 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import type { AlternativePath, RecommendResult, RoutePath, SegmentRecord, VehicleRecord } from '../../shared/traffic'
+import { networkSourceLabel } from '../../shared/demoNetwork'
 import NetMap from './components/NetMap.vue'
 import RoutePanel from './components/RoutePanel.vue'
 import SegmentDetailPanel from './components/SegmentDetailPanel.vue'
 import SegmentListPanel from './components/SegmentListPanel.vue'
 
 const segments = ref<SegmentRecord[]>([])
+const sourceLabel = networkSourceLabel()
 const vehicles = ref<VehicleRecord[]>([])
 const plan = ref<RecommendResult | null>(null)
 const selectedId = ref<string | null>(null)
@@ -161,7 +163,7 @@ const stageStyle = computed(() => ({
 
       <footer class="foot">
         <span>快照时间 {{ snapshotTs || '—' }}</span>
-        <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · 示例路网非实测</span>
+        <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · {{ sourceLabel }}</span>
         <span>一期无视频画面,检测画面归二期 · 指令下发 / 回写归 W4</span>
       </footer>
     </div>
