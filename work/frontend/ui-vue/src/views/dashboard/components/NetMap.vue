@@ -3,7 +3,7 @@
 // 孪生车辆动点(位置随快照刷新,CSS transition 平滑移动)。
 // 底图数据 = 示例路网(非实测,#36/#37 站点包落地后替换)。
 import { computed } from 'vue'
-import { DEMO_NETWORK, type DemoSegment } from '../../../shared/demoNetwork'
+import { DEMO_NETWORK, networkSourceLabel, type DemoSegment } from '../../../shared/demoNetwork'
 import { levelStyle, type DriverType, type SegmentRecord, type VehicleRecord } from '../../../shared/traffic'
 import LevelBadge from './LevelBadge.vue'
 
@@ -24,6 +24,7 @@ const H = 680
 const PAD = 52
 
 const net = DEMO_NETWORK.segments
+const sourceLabel = networkSourceLabel()
 const lons = net.flatMap((s) => s.coords.map((c) => c[0]))
 const lats = net.flatMap((s) => s.coords.map((c) => c[1]))
 const minLon = Math.min(...lons)
@@ -160,7 +161,7 @@ const vehPts = computed(() =>
       </g>
     </svg>
 
-    <div class="watermark">示例路网 · 非实测</div>
+    <div class="watermark">{{ sourceLabel }}</div>
 
     <div class="legend">
       <div class="lg-title">四级编码(颜色 · 竖条 · 文字)</div>
