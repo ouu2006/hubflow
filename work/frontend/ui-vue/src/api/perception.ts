@@ -3,7 +3,8 @@
 // 检测 + ByteTrack 跟踪),经 work/perception/server.py 出接口;vite 把独立前缀
 // /perception-api 代理并重写到服务端 /api/perception(见 vite.config.ts,避开 traffic mock)。
 // 检测框/轨迹是一期接口面新增形状,非契约 v2.0 字段;
-// 全部响应 is_simulated=true,页面显著标注"样本视频回放 · 演示数据(模拟)"。
+// meta/health 响应带 is_simulated=true 信封(detections/frames 为原始载荷不含信封),
+// 页面显著标注"样本视频回放 · 演示数据(模拟)"。
 
 export interface PerceptionStreamMeta {
   stream_id: string
