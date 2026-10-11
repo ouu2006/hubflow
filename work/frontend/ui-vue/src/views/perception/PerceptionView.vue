@@ -2,7 +2,7 @@
 // 感知层 · YOLO 路面监控(Issue #54,三层前端之一):
 //   左 = 监控画面(样本视频帧序列 + 逐帧检测框/轨迹叠加,数据来自感知演示服务
 //        work/perception/server.py,由 dump_monitor_data.py 离线 MindSpore 推理导出);
-//   右 = 检测通道 + 实时检测统计;下 = video/twin 双链路指标快照(TC-19 口径)。
+//   右 = 检测通道 + 回放侧检测统计;下 = video/twin 双链路指标快照(TC-19 口径)。
 // 口径:画面是样本视频离线回放(非本站现场、非实时流);检测框/轨迹为一期接口面
 //   新增形状(非契约 v2.0 字段);路段指标仍为契约 mock 快照。页面不出现"实时画面/实测"。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'

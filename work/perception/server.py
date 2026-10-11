@@ -7,7 +7,8 @@
 启动(仓库任意 python 3.10+,需 fastapi+uvicorn):
   python work/perception/server.py                # 默认端口 8101,数据目录 ../data/monitor
 
-接口(字段 snake_case;每个响应带 is_simulated=true,演示数据(模拟)):
+接口(字段 snake_case;meta/health 端点响应带 is_simulated=true 信封,
+  detections/frames 为原始检测载荷直接流式回、不含信封,演示数据(模拟)):
   GET /api/perception/health
   GET /api/perception/streams                          全部检测通道的 meta 列表
   GET /api/perception/streams/{sid}/meta               单通道元信息
