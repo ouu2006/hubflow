@@ -536,6 +536,8 @@ async function fetchTwinVehicles(): Promise<VehicleRecord[] | null> {
 
 async function buildVehiclesSnapshotWithTwin(): Promise<VehiclesSnapshot> {
   const twin = await fetchTwinVehicles()
+  // 桥接可达就信它的结果,包括空列表(仿真刚起步 genuinely 0 车)——
+  // 此时回落合成车反而会造成"假车混进真仿真"的口径问题;只有不可达才回落
   if (twin) return { ts: localIso(new Date()), is_simulated: true, vehicles: twin }
   return buildVehiclesSnapshot()
 }
