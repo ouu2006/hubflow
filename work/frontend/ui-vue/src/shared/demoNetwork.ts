@@ -125,6 +125,24 @@ export function demoSegment(id: string): DemoSegment | undefined {
   return SEGMENT_MAP.get(id)
 }
 
+// ---- 真路网覆盖(#61 twin_preview):入口在挂载前拉 /twin-api/network 原地替换,
+// NetMap / 两个面板 / mock 的静态读取统一生效;桥接服务不可用则保持示例路网不变。
+const NETWORK_SOURCE = { twin: false }
+
+export function applyNetworkOverride(segments: DemoSegment[], note: string): void {
+  if (segments.length === 0) return
+  DEMO_NETWORK.segments.splice(0, DEMO_NETWORK.segments.length, ...segments)
+  DEMO_NETWORK.note = note
+  SEGMENT_MAP.clear()
+  for (const s of DEMO_NETWORK.segments) SEGMENT_MAP.set(s.segment_id, s)
+  NETWORK_SOURCE.twin = true
+}
+
+/** 底图来源短文案(页面水印/页脚口径用) */
+export function networkSourceLabel(): string {
+  return NETWORK_SOURCE.twin ? 'OSM 真路网 · SUMO 仿真演示' : '示例路网 · 非实测'
+}
+
 const LAT_M_PER_DEG = 111_320
 
 function lonMPerDeg(lat: number): number {
