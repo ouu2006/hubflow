@@ -115,8 +115,8 @@ npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向�
 |---|---|---|
 | 事件告警列表 | 等级、路段、指标依据(`triggered_by`)、状态(待处置/已下发/已回写) | 从契约 segments 快照派生(level ≥ 3 / 硬触发因素 / 数据陈旧) |
 | 处置工作流 | 系统建议 → **人工可编辑**(分流比例滑杆)→ 下发回执 → 处置回写(认领人/动作/结果四选一/时间戳) | 建议模板 `demoDecision.ts`;工作流状态为页面内存态(刷新复位) |
-| 因素与预测 | `factors_applied` 明细 + `pred` h15/h30(L0,无精度数字)+ **人工置位**(大雨/大型活动/临时管制,mock 侧生效,判级随之变化)+ 复位 | 契约快照;置位走 mock `POST /api/traffic/factors` |
-| 数据同化状态 | 边界断面回灌开/关 + 门控原因(置信度不足/数据过旧/偏差超标熔断) | mock `GET /api/traffic/assimilation`(接口面新增) |
+| 因素与预测 | `factors_applied` 明细 + `pred` h15/h30(L0,无精度数字)+ **人工置位**(大雨/大型活动/临时管制,mock 侧生效,判级随之变化)+ 复位 | 契约快照;置位走 mock `POST /api/traffic/factors`(同路径 `GET` 为契约 L440 预留的「当前生效因素清单」,mock 已实现,含预置演示因素与人工置位) |
+| 数据同化状态 | 边界断面回灌开/关 + 门控原因(置信度不足/数据过旧/偏差超标熔断) | mock `GET /api/traffic/assimilation`(接口面新增;记录按断面展开,字段与契约 §三 assimilation_state.json 的映射:`enabled`↔`assimilating`、`gate_reason`↔`gate.passed` 的门控口径、`flow_dev_pct`/`speed_dev_pct`↔`deviation.q_pct`/`v_pct`、`last_apply_at`↔`last_apply.at`,响应另带 `is_simulated` 信封) |
 | 效果对比报表 | **关推荐 vs 开推荐**四项指标同屏(饱和度/车速/排队/总行程时间),TC-14/TC-17 | `demoDecision.ts`(仿真对照演示) |
 | 阈值配置(P1) | 判级阈值只读 + 变更留痕示例 | `demoDecision.ts`(真实来源 stations/thresholds.json) |
 
