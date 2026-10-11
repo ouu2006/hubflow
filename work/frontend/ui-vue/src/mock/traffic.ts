@@ -470,6 +470,78 @@ function buildVehiclesSnapshot(): VehiclesSnapshot {
   return { ts: localIso(new Date()), is_simulated: true, vehicles }
 }
 
+// ---------- 孪生车辆真值接入(#61 twin_preview) ----------
+// 桥接服务(work/frontend/tools/twin_preview/server.py,:8102)在跑时,vehicles 优先用
+// SUMO TraCI 真值;不可用回落上方合成车基线。缓存 5 s + 在飞去重,2 s 轮询不会打满桥接。
+
+const TWIN_BRIDGE = process.env.VITE_TWIN_API_BASE || 'http://127.0.0.1:8102'
+const VEHICLE_STATES: readonly VehicleRecord['state'][] = ['行驶', '排队', '落客服务', '候客', '违停', '已离开']
+
+let twinCache: { at: number; vehicles: VehicleRecord[] } | null = null
+let twinInflight: Promise<VehicleRecord[] | null> | null = null
+
+function toVehicleRecords(raw: unknown): VehicleRecord[] | null {
+  if (!raw || typeof raw !== 'object') return null
+  const env = raw as { is_simulated?: unknown; vehicles?: unknown }
+  if (env.is_simulated !== true || !Array.isArray(env.vehicles)) return null
+  const out: VehicleRecord[] = []
+  for (const item of env.vehicles) {
+    if (!item || typeof item !== 'object') return null
+    const v = item as Record<string, unknown>
+    if (
+      typeof v.vehicle_id !== 'string' ||
+      typeof v.segment_id !== 'string' ||
+      typeof v.offset_m !== 'number' ||
+      typeof v.lon !== 'number' ||
+      typeof v.lat !== 'number' ||
+      !VEHICLE_STATES.includes(v.state as VehicleRecord['state'])
+    ) {
+      return null // 形状不对整包拒绝,宁可用合成车也不画脏数据
+    }
+    out.push({
+      vehicle_id: v.vehicle_id,
+      driver_type: v.driver_type === 'D2' ? 'D2' : 'D1',
+      segment_id: v.segment_id,
+      offset_m: Math.round(v.offset_m),
+      lon: v.lon,
+      lat: v.lat,
+      state: v.state as VehicleRecord['state'],
+      guided: v.guided === true,
+      is_demo_bound: v.is_demo_bound === true,
+    })
+  }
+  return out
+}
+
+async function fetchTwinVehicles(): Promise<VehicleRecord[] | null> {
+  const now = Date.now()
+  if (twinCache && now - twinCache.at < 5000) return twinCache.vehicles
+  if (!twinInflight) {
+    twinInflight = (async (): Promise<VehicleRecord[] | null> => {
+      try {
+        const res = await fetch(`${TWIN_BRIDGE}/api/twin/vehicles`, { signal: AbortSignal.timeout(700) })
+        if (!res.ok) throw new Error(`twin bridge http ${res.status}`)
+        const records = toVehicleRecords(await res.json())
+        if (records && records.length > 0) twinCache = { at: Date.now(), vehicles: records }
+        return records
+      } catch {
+        return null
+      } finally {
+        twinInflight = null
+      }
+    })()
+  }
+  return twinInflight
+}
+
+async function buildVehiclesSnapshotWithTwin(): Promise<VehiclesSnapshot> {
+  const twin = await fetchTwinVehicles()
+  // 桥接可达就信它的结果,包括空列表(仿真刚起步 genuinely 0 车)——
+  // 此时回落合成车反而会造成"假车混进真仿真"的口径问题;只有不可达才回落
+  if (twin) return { ts: localIso(new Date()), is_simulated: true, vehicles: twin }
+  return buildVehiclesSnapshot()
+}
+
 // ---------- 推荐快照(静态演示:引擎写入 routes.json 后由接口层端出,这里原样假造) ----------
 
 function buildRecommend(): RecommendResult {
@@ -538,7 +610,7 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
   }
 
   if (path === '/traffic/vehicles' && method === 'GET') {
-    json(res, 200, buildVehiclesSnapshot())
+    json(res, 200, await buildVehiclesSnapshotWithTwin())
     return true
   }
 

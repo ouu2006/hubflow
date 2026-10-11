@@ -8,6 +8,9 @@ import { mockApiPlugin } from './src/mock/index.ts'
 // - 感知演示服务(work/perception/server.py,默认 127.0.0.1:8101)走独立前缀 /perception-api,
 //   代理时重写为服务端的 /api/perception/*——不复用 /api 前缀,避免与 traffic mock 中间件
 //   互相吞路径(mock 对未匹配 /api 路径一律 404,是刻意设计,不改)(Issue #54)。
+// - 孪生预览服务(work/frontend/tools/twin_preview/server.py,默认 127.0.0.1:8102)走独立前缀 /twin-api,
+//   代理时重写为服务端的 /api/twin/*——不复用 /api 前缀,避免被 traffic mock 中间件吞路径
+//   (mock 对未匹配 /api 路径一律 404,是刻意设计,不改)(Issue #61)。
 // (VITE_MOCK_ERROR error 注入随 harness mock 一并移除,待新接口面定稿后重订。)
 export default defineConfig(({ mode }) => {
   // 前缀 '' 连同 shell 导出的 VITE_* 一起读入
@@ -22,8 +25,16 @@ export default defineConfig(({ mode }) => {
       rewrite: (p: string) => p.replace(/^\/perception-api/, '/api/perception'),
     },
   }
+  const twinTarget = env.VITE_TWIN_API_BASE || 'http://127.0.0.1:8102'
+  const twinProxy = {
+    '/twin-api': {
+      target: twinTarget,
+      changeOrigin: true,
+      rewrite: (p: string) => p.replace(/^\/twin-api/, '/api/twin'),
+    },
+  }
   const trafficProxy = { '/api': { target: apiTarget, changeOrigin: true, ws: false } }
-  const proxy = { ...perceptionProxy, ...trafficProxy }
+  const proxy = { ...perceptionProxy, ...twinProxy, ...trafficProxy }
 
   return {
     plugins: [vue(), ...(useMock ? [mockApiPlugin()] : [])],
