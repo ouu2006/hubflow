@@ -106,3 +106,18 @@ npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向�
 **M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 暂沿 [`../assembly/README.md`](../assembly/README.md) 第二节历史清单(vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
 
 **口径**:页面数据全部 `is_simulated = true` 示例数据;底图为**示例路网(非实测)**,待 #36/#37 站点包产物替换 `ui-vue/src/shared/demoNetwork.ts`;一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。
+
+## 八、决策层 · 决策工作台(Issue #59,2026-10-11)
+
+**三层定位**(业主 2026-10-11 裁定):第一层感知层 `/perception` → 第二层决策层 `/decision`(本节)→ 第三层后台大屏 `/dashboard`(**收录感知层的画面和决策层的数据判断**)。决策层页面形态为**决策工作台**:以「办」为主(下发/回写/置位),「看」由大屏承包。
+
+| 分区 | 内容 | 数据源 |
+|---|---|---|
+| 事件告警列表 | 等级、路段、指标依据(`triggered_by`)、状态(待处置/已下发/已回写) | 从契约 segments 快照派生(level ≥ 3 / 硬触发因素 / 数据陈旧) |
+| 处置工作流 | 系统建议 → **人工可编辑**(分流比例滑杆)→ 下发回执 → 处置回写(认领人/动作/结果四选一/时间戳) | 建议模板 `demoDecision.ts`;工作流状态为页面内存态(刷新复位) |
+| 因素与预测 | `factors_applied` 明细 + `pred` h15/h30(L0,无精度数字)+ **人工置位**(大雨/大型活动/临时管制,mock 侧生效,判级随之变化)+ 复位 | 契约快照;置位走 mock `POST /api/traffic/factors` |
+| 数据同化状态 | 边界断面回灌开/关 + 门控原因(置信度不足/数据过旧/偏差超标熔断) | mock `GET /api/traffic/assimilation`(接口面新增) |
+| 效果对比报表 | **关推荐 vs 开推荐**四项指标同屏(饱和度/车速/排队/总行程时间),TC-14/TC-17 | `demoDecision.ts`(仿真对照演示) |
+| 阈值配置(P1) | 判级阈值只读 + 变更留痕示例 | `demoDecision.ts`(真实来源 stations/thresholds.json) |
+
+**运行**:与大屏同一工程,`npm run dev` 后 `http://localhost:5173/#/decision`(mock 全量走 vite 中间件,无外部依赖)。**口径**:效果对比属仿真对照不得称实测;工作流状态刷新复位(演示态);人工置位为 mock 行为,页面已标「mock 侧生效」。
