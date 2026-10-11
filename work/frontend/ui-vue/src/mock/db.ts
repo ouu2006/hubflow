@@ -30,6 +30,12 @@ export const db = {
   seq: 7,
 }
 
+// 种子里的 processing 文档也要收敛到终态,否则文档页轮询永不停止(与上传件的 2.5s 流水一致)
+setTimeout(() => {
+  const doc = db.docs.find((d) => d.doc_id === 'doc-0004')
+  if (doc && doc.status === 'processing') doc.status = 'ready'
+}, 4000)
+
 export function addUploadedDoc(filename: string): MockDoc {
   const docId = `doc-${String(db.seq).padStart(4, '0')}`
   db.seq += 1
@@ -60,16 +66,15 @@ const SNIPPET_TPL = [
 ]
 
 function pickDocs(seed: string): MockDoc[] {
-  const pool = db.docs.filter((d) => d.status !== 'failed')
+  // 只引用 ready 文档:processing 尚未入索引,failed 不可用——未就绪内容不得当检索结果展示
+  const pool = db.docs.filter((d) => d.status === 'ready')
   if (!pool.length) return []
   const off = hash32(seed) % pool.length
   const rotated = pool.map((_, i) => pool[(i + off) % pool.length])
   return rotated.slice(0, 3)
 }
 
-export function buildAnswer(question: string): string {
-  const kw = primaryKeyword(question)
-  const picks = pickDocs(question)
+function composeAnswer(kw: string, picks: MockDoc[]): string {
   const body = picks.length
     ? picks.map(
         (d, i) =>
@@ -85,9 +90,8 @@ export function buildAnswer(question: string): string {
   ].join('\n')
 }
 
-export function buildTrace(question: string): TraceItem[] {
-  const kw = primaryKeyword(question)
-  return pickDocs(question).map((d, i) => ({
+function composeTrace(kw: string, picks: MockDoc[]): TraceItem[] {
+  return picks.map((d, i) => ({
     doc_id: d.doc_id,
     snippet: SNIPPET_TPL[i % SNIPPET_TPL.length]
       .replaceAll('{kw}', kw)
@@ -96,6 +100,21 @@ export function buildTrace(question: string): TraceItem[] {
     score: SCORES[i % SCORES.length],
     source: SOURCES[i % SOURCES.length],
   }))
+}
+
+export function buildAnswer(question: string): string {
+  return composeAnswer(primaryKeyword(question), pickDocs(question))
+}
+
+export function buildTrace(question: string): TraceItem[] {
+  return composeTrace(primaryKeyword(question), pickDocs(question))
+}
+
+// 一次性构造:回答与溯源取自同一批文档快照——流式期间文档增删不会造成"回答与溯源引用不一致"
+export function buildAnswerWithTrace(question: string): { answer: string; trace: TraceItem[] } {
+  const kw = primaryKeyword(question)
+  const picks = pickDocs(question)
+  return { answer: composeAnswer(kw, picks), trace: composeTrace(kw, picks) }
 }
 
 // mock 进程重启后 traces 已清空:按 answer_id 确定性合成,页面不空转

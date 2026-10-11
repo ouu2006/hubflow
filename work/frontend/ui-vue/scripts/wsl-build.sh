@@ -2,7 +2,7 @@
 # WSL 侧构建复跑(总控 §4 WSL 工作模式:代码经 /mnt/e 直达,构建产物放 ext4,
 # 不污染 Windows 侧 node_modules/dist)。用法(Windows 侧):
 #   wsl.exe -d <发行版> -- bash /mnt/e/.../harness-core/ui-vue/scripts/wsl-build.sh
-set -eu
+set -euo pipefail # pipefail:构建失败不得被 tail 的成功状态掩盖
 REPO=/mnt/e/develop/project_files/project/ict-project/harness-core/ui-vue
 export HOME="${HOME:-/root}"
 [ -d "$HOME" ] || HOME=$(getent passwd "$(id -u)" | cut -d: -f6)

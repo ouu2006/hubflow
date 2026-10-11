@@ -16,7 +16,8 @@ export class ApiError extends Error {
   }
 }
 
-function onUnauthorized(): void {
+// 401 统一处置:清登录态并回登录页(SSE / 上传路径与 REST 保持同一行为)
+export function onUnauthorized(): void {
   clearAuth()
   // hash 路由:直接改 hash 不引入 api→router 依赖环
   window.location.hash = '#/login'

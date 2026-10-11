@@ -180,7 +180,9 @@ function stop(): void {
 
 function traceJump(am: ChatMessage): void {
   if (!am.answerId) return
-  void router.push({ name: 'trace', params: { answerId: am.answerId }, query: am.question ? { q: am.question } : {} })
+  // 问题文本走 sessionStorage 随 answer_id 传递,不进 URL:浏览器历史/复制链接不再携带提问内容
+  if (am.question) sessionStorage.setItem(`harness-ui.trace.${am.answerId}`, am.question)
+  void router.push({ name: 'trace', params: { answerId: am.answerId } })
 }
 
 function onEnterKey(e: KeyboardEvent): void {

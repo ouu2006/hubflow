@@ -2,7 +2,8 @@
 // 帧格式(与 mock/B 对齐):event: <name>\n data: <json>\n\n;容忍 \r\n 与多 data 行。
 
 import { getToken } from '../stores/auth'
-import { ApiError } from './http'
+import { ApiError, onUnauthorized } from './http'
+import { SSE_EVENT } from '../shared/protocol'
 
 export type SseListener = (event: string, data: string) => void
 
@@ -22,6 +23,9 @@ export async function ssePost(path: string, body: unknown, onEvent: SseListener,
     throw new ApiError(0, 'NETWORK', '网络错误:SSE 连接建立失败(联调模式请确认后端已启动)')
   }
 
+  // 与 REST request() 同一 401 语义:清登录态并回登录页,不把旧凭据留在受保护页
+  if (res.status === 401 && token) onUnauthorized()
+
   if (!res.ok) {
     let code = `HTTP_${res.status}`
     let message = res.statusText || `SSE 建流失败(${res.status})`
@@ -39,6 +43,7 @@ export async function ssePost(path: string, body: unknown, onEvent: SseListener,
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let buf = ''
+  let sawTerminal = false // 是否见到 finish / error:EOF 且未见终态 = 流被截断
 
   const dispatch = (block: string): void => {
     let event = 'message'
@@ -48,7 +53,10 @@ export async function ssePost(path: string, body: unknown, onEvent: SseListener,
       if (line.startsWith('event:')) event = line.slice(6).trim()
       else if (line.startsWith('data:')) dataLines.push(line.slice(5).replace(/^ /, ''))
     }
-    if (dataLines.length) onEvent(event, dataLines.join('\n'))
+    if (dataLines.length) {
+      if (event === SSE_EVENT.finish || event === SSE_EVENT.error) sawTerminal = true
+      onEvent(event, dataLines.join('\n'))
+    }
   }
 
   try {
@@ -67,6 +75,13 @@ export async function ssePost(path: string, body: unknown, onEvent: SseListener,
     }
     const tail = decoder.decode()
     if (tail.trim()) dispatch(tail)
+    // EOF 且未见 finish/error:流被截断。显式发 error,让调用方呈现"中断"而不是当成完整回答
+    if (!sawTerminal && !signal?.aborted) {
+      onEvent(
+        SSE_EVENT.error,
+        JSON.stringify({ code: 'STREAM_INTERRUPTED', message: '连接中断:响应在收尾前结束,回答可能不完整' }),
+      )
+    }
   } finally {
     reader.releaseLock()
   }
