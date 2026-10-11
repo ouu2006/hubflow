@@ -12,12 +12,16 @@ import { SseWriter } from './sse-writer.ts'
 import { demoSegment, pointAtOffset, segmentLengthM } from '../shared/demoNetwork.ts'
 import {
   TRAFFIC_SNAPSHOT_EVENT,
+  type CongestionLevel,
+  type ManualFactorInput,
+  type ManualFactorResult,
   type RecommendResult,
   type SegmentRecord,
   type SegmentsSnapshot,
   type TrafficSnapshotPing,
   type VehicleRecord,
   type VehiclesSnapshot,
+  type AssimilationSnapshot,
 } from '../shared/traffic.ts'
 
 // ---------- 预置基线(契约 v2.0 形状;x = q_vph / c_vph) ----------
@@ -333,6 +337,69 @@ const VEHICLE_BASES: VehicleBase[] = [
   { vehicle_id: 'twin-0012', driver_type: 'D1', segment_id: 'SEG-006', offset_m: 110, speed_mps: 11.2, state: '行驶', guided: false },
 ]
 
+// ---------- 人工置位因素(管理端口子,手册第 19 章 F07/F08/F11;mock 内存态,Issue #59) ----------
+// 置位后对目标路段生效:target=demand 乘 q,c/lanes 乘 c,再按演示阈值重算 level(演示行为,
+// 非判级模型输出);reset 端点清空,供反复演示。
+
+interface ManualFactor {
+  segment_id: string
+  factor_id: string
+  name: string
+  target: 'c' | 'demand' | 'lanes'
+  multiplier: number
+  until: string
+}
+
+const manualFactors: ManualFactor[] = []
+
+const LEVEL_NAME: Record<number, string> = { 1: '畅通', 2: '缓行', 3: '拥堵', 4: '严重拥堵' }
+
+function applyManualFactors(base: Omit<SegmentRecord, 'is_simulated'>): Omit<SegmentRecord, 'is_simulated'> {
+  const mine = manualFactors.filter((f) => f.segment_id === base.segment_id)
+  if (mine.length === 0) return base
+  let q = base.q_vph ?? 0
+  let c = base.c_vph ?? 0
+  for (const f of mine) {
+    if (f.target === 'demand') q *= f.multiplier
+    else c *= f.multiplier // c / lanes 都折算通行能力
+  }
+  const x2 = q / Math.max(1, c)
+  const xLevel: CongestionLevel = x2 >= 0.9 ? 4 : x2 >= 0.7 ? 3 : x2 >= 0.5 ? 2 : 1
+  const level = Math.max(base.level, xLevel) as CongestionLevel
+  const baseTrig = base.triggered_by ?? []
+  const triggered = xLevel > base.level && !baseTrig.includes('x') ? [...baseTrig, 'x'] : baseTrig
+  const scale = base.x && base.x > 0 ? x2 / base.x : 1
+  return {
+    ...base,
+    q_vph: Math.round(q),
+    c_vph: Math.round(c),
+    x: round(x2, 2),
+    ci: round(Math.min(100, (base.ci ?? 0) * scale), 1),
+    level,
+    level_name: LEVEL_NAME[level],
+    triggered_by: triggered,
+    factors_applied: [
+      ...(base.factors_applied ?? []),
+      ...mine.map((f) => ({ factor_id: f.factor_id, name: f.name, target: f.target, multiplier: f.multiplier, until: f.until })),
+    ],
+  }
+}
+
+function buildAssimilation(): AssimilationSnapshot {
+  const now = localIso(new Date())
+  return {
+    ts: now,
+    is_simulated: true,
+    gate: { confidence_min: 0.6, data_age_max_s: 120 },
+    records: [
+      { point_id: 'DET-B1', segment_id: 'SEG-001', enabled: true, flow_dev_pct: 7.4, speed_dev_pct: 11.2, gate_reason: null, gate_detail: null, last_apply_at: now },
+      { point_id: 'DET-B2', segment_id: 'SEG-007', enabled: true, flow_dev_pct: 13.8, speed_dev_pct: 18.5, gate_reason: null, gate_detail: null, last_apply_at: now },
+      { point_id: 'DET-B3', segment_id: 'SEG-010', enabled: false, flow_dev_pct: null, speed_dev_pct: null, gate_reason: 'confidence_low', gate_detail: '数据置信度 0.31 < 0.60,停止回灌并留日志', last_apply_at: null },
+      { point_id: 'DET-B4', segment_id: 'SEG-009', enabled: false, flow_dev_pct: null, speed_dev_pct: null, gate_reason: 'deviation_fuse', gate_detail: '边界偏差连续超标熔断(演示),恢复后自动重开', last_apply_at: null },
+    ],
+  }
+}
+
 // ---------- 快照构造(tick 驱动抖动;数值是演示基线,不是模型输出) ----------
 
 let tick = 0
@@ -359,18 +426,19 @@ function localIso(d: Date): string {
 function buildSegmentsSnapshot(): SegmentsSnapshot {
   tick += 1
   const segments: SegmentRecord[] = SEGMENT_BASES.map(({ base, stale }) => {
-    const q_vph = Math.round(jitter(base.q_vph ?? 0, 0.04))
-    const v_kmh = round(jitter(base.v_kmh ?? 0, 0.03), 1)
-    const c_vph = base.c_vph ?? 0
-    const ageBase = base.data_age_s ?? 0
+    const src = applyManualFactors(base) // 人工置位先生效,再走抖动
+    const q_vph = Math.round(jitter(src.q_vph ?? 0, 0.04))
+    const v_kmh = round(jitter(src.v_kmh ?? 0, 0.03), 1)
+    const c_vph = src.c_vph ?? 0
+    const ageBase = src.data_age_s ?? 0
     return {
-      ...base,
+      ...src,
       q_vph,
       v_kmh,
-      k_vpk: round(jitter(base.k_vpk ?? 0, 0.03), 1),
-      L_q_m: Math.round(jitter(base.L_q_m ?? 0, 0.06)),
+      k_vpk: round(jitter(src.k_vpk ?? 0, 0.03), 1),
+      L_q_m: Math.round(jitter(src.L_q_m ?? 0, 0.06)),
       x: round(q_vph / Math.max(1, c_vph), 2),
-      ci: round(jitter(base.ci ?? 0, 0.02), 1),
+      ci: round(jitter(src.ci ?? 0, 0.02), 1),
       data_age_s: stale ? ageBase + (tick % 30) * 2 : Math.min(ageBase + (tick % 6) * 2, 110),
       is_simulated: true,
     }
@@ -477,6 +545,57 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
   if (path === '/traffic/route/recommend' && method === 'POST') {
     await readJson(req) // 请求体形状见契约(session_id / location);mock 不校验,原样回推荐快照
     json(res, 200, buildRecommend())
+    return true
+  }
+
+  // 决策工作台(Issue #59,接口面新增):同化状态 / 人工置位因素
+  if (path === '/traffic/assimilation' && method === 'GET') {
+    json(res, 200, buildAssimilation())
+    return true
+  }
+
+  // 契约 L440 预留端点的 GET:当前生效因素清单(含预置演示因素与人工置位,
+  // 从 segments 快照展平——POST 置位 / reset 复位后此处随动)。
+  if (path === '/traffic/factors' && method === 'GET') {
+    const factors = buildSegmentsSnapshot().segments.flatMap((s) =>
+      (s.factors_applied ?? []).map((f) => ({ ...f, segment_id: s.segment_id })),
+    )
+    json(res, 200, { ts: localIso(new Date()), is_simulated: true, factors })
+    return true
+  }
+
+  if (path === '/traffic/factors' && method === 'POST') {
+    const body = (await readJson(req)) as Partial<ManualFactorInput>
+    const seg = SEGMENT_BASES.find((s) => s.base.segment_id === body.segment_id)
+    if (!seg || !body.factor_id || !body.target || typeof body.multiplier !== 'number') {
+      json(res, 400, { code: 'FACTOR_INVALID', message: '置位参数不完整(需 segment_id/factor_id/target/multiplier)' })
+      return true
+    }
+    const until = new Date(Date.now() + 60 * 60 * 1000) // 演示:置位 60 分钟后自动过期
+    manualFactors.push({
+      segment_id: seg.base.segment_id,
+      factor_id: body.factor_id,
+      name: body.name ?? body.factor_id,
+      target: body.target,
+      multiplier: body.multiplier,
+      until: localIso(until),
+    })
+    const seg0 = applyManualFactors(seg.base)
+    const result: ManualFactorResult = {
+      applied: true,
+      segment_id: seg0.segment_id,
+      level: seg0.level,
+      level_name: seg0.level_name ?? LEVEL_NAME[seg0.level],
+      factors_applied: seg0.factors_applied ?? [],
+      is_simulated: true,
+    }
+    json(res, 200, result)
+    return true
+  }
+
+  if (path === '/traffic/factors/reset' && method === 'POST') {
+    manualFactors.length = 0
+    json(res, 200, { reset: true, is_simulated: true })
     return true
   }
 

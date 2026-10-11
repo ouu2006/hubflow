@@ -164,3 +164,44 @@ export interface TrafficSnapshotPing {
   is_simulated: true
   note?: string
 }
+
+// ---------- 决策工作台(Issue #59,接口面新增;字段 snake_case,非契约 v2.0 冻结范围) ----------
+
+/** 数据同化单断面状态(契约 §数据同化 gate 字段口径) */
+export type AssimilationGateReason = 'confidence_low' | 'data_age' | 'deviation_fuse' | null
+
+export interface AssimilationRecord {
+  point_id: string
+  segment_id: string
+  enabled: boolean
+  flow_dev_pct: number | null
+  speed_dev_pct: number | null
+  gate_reason: AssimilationGateReason
+  gate_detail: string | null
+  last_apply_at: string | null
+}
+
+export interface AssimilationSnapshot {
+  ts: string
+  is_simulated: true
+  gate: { confidence_min: number; data_age_max_s: number }
+  records: AssimilationRecord[]
+}
+
+/** 人工置位因素输入(mock 侧生效,管理端口子,手册第 19 章) */
+export interface ManualFactorInput {
+  segment_id: string
+  factor_id: string
+  name: string
+  target: 'c' | 'demand' | 'lanes'
+  multiplier: number
+}
+
+export interface ManualFactorResult {
+  applied: true
+  segment_id: string
+  level: CongestionLevel
+  level_name: string
+  factors_applied: FactorApplied[]
+  is_simulated: true
+}

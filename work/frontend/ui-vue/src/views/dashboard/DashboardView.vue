@@ -118,6 +118,7 @@ const stageStyle = computed(() => ({
         </div>
         <div class="bar-right">
           <RouterLink class="percep-link" to="/perception">感知画面 ›</RouterLink>
+          <RouterLink class="percep-link" to="/decision">决策工作台 ›</RouterLink>
           <span class="conn" :class="live ? 'up' : 'down'">
             <i class="dot" />
             {{ live ? '快照流已连接' : '快照流未连接' }}

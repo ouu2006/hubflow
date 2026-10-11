@@ -4,6 +4,9 @@
 // 一期 mock 演示:全部数据 is_simulated=true,页面显著标注"示例数据"。
 
 import type {
+  AssimilationSnapshot,
+  ManualFactorInput,
+  ManualFactorResult,
   RecommendResult,
   SegmentRecord,
   SegmentsSnapshot,
@@ -51,4 +54,21 @@ export function subscribeTrafficSnapshot(
     onPing(payload)
   })
   return () => es.close()
+}
+
+// ---------- 决策工作台(Issue #59,接口面新增) ----------
+
+// GET /api/traffic/assimilation → 数据同化状态(哪些边界断面在回灌、门控原因)
+export function getTrafficAssimilation(): Promise<AssimilationSnapshot> {
+  return request<AssimilationSnapshot>('GET', '/api/traffic/assimilation')
+}
+
+// POST /api/traffic/factors → 人工置位因素(管理端口子;mock 侧生效并重算判级,演示行为)
+export function postTrafficFactor(body: ManualFactorInput): Promise<ManualFactorResult> {
+  return request<ManualFactorResult>('POST', '/api/traffic/factors', { body })
+}
+
+// POST /api/traffic/factors/reset → 清空人工置位(演示复位)
+export function postTrafficFactorReset(): Promise<{ reset: boolean; is_simulated: boolean }> {
+  return request<{ reset: boolean; is_simulated: boolean }>('POST', '/api/traffic/factors/reset')
 }
