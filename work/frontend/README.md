@@ -107,3 +107,24 @@ npm run dev        # 浏览器打开 http://localhost:5173/#/dashboard(公开访
 **M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 对齐 PR #51 分支上的 `work/assembly/traffic.py`(端点清单见 [`../assembly/README.md`](../assembly/README.md) 第二节;vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
 
 **口径**:页面数据全部 `is_simulated = true` 示例数据;底图为**示例路网(非实测)**,待 #36/#37 站点包产物替换 `ui-vue/src/shared/demoNetwork.ts`;一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。
+
+## 八、决策层四页运行核验(Issue #55,2026-10-11)
+
+**决策层 = harness 现有四页,业主拍板保留不动**(Issue #52 三层表)。本节是四页在仓库内新落位(`work/frontend/ui-vue/`)下的 mock 全链路核验台账(`VITE_USE_MOCK=1` 默认 mock,`node_modules` 用 junction 指向上游已装依赖):
+
+| 页面 | 路由 | 核验结果 |
+|---|---|---|
+| 登录 | `#/login` | ✅ 表单与 mock 提示正常;`devc` 登录成功跳转问答页;清空 localStorage 后未登录访问 `#/chat` 被守卫拦回登录页 |
+| 问答对话 | `#/chat` | ✅ 新建会话、发送问题、SSE 流式回复(delta 增量)、usage 角标(tokens 63/143/206)、「溯源」按钮出现 |
+| 溯源引用 | `#/trace/:answerId` | ✅ 高亮关键词;3 条引用(doc-0004/0006/0001,得分 0.920/0.850/0.730);「跳转文档」按钮在 |
+| 文档管理 | `#/documents` | ✅ 种子 6 条覆盖三种状态(就绪/处理中/失败);真实上传「决策层核验-测试上传.txt」成功(doc-0007,processing → 刷新后 ready),确认弹窗删除成功(toast「已删除:doc-0007」) |
+
+说明:① 上传经由页面文件输入以 DataTransfer 程序化注入触发——浏览器自动化不支持原生文件选择器,上传链路(前端预检 → `POST /api/kb/documents` → 2.5 秒后 ready)真实走到 mock 端点;② 四页源码**零改动**(本分支 diff 只含本节 README);③ 运行截图存 `work/frontend/logs/`(gitignore,不进仓库),另贴 PR 描述。
+
+### 管理端三层路由总览
+
+| 层 | 路由 | 访问 | 说明 |
+|---|---|---|---|
+| 决策层(harness 四页) | `#/login` `#/chat` `#/documents` `#/trace/:answerId` | 需登录 | 保留不动,后续再增强"数据流入 + 思考过程"展示(后续 Issue) |
+| 后台大屏(M1) | `#/dashboard` | 公开(`meta.public`) | Issue #52,工程落位与实现见 PR #53 |
+| 感知层检测画面页 | `#/perception` | 公开(`meta.public`) | Issue #54 并行落地:示例画面 + 检测框叠加演示层 + 双链路指标快照;**真实视频流归二期**(手册口径) |
