@@ -514,6 +514,7 @@ onUnmounted(() => {
           <i class="dot" />
           {{ live ? '快照流已连接' : '快照流未连接' }}
         </span>
+        <RouterLink class="nav-link" to="/decision">决策工作台 ›</RouterLink>
         <RouterLink class="dash-link" to="/dashboard">态势大屏 ›</RouterLink>
       </div>
     </header>
@@ -799,6 +800,18 @@ onUnmounted(() => {
 .conn.down .dot {
   background: #e0564f;
   box-shadow: 0 0 0 3px rgba(224, 86, 79, 0.18);
+}
+.nav-link {
+  font-size: 13px;
+  color: #37d6ff;
+  text-decoration: none;
+  border: 1px solid #1d3354;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+.nav-link:hover {
+  border-color: #2c4a78;
+  background: rgba(55, 214, 255, 0.08);
 }
 .dash-link {
   font-size: 13px;
