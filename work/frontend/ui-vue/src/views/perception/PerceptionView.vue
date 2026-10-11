@@ -241,6 +241,102 @@ const clsChips = computed(() => {
     .sort((a, b) => b.count - a.count)
 })
 
+// ---------- 感知判读(人眼判堵要素,像素空间近似) ----------
+// 人判断路段堵不堵看的是:车停没停/走多快、路面上塞了多少车、一分钟能过几辆、
+// 比刚才更堵还是更缓。这些都从逐帧检测框直接算(归一化坐标,无米制标定):
+//   占有率 = 当前帧车辆框面积合计 / 画面面积(近似密度 k)
+//   三态   = 每个目标按近 8 个采样帧的位移速度分 停驻/缓行/通行(近似车速 v 的定性版)
+//   断面   = 虚拟检测线(画面 55% 高度)的过车计数,近 10 秒×6 → 辆/分(近似流量 q)
+// 米制四指标(q/v/k/L_q)与判级待 M1-9 透视标定链路接入后替换,此处只做演示判读。
+const DETECT_LINE_Y = 0.55
+const SPEED_STOP = 0.0008 // 归一化位移/帧:低于≈停驻
+const SPEED_SLOW = 0.004 // 低于≈缓行,否则通行
+
+const kpi = computed(() => {
+  const d = det.value
+  if (!d) return null
+  const totalN = d.total_frames
+  const occArr = new Float32Array(totalN + 1)
+  const binStop = new Int32Array(totalN + 1)
+  const binSlow = new Int32Array(totalN + 1)
+  const binMove = new Int32Array(totalN + 1)
+  const crossArr = new Int32Array(totalN + 1)
+  const hist = new Map<number, Array<[number, number, number]>>() // tid → [帧, cx, cy]
+  let occ = 0
+  let bins: [number, number, number] = [0, 0, 0]
+  let crossings = 0
+  let ei = 0
+  for (let i = 0; i <= totalN; i++) {
+    if (ei < d.frames.length && d.frames[ei].i === i) {
+      const e = d.frames[ei]
+      ei++
+      occ = 0
+      bins = [0, 0, 0]
+      for (const dt of e.det) {
+        const [x1, y1, x2, y2, , , tid] = dt
+        occ += (x2 - x1) * (y2 - y1)
+        const cx = (x1 + x2) / 2
+        const cy = y2
+        const h = hist.get(tid)
+        if (h && h.length > 0) {
+          const k = h.length
+          const [i0, x0, y0] = h[Math.max(0, k - 8)]
+          const span = i - i0
+          if ((h[k - 1][2] - DETECT_LINE_Y) * (cy - DETECT_LINE_Y) < 0) crossings++
+          if (k >= 3 && span > 0 && span <= 12) {
+            const sp = Math.hypot(cx - x0, cy - y0) / span
+            bins[sp < SPEED_STOP ? 0 : sp < SPEED_SLOW ? 1 : 2]++
+          } else {
+            bins[2]++ // 新出现/久未更新的轨迹按通行计
+          }
+        } else {
+          bins[2]++
+        }
+        if (h) h.push([i, cx, cy])
+        else hist.set(tid, [[i, cx, cy]])
+        if (h && h.length > 40) h.shift()
+      }
+    }
+    occArr[i] = occ
+    binStop[i] = bins[0]
+    binSlow[i] = bins[1]
+    binMove[i] = bins[2]
+    crossArr[i] = crossings
+  }
+  return { occArr, binStop, binSlow, binMove, crossArr }
+})
+
+const TREND_SPAN = 90 // 3 秒前的占有率对比
+const occNow = computed(() => kpi.value?.occArr[idx.value] ?? 0)
+const occPct = computed(() => (occNow.value * 100).toFixed(1))
+const occTrend = computed<'up' | 'down' | 'flat'>(() => {
+  const k = kpi.value
+  if (!k) return 'flat'
+  const prev = k.occArr[Math.max(0, idx.value - TREND_SPAN)]
+  const delta = k.occArr[idx.value] - prev
+  if (delta > 0.02) return 'up'
+  if (delta < -0.02) return 'down'
+  return 'flat'
+})
+const TREND_LABEL = { up: '▲ 变堵', down: '▼ 缓解', flat: '▬ 平稳' } as const
+const binsNow = computed(() => ({
+  stop: kpi.value?.binStop[idx.value] ?? 0,
+  slow: kpi.value?.binSlow[idx.value] ?? 0,
+  move: kpi.value?.binMove[idx.value] ?? 0,
+}))
+const binTotal = computed(() => {
+  const b = binsNow.value
+  return Math.max(1, b.stop + b.slow + b.move)
+})
+const crossTotal = computed(() => kpi.value?.crossArr[idx.value] ?? 0)
+const crossRatePerMin = computed(() => {
+  const k = kpi.value
+  if (!k) return 0
+  const win = Math.max(1, Math.round(fpsNum.value * 10))
+  const inWin = k.crossArr[idx.value] - k.crossArr[Math.max(0, idx.value - win)]
+  return Math.round((inWin / win) * fpsNum.value * 60)
+})
+
 function hexA(hex: string, alpha: number): string {
   const n = parseInt(hex.slice(1), 16)
   return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
@@ -294,6 +390,21 @@ function drawTrails(ctx2d: CanvasRenderingContext2D, W: number, H: number): void
   }
 }
 
+function drawCountLine(ctx2d: CanvasRenderingContext2D, W: number, H: number): void {
+  const ly = DETECT_LINE_Y * H
+  ctx2d.strokeStyle = 'rgba(55,214,255,0.55)'
+  ctx2d.setLineDash([10, 8])
+  ctx2d.lineWidth = 1.5
+  ctx2d.beginPath()
+  ctx2d.moveTo(0, ly)
+  ctx2d.lineTo(W, ly)
+  ctx2d.stroke()
+  ctx2d.setLineDash([])
+  ctx2d.fillStyle = 'rgba(55,214,255,0.8)'
+  ctx2d.font = '600 11px system-ui, sans-serif'
+  ctx2d.fillText('虚拟断面 · 过车计数', 10, ly - 7)
+}
+
 function draw(): void {
   const cv = canvasRef.value
   if (!cv) return
@@ -313,6 +424,7 @@ function draw(): void {
   if (!meta || !det.value) return
   const img = ensureImg(meta.stream_id, idx.value + 1)
   if (img && img.complete && img.naturalWidth > 0) ctx2d.drawImage(img, 0, 0, W, H)
+  drawCountLine(ctx2d, W, H)
   drawTrails(ctx2d, W, H)
   const f = detAt(idx.value)
   if (f) drawBoxes(ctx2d, W, H, f)
@@ -469,6 +581,57 @@ onUnmounted(() => {
       </section>
 
       <aside class="col">
+        <section class="panel kpi-panel">
+          <div class="panel-head">感知判读 · 人眼判堵要素(像素近似)</div>
+          <div class="kpi-grid">
+            <div class="kpi">
+              <span class="kpi-num">
+                {{ occPct }}%
+                <i class="trend" :class="occTrend">{{ TREND_LABEL[occTrend] }}</i>
+              </span>
+              <span class="kpi-lbl">画面车辆占有率(近3秒对比)</span>
+            </div>
+            <div class="kpi">
+              <span class="kpi-num">{{ crossRatePerMin }}</span>
+              <span class="kpi-lbl">断面通过率(辆/分 · 近10秒)</span>
+            </div>
+            <div class="kpi">
+              <span class="kpi-num">{{ crossTotal }}</span>
+              <span class="kpi-lbl">虚拟断面累计过车</span>
+            </div>
+            <div class="kpi">
+              <span class="kpi-num">{{ cumTracks }}</span>
+              <span class="kpi-lbl">累计进入画面(轨迹)</span>
+            </div>
+          </div>
+          <div class="flow-bar" aria-hidden="true">
+            <span class="fb-seg fb-stop" :style="{ width: `${(binsNow.stop / binTotal) * 100}%` }" />
+            <span class="fb-seg fb-slow" :style="{ width: `${(binsNow.slow / binTotal) * 100}%` }" />
+            <span class="fb-seg fb-move" :style="{ width: `${(binsNow.move / binTotal) * 100}%` }" />
+          </div>
+          <div class="flow-legend">
+            <span class="fl fl-stop">停驻 {{ binsNow.stop }}</span>
+            <span class="fl fl-slow">缓行 {{ binsNow.slow }}</span>
+            <span class="fl fl-move">通行 {{ binsNow.move }}</span>
+            <span class="fl-dim">当前帧 {{ activeCount }} 个目标按位移分档</span>
+          </div>
+          <div class="chips">
+            <span
+              v-for="chip in clsChips"
+              :key="chip.cls"
+              class="chip"
+              :style="{ borderColor: chip.color, color: chip.color }"
+            >
+              {{ chip.name }} ×{{ chip.count }}
+            </span>
+            <span v-if="clsChips.length === 0" class="empty">本帧前无轨迹</span>
+          </div>
+          <p class="kpi-note">
+            口径:以上为像素空间近似值(无米制标定);流量/车速/密度/排队长度四项契约指标
+            待透视标定链路(M1-9)接入后替换,判级见下方快照。
+          </p>
+        </section>
+
         <section class="panel">
           <div class="panel-head">监控通道(固定机位 · 样本视频)</div>
           <div class="ch-list">
@@ -490,38 +653,17 @@ onUnmounted(() => {
         </section>
 
         <section class="panel">
-          <div class="panel-head">实时检测统计(当前回放进度)</div>
-          <div class="stats">
-            <div class="stat">
-              <span class="num">{{ activeCount }}</span>
-              <span class="lbl">当前帧目标</span>
-            </div>
-            <div class="stat">
-              <span class="num">{{ cumTracks }}</span>
-              <span class="lbl">累计轨迹</span>
-            </div>
-            <div class="stat">
-              <span class="num">{{ curMeta?.duration_s ?? '—' }}s</span>
-              <span class="lbl">样本时长</span>
-            </div>
-          </div>
-          <div class="chips">
-            <span
-              v-for="chip in clsChips"
-              :key="chip.cls"
-              class="chip"
-              :style="{ borderColor: chip.color, color: chip.color }"
-            >
-              {{ chip.name }} ×{{ chip.count }}
-            </span>
-            <span v-if="clsChips.length === 0" class="empty">本帧前无轨迹</span>
-          </div>
+          <div class="panel-head">检测明细(当前回放进度)</div>
           <div class="meta-lines">
-            <span>模型:{{ curMeta?.model }} · {{ curMeta?.backend }}</span>
+            <span>
+              当前帧目标 {{ activeCount }} · 平均置信度 {{ avgConf == null ? '—' : avgConf.toFixed(2) }} ·
+              累计轨迹 {{ cumTracks }}
+            </span>
             <span>
               画面:{{ curMeta?.width }}×{{ curMeta?.height }} · {{ fpsNum }} fps ·
-              平均置信度 {{ avgConf == null ? '—' : avgConf.toFixed(2) }}
+              时长 {{ curMeta?.duration_s ?? '—' }}s · {{ total }} 帧
             </span>
+            <span>模型:{{ curMeta?.model }} · {{ curMeta?.backend }}</span>
             <span>导出:{{ curMeta?.generated_at }} · 离线推理产物</span>
           </div>
         </section>
@@ -880,30 +1022,100 @@ onUnmounted(() => {
   font-size: 11px;
   color: #7c93b5;
 }
-.stats {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 8px;
-  margin-bottom: 10px;
+.kpi-panel {
+  gap: 10px;
 }
-.stat {
+.kpi-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.kpi {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  align-items: center;
-  padding: 10px 4px;
+  padding: 9px 10px;
   background: rgba(20, 38, 66, 0.55);
   border: 1px solid #1d3354;
   border-radius: 8px;
 }
-.stat .num {
+.kpi-num {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 22px;
   font-weight: 700;
   color: #37d6ff;
+  line-height: 1.1;
 }
-.stat .lbl {
+.trend {
+  font-size: 11px;
+  font-weight: 600;
+  font-style: normal;
+}
+.trend.up {
+  color: #e0564f;
+}
+.trend.down {
+  color: #35d08c;
+}
+.trend.flat {
+  color: #8c8c8c;
+}
+.kpi-lbl {
   font-size: 11px;
   color: #7c93b5;
+}
+.flow-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 5px;
+  overflow: hidden;
+  background: rgba(8, 18, 34, 0.8);
+}
+.fb-seg {
+  height: 100%;
+}
+.fb-stop {
+  background: #e0564f;
+}
+.fb-slow {
+  background: #ffd479;
+}
+.fb-move {
+  background: #35d08c;
+}
+.flow-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 12px;
+  font-size: 12px;
+}
+.fl::before {
+  content: '●';
+  margin-right: 4px;
+  font-size: 10px;
+}
+.fl-stop {
+  color: #e0564f;
+}
+.fl-slow {
+  color: #ffd479;
+}
+.fl-move {
+  color: #35d08c;
+}
+.fl-dim {
+  margin-left: auto;
+  font-size: 11px;
+  color: #5f7396;
+}
+.kpi-note {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #5f7396;
 }
 .chips {
   display: flex;

@@ -144,6 +144,6 @@
 | ① 导出检测数据 | `python tools/dump_monitor_data.py --video <上游>/traffic-core-mindspore/video/track1.mp4 --out data/monitor` | 必须用上游 `traffic-ms311` venv（MindSpore 推理）；逐段运行，产物入 `data/monitor/<stream_id>/`（**整树不入库**，`.gitignore` 已拦）；类别走交通白名单（行人/自行车/小汽车/摩托车/公交车/货车），路口段的非车辆误检类别（0-6 实测出现过 67/74）被过滤 |
 | ② 起感知服务 | `python server.py --port 8101` | 任意带 fastapi+uvicorn 的 python；只做文件服务不做推理 |
 | ③ 起前端 | `cd work/frontend/ui-vue && npm run dev` | vite 把 `/perception-api` 代理并重写到 `http://127.0.0.1:8101` 的 `/api/perception`（独立前缀是为了不与 traffic mock 的 `/api` 拦截互相吞路径） |
-| ④ 打开页面 | `http://localhost:5173/#/perception` | 帧播放器（播放/倍速/拖动）+ 逐帧检测框 + 轨迹拖尾 + 通道切换 + 实时统计；下方为 video/twin 双链路指标快照 |
+| ④ 打开页面 | `http://localhost:5173/#/perception` | 帧播放器（播放/倍速/拖动）+ 逐帧检测框 + 轨迹拖尾 + 通道切换；右侧「感知判读」面板给出一组**像素空间近似**的人眼判堵要素（画面占有率、停驻/缓行/通行三态、虚拟断面过车率、近3秒趋势），**米制四指标（q/v/k/L_q）待透视标定链路（M1-9）接入后替换**；下方为 video/twin 双链路指标快照 |
 
 **口径纪律**：画面是**样本视频离线回放**（非本站现场、非实时流），页面角标与页脚已标注「样本视频回放 · 演示数据(模拟)」；**不得**表述为"实时画面/现场实测"。前端对检测流与指标快照分别标注数据来源，两者不混。
