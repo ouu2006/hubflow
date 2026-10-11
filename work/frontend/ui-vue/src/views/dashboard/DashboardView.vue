@@ -117,6 +117,7 @@ const stageStyle = computed(() => ({
           <span class="badge sim">is_simulated = true · 示例数据</span>
         </div>
         <div class="bar-right">
+          <RouterLink class="percep-link" to="/perception">感知画面 ›</RouterLink>
           <span class="conn" :class="live ? 'up' : 'down'">
             <i class="dot" />
             {{ live ? '快照流已连接' : '快照流未连接' }}
@@ -265,6 +266,18 @@ const stageStyle = computed(() => ({
   font-variant-numeric: tabular-nums;
   min-width: 96px;
   text-align: right;
+}
+.percep-link {
+  font-size: 13px;
+  color: #37d6ff;
+  text-decoration: none;
+  border: 1px solid #1d3354;
+  border-radius: 6px;
+  padding: 4px 10px;
+}
+.percep-link:hover {
+  border-color: #2c4a78;
+  background: rgba(55, 214, 255, 0.08);
 }
 .cols {
   flex: 1;
