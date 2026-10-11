@@ -8,7 +8,7 @@
 
 | 端 | 技术 | 复用情况 | 期次 |
 |---|---|---|---|
-| 管理端 | **Vue 3 + Vite + Element Plus** | 复用上游 `harness-core/ui-vue` 工程，新增交通页面 | 一期 |
+| 管理端 | **Vue 3 + Vite + Element Plus** | 基于上游 `harness-core/ui-vue` 工程落位；**harness 四页（登录/问答/文档/溯源）已按 2026-10-11 业主裁定整体移除**，现存态势大屏（感知画面页见 PR #56） | 一期 |
 | 司机端 | **鸿蒙（ArkTS / DevEco Studio）** | 新建；**全程由 AI 辅助开发** | 一期只做 P0 四页 |
 | App 真实定位上报 | 鸿蒙定位能力 + 后端 `locate` | 二期 | 二期 |
 
@@ -70,20 +70,19 @@
 2. **数据不可用显示灰色**，**绝不显示成蓝色**——"没数据"不能被读成"很通畅"。一期判级的可用性门会输出"不可用"，页面必须有这个分支。
 3. **不强制、不反复弹窗**；**应急状态下停止路线引导**，替换为"请服从现场指挥"（优先级高于一切推荐）。
 
-## 五、接线点（既有代码零改动）
+## 五、接线点（2026-10-11 裁定后重述）
 
-| 文件 | 动作 |
+> ⚠️ **2026-10-11 业主裁定**：web 端整体推翻 harness 架构，**后端接口面根据前端页面重新规划**后再落地。原"既有 8 个端点零改动"边界与下方旧接线点**作废**；PR #51（traffic.py 骨架）已收回，内容可在该 PR 页面回看。
+
+| 事项 | 状态 |
 |---|---|
-| `host-fastapi/app/api/traffic.py` | **新建**（接口层本体在 [`../assembly/`](../assembly/)） |
-| `app/main.py` | 注册新路由（**既有 8 个端点零改动**，diff 只包含"新增注册"） |
-| `ui-vue/src/router/index.ts` | 新增路由（hash 路由） |
-| `ui-vue/src/mock/*` | 扩充为交通业务 mock |
+| 上游 `host-fastapi` 集成（`app/api/traffic.py` 新建、`app/main.py` 注册） | **作废**——不再以 harness 后端为集成底座，上游仓保持零改动 |
+| 新后端 | **待规划**——按前端页面重新规划接口面后，在 `work/assembly/` 重建 |
+| `ui-vue/src/api/index.ts`（冻结 8 端点调用面） | **已移除** |
+| `ui-vue/src/mock/*` | 已裁剪为仅 traffic mock；新接口面定稿后按新面重建 |
+| `ui-vue/src/router/index.ts` | 仅存 `/dashboard`，根路径重定向大屏 |
 
-**开工须知（2026-10-09 实测）**：上游 Vue 工程结构已核实——`ui-vue/src/{api,mock,router,views,stores,shared}`，路由确为 `createWebHashHistory()`（`router/index.ts:21`），依赖含 `element-plus`；`api/` 下有 `http.ts` / `sse.ts` / `upload.ts`，`mock/` 下有 `db.ts` / `sse-writer.ts` / `util.ts`。**mock 模式可直接跑，不必等后端接口——一期页面壳可以先行。**
-
-**接口形状**（完整清单见 [`docs/数据契约.md`](../../docs/数据契约.md) 第六节）：`/api/traffic/segments`、`/segments/{id}`、`/route/recommend`、**`/locate`**、**`/vehicles`**、**`/factors`**、**`/predict`**、**`/assimilation`**、`/alerts`、`/plan/dispatch`、`/plan/ack`、`/report/compare` + SSE。
-
-> **约定**：`is_simulated` 字段在**每一个**响应里出现；SSE **新增**事件名，**不改既有事件名**。
+> **约定**（沿用）：`is_simulated` 字段在**每一个**响应里出现；SSE **新增**事件名，**不改既有事件名**。
 
 **备选条数口径（v2.0 沿用）**：司机端每屏**备选 ≥2 条**（+ 推荐 1 条 = 合计 ≥3 条方案）。唯一候选时后端返回 `no_alternative: true`，此时页面要**如实说明原因**，不要显示空白。
 
@@ -94,16 +93,16 @@
 
 ## 七、ui-vue 工程落位与态势大屏 M1(Issue #52,2026-10-11)
 
-**工程落位**:上游 `harness-core/ui-vue` 已整体拷贝进本目录 `work/frontend/ui-vue/`(harness 四页保留 = 决策层可视化;来源与改动清单见 [`ui-vue/SOURCE.md`](ui-vue/SOURCE.md))。**上游仓零改动**。
+**工程落位**:上游 `harness-core/ui-vue` 已整体拷贝进本目录 `work/frontend/ui-vue/`(来源与改动清单见 [`ui-vue/SOURCE.md`](ui-vue/SOURCE.md))。**2026-10-11 业主裁定:web 端不复用 harness 架构,harness 四页(登录/问答/文档/溯源)已整体移除**,现存页面 = `/dashboard` 态势大屏(感知画面页见 PR #56)。**上游仓零改动**。
 
 **态势大屏运行方式**:
 
 ```bash
 cd work/frontend/ui-vue
 npm install        # 仅首次;或 mklink /J node_modules 指向上游已装好的 node_modules
-npm run dev        # 浏览器打开 http://localhost:5173/#/dashboard(公开访问,免登录)
+npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向至 /dashboard,无登录)
 ```
 
-**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 对齐 PR #51 分支上的 `work/assembly/traffic.py`(端点清单见 [`../assembly/README.md`](../assembly/README.md) 第二节;vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
+**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 暂沿 [`../assembly/README.md`](../assembly/README.md) 第二节历史清单(vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
 
 **口径**:页面数据全部 `is_simulated = true` 示例数据;底图为**示例路网(非实测)**,待 #36/#37 站点包产物替换 `ui-vue/src/shared/demoNetwork.ts`;一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。
