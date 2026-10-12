@@ -69,8 +69,14 @@ const STATUS_LABEL: Record<AlertStatus, string> = {
   false_alarm: '误报',
 }
 const TRIGGER_LABEL: Record<string, string> = { x: '饱和度', v: '车速', k: '密度', L_q: '排队长度', T_d: '消散时间' }
-// 硬触发类(手册 §:2840-2841 / §:3048 封路类优先):F06 违停占道 / F07 事故故障车封道 / F08 施工管制
-const HARD_FACTOR_IDS = ['F06', 'F07', 'F08']
+// 事件类因素(**本页展示口径**,不声称是手册的"硬触发"分类;只决定要不要多列一张事件卡,不改判级):
+//   ① 封路类 F07 事故 / 故障车封道、F08 施工 / 临时管制——手册 §:3047-3048「① 封路类(F07 / F08 封闭)优先」,
+//      且封道期间该路段不可通行,其他因素只作解释不做计算;
+//   ② F06 路边违停 / 占道——手册 §:3048 把它归「② 车道类」,**低于封路类**;也不在 §:762-765
+//      「步骤 1 · 硬触发(熔断)」的清单(事故 / 故障占道 / 危险品事件 + x / L_q / v 阈值)里。
+//     本页把它一并作为事件卡列出,属本页展示口径。
+//   ⚠️ 手册**未定义**「F06 / F07 / F08 = 硬触发类」这一分类,故常量名不叫 HARD_*(原注释把推断写成了条款)。
+const EVENT_FACTOR_IDS = ['F06', 'F07', 'F08']
 
 interface AlertItem {
   id: string
@@ -83,6 +89,9 @@ interface AlertItem {
   status: AlertStatus
 }
 
+// 键 = **告警 id**(派生键 `${segment_id}:stale|hard|level`),**不是** segment_id——
+// 同一路段可能同时产出 stale / hard / level 多条告警,按段键会让它们共用一个状态
+// (对 hard 下发,同路段的 level 也变「处置中」,而它自己的按钮仍显示"未下发")。
 const statusMap = reactive<Record<string, AlertStatus>>({})
 
 /** 告警时间(手册 §11.2 要求"时间"列):记录该告警**首次被观测到**的快照时间(仿真时钟,不混墙钟) */
@@ -92,43 +101,37 @@ const alerts = computed<AlertItem[]>(() => {
   const out: AlertItem[] = []
   for (const seg of segments.value) {
     const name = segName(seg.segment_id)
-    const status = statusMap[seg.segment_id] ?? 'unclaimed'
+    // 每条告警按**自己的 id** 取状态:同一路段的多条告警互不串台
+    const push = (
+      id: string,
+      item: Omit<AlertItem, 'id' | 'segment_id' | 'name' | 'status'>,
+    ): void => {
+      out.push({ id, segment_id: seg.segment_id, name, status: statusMap[id] ?? 'unclaimed', ...item })
+    }
     if (isStale(seg)) {
-      out.push({
-        id: `${seg.segment_id}:stale`,
-        segment_id: seg.segment_id,
-        name,
+      push(`${seg.segment_id}:stale`, {
         level: seg.level,
         stale: true,
         title: '数据不可用(陈旧)',
         basis: 'data_age_s 超限,只展示、不进推荐计算',
-        status,
       })
       continue
     }
-    const hard = (seg.factors_applied ?? []).find((f) => HARD_FACTOR_IDS.includes(f.factor_id))
-    if (hard) {
-      out.push({
-        id: `${seg.segment_id}:hard`,
-        segment_id: seg.segment_id,
-        name,
+    const event = (seg.factors_applied ?? []).find((f) => EVENT_FACTOR_IDS.includes(f.factor_id))
+    if (event) {
+      push(`${seg.segment_id}:hard`, {
         level: seg.level,
         stale: false,
-        title: `事件 · ${hard.name}`,
-        basis: '硬触发因素,判级直接上高档',
-        status,
+        title: `事件 · ${event.name}`,
+        basis: '事件因素(封路类优先,手册 §:3047-3048)',
       })
     }
     if (seg.level >= 3) {
-      out.push({
-        id: `${seg.segment_id}:level`,
-        segment_id: seg.segment_id,
-        name,
+      push(`${seg.segment_id}:level`, {
         level: seg.level,
         stale: false,
         title: `${seg.level_name}(x = ${seg.x ?? '—'})`,
         basis: (seg.triggered_by ?? []).map((t) => TRIGGER_LABEL[t] ?? t).join('、') || '综合指标',
-        status,
       })
     }
   }
@@ -138,10 +141,28 @@ const alerts = computed<AlertItem[]>(() => {
 const selectedId = ref<string | null>(null)
 const selectedAlert = computed(() => alerts.value.find((a) => a.id === selectedId.value) ?? null)
 
-// 首次观测时间:某条告警第一次出现在快照里时,记下当时的快照时间(仿真时钟;快照未到时留空)
+// ---------- 处置工作流(页面内存态,刷新复位) ----------
+// 回执为演示态:一期没有真实下发通道(手册 §:2262 信号只生成建议、不下发信号机),页面已标注。
+const dispatches = reactive<
+  Record<string, { ack_id: string; at: string; pct: number; target: string; channel: string }>
+>({})
+const writebacks = reactive<
+  { id: string; alertTitle: string; segment: string; owner: string; action: string; result: string; at: string }[]
+>([])
+
+// 首次观测时间 + 「消失又重现」清理:
+//   告警 id 是**派生键**(`${segment_id}:stale|hard|level`),路段条件来回切换(人工置位 → 复位 → 再置位)
+//   会让同一个 id「消失又重现」。不清的话,重现的那条会沿用上一轮的首次观测时间 / 回执 / 终态(按钮已禁用)。
+//   做法:只清**本轮缺席**的 id(连续在场期间一律不清,不误丢回执);下一轮重现即从「待认领」重新开始。
+//   来源:Sourcery 行内意见(🟡 Recurring alerts retain old state)+ 独立审查同源发现。
+//   注意:本 watch 必须放在 firstSeen / dispatches / statusMap 三张表**声明之后**(immediate 会立即执行)。
 watch(
   alerts,
   (list) => {
+    const present = new Set(list.map((a) => a.id))
+    for (const id of Object.keys(firstSeen)) if (!present.has(id)) delete firstSeen[id]
+    for (const id of Object.keys(dispatches)) if (!present.has(id)) delete dispatches[id]
+    for (const id of Object.keys(statusMap)) if (!present.has(id)) delete statusMap[id]
     const ts = snapshotTs.value
     if (!ts) return
     for (const a of list) {
@@ -151,14 +172,10 @@ watch(
   { immediate: true },
 )
 
-// ---------- 处置工作流(页面内存态,刷新复位) ----------
-// 回执为演示态:一期没有真实下发通道(手册 §:2262 信号只生成建议、不下发信号机),页面已标注。
-const dispatches = reactive<
-  Record<string, { ack_id: string; at: string; pct: number; target: string; channel: string }>
->({})
-const writebacks = reactive<
-  { id: string; alertTitle: string; segment: string; owner: string; action: string; result: string; at: string }[]
->([])
+/** 终态(已闭环 / 误报):终态不可再下发,也不可再回写 */
+function isTerminal(a: AlertItem | null): boolean {
+  return a != null && (a.status === 'closed' || a.status === 'false_alarm')
+}
 
 const suggestion = computed<DiversionSuggestion | null>(() => {
   const a = selectedAlert.value
@@ -170,12 +187,16 @@ const dispatchPct = ref(30)
 const dispatchChannel = ref<string>(DISPATCH_CHANNELS[0])
 watch(selectedId, () => {
   dispatchPct.value = suggestion.value?.base_pct ?? 20
+  // 渠道不跨告警沿用:否则对 B 下发的回执里会写上"上一条告警选的渠道"
+  dispatchChannel.value = DISPATCH_CHANNELS[0]
 })
 
 function dispatch(): void {
   const a = selectedAlert.value
   const s = suggestion.value
-  if (!a || !s) return
+  if (!a || !s || isTerminal(a)) return
+  // 「未改善」后告警仍在处置中,允许**再次下发**并覆盖旧回执——
+  // 否则 dispatches[id] 恒非空,按钮永久灰死,处置流程走不下去(独立审查发现)。
   dispatches[a.id] = {
     ack_id: `ACK-${Date.now().toString(36).toUpperCase()}`,
     at: snapshotTs.value || new Date().toLocaleTimeString(),
@@ -183,8 +204,16 @@ function dispatch(): void {
     target: s.target_name,
     channel: dispatchChannel.value,
   }
-  statusMap[a.segment_id] = 'processing'
+  statusMap[a.id] = 'processing'
 }
+
+/** 下发按钮文案:终态 / 已下发(可重新下发) / 首次下发 */
+const dispatchLabel = computed(() => {
+  const a = selectedAlert.value
+  if (!a) return '下发分流指令'
+  if (isTerminal(a)) return `已终结(${STATUS_LABEL[a.status]})`
+  return dispatches[a.id] ? '重新下发(覆盖回执)' : '下发分流指令'
+})
 
 const ACTIONS = ['现场疏导', '情报板诱导', '临时管制', '上报等待']
 // 回写结果四选一照抄手册 §11.2(:1862):已消除 / 已缓解 / 未改善 / 误报
@@ -196,7 +225,8 @@ const wbResult = ref<string>(RESULTS[1])
 function submitWriteback(): void {
   const a = selectedAlert.value
   const d = a ? dispatches[a.id] : null
-  if (!a || !d) return
+  // 加终态守门:已闭环 / 误报不得再回写,否则同一告警可无限回写并互相翻转(已消除 → 误报 → 已缓解…)
+  if (!a || !d || isTerminal(a)) return
   writebacks.unshift({
     id: `WB-${Date.now().toString(36).toUpperCase()}`,
     alertTitle: a.title,
@@ -204,12 +234,15 @@ function submitWriteback(): void {
     owner: wbOwner.value,
     action: wbAction.value,
     result: wbResult.value,
-    at: new Date().toLocaleTimeString(),
+    // 与告警时间、回执时间同源(快照 ts),不再单取浏览器墙钟——三者同屏需同一基准
+    at: snapshotTs.value || new Date().toLocaleTimeString(),
   })
-  // 结果 → 告警状态(手册 §:1862 + 值守纪律 §:3333:未改善不得进已闭环,留在处置中)
-  if (wbResult.value === '误报') statusMap[a.segment_id] = 'false_alarm'
-  else if (wbResult.value === '未改善') statusMap[a.segment_id] = 'processing'
-  else statusMap[a.segment_id] = 'closed'
+  // 结果 → 告警状态:**本页口径**——手册 §:1860-1863 只定枚举(状态四态 / 结果四选一),**未定流转**;
+  //   本页取「已消除 / 已缓解 → 已闭环;未改善 → 留在处置中;误报 → 误报」。
+  //   (原注释误引「值守纪律 §:3333」,该行只讲值守要能回答数据新鲜度 / 当前告警 / 是否有降级,与流转无关)
+  if (wbResult.value === '误报') statusMap[a.id] = 'false_alarm'
+  else if (wbResult.value === '未改善') statusMap[a.id] = 'processing'
+  else statusMap[a.id] = 'closed'
 }
 
 // ---------- 因素与预测 + 人工置位(TC-16) ----------
@@ -395,15 +428,15 @@ onUnmounted(() => {
                 </span>
                 <span class="sug-item dim">预期:{{ suggestion.expect }}</span>
               </div>
-              <button class="act primary" type="button" :disabled="dispatches[selectedAlert.id] != null" @click="dispatch">
-                {{ dispatches[selectedAlert.id] ? '已下发' : '下发分流指令' }}
+              <button class="act primary" type="button" :disabled="isTerminal(selectedAlert)" @click="dispatch">
+                {{ dispatchLabel }}
               </button>
             </div>
 
             <div v-if="dispatches[selectedAlert.id]" class="flow-block ack">
               <div class="flow-title">下发回执</div>
               <p class="mono">
-                {{ dispatches[selectedAlert.id]!.ack_id }} · {{ dispatches[selectedAlert.id]!.at }} ·
+                {{ dispatches[selectedAlert.id]!.ack_id }} · 快照 {{ dispatches[selectedAlert.id]!.at }} ·
                 渠道 {{ dispatches[selectedAlert.id]!.channel }} ·
                 向{{ dispatches[selectedAlert.id]!.target }}分流 {{ dispatches[selectedAlert.id]!.pct }}% ·
                 is_simulated = true
@@ -419,8 +452,12 @@ onUnmounted(() => {
                 <label>认领人<input v-model="wbOwner" class="wb-input" type="text" /></label>
                 <label>动作<select v-model="wbAction" class="wb-input"><option v-for="x in ACTIONS" :key="x">{{ x }}</option></select></label>
                 <label>结果<select v-model="wbResult" class="wb-input"><option v-for="x in RESULTS" :key="x">{{ x }}</option></select></label>
-                <button class="act" type="button" @click="submitWriteback">提交回写</button>
+                <button class="act" type="button" :disabled="isTerminal(selectedAlert)" @click="submitWriteback">提交回写</button>
               </div>
+              <p v-if="isTerminal(selectedAlert)" class="dim">
+                该告警已终结({{ STATUS_LABEL[selectedAlert.status] }}):终态不可再下发,也不可再回写
+                (处置态为页面内存态,刷新页面即重新开始演示)。
+              </p>
             </div>
           </template>
           <p v-else class="empty">← 在上方选择一条告警开始处置流程</p>
@@ -702,6 +739,17 @@ onUnmounted(() => {
   padding-right: 2px;
 }
 .main > aside.col .panel {
+  flex: 0 0 auto;
+}
+/* 左栏(告警列表 + 处置工作流)同因:内容天然超高,而此前只给右栏做了"栏内自滚动",左栏漏了——
+   `.flow-panel` 只分到剩余高度,内容溢出(overflow visible)落到栏外,
+   被 DOM 更靠后的「效果对比」面板(cmp-panel)盖住:实测「提交回写」按钮可见、enabled,但点击命中的是 cmp-fill。
+   故左栏照右栏同法处理:栏内自滚动 + 面板保持内容高度。 */
+.main > div.col {
+  overflow-y: auto;
+  padding-right: 2px;
+}
+.main > div.col .panel {
   flex: 0 0 auto;
 }
 .panel {
