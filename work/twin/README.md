@@ -73,7 +73,7 @@ work/twin/
 PowerShell 里设环境变量（当前会话）：
 
 ```powershell
-$env:SUMO_HOME = "C:\Program Files\SUMO"     # 按实际安装路径改
+$env:SUMO_HOME = "C:\Program Files\SUMO"     # 仅为示例值（MSI 默认位置）；本仓按 zip 装到自定的纯英文目录，按实际改
 $env:PYTHONPATH = "$env:SUMO_HOME\tools;$env:PYTHONPATH"
 ```
 
@@ -85,7 +85,7 @@ python -c "import traci; print(traci.__file__)"   # 能导入 TraCI
 sumo --version                       # 能打印版本
 ```
 
-> **路径已统一为纯英文（2026-10-10）**：仓库在 `D:\work\hubflow`，上游在 `D:\work\agentic-traffic-management`，**中文路径的坑已消除**（背景见 [`../assembly/现状核实.md`](../assembly/现状核实.md) 4.3）。**新同事 clone 时也要挑纯英文目录。**
+> **路径已统一为纯英文（2026-10-10）**：本仓库与上游仓都在纯英文路径下、两仓同级，**中文路径的坑已消除**（背景见 [`../assembly/现状核实.md`](../assembly/现状核实.md) 4.3）。**新同事 clone 时也要挑纯英文目录。**
 > 仍要记住的经验：**任何走 OpenCV 的产物（截图、标注图）遇到「命令报成功、产物没生成」，先怀疑路径与输出目录，再怀疑代码**——`video_output/` 不存在时的静默失败是同一个毛病。
 
 ## 四、虚拟检测器布点口径（**必须与二期摄像头点位一致**）

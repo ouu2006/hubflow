@@ -80,7 +80,7 @@ git clone https://github.com/ouu2006/hubflow.git
 cd hubflow
 ```
 
-> ⚠️ **路径必须全英文（硬规则）**：仓库与上游仓库都要放在**纯英文路径**下——本项目当前就在 `D:\work\hubflow` 与 `D:\work\agentic-traffic-management`。**含中文的绝对路径会让 OpenCV 的 `imwrite` / `imread`、部分仿真与 Python 工具直接失败**（`image` 模式必失败已实测复现）。新同事 clone 时请挑一个纯英文目录，不要放在中文目录下。
+> ⚠️ **路径必须全英文（硬规则）**：仓库与上游仓库都要放在**纯英文路径**下，且上游仓与本仓库同级。**含中文的绝对路径会让 OpenCV 的 `imwrite` / `imread`、部分仿真与 Python 工具直接失败**（`image` 模式必失败已实测复现）。新同事 clone 时请挑一个纯英文目录，不要放在中文目录下。
 
 本项目**依赖上游代码仓库**（管理端 Vue 骨架、FastAPI 宿主、以及**视频识别链路——一期就用它跑 6 段真实样本视频**）。把它 clone 到**与本仓库同级的位置**：
 
