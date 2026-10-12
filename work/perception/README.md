@@ -100,7 +100,7 @@
 
 ### 3.1 一期就要先绕过的两条实测坑
 
-1. **中文路径**：OpenCV 的 `imwrite` / `imread` **不支持含中文的绝对路径**，`demo_cli.py image` 在中文工作区必失败。**先把仓库放到纯英文路径**（当前 `D:\work\hubflow` 已是纯英文），或改用 `cv2.imencode` + `open(...,'wb')` / `np.fromfile` + `cv2.imdecode` 绕过；
+1. **中文路径**：OpenCV 的 `imwrite` / `imread` **不支持含中文的绝对路径**，`demo_cli.py image` 在中文工作区必失败。**先把仓库放到纯英文路径**（本仓库当前位置已是纯英文路径），或改用 `cv2.imencode` + `open(...,'wb')` / `np.fromfile` + `cv2.imdecode` 绕过；
 2. **输出目录不存在时静默失败**：`track` / `count` 的 `_write_frames()` 既不 `makedirs` 也不检查 `isOpened()`——**命令照样打印"轨迹条数: 9"但视频文件根本没生成**。**先建输出目录**（`mkdir video_output`），并且**别只信退出码，要检查产物真的在**。
 
 > 两条的完整实测记录见 [`../assembly/现状核实.md`](../assembly/现状核实.md) 4.3。
