@@ -1,6 +1,7 @@
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, loadEnv } from 'vite'
 import { mockApiPlugin } from './src/mock/index.ts'
+import { setActivePackKey } from './src/station-packs/index.ts'
 
 // 工程约定:
 // - VITE_USE_MOCK=1(默认,mode=development)→ 挂本地 traffic mock 中间件(态势大屏假数据 + SSE 假流);
@@ -11,10 +12,14 @@ import { mockApiPlugin } from './src/mock/index.ts'
 // - 孪生预览服务(work/frontend/tools/twin_preview/server.py,默认 127.0.0.1:8102)走独立前缀 /twin-api,
 //   代理时重写为服务端的 /api/twin/*——不复用 /api 前缀,避免被 traffic mock 中间件吞路径
 //   (mock 对未匹配 /api 路径一律 404,是刻意设计,不改)(Issue #61)。
+// - **站点包**(2026-10-12):`VITE_STATION_PACK` 选哪个包(`src/station-packs/`),`--mode station2`
+//   即在 `.env.station2` 里把它设成 B(第二站)。两侧取值必须一致,所以这里读到的键**显式注入**
+//   mock 中间件 —— 浏览器侧由 main.ts 注入同一个键,页面与 mock 才不会一站一路网。
 // (VITE_MOCK_ERROR error 注入随 harness mock 一并移除,待新接口面定稿后重订。)
 export default defineConfig(({ mode }) => {
   // 前缀 '' 连同 shell 导出的 VITE_* 一起读入
   const env = loadEnv(mode, process.cwd(), '')
+  setActivePackKey(env.VITE_STATION_PACK || process.env.VITE_STATION_PACK || 'A')
   const useMock = env.VITE_USE_MOCK !== '0'
   const apiTarget = env.VITE_API_BASE || 'http://127.0.0.1:8000'
   const perceptionTarget = env.VITE_PERCEPTION_API_BASE || 'http://127.0.0.1:8101'
@@ -36,9 +41,12 @@ export default defineConfig(({ mode }) => {
   const trafficProxy = { '/api': { target: apiTarget, changeOrigin: true, ws: false } }
   const proxy = { ...perceptionProxy, ...twinProxy, ...trafficProxy }
 
+  // 二站起在独立端口:6880(与默认 5173 并存,方便两站对照着看)
+  const server = { proxy, port: Number(env.VITE_DEV_PORT) || 5173 }
+
   return {
     plugins: [vue(), ...(useMock ? [mockApiPlugin()] : [])],
-    server: { proxy },
-    preview: { proxy },
+    server,
+    preview: { proxy, port: Number(env.VITE_DEV_PORT) || 4173 },
   }
 })
