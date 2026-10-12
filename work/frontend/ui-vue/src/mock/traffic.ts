@@ -241,10 +241,10 @@ const SEGMENT_BASES: SegmentBase[] = [
       T_d_min: 7.0,
       x: 0.52,
       c_base_vph: 900,
-      c_vph: 900, // F09 打的是 demand,不动 c
+      c_vph: 900, // F11 打的是 demand,不动 c
       factors_applied: [
         {
-          factor_id: 'F09',
+          factor_id: 'F11',
           name: '大型活动散场',
           target: 'demand',
           multiplier: 1.25,

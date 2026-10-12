@@ -1,26 +1,55 @@
 <script setup lang="ts">
-// 左栏·路段监测列表:四级徽章(颜色+竖条+文字)+ 路段名 + 车速 + 链路来源。
+// 左栏·路段监测列表:四级徽章(颜色+竖条+文字)+ 路段名 + 车速/拥挤指数 + 链路来源。
 // 数据陈旧的路段整行灰显"数据不可用"(TC-11 展示侧)。
+// mode = 'index' 时:取值列改显 `ci`,并按 ci 降序(手册 §6.5 第 1 条:CI 可用于辅助排序)。
 import { computed } from 'vue'
 import { demoSegment } from '../../../shared/demoNetwork'
-import { isStale, levelStyle, type SegmentRecord, type TrafficSource } from '../../../shared/traffic'
+import {
+  ciAvailable,
+  CI_DISCLAIMER,
+  ciStyleColor,
+  isStale,
+  levelStyle,
+  type CongestionViewMode,
+  type SegmentRecord,
+  type TrafficSource,
+} from '../../../shared/traffic'
 import LevelBadge from './LevelBadge.vue'
 
-const props = defineProps<{
-  segments: SegmentRecord[]
-  selectedId: string | null
-}>()
+const props = withDefaults(
+  defineProps<{
+    segments: SegmentRecord[]
+    selectedId: string | null
+    /** 'level' = 四级视图(默认) · 'index' = 拥挤指数视图(按 ci 辅助排序) */
+    mode?: CongestionViewMode
+  }>(),
+  { mode: 'level' },
+)
 
 const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
 
-const rows = computed(() =>
-  props.segments.map((seg) => ({
+const isIndex = computed(() => props.mode === 'index')
+
+const rows = computed(() => {
+  const mapped = props.segments.map((seg) => ({
     seg,
     name: demoSegment(seg.segment_id)?.name ?? seg.segment_id,
     stale: isStale(seg),
     color: levelStyle(seg).color,
-  })),
-)
+    ciOk: ciAvailable(seg),
+    value: isIndex.value
+      ? ciAvailable(seg)
+        ? `ci ${seg.ci}`
+        : '不可用'
+      : isStale(seg)
+        ? '不可用'
+        : `${seg.v_kmh ?? '—'} km/h`,
+    valueColor: isStale(seg) || (isIndex.value && !ciAvailable(seg)) ? '#8C8C8C' : isIndex.value ? ciStyleColor(seg) : levelStyle(seg).color,
+  }))
+  return isIndex.value
+    ? [...mapped].sort((a, b) => (b.seg.ci ?? -1) - (a.seg.ci ?? -1))
+    : [...mapped].sort((a, b) => b.seg.level - a.seg.level)
+})
 
 const SOURCE_LABEL: Record<TrafficSource, string> = {
   video: '视频链路',
@@ -43,10 +72,11 @@ const SOURCE_LABEL: Record<TrafficSource, string> = {
         <span class="name">{{ row.name }}</span>
         <span class="id">{{ row.seg.segment_id }} · {{ SOURCE_LABEL[row.seg.source] }}</span>
       </span>
-      <span class="speed" :style="{ color: row.stale ? '#8C8C8C' : row.color }">
-        {{ row.stale ? '不可用' : `${row.seg.v_kmh ?? '—'} km/h` }}
+      <span class="speed" :style="{ color: row.valueColor }">
+        {{ row.value }}
       </span>
     </button>
+    <p v-if="isIndex" class="list-note">{{ CI_DISCLAIMER }}</p>
   </div>
 </template>
 
@@ -109,5 +139,11 @@ const SOURCE_LABEL: Record<TrafficSource, string> = {
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+}
+.list-note {
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #ffd479;
 }
 </style>

@@ -119,6 +119,7 @@ const stageStyle = computed(() => ({
           <span class="badge sim">is_simulated = true · 示例数据</span>
         </div>
         <div class="bar-right">
+          <RouterLink class="percep-link" to="/heat">拥挤度热力 ›</RouterLink>
           <RouterLink class="percep-link" to="/perception">感知画面 ›</RouterLink>
           <RouterLink class="percep-link" to="/decision">决策工作台 ›</RouterLink>
           <span class="conn" :class="live ? 'up' : 'down'">
@@ -166,7 +167,7 @@ const stageStyle = computed(() => ({
       <footer class="foot">
         <span>快照时间 {{ snapshotTs || '—' }}</span>
         <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · {{ sourceLabel }}</span>
-        <span>一期无视频画面,检测画面归二期 · 指令下发 / 回写归 W4</span>
+        <span>拥挤度热力(可切拥挤指数视图)见 /heat · 指令下发 / 回写 / 效果对比见决策工作台</span>
       </footer>
     </div>
   </div>

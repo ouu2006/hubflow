@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// 决策层 · 决策工作台(Issue #59,三层前端之二):
-//   左 = 事件告警列表 + 处置工作流(系统建议 → 人工编辑 → 下发回执 → 处置回写);
+// 决策层 · 决策工作台(Issue #59,三层前端之二;Issue #66 按手册 §11.2 对齐判定口径):
+//   左 = 事件告警列表(等级/路段/时间/指标依据/状态四态) + 处置工作流(系统建议 → 人工编辑 → 下发渠道 → 回执 → 处置回写);
 //   右 = 因素与预测(含人工置位,TC-16 口径) + 数据同化状态 + 阈值配置(P1 只读);
-//   下 = 效果对比报表(关推荐 vs 开推荐,TC-14/TC-17 仿真对照演示)。
+//   下 = 效果对比报表(不推荐 / 此刻最快 / 协同推荐 三组对比 + 处置前后三项,TC-14/TC-17)。
 // 数据:告警/因素/预测从契约 segments 快照派生(getTrafficSegments + SSE);
 //   人工置位走 mock POST /api/traffic/factors;同化状态读 mock /api/traffic/assimilation;
 //   分流建议/效果对照/阈值为演示数据(demoDecision.ts)。全部 is_simulated=true。
-// 口径:效果对比属仿真结果不得称实测;预测不显示精度数字;工作流状态为页面内存态(刷新复位)。
+// 口径:效果对比属仿真结果不得称实测;预测不显示精度数字;工作流状态为页面内存态(刷新复位);
+//   一期无真实下发通道(信号只生成建议,不下发信号机,手册 §:2262)。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import {
   getTrafficAssimilation,
@@ -17,6 +18,8 @@ import {
 } from '../../api/traffic'
 import { demoSegment } from '../../shared/demoNetwork'
 import {
+  ACK_COMPARISON,
+  DISPATCH_CHANNELS,
   DIVERSION_SUGGESTIONS,
   EFFECT_SCENARIOS,
   fallbackSuggestion,
@@ -24,6 +27,7 @@ import {
   MANUAL_FACTOR_PRESETS,
   THRESHOLD_CHANGELOG,
   type DiversionSuggestion,
+  type EffectMetric,
 } from '../../shared/demoDecision'
 import {
   isStale,
@@ -55,10 +59,18 @@ function segName(id: string): string {
 }
 
 // ---------- 事件告警列表(从快照派生) ----------
-type AlertStatus = 'pending' | 'dispatched' | 'written'
-const STATUS_LABEL: Record<AlertStatus, string> = { pending: '待处置', dispatched: '已下发', written: '已回写' }
+// 状态四态照抄手册 §11.2(:1860):待认领 / 处置中 / 已闭环 / 误报。
+// 流转:待认领 --下发--> 处置中 --回写--> 已闭环(已消除|已缓解) | 误报 | 未改善则留在处置中。
+type AlertStatus = 'unclaimed' | 'processing' | 'closed' | 'false_alarm'
+const STATUS_LABEL: Record<AlertStatus, string> = {
+  unclaimed: '待认领',
+  processing: '处置中',
+  closed: '已闭环',
+  false_alarm: '误报',
+}
 const TRIGGER_LABEL: Record<string, string> = { x: '饱和度', v: '车速', k: '密度', L_q: '排队长度', T_d: '消散时间' }
-const HARD_FACTOR_IDS = ['F06', 'F11', 'F12'] // 硬触发类:违停占道/事故封道等(演示)
+// 硬触发类(手册 §:2840-2841 / §:3048 封路类优先):F06 违停占道 / F07 事故故障车封道 / F08 施工管制
+const HARD_FACTOR_IDS = ['F06', 'F07', 'F08']
 
 interface AlertItem {
   id: string
@@ -73,11 +85,14 @@ interface AlertItem {
 
 const statusMap = reactive<Record<string, AlertStatus>>({})
 
+/** 告警时间(手册 §11.2 要求"时间"列):记录该告警**首次被观测到**的快照时间(仿真时钟,不混墙钟) */
+const firstSeen = reactive<Record<string, string>>({})
+
 const alerts = computed<AlertItem[]>(() => {
   const out: AlertItem[] = []
   for (const seg of segments.value) {
     const name = segName(seg.segment_id)
-    const status = statusMap[seg.segment_id] ?? 'pending'
+    const status = statusMap[seg.segment_id] ?? 'unclaimed'
     if (isStale(seg)) {
       out.push({
         id: `${seg.segment_id}:stale`,
@@ -123,8 +138,24 @@ const alerts = computed<AlertItem[]>(() => {
 const selectedId = ref<string | null>(null)
 const selectedAlert = computed(() => alerts.value.find((a) => a.id === selectedId.value) ?? null)
 
+// 首次观测时间:某条告警第一次出现在快照里时,记下当时的快照时间(仿真时钟;快照未到时留空)
+watch(
+  alerts,
+  (list) => {
+    const ts = snapshotTs.value
+    if (!ts) return
+    for (const a of list) {
+      if (firstSeen[a.id] === undefined) firstSeen[a.id] = ts
+    }
+  },
+  { immediate: true },
+)
+
 // ---------- 处置工作流(页面内存态,刷新复位) ----------
-const dispatches = reactive<Record<string, { ack_id: string; at: string; pct: number; target: string }>>({})
+// 回执为演示态:一期没有真实下发通道(手册 §:2262 信号只生成建议、不下发信号机),页面已标注。
+const dispatches = reactive<
+  Record<string, { ack_id: string; at: string; pct: number; target: string; channel: string }>
+>({})
 const writebacks = reactive<
   { id: string; alertTitle: string; segment: string; owner: string; action: string; result: string; at: string }[]
 >([])
@@ -136,6 +167,7 @@ const suggestion = computed<DiversionSuggestion | null>(() => {
 })
 
 const dispatchPct = ref(30)
+const dispatchChannel = ref<string>(DISPATCH_CHANNELS[0])
 watch(selectedId, () => {
   dispatchPct.value = suggestion.value?.base_pct ?? 20
 })
@@ -149,15 +181,17 @@ function dispatch(): void {
     at: snapshotTs.value || new Date().toLocaleTimeString(),
     pct: dispatchPct.value,
     target: s.target_name,
+    channel: dispatchChannel.value,
   }
-  statusMap[a.segment_id] = 'dispatched'
+  statusMap[a.segment_id] = 'processing'
 }
 
 const ACTIONS = ['现场疏导', '情报板诱导', '临时管制', '上报等待']
-const RESULTS = ['已缓解', '部分缓解', '无变化', '恶化']
+// 回写结果四选一照抄手册 §11.2(:1862):已消除 / 已缓解 / 未改善 / 误报
+const RESULTS = ['已消除', '已缓解', '未改善', '误报'] as const
 const wbOwner = ref('值班员 A')
 const wbAction = ref(ACTIONS[1] ?? '情报板诱导')
-const wbResult = ref(RESULTS[1] ?? '部分缓解')
+const wbResult = ref<string>(RESULTS[1])
 
 function submitWriteback(): void {
   const a = selectedAlert.value
@@ -172,7 +206,10 @@ function submitWriteback(): void {
     result: wbResult.value,
     at: new Date().toLocaleTimeString(),
   })
-  statusMap[a.segment_id] = 'written'
+  // 结果 → 告警状态(手册 §:1862 + 值守纪律 §:3333:未改善不得进已闭环,留在处置中)
+  if (wbResult.value === '误报') statusMap[a.segment_id] = 'false_alarm'
+  else if (wbResult.value === '未改善') statusMap[a.segment_id] = 'processing'
+  else statusMap[a.segment_id] = 'closed'
 }
 
 // ---------- 因素与预测 + 人工置位(TC-16) ----------
@@ -231,16 +268,33 @@ const GATE_LABEL: Record<string, string> = {
   deviation_fuse: '偏差超标熔断',
 }
 
-// ---------- 效果对比(TC-14/TC-17 仿真对照演示) ----------
+// ---------- 效果对比(TC-14/TC-17 仿真对照演示;手册 §11.2 三组对比) ----------
+// 三组 = ① 不推荐(对照组) ② "此刻最快"推荐(普通导航) ③ 协同推荐(本项目:时段预约 + 不伤害前车)。
+// ②③ 的差就是本项目核心机制的举证口——"不给每个人此刻最快的那条路"。
 const scenarioKey = ref(EFFECT_SCENARIOS[0]?.key ?? 'peak')
 const scenario = computed(() => EFFECT_SCENARIOS.find((s) => s.key === scenarioKey.value) ?? EFFECT_SCENARIOS[0]!)
 
 function barPct(v: number, max: number): string {
   return `${Math.round((v / Math.max(max, 0.0001)) * 100)}%`
 }
-function deltaPct(baseline: number, guided: number): string {
-  const d = ((guided - baseline) / Math.max(Math.abs(baseline), 0.0001)) * 100
+
+/** 相对变化;基准为 0 时显示绝对值差,避免出现 ∞ 或 -100% 的假象 */
+function deltaText(from: number, to: number): string {
+  if (Math.abs(from) < 0.0001) {
+    const abs = to - from
+    return `${abs >= 0 ? '+' : ''}${Number(abs.toFixed(2))}`
+  }
+  const d = ((to - from) / Math.abs(from)) * 100
   return `${d >= 0 ? '+' : ''}${d.toFixed(1)}%`
+}
+
+function isGood(m: EffectMetric, value: number, ref0: number): boolean {
+  return m.better === 'up' ? value >= ref0 : value <= ref0
+}
+
+/** 一行指标的三个取值与条宽基准 */
+function rowMax(m: EffectMetric): number {
+  return Math.max(m.no_guide, m.fastest, m.cooperative, 0.0001)
 }
 
 onMounted(() => {
@@ -278,6 +332,7 @@ onUnmounted(() => {
           <i class="dot" />
           {{ live ? '快照流已连接' : '快照流未连接' }}
         </span>
+        <RouterLink class="nav-link" to="/heat">拥挤度热力 ›</RouterLink>
         <RouterLink class="nav-link" to="/perception">感知层 ›</RouterLink>
         <RouterLink class="nav-link" to="/dashboard">态势大屏 ›</RouterLink>
       </div>
@@ -303,6 +358,7 @@ onUnmounted(() => {
                   <i class="status" :class="a.status">{{ STATUS_LABEL[a.status] }}</i>
                 </span>
                 <span class="al-basis">{{ a.basis }}</span>
+                <span class="al-time">时间(首次观测) {{ firstSeen[a.id] ?? '—' }}</span>
               </span>
             </button>
             <p v-if="alerts.length === 0" class="empty">当前快照无 ≥3 级路段、无硬触发事件</p>
@@ -331,6 +387,12 @@ onUnmounted(() => {
                   />
                   <span class="dim">范围 {{ suggestion.min_pct }}~{{ suggestion.max_pct }}%</span>
                 </span>
+                <span class="sug-item">
+                  下发渠道:
+                  <select v-model="dispatchChannel" class="wb-input ch">
+                    <option v-for="c in DISPATCH_CHANNELS" :key="c">{{ c }}</option>
+                  </select>
+                </span>
                 <span class="sug-item dim">预期:{{ suggestion.expect }}</span>
               </div>
               <button class="act primary" type="button" :disabled="dispatches[selectedAlert.id] != null" @click="dispatch">
@@ -342,8 +404,12 @@ onUnmounted(() => {
               <div class="flow-title">下发回执</div>
               <p class="mono">
                 {{ dispatches[selectedAlert.id]!.ack_id }} · {{ dispatches[selectedAlert.id]!.at }} ·
+                渠道 {{ dispatches[selectedAlert.id]!.channel }} ·
                 向{{ dispatches[selectedAlert.id]!.target }}分流 {{ dispatches[selectedAlert.id]!.pct }}% ·
                 is_simulated = true
+              </p>
+              <p class="dim">
+                演示回执(页面内存态,刷新复位)· 一期无真实下发通道,未下发到信号机
               </p>
             </div>
 
@@ -458,33 +524,71 @@ onUnmounted(() => {
           <option v-for="s in EFFECT_SCENARIOS" :key="s.key" :value="s.key">{{ s.name }}</option>
         </select>
       </div>
+      <div class="cmp-window dim">
+        时间窗:{{ scenario?.window }} · 来源:仿真对照(同一随机种子三跑,只切推荐口径)· is_simulated = true
+      </div>
       <div class="cmp-grid">
         <div v-for="m in scenario?.metrics ?? []" :key="m.name" class="cmp-row">
           <span class="cmp-name">{{ m.name }}{{ m.unit && `(${m.unit})` }}</span>
           <div class="cmp-bars">
             <div class="cmp-track">
-              <span class="cmp-fill base" :style="{ width: barPct(m.baseline, Math.max(m.baseline, m.guided)) }" />
-              <span class="cmp-val">{{ m.baseline }}</span>
+              <span class="cmp-fill base" :style="{ width: barPct(m.no_guide, rowMax(m)) }" />
+              <span class="cmp-val">{{ m.no_guide }}</span>
             </div>
             <div class="cmp-track">
-              <span class="cmp-fill guided" :style="{ width: barPct(m.guided, Math.max(m.baseline, m.guided)) }" />
-              <span class="cmp-val">{{ m.guided }}</span>
+              <span class="cmp-fill fastest" :style="{ width: barPct(m.fastest, rowMax(m)) }" />
+              <span class="cmp-val">{{ m.fastest }}</span>
+            </div>
+            <div class="cmp-track">
+              <span class="cmp-fill guided" :style="{ width: barPct(m.cooperative, rowMax(m)) }" />
+              <span class="cmp-val">{{ m.cooperative }}</span>
             </div>
           </div>
-          <span class="cmp-delta" :class="m.better === 'up' ? (m.guided >= m.baseline ? 'good' : 'bad') : m.guided <= m.baseline ? 'good' : 'bad'">
-            {{ deltaPct(m.baseline, m.guided) }}
+          <span class="cmp-delta" :class="isGood(m, m.cooperative, m.fastest) ? 'good' : 'bad'">
+            ③vs② {{ deltaText(m.fastest, m.cooperative) }}
+          </span>
+          <span class="cmp-delta" :class="isGood(m, m.cooperative, m.no_guide) ? 'good' : 'bad'">
+            ③vs① {{ deltaText(m.no_guide, m.cooperative) }}
           </span>
         </div>
       </div>
       <div class="cmp-legend dim">
-        灰条 = 关推荐(对照组)· 绿条 = 开推荐(实验组)· 数值为仿真对照演示数据,非实测;同输入跑两遍只切推荐。
+        灰条 = ① 不推荐(对照组)· 琥珀条 = ② "此刻最快"推荐(普通导航口径)· 绿条 = ③ 协同推荐(本项目:时段预约 + 不伤害前车)·
+        数值为仿真对照演示数据,非实测;同输入跑三遍只切推荐口径。
+      </div>
+      <div class="cmp-counts dim">
+        评测协议四计数(分工表 §8.4):inserted {{ scenario?.counts.inserted }} · removed {{ scenario?.counts.removed }} ·
+        not_entered {{ scenario?.counts.not_entered }} · completed {{ scenario?.counts.completed }}
+      </div>
+
+      <div class="panel-head sub">
+        处置前后对比(手册 §11.2:排队长度峰值 / 拥堵持续时间 / 饱和度和差)
+      </div>
+      <div class="cmp-window dim">时间窗:{{ ACK_COMPARISON.window }} · 来源:仿真对照 · is_simulated = true</div>
+      <div class="cmp-grid">
+        <div v-for="r in ACK_COMPARISON.rows" :key="r.name" class="cmp-row">
+          <span class="cmp-name">{{ r.name }}{{ r.unit && `(${r.unit})` }}</span>
+          <div class="cmp-bars">
+            <div class="cmp-track">
+              <span class="cmp-fill base" :style="{ width: barPct(r.before, Math.max(r.before, r.after, 0.0001)) }" />
+              <span class="cmp-val">{{ r.before }}</span>
+            </div>
+            <div class="cmp-track">
+              <span class="cmp-fill guided" :style="{ width: barPct(r.after, Math.max(r.before, r.after, 0.0001)) }" />
+              <span class="cmp-val">{{ r.after }}</span>
+            </div>
+          </div>
+          <span class="cmp-delta" :class="r.better === 'up' ? (r.after >= r.before ? 'good' : 'bad') : r.after <= r.before ? 'good' : 'bad'">
+            {{ deltaText(r.before, r.after) }}
+          </span>
+        </div>
       </div>
     </section>
 
     <footer class="foot">
       <span>快照时间 {{ snapshotTs || '—' }}</span>
       <span>数据来源:契约 v2.0 mock 快照 + 决策工作台演示数据 · is_simulated 恒 true · 四级编码见手册 §6.2</span>
-      <span>效果对比属仿真对照,不得称实测 · 预测只展示 L0 接口通,无精度数字</span>
+      <span>效果对比属仿真对照,不得称实测 · 预测只展示 L0 接口通,无精度数字 · 工作流为演示态(刷新复位)</span>
     </footer>
   </div>
 </template>
@@ -662,6 +766,11 @@ onUnmounted(() => {
   font-size: 11px;
   color: #7c93b5;
 }
+.al-time {
+  font-size: 11px;
+  color: #5f7396;
+  font-variant-numeric: tabular-nums;
+}
 .status {
   margin-left: 8px;
   font-size: 10px;
@@ -670,17 +779,22 @@ onUnmounted(() => {
   border-radius: 4px;
   border: 1px solid;
 }
-.status.pending {
+/* 告警状态四态照抄手册 §11.2(:1860):待认领 / 处置中 / 已闭环 / 误报 */
+.status.unclaimed {
   color: #ffd479;
   border-color: #8a6d1f;
 }
-.status.dispatched {
+.status.processing {
   color: #37d6ff;
   border-color: #2a7f9e;
 }
-.status.written {
+.status.closed {
   color: #35d08c;
   border-color: #1f7a54;
+}
+.status.false_alarm {
+  color: #9fb6d9;
+  border-color: #3c4d6b;
 }
 .flow-block {
   padding: 10px 12px;
@@ -922,7 +1036,7 @@ onUnmounted(() => {
 }
 .cmp-row {
   display: grid;
-  grid-template-columns: 130px 1fr 64px;
+  grid-template-columns: 130px 1fr 74px 74px;
   align-items: center;
   gap: 10px;
 }
@@ -950,6 +1064,10 @@ onUnmounted(() => {
 .cmp-fill.base {
   background: #5f7396;
 }
+/* ② "此刻最快"推荐(普通导航口径):琥珀色,与①灰、③绿三分 */
+.cmp-fill.fastest {
+  background: #f2b705;
+}
 .cmp-fill.guided {
   background: #35d08c;
 }
@@ -974,6 +1092,17 @@ onUnmounted(() => {
 }
 .cmp-legend {
   font-size: 11px;
+}
+.cmp-window,
+.cmp-counts {
+  font-size: 11px;
+  margin-top: 6px;
+}
+.panel-head.sub {
+  margin-top: 14px;
+}
+.wb-input.ch {
+  width: 130px;
 }
 .empty {
   font-size: 12px;

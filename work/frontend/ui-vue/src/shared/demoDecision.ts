@@ -35,7 +35,7 @@ export const DIVERSION_SUGGESTIONS: Record<string, DiversionSuggestion> = {
     base_pct: 25,
     min_pct: 10,
     max_pct: 40,
-    expect: '西出站疏解路排队预计 -22%,消散时间 -3.1 分钟',
+    expect: '社会停车场联络线排队预计 -22%,消散时间 -3.1 分钟',
     why: '社会停车场联络线拥堵(F01 大雨);北出站疏解路畅通,可承接绕行车流。',
   },
   'SEG-008': {
@@ -64,7 +64,7 @@ export function fallbackSuggestion(segmentId: string): DiversionSuggestion {
   }
 }
 
-/** 人工置位预设(手册第 19 章:人为因素走管理端人工置位口子 F07/F08/F11) */
+/** 人工置位预设(手册 §19 / §:2222:人为因素走管理端人工置位口子 = **F07 事故 / F08 施工管制 / F11 大型活动**) */
 export interface ManualFactorPreset {
   factor_id: string
   name: string
@@ -74,62 +74,115 @@ export interface ManualFactorPreset {
 }
 
 export const MANUAL_FACTOR_PRESETS: ManualFactorPreset[] = [
-  { factor_id: 'F01', name: '大雨(人工确认)', target: 'c', multiplier: 0.75, note: '通行能力 ×0.75' },
-  { factor_id: 'F07', name: '大型活动(人工置位)', target: 'demand', multiplier: 1.3, note: '到达需求 ×1.3' },
-  { factor_id: 'F08', name: '临时管制(人工置位)', target: 'lanes', multiplier: 0.5, note: '车道 ×0.5' },
+  { factor_id: 'F07', name: '交通事故 / 故障车(人工置位)', target: 'lanes', multiplier: 0.5, note: '封闭车道 → 触发红档(手册 §:2840)' },
+  { factor_id: 'F08', name: '施工 / 临时管制(人工置位)', target: 'lanes', multiplier: 0.5, note: '车道 ×0.5,带生效时间窗(手册 §:2841)' },
+  { factor_id: 'F11', name: '大型活动(人工置位)', target: 'demand', multiplier: 1.3, note: '到达需求 ×1.3(手册 §:2844)' },
 ]
 
-// ---------- 效果对比(TC-14/TC-17 仿真对照演示) ----------
+// ---------- 分流下发渠道(Issue #66,手册 §11.2:系统建议 + 人工可编辑 + **下发渠道** + 回执) ----------
+// 口径:一期**没有真实下发通道**,回执为页面演示态(刷新复位);信号只"生成建议并推送,
+// 不下发到信号机"(手册 §:2262),所以渠道是**演示枚举**,不暗示已对接任何外部系统。
+export const DISPATCH_CHANNELS = ['情报板', '导航软件推送', '现场调度', '广播'] as const
+export type DispatchChannel = (typeof DISPATCH_CHANNELS)[number]
+
+// ---------- 效果对比(TC-14/TC-17 仿真对照演示;手册 §11.2 三组对比) ----------
 
 export interface EffectMetric {
   name: string
   unit: string
-  /** 关推荐(对照) */
-  baseline: number
-  /** 开推荐(实验) */
-  guided: number
+  /** ① 不推荐(对照组) */
+  no_guide: number
+  /** ② "此刻最快"推荐(普通导航口径) */
+  fastest: number
+  /** ③ 协同推荐(本项目:时段预约 + 不伤害前车) */
+  cooperative: number
   /** 数值越大越好? */
   better: 'up' | 'down'
+}
+
+export interface EffectCounts {
+  inserted: number
+  removed: number
+  not_entered: number
+  completed: number
 }
 
 export interface EffectScenario {
   key: string
   name: string
+  /** 时间窗(TC-09:报表必须标清时间窗与来源) */
+  window: string
   metrics: EffectMetric[]
+  /** 评测协议四计数(分工表 §:76;同一随机种子下的三跑对照) */
+  counts: EffectCounts
 }
 
 export const EFFECT_SCENARIOS: EffectScenario[] = [
   {
     key: 'peak',
     name: '列车集中到达峰值',
+    window: '仿真时钟 18:00–19:00 · 评估窗 30 min · 固定种子三跑',
     metrics: [
-      { name: '饱和度 x', unit: '', baseline: 0.91, guided: 0.74, better: 'down' },
-      { name: '平均车速', unit: 'km/h', baseline: 9.8, guided: 14.6, better: 'up' },
-      { name: '排队长度', unit: 'm', baseline: 340, guided: 180, better: 'down' },
-      { name: '总行程时间', unit: 'min', baseline: 12.4, guided: 9.1, better: 'down' },
+      { name: '全网总行程时间', unit: 'min', no_guide: 12.4, fastest: 11.1, cooperative: 9.1, better: 'down' },
+      { name: '先进入车辆到达时间增量', unit: 's', no_guide: 0, fastest: 42, cooperative: 18, better: 'down' },
+      { name: '新增橙/红路段数', unit: '个', no_guide: 0, fastest: 2, cooperative: 0, better: 'down' },
+      { name: '排队长度峰值', unit: 'm', no_guide: 410, fastest: 355, cooperative: 180, better: 'down' },
+      { name: '饱和度峰值 x', unit: '', no_guide: 0.98, fastest: 0.93, cooperative: 0.74, better: 'down' },
     ],
+    counts: { inserted: 412, removed: 0, not_entered: 12, completed: 400 },
   },
   {
     key: 'normal',
     name: '常态平峰',
+    window: '仿真时钟 14:00–15:00 · 评估窗 30 min · 固定种子三跑',
     metrics: [
-      { name: '饱和度 x', unit: '', baseline: 0.42, guided: 0.38, better: 'down' },
-      { name: '平均车速', unit: 'km/h', baseline: 28.3, guided: 29.1, better: 'up' },
-      { name: '排队长度', unit: 'm', baseline: 40, guided: 25, better: 'down' },
-      { name: '总行程时间', unit: 'min', baseline: 7.2, guided: 6.9, better: 'down' },
+      { name: '全网总行程时间', unit: 'min', no_guide: 7.2, fastest: 7.0, cooperative: 6.9, better: 'down' },
+      { name: '先进入车辆到达时间增量', unit: 's', no_guide: 0, fastest: 6, cooperative: 3, better: 'down' },
+      { name: '新增橙/红路段数', unit: '个', no_guide: 0, fastest: 0, cooperative: 0, better: 'down' },
+      { name: '排队长度峰值', unit: 'm', no_guide: 48, fastest: 45, cooperative: 25, better: 'down' },
+      { name: '饱和度峰值 x', unit: '', no_guide: 0.46, fastest: 0.45, cooperative: 0.38, better: 'down' },
     ],
+    counts: { inserted: 268, removed: 0, not_entered: 0, completed: 268 },
   },
   {
     key: 'incident',
-    name: '突发事件',
+    name: '突发事件(事故封道)',
+    window: '仿真时钟 08:10–09:10 · 评估窗 30 min · 固定种子三跑',
     metrics: [
-      { name: '饱和度 x', unit: '', baseline: 0.97, guided: 0.81, better: 'down' },
-      { name: '平均车速', unit: 'km/h', baseline: 6.2, guided: 9.4, better: 'up' },
-      { name: '排队长度', unit: 'm', baseline: 410, guided: 260, better: 'down' },
-      { name: '总行程时间', unit: 'min', baseline: 15.8, guided: 11.9, better: 'down' },
+      { name: '全网总行程时间', unit: 'min', no_guide: 15.8, fastest: 14.2, cooperative: 11.9, better: 'down' },
+      { name: '先进入车辆到达时间增量', unit: 's', no_guide: 0, fastest: 68, cooperative: 24, better: 'down' },
+      { name: '新增橙/红路段数', unit: '个', no_guide: 3, fastest: 3, cooperative: 0, better: 'down' },
+      { name: '排队长度峰值', unit: 'm', no_guide: 520, fastest: 470, cooperative: 260, better: 'down' },
+      { name: '饱和度峰值 x', unit: '', no_guide: 1.04, fastest: 0.99, cooperative: 0.81, better: 'down' },
     ],
+    counts: { inserted: 356, removed: 18, not_entered: 26, completed: 312 },
   },
 ]
+
+// ---------- 处置前后对比(手册 §11.2:排队长度峰值 / 拥堵持续时间 / 饱和度和差) ----------
+
+export interface AckCompareRow {
+  name: string
+  unit: string
+  before: number
+  after: number
+  better: 'up' | 'down'
+}
+
+export interface AckComparison {
+  /** TC-09:处置前后必须标清时间窗与来源 */
+  window: string
+  rows: AckCompareRow[]
+}
+
+export const ACK_COMPARISON: AckComparison = {
+  window: '处置前 30 min vs 处置后 30 min(仿真对照,时间窗等长对齐)',
+  rows: [
+    { name: '排队长度峰值', unit: 'm', before: 340, after: 180, better: 'down' },
+    { name: '拥堵持续时间', unit: 'min', before: 26, after: 11, better: 'down' },
+    { name: '饱和度和差', unit: 'Δx 合计', before: 3.42, after: 2.05, better: 'down' },
+  ],
+}
 
 // ---------- 判级阈值(只读演示,P1;真实来源 stations/thresholds.json) ----------
 
