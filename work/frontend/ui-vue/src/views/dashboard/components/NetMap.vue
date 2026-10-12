@@ -246,6 +246,9 @@ const vehPts = computed(() =>
         <div class="lg-note strong">{{ CI_DISCLAIMER }}</div>
         <div class="lg-sep" />
         <div class="lg-row"><LevelBadge :level="1" stale />灰 = 数据不可用(缺 ci 或数据陈旧)</div>
+        <!-- 车辆动点在**任何** mode 下都照画(:220-228),图例必须跟着给,否则指数视图出现无说明的彩色圆点 -->
+        <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D1 }" />D1 送客车辆</div>
+        <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D2 }" />D2 接客车辆</div>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
       <!-- 四级视图的图例(原有) -->
