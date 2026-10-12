@@ -23,6 +23,7 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import type { SourceMode } from '../../shared/nav'
+import { activePack } from '../../station-packs/index'
 import {
   CI_BANDS,
   CI_BAND_NOTE,
@@ -65,7 +66,8 @@ const history = ref<CiHistory | null>(null)
 const factors = ref<(FactorApplied & { segment_id: string })[]>([])
 const selectedId = ref<string | null>(null)
 const snapshotTs = ref('')
-const stationName = ref('肇庆东站')
+// 站点名初始值取当前站点包;拿到 meta 后由 meta.station.name 覆盖(单一口径)
+const stationName = ref(activePack().station.name)
 
 let unsubscribe: (() => void) | null = null
 

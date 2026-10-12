@@ -6,12 +6,13 @@ import { computed, useSlots } from 'vue'
 import { RouterLink } from 'vue-router'
 import { APP_TABS, DEMO_BADGE, SOURCE_ITEMS, type AppTabKey, type SourceMode } from '../shared/nav'
 import { formatStamp } from '../shared/traffic'
+import { activePack } from '../station-packs/index'
 
 const props = withDefaults(
   defineProps<{
     /** 当前页签 */
     active: AppTabKey
-    /** 站点名(顶栏站点 chip) */
+    /** 站点名(顶栏站点 chip);缺省取当前站点包 —— 页面拿到 meta 后传 meta.station.name 覆盖 */
     station?: string
     /** 快照时间(顶栏「快照 …」) */
     ts?: string
@@ -22,7 +23,8 @@ const props = withDefaults(
     /** 页头副题 */
     subtitle?: string
   }>(),
-  { station: '肇庆东站', ts: '', sourceMode: 'both', title: '', subtitle: '' },
+  // 站点名默认值从**站点包**取:换站时改包,不在壳层里写死站名
+  { station: activePack().station.name, ts: '', sourceMode: 'both', title: '', subtitle: '' },
 )
 
 const emit = defineEmits<{ (e: 'update:sourceMode', mode: SourceMode): void }>()

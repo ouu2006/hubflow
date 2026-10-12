@@ -2,19 +2,25 @@
 // 的历史清单——2026-10-11 架构裁定后接口面待按前端页面重新规划,原实现基准 PR #51 骨架已收回,
 // 字段名对照 docs/数据契约.md v2.0。口径铁律:
 //   ① 所有数据 is_simulated=true,示例数据、非实测;
-//   ② 只读快照、不算业务——数值是预置基线加抖动,不是任何模型的输出;
+//   ② 只读快照、不算业务——数值是站点包给的预置基线加抖动,不是任何模型的输出;
 //   ③ SSE 只新增事件名 traffic_snapshot,不改既有事件名;
-//   ④ SEG-010 恒为数据陈旧(data_age_s > 120s),用于演示灰色"数据不可用"(TC-11 展示侧)。
+//   ④ 「数据不可用」的演示路段由**站点包**指定(`pack.segmentBases[].stale`),这里不再写死 id。
+//
+// 2026-10-12(站点包层):本文件的站点相关内容(路段基线 / 合成车 / 断面 / 告警 / 双源覆盖 /
+// 推荐骨架 / 站点元信息)全部改为**从当前站点包读**(`src/station-packs/`)。换站只换包,
+// 本文件不出现任何"某个站才有的"常量——手册 §8.4 的判定标准。
 
 import type { MockReq, MockRes } from './util.ts'
 import { json, readJson, rid } from './util.ts'
 import { SseWriter } from './sse-writer.ts'
+import { activePack, activePackKey } from '../station-packs/index.ts'
+import type { PackAlertBase, PackVehicleBase } from '../station-packs/types.ts'
 import {
   DEMO_NETWORK,
   demoSegment,
   isOsmNetwork,
+  networkAttribution,
   networkSourceLabel,
-  OSM_ATTRIBUTION,
   pointAtOffset,
   segmentLengthM,
 } from '../shared/demoNetwork.ts'
@@ -52,6 +58,9 @@ import {
 } from '../shared/traffic.ts'
 
 // ---------- 预置基线(契约 v2.0 形状;x = q_vph / c_vph) ----------
+// 数值全部来自**当前站点包**(`src/station-packs/`),本文件不自带任何路段 id 与数值 ——
+// "换一个站只新增 / 替换配置文件,不改引擎代码"(手册 §8.4)在管理端这一侧的落地。
+// `stale` 由包声明:那条恒为数据陈旧(data_age_s > 120s)的演示灰档路段(TC-11 展示侧)。
 
 interface SegmentBase {
   base: Omit<SegmentRecord, 'is_simulated'>
@@ -59,310 +68,25 @@ interface SegmentBase {
   stale: boolean
 }
 
-const SEGMENT_BASES: SegmentBase[] = [
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-001',
-      source: 'video',
-      q_vph: 820,
-      v_kmh: 22.5,
-      v_f_kmh: 40,
-      k_vpk: 36.4,
-      L_q_m: 90,
-      L_seg_m: 520,
-      T_d_min: 3.2,
-      x: 0.55,
-      c_base_vph: 1500,
-      c_vph: 1500,
-      factors_applied: [],
-      ci: 38.2,
-      level: 2,
-      level_name: '缓行',
-      triggered_by: ['v'],
-      confidence: 0.88,
-      data_age_s: 6,
-      pred: { h15: { q_vph: 860, level: 2 }, h30: { q_vph: 780, level: 2 }, model: 'L0' },
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-002',
-      source: 'twin',
-      q_vph: 430,
-      v_kmh: 35.1,
-      v_f_kmh: 40,
-      k_vpk: 12.3,
-      L_q_m: 0,
-      L_seg_m: 640,
-      T_d_min: 0,
-      x: 0.27,
-      c_base_vph: 1600,
-      c_vph: 1600,
-      factors_applied: [],
-      ci: 12.5,
-      level: 1,
-      level_name: '畅通',
-      triggered_by: [],
-      confidence: 0.92,
-      data_age_s: 4,
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-003',
-      source: 'video',
-      q_vph: 610,
-      v_kmh: 6.8,
-      v_f_kmh: 35,
-      k_vpk: 89.7,
-      L_q_m: 350,
-      L_seg_m: 380,
-      T_d_min: 9.6,
-      x: 0.94,
-      c_base_vph: 1288,
-      c_vph: 647, // 1288 × 0.75 × 0.67(F01 大雨 + F06 违停占道)
-      factors_applied: [
-        {
-          factor_id: 'F01',
-          name: '大雨',
-          target: 'c',
-          multiplier: 0.75,
-          until: '2026-10-11T23:30:00+08:00',
-        },
-        {
-          factor_id: 'F06',
-          name: '路边违停占道',
-          target: 'lanes',
-          multiplier: 0.67,
-          until: '2026-10-11T23:10:00+08:00',
-        },
-      ],
-      ci: 82.4,
-      level: 4,
-      level_name: '严重拥堵',
-      triggered_by: ['x', 'L_q'],
-      confidence: 0.81,
-      data_age_s: 8,
-      pred: { h15: { q_vph: 640, level: 4 }, h30: { q_vph: 520, level: 3 }, model: 'L0' },
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-004',
-      source: 'twin',
-      q_vph: 690,
-      v_kmh: 21.0,
-      v_f_kmh: 40,
-      k_vpk: 32.9,
-      L_q_m: 70,
-      L_seg_m: 700,
-      T_d_min: 2.4,
-      x: 0.43,
-      c_base_vph: 1600,
-      c_vph: 1600,
-      factors_applied: [],
-      ci: 34.1,
-      level: 2,
-      level_name: '缓行',
-      triggered_by: ['v'],
-      confidence: 0.9,
-      data_age_s: 5,
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-005',
-      source: 'twin',
-      q_vph: 320,
-      v_kmh: 38.2,
-      v_f_kmh: 45,
-      k_vpk: 8.4,
-      L_q_m: 0,
-      L_seg_m: 610,
-      T_d_min: 0,
-      x: 0.23,
-      c_base_vph: 1400,
-      c_vph: 1400,
-      factors_applied: [],
-      ci: 9.8,
-      level: 1,
-      level_name: '畅通',
-      triggered_by: [],
-      confidence: 0.93,
-      data_age_s: 7,
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-006',
-      source: 'twin',
-      q_vph: 260,
-      v_kmh: 41.5,
-      v_f_kmh: 45,
-      k_vpk: 6.3,
-      L_q_m: 0,
-      L_seg_m: 480,
-      T_d_min: 0,
-      x: 0.22,
-      c_base_vph: 1200,
-      c_vph: 1200,
-      factors_applied: [],
-      ci: 8.1,
-      level: 1,
-      level_name: '畅通',
-      triggered_by: [],
-      confidence: 0.91,
-      data_age_s: 9,
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-007',
-      source: 'video',
-      q_vph: 540,
-      v_kmh: 12.4,
-      v_f_kmh: 35,
-      k_vpk: 43.5,
-      L_q_m: 180,
-      L_seg_m: 560,
-      T_d_min: 6.1,
-      x: 0.65,
-      c_base_vph: 1100,
-      c_vph: 825, // 1100 × 0.75(F01 大雨)
-      factors_applied: [
-        {
-          factor_id: 'F01',
-          name: '大雨',
-          target: 'c',
-          multiplier: 0.75,
-          until: '2026-10-11T23:30:00+08:00',
-        },
-      ],
-      ci: 58.7,
-      level: 3,
-      level_name: '拥堵',
-      triggered_by: ['v'],
-      confidence: 0.84,
-      data_age_s: 11,
-      pred: { h15: { q_vph: 590, level: 3 }, h30: { q_vph: 430, level: 2 }, model: 'L0' },
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-008',
-      source: 'twin',
-      q_vph: 470,
-      v_kmh: 9.5,
-      v_f_kmh: 35,
-      k_vpk: 49.5,
-      L_q_m: 210,
-      L_seg_m: 420,
-      T_d_min: 7.0,
-      x: 0.52,
-      c_base_vph: 900,
-      c_vph: 900, // F11 打的是 demand,不动 c
-      factors_applied: [
-        {
-          factor_id: 'F11',
-          name: '大型活动散场',
-          target: 'demand',
-          multiplier: 1.25,
-          until: '2026-10-11T23:55:00+08:00',
-        },
-      ],
-      ci: 61.3,
-      level: 3,
-      level_name: '拥堵',
-      triggered_by: ['v'],
-      confidence: 0.87,
-      data_age_s: 6,
-    },
-  },
-  {
-    stale: false,
-    base: {
-      segment_id: 'SEG-009',
-      source: 'video',
-      q_vph: 760,
-      v_kmh: 18.6,
-      v_f_kmh: 35,
-      k_vpk: 40.9,
-      L_q_m: 110,
-      L_seg_m: 450,
-      T_d_min: 3.8,
-      x: 0.58,
-      c_base_vph: 1300,
-      c_vph: 1300,
-      factors_applied: [],
-      ci: 41.6,
-      level: 2,
-      level_name: '缓行',
-      triggered_by: ['v'],
-      confidence: 0.79,
-      data_age_s: 13,
-    },
-  },
-  {
-    stale: true, // 演示灰色"数据不可用":>120s 只展示、不推荐(TC-11 展示侧)
-    base: {
-      segment_id: 'SEG-010',
-      source: 'video',
-      q_vph: 410,
-      v_kmh: 24.0,
-      v_f_kmh: 40,
-      k_vpk: 17.1,
-      L_q_m: 0,
-      L_seg_m: 520,
-      T_d_min: 0,
-      x: 0.33,
-      c_base_vph: 1250,
-      c_vph: 1250,
-      factors_applied: [],
-      ci: 26.0,
-      level: 2,
-      level_name: '缓行',
-      triggered_by: ['v'],
-      confidence: 0.31,
-      data_age_s: 186,
-    },
-  },
-]
+const LEVEL_NAME: Record<number, string> = { 1: '畅通', 2: '缓行', 3: '拥堵', 4: '严重拥堵' }
 
-// ---------- 孪生车辆(仅一期演示,二期 vehicles 端点下线) ----------
-
-interface VehicleBase {
-  vehicle_id: string
-  driver_type: VehicleRecord['driver_type']
-  segment_id: string
-  offset_m: number
-  speed_mps: number
-  state: VehicleRecord['state']
-  guided: boolean
-  is_demo_bound?: boolean
+function segmentBases(): SegmentBase[] {
+  return activePack().segmentBases.map((b) => {
+    // derive 是包侧的来源说明(FCD 折算 / 预置演示值),备查用,不进契约快照字段
+    const { stale, derive, ...rest } = b
+    void derive
+    // level_name 不写在包里(包里只有 level):文案由 level 现算,免得包与文案两处各写一份再对不上
+    return { stale, base: { ...rest, level_name: LEVEL_NAME[rest.level] } }
+  })
 }
 
-const VEHICLE_BASES: VehicleBase[] = [
-  { vehicle_id: 'twin-0001', driver_type: 'D1', segment_id: 'SEG-001', offset_m: 60, speed_mps: 7.5, state: '行驶', guided: true, is_demo_bound: true },
-  { vehicle_id: 'twin-0002', driver_type: 'D1', segment_id: 'SEG-002', offset_m: 120, speed_mps: 9.8, state: '行驶', guided: true },
-  { vehicle_id: 'twin-0003', driver_type: 'D1', segment_id: 'SEG-003', offset_m: 40, speed_mps: 1.2, state: '落客服务', guided: true },
-  { vehicle_id: 'twin-0004', driver_type: 'D2', segment_id: 'SEG-003', offset_m: 210, speed_mps: 0.8, state: '排队', guided: false },
-  { vehicle_id: 'twin-0005', driver_type: 'D1', segment_id: 'SEG-004', offset_m: 300, speed_mps: 6.4, state: '行驶', guided: true },
-  { vehicle_id: 'twin-0006', driver_type: 'D2', segment_id: 'SEG-005', offset_m: 150, speed_mps: 10.6, state: '行驶', guided: false },
-  { vehicle_id: 'twin-0007', driver_type: 'D2', segment_id: 'SEG-005', offset_m: 380, speed_mps: 9.9, state: '行驶', guided: true },
-  { vehicle_id: 'twin-0008', driver_type: 'D1', segment_id: 'SEG-007', offset_m: 90, speed_mps: 3.4, state: '行驶', guided: false },
-  { vehicle_id: 'twin-0009', driver_type: 'D2', segment_id: 'SEG-008', offset_m: 60, speed_mps: 1.6, state: '排队', guided: false },
-  { vehicle_id: 'twin-0010', driver_type: 'D1', segment_id: 'SEG-009', offset_m: 200, speed_mps: 5.2, state: '行驶', guided: true },
-  { vehicle_id: 'twin-0011', driver_type: 'D2', segment_id: 'SEG-002', offset_m: 420, speed_mps: 8.8, state: '行驶', guided: false },
-  { vehicle_id: 'twin-0012', driver_type: 'D1', segment_id: 'SEG-006', offset_m: 110, speed_mps: 11.2, state: '行驶', guided: false },
-]
+// ---------- 孪生车辆(仅一期演示,二期 vehicles 端点下线) ----------
+// 合成车基线同样取自站点包:包声明本站接不接孪生桥接服务,接不上时才用这一份。
+
+function vehicleBases(): PackVehicleBase[] {
+  return activePack().vehicleBases
+}
+
 
 // ---------- 人工置位因素(管理端口子,手册第 19 章 F07/F08/F11;mock 内存态,Issue #59) ----------
 // 置位后对目标路段生效:target=demand 乘 q,c/lanes 乘 c,再按演示阈值重算 level(演示行为,
@@ -378,8 +102,6 @@ interface ManualFactor {
 }
 
 const manualFactors: ManualFactor[] = []
-
-const LEVEL_NAME: Record<number, string> = { 1: '畅通', 2: '缓行', 3: '拥堵', 4: '严重拥堵' }
 
 function applyManualFactors(base: Omit<SegmentRecord, 'is_simulated'>): Omit<SegmentRecord, 'is_simulated'> {
   const mine = manualFactors.filter((f) => f.segment_id === base.segment_id)
@@ -439,7 +161,7 @@ function localIso(d: Date): string {
 
 function buildSegmentsSnapshot(): SegmentsSnapshot {
   tick += 1
-  const segments: SegmentRecord[] = SEGMENT_BASES.map(({ base, stale }) => {
+  const segments: SegmentRecord[] = segmentBases().map(({ base, stale }) => {
     const src = applyManualFactors(base) // 人工置位先生效,再走抖动
     const q_vph = Math.round(jitter(src.q_vph ?? 0, 0.04))
     const v_kmh = round(jitter(src.v_kmh ?? 0, 0.03), 1)
@@ -462,7 +184,7 @@ function buildSegmentsSnapshot(): SegmentsSnapshot {
 
 function buildVehiclesSnapshot(): VehiclesSnapshot {
   const vehicles: VehicleRecord[] = []
-  for (const v of VEHICLE_BASES) {
+  for (const v of vehicleBases()) {
     const seg = demoSegment(v.segment_id)
     if (!seg) continue // 示例路网缺该路段(换路网时 id 未对齐)就不画这辆车
     const len = segmentLengthM(seg.coords)
@@ -487,8 +209,10 @@ function buildVehiclesSnapshot(): VehiclesSnapshot {
 // ---------- 孪生车辆真值接入(#61 twin_preview) ----------
 // 桥接服务(work/frontend/tools/twin_preview/server.py,:8102)在跑时,vehicles 优先用
 // SUMO TraCI 真值;不可用回落上方合成车基线。缓存 5 s + 在飞去重,2 s 轮询不会打满桥接。
+//
+// 开关与地址由**站点包**决定(`pack.bridge`):包说关就一个请求都不发。二站(自建示意路网)
+// 必须关 —— twin_preview 跑的是肇庆东站的 OSM 切片,开它会把别站的车辆坐标画到本站图上。
 
-const TWIN_BRIDGE = process.env.VITE_TWIN_API_BASE || 'http://127.0.0.1:8102'
 const VEHICLE_STATES: readonly VehicleRecord['state'][] = ['行驶', '排队', '落客服务', '候客', '违停', '已离开']
 
 let twinCache: { at: number; vehicles: VehicleRecord[] } | null = null
@@ -527,13 +251,23 @@ function toVehicleRecords(raw: unknown): VehicleRecord[] | null {
   return out
 }
 
+/** 桥接地址:站点包给默认值,`VITE_TWIN_API_BASE` 可临时改端口(与 vite 的 /twin-api 代理同源) */
+function twinBridgeBase(): string {
+  return process.env.VITE_TWIN_API_BASE || activePack().bridge.base
+}
+
 async function fetchTwinVehicles(): Promise<VehicleRecord[] | null> {
+  const bridge = activePack().bridge
+  // 包说本站不接桥接 → 一个请求都不发(二站正是这种:桥接跑的是别站的 OSM 切片)
+  if (!bridge.enabled) return null
+  const base = twinBridgeBase()
+  if (!base) return null
   const now = Date.now()
   if (twinCache && now - twinCache.at < 5000) return twinCache.vehicles
   if (!twinInflight) {
     twinInflight = (async (): Promise<VehicleRecord[] | null> => {
       try {
-        const res = await fetch(`${TWIN_BRIDGE}/api/twin/vehicles`, { signal: AbortSignal.timeout(700) })
+        const res = await fetch(`${base}/api/twin/vehicles`, { signal: AbortSignal.timeout(700) })
         if (!res.ok) throw new Error(`twin bridge http ${res.status}`)
         const records = toVehicleRecords(await res.json())
         if (records && records.length > 0) twinCache = { at: Date.now(), vehicles: records }
@@ -556,51 +290,47 @@ async function buildVehiclesSnapshotWithTwin(): Promise<VehiclesSnapshot> {
   return buildVehiclesSnapshot()
 }
 
-// ---------- 推荐快照(静态演示:引擎写入 routes.json 后由接口层端出,这里原样假造) ----------
+// ---------- 推荐快照(静态演示:引擎写入 routes.json 后由接口层端出,这里按站点包骨架假造) ----------
 
 function buildRecommend(): RecommendResult {
+  const r = activePack().recommend
   return {
     request_id: rid('REQ'),
     session_id: rid('S'),
     driver_type: 'D1',
     parking_mode: 'S1',
-    location: { segment_id: 'SEG-001', offset_m: 85, match_confidence: 1.0, source: 'twin' },
+    location: {
+      segment_id: r.location_segment_id,
+      offset_m: r.location_offset_m,
+      match_confidence: 1.0,
+      source: 'twin',
+    },
     arrival_route: {
       path_id: 'P-2',
-      segments: ['SEG-001', 'SEG-002', 'SEG-004'],
-      eta_min: 6.4,
-      dropoff_point: 'DROP-03',
-      walk_min: 2.1,
+      segments: r.arrival_segments,
+      eta_min: r.arrival_eta_min,
+      dropoff_point: r.arrival_dropoff_point,
+      walk_min: r.arrival_walk_min,
     },
-    departure_route: { path_id: 'P-2-D', segments: ['SEG-004', 'SEG-006'], eta_min: 5.2 },
+    departure_route: { path_id: 'P-2-D', segments: r.departure_segments, eta_min: r.departure_eta_min },
     pickup_route: null,
-    alternatives: [
-      {
-        path_id: 'P-1',
-        eta_min: 7.8,
-        reason: '经到达层通道,少 0.5 分钟步行,但到达层排队更多',
-        segments: ['SEG-001', 'SEG-009', 'SEG-003'],
-        dropoff_point: 'DROP-03',
-        walk_min: 1.6,
-      },
-      {
-        path_id: 'P-5',
-        eta_min: 8.9,
-        reason: '南进站路更空,但落客点离出站口远、步行长',
-        segments: ['SEG-005', 'SEG-008'],
-        dropoff_point: 'DROP-05',
-        walk_min: 3.4,
-      },
-    ],
+    // 契约:备选 ≥2 条(包给的是演示骨架;引擎 routes.json 就绪后由接口层端出真结果)
+    alternatives: r.alternatives.map((a) => ({
+      path_id: a.path_id,
+      eta_min: a.eta_min,
+      reason: a.note,
+      segments: a.segments,
+    })),
     reservation: {
       slots_reserved: 9,
       lease_expire_s: 90,
       harm_check: { max_eta_increase_s: 12, max_slot_x: 0.81, passed: true },
     },
-    why: 'P-2 预计 6.4 分钟,比备选少 1.4 分钟;落客平台(SEG-003)严重拥堵,推荐走环道南侧落客;预约未伤及前车(最大 +12 秒)。',
+    why: r.why,
     is_simulated: true,
   }
 }
+
 
 // =====================================================================================
 // 四页重做(Issue #78)新增端点实现
@@ -642,7 +372,7 @@ function buildMeta(): TrafficMeta {
   return {
     ts: localIso(new Date()),
     is_simulated: true,
-    station: { station_id: 'ZQD', name: '肇庆东站', subtitle: '高铁站外交通' },
+    station: { ...activePack().station },
     sources: [
       { key: 'video', name: '视频链路' },
       { key: 'twin', name: '孪生链路' },
@@ -707,64 +437,49 @@ function buildOverview(): TrafficOverview {
 
 // ---------- 路网拓扑(地图几何 + 断面 + 落客点 + 场区) ----------
 
-interface SectionBase {
-  point_id: string
-  segment_id: string
-  name: string
-  role: 'boundary' | 'internal'
-  offset: number
-}
-
-// 断面目录:边界断面允许回灌孪生,内部断面恒为 not allowed(手册门控口径)。
-// 编号沿用设计稿的 E-xx 展示编号(非契约字段);boundary 3 / internal 1,与设计稿页头计数一致。
-const SECTION_BASES: SectionBase[] = [
-  { point_id: 'E-01', segment_id: 'SEG-002', name: '东进站路·边界', role: 'boundary', offset: 0.5 },
-  { point_id: 'E-04', segment_id: 'SEG-007', name: '西进站路·边界', role: 'boundary', offset: 0.5 },
-  { point_id: 'E-07', segment_id: 'SEG-005', name: '南进站路·边界', role: 'boundary', offset: 0.5 },
-  { point_id: 'E-09', segment_id: 'SEG-001', name: '站前路·内部', role: 'internal', offset: 0.5 },
-]
-
-function pointOnSegment(segmentId: string, t: number): [number, number] {
-  const seg = demoSegment(segmentId)
-  if (!seg) return [112.4309, 23.0626]
-  return pointAtOffset(seg.coords, segmentLengthM(seg.coords) * t)
-}
+// 断面目录 / 落客点 / 场区 / 站点全部由**站点包**给(几何从包里的占位坐标读):
+// 边界断面允许回灌孪生,内部断面恒为 not allowed(手册门控口径);编号沿用设计稿的
+// E-xx 展示编号(非契约字段),数量随包(一站 boundary 3 / internal 1,二站 boundary 5 / internal 2)。
 
 function buildNetwork(): TrafficNetwork {
+  const pack = activePack()
   const osm = isOsmNetwork()
-  const dropoff = pointOnSegment('SEG-003', 0.85)
-  const zoneWait = pointOnSegment('SEG-008', 0.6)
-  const zonePark = pointOnSegment('SEG-007', 0.7)
-  const station = pointOnSegment('SEG-004', 0.5)
   return {
     ts: localIso(new Date()),
     is_simulated: true,
     origin: osm ? 'osm' : 'demo',
     note: networkSourceLabel(),
-    // OSM 署名是展示义务(条款核实 §2.1):真路网时必须带出,示例路网不带
-    attribution: osm ? OSM_ATTRIBUTION : undefined,
+    // 署名是站点包声明的展示义务(如 OSM 的 ODbL):包没声明就带 undefined,不署名
+    attribution: networkAttribution(),
     segments: DEMO_NETWORK.segments.map((s) => ({
       segment_id: s.segment_id,
       name: s.name,
       kind: s.kind,
       coords: s.coords,
     })),
-    sections: SECTION_BASES.map((s) => ({ ...s })),
-    dropoffs: [{ id: 'DROP-03', name: '落客点 DROP-03', lon: dropoff[0], lat: dropoff[1] }],
-    zones: [
-      { id: 'Z-01', name: '车辆候客区', lon: zoneWait[0], lat: zoneWait[1] },
-      { id: 'Z-02', name: '社会停车场', lon: zonePark[0], lat: zonePark[1] },
-    ],
-    stations: [{ id: 'ZQD', name: '肇庆东站', lon: station[0], lat: station[1] }],
+    sections: pack.sections.map((s) => ({
+      point_id: s.point_id,
+      segment_id: s.segment_id,
+      name: s.name,
+      role: s.role,
+      offset: s.offset,
+    })),
+    dropoffs: pack.dropoffs.map((d) => ({ ...d })),
+    zones: pack.zones.map((z) => ({ ...z })),
+    stations: pack.stations.map((s) => ({ ...s })),
   }
 }
 
 // ---------- 同一路段双数据源并排(TC-19) ----------
 
-/** 一期有视频链路覆盖的路段(预置基线里 source=video 的路段 + 视频感知页台账映射的路段) */
-// SEG-004 追加理由:视频感知页的通道台账把样本视频 C-05 track1 映射到 SEG-004(设计稿数据线索
-// 「C-05 track1 = SEG-004 落客通道」),该路段的指标确实由视频链路产出,故并排时 video 槽位必须可用。
-const VIDEO_COVERED = new Set(['SEG-001', 'SEG-003', 'SEG-004', 'SEG-007', 'SEG-009', 'SEG-010'])
+// 一期有视频链路覆盖的路段由**站点包**声明;一站那份的 SEG-004 追加理由保留备查:
+// 视频感知页的通道台账把样本视频 C-05 track1 映射到 SEG-004,该路段指标确实由视频链路产出,
+// 故并排时 video 槽位必须可用。
+// 取值函数而不是常量:本模块在 vite 配置里就被 import,那时包键还没注入(见 station-packs/index.ts)。
+function videoCovered(): Set<string> {
+  return new Set(activePack().videoCovered)
+}
+
 
 /** 由孪生记录派生视频记录:视频侧偏差略大(演示差值:饱和度 +0.07 / 车速 −2.6 / 排队 +42 / 消散 +0.6) */
 function deriveVideoFromTwin(base: SegmentRecord): SegmentRecord {
@@ -806,7 +521,7 @@ function buildSegmentSources(segmentId: string): SegmentSourcePair | null {
   const twinIsBase = base.source === 'twin'
   const twin = twinIsBase ? base : deriveTwinFromVideo(base)
   let video: SegmentRecord | null = null
-  if (VIDEO_COVERED.has(segmentId)) video = twinIsBase ? deriveVideoFromTwin(base) : base
+  if (videoCovered().has(segmentId)) video = twinIsBase ? deriveVideoFromTwin(base) : base
 
   const pick = (r: SegmentRecord | null, k: keyof SegmentRecord): number | null =>
     r && typeof r[k] === 'number' ? (r[k] as number) : null
@@ -837,36 +552,15 @@ function buildSegmentSources(segmentId: string): SegmentSourcePair | null {
 
 // ---------- 告警(四态,内存态流转) ----------
 
-interface AlertBase {
-  alert_id: string
-  segment_id: string
-  level: CongestionLevel
-  triggered_by: string[]
-  factor_ids?: string[]
-  /** 首次观测 = 快照时间往前推 ago_min 分钟(不另取浏览器时间) */
-  ago_min: number
-  status: TrafficAlert['status']
-}
+/** 告警基线的形状就是站点包里的那条(ago_min = 首次观测 = 快照时间往前推几分钟) */
+type AlertBase = PackAlertBase
 
-// 预置告警(沿用设计稿的告警编号与路段线索):待认领 2 / 处置中 1 / 已闭环 3 / 误报 1,
-// 与 page2「关联告警 2 条未闭环」、page3「待认领 7 条·未闭环 3」的口径自洽:未闭环 = 待认领 + 处置中。
-const ALERT_BASES: AlertBase[] = [
-  { alert_id: 'A-2412-018', segment_id: 'SEG-004', level: 3, triggered_by: ['x', 'L_q'], ago_min: 3, status: '待认领' },
-  { alert_id: 'A-2412-021', segment_id: 'SEG-007', level: 2, triggered_by: ['v'], ago_min: 5, status: '待认领' },
-  {
-    alert_id: 'A-2412-015',
-    segment_id: 'SEG-003',
-    level: 3,
-    triggered_by: ['x'],
-    factor_ids: ['F01', 'F06'],
-    ago_min: 9,
-    status: '处置中',
-  },
-  { alert_id: 'A-2410-306', segment_id: 'SEG-002', level: 3, triggered_by: ['v'], ago_min: 38, status: '已闭环' },
-  { alert_id: 'A-2410-308', segment_id: 'SEG-001', level: 3, triggered_by: ['x'], ago_min: 59, status: '已闭环' },
-  { alert_id: 'A-2410-298', segment_id: 'SEG-005', level: 3, triggered_by: ['v'], ago_min: 78, status: '已闭环' },
-  { alert_id: 'A-2410-291', segment_id: 'SEG-001', level: 2, triggered_by: ['x'], ago_min: 95, status: '误报' },
-]
+// 预置告警由**站点包**给(告警编号、路段、等级、四态条数都随站):待认领 2 / 处置中 1 /
+// 已闭环 3 / 误报 1,与 page2「关联告警 2 条未闭环」、page3「待认领 7 条·未闭环 3」的口径自洽:
+// 未闭环 = 待认领 + 处置中。
+function alertBases(): PackAlertBase[] {
+  return activePack().alerts
+}
 
 interface AlertRuntime {
   status?: TrafficAlert['status']
@@ -886,16 +580,17 @@ function isTerminal(status: TrafficAlert['status']): boolean {
   return status === '已闭环' || status === '误报'
 }
 
-/** 预置「处置中」的 A-2412-015 视为已下发过:回执 / 渠道 / 比例齐备,演示可直接走回写(TC-07) */
-const SEED_DISPATCH: Record<string, { channel: string; ratio_pct: number; dispatch_ago_min: number }> = {
-  'A-2412-015': { channel: '情报板', ratio_pct: 25, dispatch_ago_min: 6 },
-}
-
-/** 复位到初始演示态:清运行态后重放预置下发留痕(供 POST /traffic/alerts/reset 调用) */
+/**
+ * 复位到初始演示态:清运行态后重放预置下发留痕(供 POST /traffic/alerts/reset 调用)。
+ * 预置留痕也来自站点包(那条「处置中」的告警 = 已下发过:渠道 / 比例 / 时间齐备,
+ * 演示可直接走回写,TC-07)。
+ */
 function resetAlertRuntime(): void {
   alertRuntime.clear()
+  firstSeenCache.clear()
+  runtimeSeededFor = activePackKey()
   const now = Date.now()
-  for (const [id, s] of Object.entries(SEED_DISPATCH)) {
+  for (const [id, s] of Object.entries(activePack().seedDispatch)) {
     alertRuntime.set(id, {
       channels: [s.channel],
       dispatch_at: stampOf(new Date(now - s.dispatch_ago_min * 60_000)),
@@ -903,7 +598,13 @@ function resetAlertRuntime(): void {
     })
   }
 }
-resetAlertRuntime()
+
+// 运行态是**按包**建的:包键变了(换站)就重建一次,免得把一站的下发 / 回写留痕带到二站。
+// 惰性播种而不是模块加载时播种 —— 本模块在 vite 配置里被 import,那时包键还没注入。
+let runtimeSeededFor = ''
+function ensureAlertRuntime(): void {
+  if (runtimeSeededFor !== activePackKey()) resetAlertRuntime()
+}
 
 /** 首次观测时间只在首次出快照时算一次,此后各快照沿用同一值(审计时间不得随刷新漂移) */
 const firstSeenCache = new Map<string, string>()
@@ -917,8 +618,9 @@ function firstSeenOf(a: AlertBase, now: number): string {
 }
 
 function buildAlerts(): AlertsSnapshot {
+  ensureAlertRuntime()
   const now = Date.now()
-  const alerts: TrafficAlert[] = ALERT_BASES.map((a) => {
+  const alerts: TrafficAlert[] = alertBases().map((a) => {
     const rt = alertRuntime.get(a.alert_id) ?? {}
     return {
       alert_id: a.alert_id,
@@ -1024,78 +726,42 @@ function buildCiHistory(segmentId: string, points: number): CiHistory | null {
 
 // ---------- 数据同化(扩展:断面 role / 编号 / 计数) ----------
 
+// 断面清单与每条断面的回灌状态来自**站点包**:边界断面允许回灌,内部断面恒为
+// assimilating=false(不是"门控中",是**制度上不允许**,手册门控口径 + TC-20 第②项)。
+// 门控阈值也由包给(一站 0.6 / 二站 0.75),不再写死,免得出现"0.62 < 0.6 却报门控"的自相矛盾。
+
 function buildAssimilationFull(): AssimilationSnapshotFull {
+  const pack = activePack()
   const now = localIso(new Date())
   const nowStamp = stampOf(new Date())
-  const det = (
-    pointId: string,
-    name: string,
-    segmentId: string,
-    role: 'boundary' | 'internal',
-    enabled: boolean,
-    flow: number | null,
-    speed: number | null,
-    confidence: number,
-    gateReason: 'confidence_low' | 'data_age' | 'deviation_fuse' | null,
-    gateDetail: string | null,
-    reason: string | null,
-  ): AssimilationRecordV2 => ({
-    point_code: pointId,
-    point_id: pointId,
-    name,
-    segment_id: segmentId,
-    role,
-    enabled,
-    flow_dev_pct: flow,
-    speed_dev_pct: speed,
-    confidence,
-    gate_reason: gateReason,
-    gate_detail: gateDetail,
-    reason,
-    last_apply_at: enabled ? nowStamp : null,
-  })
-
-  const records: AssimilationRecordV2[] = [
-    // 边界断面 3 条:可回灌(其中一条门控中)
-    det('E-01', '东进站路·边界', 'SEG-002', 'boundary', true, 3.2, 4.1, 0.88, null, null, null),
-    det(
-      'E-04',
-      '西进站路·边界',
-      'SEG-007',
-      'boundary',
-      false,
-      null,
-      null,
-      0.62,
-      'confidence_low',
-      '数据置信度 0.62 < 门控阈值 0.75,停止回灌并留日志',
-      'confidence_low',
-    ),
-    det('E-07', '南进站路·边界', 'SEG-005', 'boundary', true, 1.8, 2.4, 0.91, null, null, null),
-    // 内部断面 1 条:恒为 assimilating=false,reason 写死(不是"门控中",是"制度上不允许")
-    det(
-      'E-09',
-      '站前路·内部',
-      'SEG-001',
-      'internal',
-      false,
-      null,
-      null,
-      0.9,
-      null,
-      '仅 role=boundary 断面允许回灌(手册门控口径)',
-      'internal_not_allowed',
-    ),
-  ]
+  const records: AssimilationRecordV2[] = pack.assimilation.map((a) => ({
+    point_code: a.point_id,
+    point_id: a.point_id,
+    name: a.name,
+    segment_id: a.segment_id,
+    role: a.role,
+    enabled: a.enabled,
+    flow_dev_pct: a.flow_dev_pct,
+    speed_dev_pct: a.speed_dev_pct,
+    confidence: a.confidence,
+    gate_reason: a.gate_reason,
+    gate_detail: a.gate_detail,
+    reason: a.reason,
+    last_apply_at: a.enabled ? nowStamp : null,
+  }))
 
   return {
     ts: now,
     is_simulated: true,
-    gate: { confidence_min: 0.6, data_age_max_s: 120 },
-    counts: { boundary: records.filter((r) => r.role === 'boundary').length, internal: records.filter((r) => r.role === 'internal').length },
+    gate: { ...pack.assimilationGate },
+    counts: {
+      boundary: records.filter((r) => r.role === 'boundary').length,
+      internal: records.filter((r) => r.role === 'internal').length,
+    },
     records,
   }
 }
+
 
 // ---------- HTTP 处理(path 不含 /api 前缀,与 mock/index.ts 的 connect 挂载一致) ----------
 
@@ -1202,7 +868,8 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
       json(res, 400, { code: 'DISPATCH_INVALID', message: '下发参数不完整(需 alert_id/channel/ratio_pct)' })
       return true
     }
-    const alertBase = ALERT_BASES.find((a) => a.alert_id === body.alert_id)
+    ensureAlertRuntime()
+    const alertBase = alertBases().find((a) => a.alert_id === body.alert_id)
     if (!alertBase) {
       json(res, 404, { code: 'ALERT_NOT_FOUND', message: `告警不存在: ${body.alert_id}` })
       return true
@@ -1256,7 +923,8 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
       })
       return true
     }
-    const alertBase = ALERT_BASES.find((a) => a.alert_id === body.alert_id)
+    ensureAlertRuntime()
+    const alertBase = alertBases().find((a) => a.alert_id === body.alert_id)
     if (!alertBase) {
       json(res, 404, { code: 'ALERT_NOT_FOUND', message: `告警不存在: ${body.alert_id}` })
       return true
@@ -1350,7 +1018,7 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
 
   if (path === '/traffic/factors' && method === 'POST') {
     const body = (await readJson(req)) as Partial<ManualFactorInput>
-    const seg = SEGMENT_BASES.find((s) => s.base.segment_id === body.segment_id)
+    const seg = segmentBases().find((s) => s.base.segment_id === body.segment_id)
     if (!seg || !body.factor_id || !body.target || typeof body.multiplier !== 'number') {
       json(res, 400, { code: 'FACTOR_INVALID', message: '置位参数不完整(需 segment_id/factor_id/target/multiplier)' })
       return true

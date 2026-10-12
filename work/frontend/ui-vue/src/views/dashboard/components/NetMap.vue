@@ -251,12 +251,19 @@ const vehPts = computed(() =>
         <text :x="z.x + 52" :y="z.y + 56 + 15" text-anchor="middle" class="lbl">{{ z.name }}</text>
       </g>
 
-      <!-- 站点块 -->
+      <!-- 站点块:副标由站点包给(包没给就不画,别站的图上不出现别的站的英文名) -->
       <g v-for="st in stationRects" :key="`station-${st.id}`">
         <rect :x="st.x" :y="st.y" width="156" height="68" rx="6" fill="#FFFFFF" stroke="#E8E8E8" />
-        <text :x="st.x + 78" :y="st.y + 30" text-anchor="middle" class="station-name">{{ st.name }}</text>
-        <text :x="st.x + 78" :y="st.y + 48" text-anchor="middle" class="station-en">
-          Zhaoqing East Railway Station
+        <text
+          :x="st.x + 78"
+          :y="st.y + (st.sub ? 30 : 39)"
+          text-anchor="middle"
+          class="station-name"
+        >
+          {{ st.name }}
+        </text>
+        <text v-if="st.sub" :x="st.x + 78" :y="st.y + 48" text-anchor="middle" class="station-en">
+          {{ st.sub }}
         </text>
       </g>
 
