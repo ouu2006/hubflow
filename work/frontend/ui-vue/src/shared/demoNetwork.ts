@@ -143,6 +143,15 @@ export function networkSourceLabel(): string {
   return NETWORK_SOURCE.twin ? 'OSM 真路网 · SUMO 仿真演示' : '示例路网 · 非实测'
 }
 
+/** 当前底图是否为真 OSM 路网(#61 twin_preview 覆盖后为 true)——OSM 署名义务随之触发 */
+export function isOsmNetwork(): boolean {
+  return NETWORK_SOURCE.twin
+}
+
+/** OSM 署名(ODbL 要求;条款核实 §2.1:对外展示 OSM 数据须署名并给超链接) */
+export const OSM_ATTRIBUTION = '地图数据 © OpenStreetMap 贡献者,依 ODbL 许可'
+export const OSM_COPYRIGHT_URL = 'https://www.openstreetmap.org/copyright'
+
 const LAT_M_PER_DEG = 111_320
 
 function lonMPerDeg(lat: number): number {

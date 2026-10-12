@@ -514,6 +514,7 @@ onUnmounted(() => {
           <i class="dot" />
           {{ live ? '快照流已连接' : '快照流未连接' }}
         </span>
+        <RouterLink class="nav-link" to="/heat">拥挤度热力 ›</RouterLink>
         <RouterLink class="nav-link" to="/decision">决策工作台 ›</RouterLink>
         <RouterLink class="dash-link" to="/dashboard">态势大屏 ›</RouterLink>
       </div>
