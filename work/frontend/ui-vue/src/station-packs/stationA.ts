@@ -480,9 +480,11 @@ export const STATION_A: StationPack = {
       enabled: false,
       flow_dev_pct: null,
       speed_dev_pct: null,
-      confidence: 0.62,
+      confidence: 0.55,
       gate_reason: 'confidence_low',
-      gate_detail: '数据置信度 0.62 < 门控阈值 0.75,停止回灌并留日志',
+      // 阈值取本站 `assimilationGate.confidence_min`(0.6,契约 §三【待标定】):文案里的数字
+      // 必须低于它,否则读起来是"0.55 > 0.6 却报置信度不足"——这条在重构前是自相矛盾的
+      gate_detail: '数据置信度 0.55 < 门控阈值 0.6,停止回灌并留日志',
       reason: 'confidence_low',
     },
     { point_id: 'E-07', name: '南进站路·边界', segment_id: 'SEG-005', role: 'boundary', enabled: true, flow_dev_pct: 1.8, speed_dev_pct: 2.4, confidence: 0.91, gate_reason: null, gate_detail: null, reason: null },
