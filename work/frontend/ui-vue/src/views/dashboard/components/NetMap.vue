@@ -1,19 +1,52 @@
 <script setup lang="ts">
-// 中央路网图:零依赖 SVG 渲染。四级染色 + 选中描边 + 推荐路线高亮(流动虚线)+
-// 孪生车辆动点(位置随快照刷新,CSS transition 平滑移动)。
-// 底图数据 = 示例路网(非实测,#36/#37 站点包落地后替换)。
+// 中央路网图:零依赖 SVG 渲染。两种视图模式(Issue #66):
+//   mode = 'level' → 四级染色(判级产出);mode = 'index' → 拥挤指数色阶(ci,仅展示)。
+// 另有:选中描边 + 推荐路线高亮(流动虚线) + 孪生车辆动点(位置随快照刷新,CSS transition 平滑移动)。
+// 底图数据 = 示例路网(非实测,#36/#37 站点包落地后替换;真路网时触发 OSM 署名)。
 import { computed } from 'vue'
-import { DEMO_NETWORK, networkSourceLabel, type DemoSegment } from '../../../shared/demoNetwork'
-import { levelStyle, type DriverType, type SegmentRecord, type VehicleRecord } from '../../../shared/traffic'
+import {
+  DEMO_NETWORK,
+  isOsmNetwork,
+  networkSourceLabel,
+  OSM_ATTRIBUTION,
+  OSM_COPYRIGHT_URL,
+  type DemoSegment,
+} from '../../../shared/demoNetwork'
+import {
+  ciAvailable,
+  ciGradientCss,
+  ciStyleColor,
+  CI_BAND_NOTE,
+  CI_BANDS,
+  CI_DISCLAIMER,
+  CI_MAX,
+  levelStyle,
+  UNAVAILABLE,
+  type CongestionViewMode,
+  type DriverType,
+  type SegmentRecord,
+  type VehicleRecord,
+} from '../../../shared/traffic'
 import LevelBadge from './LevelBadge.vue'
 
-const props = defineProps<{
-  segments: SegmentRecord[]
-  vehicles: VehicleRecord[]
-  selectedId: string | null
-  /** 当前高亮路线包含的路段 id(推荐/备选/离站) */
-  routeSegments: string[]
-}>()
+const UNAVAILABLE_COLOR = UNAVAILABLE.color
+
+/** 'level' = 四级视图(默认) · 'index' = 拥挤指数视图 */
+type MapMode = CongestionViewMode
+
+const props = withDefaults(
+  defineProps<{
+    segments: SegmentRecord[]
+    vehicles: VehicleRecord[]
+    selectedId: string | null
+    /** 当前高亮路线包含的路段 id(推荐/备选/离站) */
+    routeSegments: string[]
+    mode?: MapMode
+    /** 快照时间(热力视图的"更新时间戳",手册 §11.2 必现) */
+    ts?: string
+  }>(),
+  { mode: 'level', ts: '' },
+)
 
 const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
 
@@ -45,14 +78,36 @@ function pointsFor(seg: DemoSegment): string {
   return seg.coords.map(([lon, lat]) => px(lon, lat).join(',')).join(' ')
 }
 
-// ---- 路段染色 ----
+// ---- 路段染色(两种视图模式) ----
 
 const segById = computed(() => new Map(props.segments.map((s) => [s.segment_id, s])))
 
-function colorOf(seg: DemoSegment): string {
-  const rec = segById.value.get(seg.segment_id)
-  return rec ? levelStyle(rec).color : '#8C8C8C' // 无数据 = 灰色(数据不可用)
+const isIndex = computed(() => props.mode === 'index')
+
+function recOf(seg: DemoSegment): SegmentRecord | undefined {
+  return segById.value.get(seg.segment_id)
 }
+
+/** 路段色:四级视图取判级色;拥挤指数视图取 ci 色阶;无记录/不可用一律灰(数据不可用) */
+function colorOf(seg: DemoSegment): string {
+  const rec = recOf(seg)
+  if (!rec) return UNAVAILABLE_COLOR
+  return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
+}
+
+/** 热力晕染:仅指数视图且 ci 可用时渲染,强度随 ci 单调增(不改任何判级着色) */
+function heatOpacity(seg: DemoSegment): number {
+  const rec = recOf(seg)
+  if (!rec || !ciAvailable(rec)) return 0
+  const v = Math.min(CI_MAX, Math.max(0, rec.ci as number))
+  return Math.round((0.12 + (v / CI_MAX) * 0.58) * 100) / 100
+}
+
+function heatWidth(seg: DemoSegment): number {
+  return seg.kind === 'main' ? 26 : 22
+}
+
+const osmActive = computed(() => isOsmNetwork())
 
 // ---- 路线高亮与落客点 ----
 
@@ -104,6 +159,18 @@ const vehPts = computed(() =>
         class="road"
         @click="emit('select', s.segment_id)"
       >
+        <!-- 热力晕染(仅拥挤指数视图):强度随 ci 单调增,不改变任何路段的判级着色 -->
+        <polyline
+          v-if="isIndex && heatOpacity(s) > 0"
+          class="heat"
+          :points="pointsFor(s)"
+          fill="none"
+          :stroke="colorOf(s)"
+          :stroke-width="heatWidth(s)"
+          :style="{ opacity: heatOpacity(s) }"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
         <polyline
           :points="pointsFor(s)"
           fill="none"
@@ -163,17 +230,37 @@ const vehPts = computed(() =>
 
     <div class="watermark">{{ sourceLabel }}</div>
 
+    <div v-if="osmActive" class="attribution">
+      <a :href="OSM_COPYRIGHT_URL" target="_blank" rel="noopener">{{ OSM_ATTRIBUTION }}</a>
+    </div>
+
     <div class="legend">
-      <div class="lg-title">四级编码(颜色 · 竖条 · 文字)</div>
-      <div class="lg-row"><LevelBadge :level="1" /></div>
-      <div class="lg-row"><LevelBadge :level="2" /></div>
-      <div class="lg-row"><LevelBadge :level="3" /></div>
-      <div class="lg-row"><LevelBadge :level="4" /></div>
-      <div class="lg-row"><LevelBadge :level="1" stale /></div>
-      <div class="lg-sep" />
-      <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D1 }" />D1 送客车辆</div>
-      <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D2 }" />D2 接客车辆</div>
-      <div class="lg-row"><span class="dot flow" />路线高亮</div>
+      <!-- 拥挤指数视图的图例:色阶 + 档位刻度 + 与四级视图的互证说明(手册 §11.2 必现图例) -->
+      <template v-if="isIndex">
+        <div class="lg-title">拥挤指数色阶(ci · 0~100)</div>
+        <div class="lg-ramp" :style="{ background: ciGradientCss() }" />
+        <div class="lg-scale">
+          <span v-for="b in CI_BANDS" :key="b">{{ b }}</span>
+        </div>
+        <div class="lg-note">{{ CI_BAND_NOTE }}</div>
+        <div class="lg-note strong">{{ CI_DISCLAIMER }}</div>
+        <div class="lg-sep" />
+        <div class="lg-row"><LevelBadge :level="1" stale />灰 = 数据不可用(缺 ci 或数据陈旧)</div>
+        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
+      </template>
+      <!-- 四级视图的图例(原有) -->
+      <template v-else>
+        <div class="lg-title">四级编码(颜色 · 竖条 · 文字)</div>
+        <div class="lg-row"><LevelBadge :level="1" /></div>
+        <div class="lg-row"><LevelBadge :level="2" /></div>
+        <div class="lg-row"><LevelBadge :level="3" /></div>
+        <div class="lg-row"><LevelBadge :level="4" /></div>
+        <div class="lg-row"><LevelBadge :level="1" stale /></div>
+        <div class="lg-sep" />
+        <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D1 }" />D1 送客车辆</div>
+        <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D2 }" />D2 接客车辆</div>
+        <div class="lg-row"><span class="dot flow" />路线高亮</div>
+      </template>
     </div>
   </div>
 </template>
@@ -254,5 +341,51 @@ svg {
   height: 1px;
   background: #1d3354;
   margin: 3px 0;
+}
+/* 拥挤指数视图(色阶图例 + 热力晕染) */
+.lg-ramp {
+  height: 10px;
+  width: 190px;
+  border-radius: 3px;
+  border: 1px solid #1d3354;
+}
+.lg-scale {
+  display: flex;
+  justify-content: space-between;
+  width: 190px;
+  font-size: 10px;
+  color: #7c93b5;
+}
+.lg-note {
+  max-width: 210px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: #7c93b5;
+  white-space: normal;
+}
+.lg-note.strong {
+  color: #ffd479;
+}
+.lg-row.ts {
+  font-size: 11px;
+  color: #9fb6d9;
+}
+.heat {
+  filter: blur(7px);
+}
+.attribution {
+  position: absolute;
+  right: 16px;
+  bottom: 12px;
+  font-size: 11px;
+  pointer-events: auto;
+}
+.attribution a {
+  color: rgba(150, 175, 210, 0.72);
+  text-decoration: none;
+}
+.attribution a:hover {
+  color: #37d6ff;
+  text-decoration: underline;
 }
 </style>
