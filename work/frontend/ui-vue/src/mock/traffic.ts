@@ -9,19 +9,46 @@
 import type { MockReq, MockRes } from './util.ts'
 import { json, readJson, rid } from './util.ts'
 import { SseWriter } from './sse-writer.ts'
-import { demoSegment, pointAtOffset, segmentLengthM } from '../shared/demoNetwork.ts'
+import {
+  DEMO_NETWORK,
+  demoSegment,
+  isOsmNetwork,
+  networkSourceLabel,
+  OSM_ATTRIBUTION,
+  pointAtOffset,
+  segmentLengthM,
+} from '../shared/demoNetwork.ts'
+import { APP_TABS, DEMO_BADGE } from '../shared/nav.ts'
+import { LEVEL_THRESHOLDS, THRESHOLD_CHANGELOG } from '../shared/demoDecision.ts'
 import {
   TRAFFIC_SNAPSHOT_EVENT,
+  type AlertsSnapshot,
+  type AssimilationRecordV2,
+  type AssimilationSnapshotFull,
+  type CiHistory,
   type CongestionLevel,
+  type DispatchInput,
+  type DispatchReceipt,
+  type HeatMatrix,
   type ManualFactorInput,
   type ManualFactorResult,
+  type PredictResponse,
   type RecommendResult,
   type SegmentRecord,
+  type SegmentSourceDelta,
+  type SegmentSourcePair,
   type SegmentsSnapshot,
+  type ThresholdSnapshot,
+  type TrafficAlert,
+  type TrafficMeta,
+  type TrafficNetwork,
+  type TrafficOverview,
   type TrafficSnapshotPing,
   type VehicleRecord,
   type VehiclesSnapshot,
-  type AssimilationSnapshot,
+  type WritebackInput,
+  type WritebackReceipt,
+  type WritebackResult,
 } from '../shared/traffic.ts'
 
 // ---------- 预置基线(契约 v2.0 形状;x = q_vph / c_vph) ----------
@@ -385,20 +412,7 @@ function applyManualFactors(base: Omit<SegmentRecord, 'is_simulated'>): Omit<Seg
   }
 }
 
-function buildAssimilation(): AssimilationSnapshot {
-  const now = localIso(new Date())
-  return {
-    ts: now,
-    is_simulated: true,
-    gate: { confidence_min: 0.6, data_age_max_s: 120 },
-    records: [
-      { point_id: 'DET-B1', segment_id: 'SEG-001', enabled: true, flow_dev_pct: 7.4, speed_dev_pct: 11.2, gate_reason: null, gate_detail: null, last_apply_at: now },
-      { point_id: 'DET-B2', segment_id: 'SEG-007', enabled: true, flow_dev_pct: 13.8, speed_dev_pct: 18.5, gate_reason: null, gate_detail: null, last_apply_at: now },
-      { point_id: 'DET-B3', segment_id: 'SEG-010', enabled: false, flow_dev_pct: null, speed_dev_pct: null, gate_reason: 'confidence_low', gate_detail: '数据置信度 0.31 < 0.60,停止回灌并留日志', last_apply_at: null },
-      { point_id: 'DET-B4', segment_id: 'SEG-009', enabled: false, flow_dev_pct: null, speed_dev_pct: null, gate_reason: 'deviation_fuse', gate_detail: '边界偏差连续超标熔断(演示),恢复后自动重开', last_apply_at: null },
-    ],
-  }
-}
+// 数据同化的完整实现见下方 buildAssimilationFull()(带断面 role / 编号 / 计数)。
 
 // ---------- 快照构造(tick 驱动抖动;数值是演示基线,不是模型输出) ----------
 
@@ -588,9 +602,506 @@ function buildRecommend(): RecommendResult {
   }
 }
 
+// =====================================================================================
+// 四页重做(Issue #78)新增端点实现
+// 与既有端点同口径:只读快照 / 不做业务计算(数值为演示基线 + 抖动,不是模型输出);
+// 每个响应带 is_simulated=true 信封;状态类端点(下发 / 回写)在 mock 内存态里流转,
+// 供演示反复操作(刷新复位),后端实现时须落库并留痕。
+// =====================================================================================
+
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v))
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/** 'HH:mm:ss' */
+function clockOf(d: Date): string {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+}
+
+/** 'YYYY-MM-DD HH:mm:ss'(首次观测时间等留痕字段用) */
+function stampOf(d: Date): string {
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${clockOf(d)}`
+}
+
+function nameOfSegment(id: string): string {
+  return demoSegment(id)?.name ?? id
+}
+
+/** 演示基线与抖动共用的陈旧判据(与 shared/traffic.ts 的 STALE_AFTER_S = 120 对齐) */
+function isStaleRec(seg: SegmentRecord): boolean {
+  return (seg.data_age_s ?? 0) > 120
+}
+
+// ---------- 站点 / 数据源元信息 ----------
+
+function buildMeta(): TrafficMeta {
+  return {
+    ts: localIso(new Date()),
+    is_simulated: true,
+    station: { station_id: 'ZQD', name: '肇庆东站', subtitle: '高铁站外交通' },
+    sources: [
+      { key: 'video', name: '视频链路' },
+      { key: 'twin', name: '孪生链路' },
+    ],
+    demo_badge: DEMO_BADGE,
+    tabs: APP_TABS.map((t) => ({ key: t.key, name: t.name, route: t.route })),
+  }
+}
+
+// ---------- 全网 KPI(态势总览) ----------
+
+const LEVEL_ORDER: CongestionLevel[] = [1, 2, 3, 4]
+let prevAvgSpeed: number | null = null
+
+function buildOverview(): TrafficOverview {
+  const snap = buildSegmentsSnapshot()
+  const segments = snap.segments
+  const usable = segments.filter((s) => !isStaleRec(s))
+
+  // 全网均速 = 按流量加权的平均车速(窗口均值口径;陈旧路段不参与,避免把"没数据"算成"很畅通")
+  const qSum = usable.reduce((acc, s) => acc + (s.q_vph ?? 0), 0)
+  const avg = qSum > 0 ? usable.reduce((acc, s) => acc + (s.v_kmh ?? 0) * (s.q_vph ?? 0), 0) / qSum : 0
+  const avgRounded = round(avg, 1)
+  const delta = prevAvgSpeed === null ? 0 : round(avgRounded - prevAvgSpeed, 1)
+  prevAvgSpeed = avgRounded
+
+  // 最堵路段:先按 level 取最高档,同档取 x(饱和度)大者
+  const worst = [...segments].sort((a, b) => b.level - a.level || (b.x ?? 0) - (a.x ?? 0))[0] ?? null
+
+  // 站前在途车辆与采纳率:演示基线(车速/流量同源抖动口径,不是仿真输出)
+  const vehiclesInbound = 128 + (tick % 7) - 3
+  const guidedRate = 0.742
+  const guided = Math.round(vehiclesInbound * guidedRate)
+
+  const levelDist: TrafficOverview['level_distribution'] = [
+    ...LEVEL_ORDER.map((lv) => ({
+      level: lv as CongestionLevel | 0,
+      name: LEVEL_NAME[lv] ?? String(lv),
+      count: segments.filter((s) => !isStaleRec(s) && s.level === lv).length,
+    })),
+    { level: 0 as CongestionLevel | 0, name: '不可用', count: segments.filter((s) => isStaleRec(s)).length },
+  ]
+
+  return {
+    ts: snap.ts,
+    is_simulated: true,
+    window_sec: snap.window_sec,
+    avg_speed_kmh: avgRounded,
+    avg_speed_delta_kmh: delta,
+    worst_segment: worst
+      ? { segment_id: worst.segment_id, name: nameOfSegment(worst.segment_id), level: worst.level, x: worst.x ?? 0 }
+      : null,
+    vehicles_inbound: vehiclesInbound,
+    vehicles_guided: guided,
+    guided_rate: round(guided / Math.max(1, vehiclesInbound), 4),
+    active_factors: segments.flatMap((s) => s.factors_applied ?? []).length,
+    level_distribution: levelDist,
+    segment_total: segments.length,
+    unavailable_count: segments.filter((s) => isStaleRec(s)).length,
+  }
+}
+
+// ---------- 路网拓扑(地图几何 + 断面 + 落客点 + 场区) ----------
+
+interface SectionBase {
+  point_id: string
+  segment_id: string
+  name: string
+  role: 'boundary' | 'internal'
+  offset: number
+}
+
+// 断面目录:边界断面允许回灌孪生,内部断面恒为 not allowed(手册门控口径)。
+// 编号沿用设计稿的 E-xx 展示编号(非契约字段);boundary 3 / internal 1,与设计稿页头计数一致。
+const SECTION_BASES: SectionBase[] = [
+  { point_id: 'E-01', segment_id: 'SEG-002', name: '东进站路·边界', role: 'boundary', offset: 0.5 },
+  { point_id: 'E-04', segment_id: 'SEG-007', name: '西进站路·边界', role: 'boundary', offset: 0.5 },
+  { point_id: 'E-07', segment_id: 'SEG-005', name: '南进站路·边界', role: 'boundary', offset: 0.5 },
+  { point_id: 'E-09', segment_id: 'SEG-001', name: '站前路·内部', role: 'internal', offset: 0.5 },
+]
+
+function pointOnSegment(segmentId: string, t: number): [number, number] {
+  const seg = demoSegment(segmentId)
+  if (!seg) return [112.4309, 23.0626]
+  return pointAtOffset(seg.coords, segmentLengthM(seg.coords) * t)
+}
+
+function buildNetwork(): TrafficNetwork {
+  const osm = isOsmNetwork()
+  const dropoff = pointOnSegment('SEG-003', 0.85)
+  const zoneWait = pointOnSegment('SEG-008', 0.6)
+  const zonePark = pointOnSegment('SEG-007', 0.7)
+  const station = pointOnSegment('SEG-004', 0.5)
+  return {
+    ts: localIso(new Date()),
+    is_simulated: true,
+    origin: osm ? 'osm' : 'demo',
+    note: networkSourceLabel(),
+    // OSM 署名是展示义务(条款核实 §2.1):真路网时必须带出,示例路网不带
+    attribution: osm ? OSM_ATTRIBUTION : undefined,
+    segments: DEMO_NETWORK.segments.map((s) => ({
+      segment_id: s.segment_id,
+      name: s.name,
+      kind: s.kind,
+      coords: s.coords,
+    })),
+    sections: SECTION_BASES.map((s) => ({ ...s })),
+    dropoffs: [{ id: 'DROP-03', name: '落客点 DROP-03', lon: dropoff[0], lat: dropoff[1] }],
+    zones: [
+      { id: 'Z-01', name: '车辆候客区', lon: zoneWait[0], lat: zoneWait[1] },
+      { id: 'Z-02', name: '社会停车场', lon: zonePark[0], lat: zonePark[1] },
+    ],
+    stations: [{ id: 'ZQD', name: '肇庆东站', lon: station[0], lat: station[1] }],
+  }
+}
+
+// ---------- 同一路段双数据源并排(TC-19) ----------
+
+/** 一期有视频链路覆盖的路段(预置基线里 source=video 的路段 + 视频感知页台账映射的路段) */
+// SEG-004 追加理由:视频感知页的通道台账把样本视频 C-05 track1 映射到 SEG-004(设计稿数据线索
+// 「C-05 track1 = SEG-004 落客通道」),该路段的指标确实由视频链路产出,故并排时 video 槽位必须可用。
+const VIDEO_COVERED = new Set(['SEG-001', 'SEG-003', 'SEG-004', 'SEG-007', 'SEG-009', 'SEG-010'])
+
+/** 由孪生记录派生视频记录:视频侧偏差略大(演示差值:饱和度 +0.07 / 车速 −2.6 / 排队 +42 / 消散 +0.6) */
+function deriveVideoFromTwin(base: SegmentRecord): SegmentRecord {
+  return {
+    ...base,
+    source: 'video',
+    q_vph: Math.round((base.q_vph ?? 0) * 1.09),
+    c_vph: base.c_vph,
+    x: round(Math.min(1.4, (base.x ?? 0) * 1.083), 2),
+    v_kmh: round(Math.max(0, (base.v_kmh ?? 0) - 2.6), 1),
+    k_vpk: round((base.k_vpk ?? 0) * 1.06, 1),
+    L_q_m: Math.round((base.L_q_m ?? 0) + 42),
+    T_d_min: round((base.T_d_min ?? 0) + 0.6, 1),
+    ci: round(clamp((base.ci ?? 0) * 1.05 + 2, 0, 100), 1),
+    confidence: round(clamp((base.confidence ?? 0.8) - 0.04, 0, 1), 2),
+  }
+}
+
+/** 由视频记录派生孪生记录(视频侧已更差时的反向派生) */
+function deriveTwinFromVideo(base: SegmentRecord): SegmentRecord {
+  return {
+    ...base,
+    source: 'twin',
+    q_vph: Math.round((base.q_vph ?? 0) / 1.09),
+    x: round(Math.max(0, (base.x ?? 0) / 1.083), 2),
+    v_kmh: round((base.v_kmh ?? 0) + 2.6, 1),
+    L_q_m: Math.max(0, Math.round((base.L_q_m ?? 0) - 42)),
+    T_d_min: round(Math.max(0, (base.T_d_min ?? 0) - 0.6), 1),
+    ci: round(clamp(((base.ci ?? 0) - 2) / 1.05, 0, 100), 1),
+    confidence: round(clamp((base.confidence ?? 0.8) + 0.04, 0, 1), 2),
+  }
+}
+
+function buildSegmentSources(segmentId: string): SegmentSourcePair | null {
+  const snap = buildSegmentsSnapshot()
+  const base = snap.segments.find((s) => s.segment_id === segmentId)
+  if (!base) return null
+  // 哪一侧是"实测基线":预置基线的 source 字段即该路段的真实来源
+  const twinIsBase = base.source === 'twin'
+  const twin = twinIsBase ? base : deriveTwinFromVideo(base)
+  let video: SegmentRecord | null = null
+  if (VIDEO_COVERED.has(segmentId)) video = twinIsBase ? deriveVideoFromTwin(base) : base
+
+  const pick = (r: SegmentRecord | null, k: keyof SegmentRecord): number | null =>
+    r && typeof r[k] === 'number' ? (r[k] as number) : null
+  const rows: [string, string, string, keyof SegmentRecord][] = [
+    ['x', '饱和度 x', '', 'x'],
+    ['v_kmh', '车速 km/h', 'km/h', 'v_kmh'],
+    ['L_q_m', '排队长度 m', 'm', 'L_q_m'],
+    ['T_d_min', '排队消散 min', 'min', 'T_d_min'],
+    ['ci', '拥挤指数 CI', '', 'ci'],
+  ]
+  const deltas: SegmentSourceDelta[] = rows.map(([key, label, unit, field]) => {
+    const v = pick(video, field)
+    const t = pick(twin, field)
+    return { key, label, unit, video: v, twin: t, delta: v !== null && t !== null ? round(v - t, 2) : null }
+  })
+
+  return {
+    segment_id: segmentId,
+    ts: snap.ts,
+    is_simulated: true,
+    slots: [
+      { source: 'video', record: video, available: video !== null },
+      { source: 'twin', record: twin, available: true },
+    ],
+    deltas,
+  }
+}
+
+// ---------- 告警(四态,内存态流转) ----------
+
+interface AlertBase {
+  alert_id: string
+  segment_id: string
+  level: CongestionLevel
+  triggered_by: string[]
+  factor_ids?: string[]
+  /** 首次观测 = 快照时间往前推 ago_min 分钟(不另取浏览器时间) */
+  ago_min: number
+  status: TrafficAlert['status']
+}
+
+// 预置告警(沿用设计稿的告警编号与路段线索):待认领 2 / 处置中 1 / 已闭环 3 / 误报 1,
+// 与 page2「关联告警 2 条未闭环」、page3「待认领 7 条·未闭环 3」的口径自洽:未闭环 = 待认领 + 处置中。
+const ALERT_BASES: AlertBase[] = [
+  { alert_id: 'A-2412-018', segment_id: 'SEG-004', level: 3, triggered_by: ['x', 'L_q'], ago_min: 3, status: '待认领' },
+  { alert_id: 'A-2412-021', segment_id: 'SEG-007', level: 2, triggered_by: ['v'], ago_min: 5, status: '待认领' },
+  {
+    alert_id: 'A-2412-015',
+    segment_id: 'SEG-003',
+    level: 3,
+    triggered_by: ['x'],
+    factor_ids: ['F01', 'F06'],
+    ago_min: 9,
+    status: '处置中',
+  },
+  { alert_id: 'A-2410-306', segment_id: 'SEG-002', level: 3, triggered_by: ['v'], ago_min: 38, status: '已闭环' },
+  { alert_id: 'A-2410-308', segment_id: 'SEG-001', level: 3, triggered_by: ['x'], ago_min: 59, status: '已闭环' },
+  { alert_id: 'A-2410-298', segment_id: 'SEG-005', level: 3, triggered_by: ['v'], ago_min: 78, status: '已闭环' },
+  { alert_id: 'A-2410-291', segment_id: 'SEG-001', level: 2, triggered_by: ['x'], ago_min: 95, status: '误报' },
+]
+
+interface AlertRuntime {
+  status?: TrafficAlert['status']
+  channels?: string[]
+  dispatch_at?: string
+  /** 最近一次下发的分流比例(%)——与回执同源,供刷新后从 /alerts 还原下发留痕 */
+  dispatch_ratio_pct?: number
+  writeback?: TrafficAlert['writeback']
+}
+
+const alertRuntime = new Map<string, AlertRuntime>()
+
+/** 结果四选一的唯一取值集(手册 §11.2);mock 侧校验用,前端展示枚举同源 */
+const WRITEBACK_RESULTS: readonly WritebackResult[] = ['已消除', '已缓解', '未改善', '误报']
+
+function isTerminal(status: TrafficAlert['status']): boolean {
+  return status === '已闭环' || status === '误报'
+}
+
+/** 预置「处置中」的 A-2412-015 视为已下发过:回执 / 渠道 / 比例齐备,演示可直接走回写(TC-07) */
+const SEED_DISPATCH: Record<string, { channel: string; ratio_pct: number; dispatch_ago_min: number }> = {
+  'A-2412-015': { channel: '情报板', ratio_pct: 25, dispatch_ago_min: 6 },
+}
+
+/** 复位到初始演示态:清运行态后重放预置下发留痕(供 POST /traffic/alerts/reset 调用) */
+function resetAlertRuntime(): void {
+  alertRuntime.clear()
+  const now = Date.now()
+  for (const [id, s] of Object.entries(SEED_DISPATCH)) {
+    alertRuntime.set(id, {
+      channels: [s.channel],
+      dispatch_at: stampOf(new Date(now - s.dispatch_ago_min * 60_000)),
+      dispatch_ratio_pct: s.ratio_pct,
+    })
+  }
+}
+resetAlertRuntime()
+
+/** 首次观测时间只在首次出快照时算一次,此后各快照沿用同一值(审计时间不得随刷新漂移) */
+const firstSeenCache = new Map<string, string>()
+
+function firstSeenOf(a: AlertBase, now: number): string {
+  const hit = firstSeenCache.get(a.alert_id)
+  if (hit) return hit
+  const stamp = stampOf(new Date(now - a.ago_min * 60_000))
+  firstSeenCache.set(a.alert_id, stamp)
+  return stamp
+}
+
+function buildAlerts(): AlertsSnapshot {
+  const now = Date.now()
+  const alerts: TrafficAlert[] = ALERT_BASES.map((a) => {
+    const rt = alertRuntime.get(a.alert_id) ?? {}
+    return {
+      alert_id: a.alert_id,
+      segment_id: a.segment_id,
+      segment_name: nameOfSegment(a.segment_id),
+      level: a.level,
+      triggered_by: a.triggered_by,
+      first_seen: firstSeenOf(a, now),
+      status: rt.status ?? a.status,
+      factor_ids: a.factor_ids,
+      channels: rt.channels,
+      dispatch_at: rt.dispatch_at,
+      dispatch_ratio_pct: rt.dispatch_ratio_pct,
+      writeback: rt.writeback,
+    }
+  })
+  return { ts: localIso(new Date()), is_simulated: true, alerts }
+}
+
+// ---------- 预测(一期 L0,不报精度数字) ----------
+
+/** 演示预测档:15 / 30 / 60 分钟相对当前 CI 的变化(设计稿口径 −3.4 / −11.0 / −20.8) */
+const PREDICT_PROFILE: { h: 15 | 30 | 60; delta: number }[] = [
+  { h: 15, delta: -3.4 },
+  { h: 30, delta: -11.0 },
+  { h: 60, delta: -20.8 },
+]
+
+/** CI → 演示档位(仅供 pred 的等级展示;判级一律以四项指标为准,见 CI 硬口径) */
+function demoLevelFromCi(ci: number): CongestionLevel {
+  if (ci >= 85) return 4
+  if (ci >= 65) return 3
+  if (ci >= 40) return 2
+  return 1
+}
+
+function buildPredict(segmentId: string, only?: number): PredictResponse | null {
+  const rec = buildSegmentsSnapshot().segments.find((s) => s.segment_id === segmentId)
+  if (!rec) return null
+  const baseCi = rec.ci ?? 0
+  // ?h=15|30|60 只回该档;未给或给的是别的值就回全档(调用方按需取)
+  const profile = only === 15 || only === 30 || only === 60 ? PREDICT_PROFILE.filter((p) => p.h === only) : PREDICT_PROFILE
+  const points = profile.map(({ h, delta }) => {
+    const ci = round(clamp(baseCi + delta, 0, 100), 1)
+    const level = demoLevelFromCi(ci)
+    return { h, ci, delta_ci: round(ci - baseCi, 1), level, level_name: LEVEL_NAME[level] ?? String(level) }
+  })
+  return { segment_id: segmentId, ts: localIso(new Date()), is_simulated: true, model: 'L0', points }
+}
+
+// ---------- 阈值与 CI 权重(只读演示;真实来源 stations/thresholds.json) ----------
+
+function buildThresholds(): ThresholdSnapshot {
+  return {
+    ts: localIso(new Date()),
+    is_simulated: true,
+    // CI 四项加权构成(设计稿口径 0.40 / 0.25 / 0.25 / 0.10,合计 1)
+    ci_weights: [
+      { key: 'x', label: '饱和度 x', weight: 0.4 },
+      { key: 'v', label: '速度比 v/v_f', weight: 0.25 },
+      { key: 'k', label: '排队比 L_q', weight: 0.25 },
+      { key: 'T_d', label: '消散 T_d', weight: 0.1 },
+    ],
+    rows: LEVEL_THRESHOLDS.map((r) => ({ metric: r.metric, unit: r.unit, bands: r.bands })),
+    changelog: THRESHOLD_CHANGELOG.map((c) => ({ ...c })),
+  }
+}
+
+// ---------- 热力矩阵 / CI 走势 ----------
+
+function buildHeatMatrix(buckets: number): HeatMatrix {
+  const count = Math.min(24, Math.max(4, buckets))
+  const snap = buildSegmentsSnapshot()
+  const now = Date.now()
+  const labels = Array.from({ length: count }, (_, i) => clockOf(new Date(now - (count - 1 - i) * 60_000)))
+  const rows = snap.segments.map((s) => {
+    const available = !isStaleRec(s) && typeof s.ci === 'number'
+    const vals: (number | null)[] = labels.map((_, i) => {
+      if (!available) return null // 数据不可用 → 灰档,绝不用 0 冒充
+      const wave = Math.sin((i / Math.max(1, count - 1)) * Math.PI * 1.6)
+      return round(clamp((s.ci ?? 0) + wave * 14 - 8, 0, 100), 1)
+    })
+    return { segment_id: s.segment_id, name: nameOfSegment(s.segment_id), buckets: vals }
+  })
+  return { ts: snap.ts, is_simulated: true, bucket_sec: 60, buckets: count, labels, rows }
+}
+
+function buildCiHistory(segmentId: string, points: number): CiHistory | null {
+  const rec = buildSegmentsSnapshot().segments.find((s) => s.segment_id === segmentId)
+  if (!rec) return null
+  const count = Math.min(48, Math.max(4, points))
+  const base = rec.ci ?? 0
+  const now = Date.now()
+  const series = Array.from({ length: count }, (_, i) => {
+    const t = i / Math.max(1, count - 1)
+    const drift = (t - 0.5) * 10 // 近期缓慢上升的演示趋势
+    const ci = round(clamp(base + drift + Math.sin(i * 0.9) * 4, 0, 100), 1)
+    return { ts: clockOf(new Date(now - (count - 1 - i) * 5 * 60_000)), ci, level: demoLevelFromCi(ci) }
+  })
+  const values = series.map((p) => p.ci)
+  return { segment_id: segmentId, is_simulated: true, points: series, min: Math.min(...values), max: Math.max(...values) }
+}
+
+// ---------- 数据同化(扩展:断面 role / 编号 / 计数) ----------
+
+function buildAssimilationFull(): AssimilationSnapshotFull {
+  const now = localIso(new Date())
+  const nowStamp = stampOf(new Date())
+  const det = (
+    pointId: string,
+    name: string,
+    segmentId: string,
+    role: 'boundary' | 'internal',
+    enabled: boolean,
+    flow: number | null,
+    speed: number | null,
+    confidence: number,
+    gateReason: 'confidence_low' | 'data_age' | 'deviation_fuse' | null,
+    gateDetail: string | null,
+    reason: string | null,
+  ): AssimilationRecordV2 => ({
+    point_code: pointId,
+    point_id: pointId,
+    name,
+    segment_id: segmentId,
+    role,
+    enabled,
+    flow_dev_pct: flow,
+    speed_dev_pct: speed,
+    confidence,
+    gate_reason: gateReason,
+    gate_detail: gateDetail,
+    reason,
+    last_apply_at: enabled ? nowStamp : null,
+  })
+
+  const records: AssimilationRecordV2[] = [
+    // 边界断面 3 条:可回灌(其中一条门控中)
+    det('E-01', '东进站路·边界', 'SEG-002', 'boundary', true, 3.2, 4.1, 0.88, null, null, null),
+    det(
+      'E-04',
+      '西进站路·边界',
+      'SEG-007',
+      'boundary',
+      false,
+      null,
+      null,
+      0.62,
+      'confidence_low',
+      '数据置信度 0.62 < 门控阈值 0.75,停止回灌并留日志',
+      'confidence_low',
+    ),
+    det('E-07', '南进站路·边界', 'SEG-005', 'boundary', true, 1.8, 2.4, 0.91, null, null, null),
+    // 内部断面 1 条:恒为 assimilating=false,reason 写死(不是"门控中",是"制度上不允许")
+    det(
+      'E-09',
+      '站前路·内部',
+      'SEG-001',
+      'internal',
+      false,
+      null,
+      null,
+      0.9,
+      null,
+      '仅 role=boundary 断面允许回灌(手册门控口径)',
+      'internal_not_allowed',
+    ),
+  ]
+
+  return {
+    ts: now,
+    is_simulated: true,
+    gate: { confidence_min: 0.6, data_age_max_s: 120 },
+    counts: { boundary: records.filter((r) => r.role === 'boundary').length, internal: records.filter((r) => r.role === 'internal').length },
+    records,
+  }
+}
+
 // ---------- HTTP 处理(path 不含 /api 前缀,与 mock/index.ts 的 connect 挂载一致) ----------
 
 export async function handleTraffic(path: string, method: string, req: MockReq, res: MockRes): Promise<boolean> {
+  // 查询参数(Issue #78 的 ?segment_id= / ?points= / ?window= 等);path 已由调用方去尾斜杠
+  const url = new URL(req.url ?? path, 'http://mock.local')
   let m = /^\/traffic\/segments$/.exec(path)
   if (m && method === 'GET') {
     json(res, 200, buildSegmentsSnapshot())
@@ -622,17 +1133,218 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
 
   // 决策工作台(Issue #59,接口面新增):同化状态 / 人工置位因素
   if (path === '/traffic/assimilation' && method === 'GET') {
-    json(res, 200, buildAssimilation())
+    json(res, 200, buildAssimilationFull())
     return true
   }
 
   // 契约 L440 预留端点的 GET:当前生效因素清单(含预置演示因素与人工置位,
   // 从 segments 快照展平——POST 置位 / reset 复位后此处随动)。
+  // Issue #78:支持 ?segment_id= 过滤(拥挤度热力页的"成因拆解"按路段取)。
   if (path === '/traffic/factors' && method === 'GET') {
-    const factors = buildSegmentsSnapshot().segments.flatMap((s) =>
-      (s.factors_applied ?? []).map((f) => ({ ...f, segment_id: s.segment_id })),
-    )
+    const only = url.searchParams.get('segment_id')
+    const factors = buildSegmentsSnapshot()
+      .segments.filter((s) => !only || s.segment_id === only)
+      .flatMap((s) => (s.factors_applied ?? []).map((f) => ({ ...f, segment_id: s.segment_id })))
     json(res, 200, { ts: localIso(new Date()), is_simulated: true, factors })
+    return true
+  }
+
+  // ---------- Issue #78 新增端点 ----------
+
+  if (path === '/traffic/meta' && method === 'GET') {
+    json(res, 200, buildMeta())
+    return true
+  }
+
+  if (path === '/traffic/overview' && method === 'GET') {
+    json(res, 200, buildOverview())
+    return true
+  }
+
+  if (path === '/traffic/network' && method === 'GET') {
+    json(res, 200, buildNetwork())
+    return true
+  }
+
+  m = /^\/traffic\/segments\/([^/]+)\/sources$/.exec(path)
+  if (m && method === 'GET') {
+    const pair = buildSegmentSources(decodeURIComponent(m[1]))
+    if (!pair) {
+      json(res, 404, { code: 'SEGMENT_NOT_FOUND', message: `路段不存在: ${decodeURIComponent(m[1])}` })
+      return true
+    }
+    json(res, 200, pair)
+    return true
+  }
+
+  if (path === '/traffic/alerts' && method === 'GET') {
+    json(res, 200, buildAlerts())
+    return true
+  }
+
+  // 演示复位:清空下发 / 回写运行态并重放预置留痕(与 factors/reset 同口径;
+  // 状态存在服务进程内存里,刷新页面不清,要清走这里)
+  if (path === '/traffic/alerts/reset' && method === 'POST') {
+    resetAlertRuntime()
+    json(res, 200, { reset: true, is_simulated: true })
+    return true
+  }
+
+  if (path === '/traffic/plan/dispatch' && method === 'POST') {
+    const body = (await readJson(req)) as Partial<DispatchInput> | null
+    if (
+      !body ||
+      !body.alert_id ||
+      !body.channel ||
+      typeof body.ratio_pct !== 'number' ||
+      !Number.isFinite(body.ratio_pct)
+    ) {
+      json(res, 400, { code: 'DISPATCH_INVALID', message: '下发参数不完整(需 alert_id/channel/ratio_pct)' })
+      return true
+    }
+    const alertBase = ALERT_BASES.find((a) => a.alert_id === body.alert_id)
+    if (!alertBase) {
+      json(res, 404, { code: 'ALERT_NOT_FOUND', message: `告警不存在: ${body.alert_id}` })
+      return true
+    }
+    if (body.segment_id && body.segment_id !== alertBase.segment_id) {
+      json(res, 400, {
+        code: 'ALERT_SEGMENT_MISMATCH',
+        message: `路段不匹配: ${body.alert_id} 属于 ${alertBase.segment_id},收到 ${body.segment_id}`,
+      })
+      return true
+    }
+    if (body.ratio_pct <= 0 || body.ratio_pct > 100) {
+      json(res, 400, { code: 'DISPATCH_INVALID', message: `分流比例须在 (0, 100]: ${body.ratio_pct}` })
+      return true
+    }
+    const nowStatus = alertRuntime.get(body.alert_id)?.status ?? alertBase.status
+    if (isTerminal(nowStatus)) {
+      json(res, 409, { code: 'ALERT_TERMINAL', message: `终态告警不可再下发: ${body.alert_id}(${nowStatus})` })
+      return true
+    }
+    const at = stampOf(new Date())
+    const rt = alertRuntime.get(body.alert_id) ?? {}
+    rt.status = '处置中'
+    rt.channels = [body.channel]
+    rt.dispatch_at = at
+    rt.dispatch_ratio_pct = body.ratio_pct
+    alertRuntime.set(body.alert_id, rt)
+    const receipt: DispatchReceipt = {
+      alert_id: body.alert_id,
+      channel: body.channel,
+      ratio_pct: body.ratio_pct,
+      // 一期无真实下发通道:回执是演示态(页面已标「mock 侧」)
+      receipt: `${body.channel}已确认`,
+      at,
+      is_simulated: true,
+    }
+    json(res, 200, receipt)
+    return true
+  }
+
+  if (path === '/traffic/plan/ack' && method === 'POST') {
+    const body = (await readJson(req)) as Partial<WritebackInput> | null
+    if (!body || !body.alert_id || !body.operator || !body.action || !body.result) {
+      json(res, 400, { code: 'ACK_INVALID', message: '回写参数不完整(需 alert_id/operator/action/result)' })
+      return true
+    }
+    if (!WRITEBACK_RESULTS.includes(body.result)) {
+      json(res, 400, {
+        code: 'ACK_INVALID',
+        message: `结果须为四选一(${WRITEBACK_RESULTS.join(' / ')}): ${body.result}`,
+      })
+      return true
+    }
+    const alertBase = ALERT_BASES.find((a) => a.alert_id === body.alert_id)
+    if (!alertBase) {
+      json(res, 404, { code: 'ALERT_NOT_FOUND', message: `告警不存在: ${body.alert_id}` })
+      return true
+    }
+    if (body.segment_id && body.segment_id !== alertBase.segment_id) {
+      json(res, 400, {
+        code: 'ALERT_SEGMENT_MISMATCH',
+        message: `路段不匹配: ${body.alert_id} 属于 ${alertBase.segment_id},收到 ${body.segment_id}`,
+      })
+      return true
+    }
+    const rt = alertRuntime.get(body.alert_id) ?? {}
+    const nowStatus = rt.status ?? alertBase.status
+    if (isTerminal(nowStatus)) {
+      json(res, 409, { code: 'ALERT_TERMINAL', message: `终态告警不可再回写: ${body.alert_id}(${nowStatus})` })
+      return true
+    }
+    // 闭环顺序硬口径(TC-07):回写必须有下发回执在前,不能从「待认领 / 处置中未下发」直接跳终态
+    if (!rt.dispatch_at || !rt.channels || rt.channels.length === 0) {
+      json(res, 409, {
+        code: 'ACK_NO_DISPATCH',
+        message: `告警尚未下发(无派发回执),不可回写: ${body.alert_id}`,
+      })
+      return true
+    }
+    // 结果 → 状态流转(手册 §11.2):已消除 / 已缓解 → 已闭环;未改善 → 留在处置中;误报 → 误报
+    const status: TrafficAlert['status'] =
+      body.result === '误报' ? '误报' : body.result === '未改善' ? '处置中' : '已闭环'
+    const at = stampOf(new Date())
+    rt.status = status
+    rt.writeback = { operator: body.operator, action: body.action, result: body.result, at }
+    alertRuntime.set(body.alert_id, rt)
+    const receipt: WritebackReceipt = {
+      alert_id: body.alert_id,
+      status,
+      result: body.result,
+      at,
+      is_simulated: true,
+    }
+    json(res, 200, receipt)
+    return true
+  }
+
+  if (path === '/traffic/predict' && method === 'GET') {
+    const sid = url.searchParams.get('segment_id')
+    if (!sid) {
+      json(res, 400, { code: 'PREDICT_INVALID', message: '缺少 segment_id' })
+      return true
+    }
+    const hRaw = url.searchParams.get('h')
+    const h = hRaw === null ? undefined : Number(hRaw)
+    if (h !== undefined && !Number.isFinite(h)) {
+      json(res, 400, { code: 'PREDICT_INVALID', message: `h 须为数值(15 / 30 / 60): ${hRaw}` })
+      return true
+    }
+    const pred = buildPredict(sid, h)
+    if (!pred) {
+      json(res, 404, { code: 'SEGMENT_NOT_FOUND', message: `路段不存在: ${sid}` })
+      return true
+    }
+    json(res, 200, pred)
+    return true
+  }
+
+  if (path === '/traffic/thresholds' && method === 'GET') {
+    json(res, 200, buildThresholds())
+    return true
+  }
+
+  if (path === '/traffic/heat-matrix' && method === 'GET') {
+    const buckets = Number(url.searchParams.get('bucket') ?? url.searchParams.get('window') ?? '12')
+    json(res, 200, buildHeatMatrix(Number.isFinite(buckets) ? buckets : 12))
+    return true
+  }
+
+  if (path === '/traffic/ci-history' && method === 'GET') {
+    const sid = url.searchParams.get('segment_id')
+    if (!sid) {
+      json(res, 400, { code: 'CI_HISTORY_INVALID', message: '缺少 segment_id' })
+      return true
+    }
+    const points = Number(url.searchParams.get('points') ?? '12')
+    const hist = buildCiHistory(sid, Number.isFinite(points) ? points : 12)
+    if (!hist) {
+      json(res, 404, { code: 'SEGMENT_NOT_FOUND', message: `路段不存在: ${sid}` })
+      return true
+    }
+    json(res, 200, hist)
     return true
   }
 
