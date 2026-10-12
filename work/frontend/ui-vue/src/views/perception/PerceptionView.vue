@@ -1,1232 +1,224 @@
 <script setup lang="ts">
-// 感知层 · YOLO 路面监控(Issue #54,三层前端之一):
-//   左 = 监控画面(样本视频帧序列 + 逐帧检测框/轨迹叠加,数据来自感知演示服务
-//        work/perception/server.py,由 dump_monitor_data.py 离线 MindSpore 推理导出);
-//   右 = 检测通道 + 回放侧检测统计;下 = video/twin 双链路指标快照(TC-19 口径)。
-// 口径:画面是样本视频离线回放(非本站现场、非实时流);检测框/轨迹为一期接口面
-//   新增形状(非契约 v2.0 字段);路段指标仍为契约 mock 快照。页面不出现"实时画面/实测"。
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { getTrafficSegments, subscribeTrafficSnapshot } from '../../api/traffic'
+// 视频感知(YOLO 链路)页 · Issue #78 按设计稿 04 重写。
+//
+// 数据来源(两个,不混):
+//  ① 感知演示服务(/perception-api → work/perception/server.py):离线样本视频的逐帧检测框 / 抽帧画面 / 通道 meta;
+//  ② traffic 契约快照(mock / 接口层):映射路段的 video 槽位字段、断面同化门控。
+//
+// 硬口径(违反即不通过):
+//  · 画面是**离线样本视频**,不是实时流、不是本站现场 → 页头黄色口径标 + 页脚写明;
+//  · 深色(token)只出现在监控画面格内,页面壳层 / 卡片 / 表格一律浅色;
+//  · 车型框色(CLASS_COLORS)与等级四级色解耦,画面区不出现等级色;
+//  · 拿不到的字段(越线计数 / SVR / 标定 / 平均 Q)一律「—」并注明出处,绝不用推算值或设计稿示例值冒充。
+import { computed, onMounted, ref, watch } from 'vue'
+import AppShell from '../../components/AppShell.vue'
 import {
   getPerceptionDetections,
   getPerceptionStreams,
-  perceptionFrameUrl,
-  type Detection,
-  type DetectionFrame,
+  getPerceptionSummary,
   type PerceptionDetections,
   type PerceptionStreamMeta,
+  type PerceptionSummary,
 } from '../../api/perception'
-import { demoSegment } from '../../shared/demoNetwork'
-import { isStale, levelStyle, type SegmentRecord, type TrafficSource } from '../../shared/traffic'
-import LevelBadge from '../dashboard/components/LevelBadge.vue'
+import {
+  getTrafficAssimilationFull,
+  getTrafficSegmentSources,
+  getTrafficSegments,
+} from '../../api/traffic'
+import type { AssimilationSnapshotFull, SegmentSourcePair } from '../../shared/traffic'
+import { formatStamp } from '../../shared/traffic'
+import ChannelLedger from './components/ChannelLedger.vue'
+import DetailPanel from './components/DetailPanel.vue'
+import MonitorWall from './components/MonitorWall.vue'
+import PipelinePanel from './components/PipelinePanel.vue'
+import SemanticsPanel from './components/SemanticsPanel.vue'
+import { CHANNELS, type ChannelDef, type ChannelState } from './components/channels'
 
-// ---------- 路段指标快照(契约 mock,与态势大屏同源) ----------
-const segments = ref<SegmentRecord[]>([])
-const live = ref(false)
-const snapshotTs = ref('')
-
-let unsubscribe: (() => void) | null = null
-
-async function refresh(): Promise<void> {
-  try {
-    const snap = await getTrafficSegments()
-    segments.value = snap.segments
-    snapshotTs.value = snap.ts
-  } catch {
-    /* 联调期接口层可能未起:SSE 重连后会再拉 */
-  }
-}
-
-const SOURCE_LABEL: Record<TrafficSource, string> = {
-  video: '视频链路',
-  twin: '孪生链路',
-}
-const videoRows = computed(() => rowsOf('video'))
-const twinRows = computed(() => rowsOf('twin'))
-
-function rowsOf(source: TrafficSource) {
-  return segments.value
-    .filter((seg) => seg.source === source)
-    .map((seg) => ({
-      seg,
-      name: demoSegment(seg.segment_id)?.name ?? seg.segment_id,
-      stale: isStale(seg),
-      color: levelStyle(seg).color,
-    }))
-}
-
-// ---------- 感知检测流(真实离线推理数据) ----------
 const streams = ref<PerceptionStreamMeta[]>([])
-const curId = ref('')
-const det = ref<PerceptionDetections | null>(null)
+const detMap = ref<Record<string, PerceptionDetections>>({})
 const pStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const pError = ref('')
+
+/** 当前检测通道(默认 C-05 track1,与设计稿一致) */
+const currentSource = ref('track1')
+
+const summary = ref<PerceptionSummary | null>(null)
+const summaryUnavailable = ref(true)
+const sourcePair = ref<SegmentSourcePair | null>(null)
+const assimilation = ref<AssimilationSnapshotFull | null>(null)
+const snapshotTs = ref('')
+
+// 可用性一律由服务端实际返回判定:返回里有的才「就绪 / 检测中」,没有的「未导出」
+const channels = computed<ChannelState[]>(() =>
+  CHANNELS.map((def) => {
+    const meta = streams.value.find((m) => m.stream_id === def.source) ?? null
+    const det = detMap.value[def.source] ?? null
+    return {
+      def,
+      meta,
+      det,
+      detTotal: det ? det.frames.reduce((s, f) => s + f.det.length, 0) : null,
+    }
+  }),
+)
+
+const fallbackDef = CHANNELS[0] as ChannelDef
+const current = computed<ChannelState>(() => {
+  const hit = channels.value.find((c) => c.def.source === currentSource.value)
+  return hit ?? channels.value[0] ?? { def: fallbackDef, meta: null, det: null, detTotal: null }
+})
+
+const processedAt = computed(() =>
+  current.value.meta ? formatStamp(current.value.meta.generated_at) : '—',
+)
 
 async function loadStreams(): Promise<void> {
   pStatus.value = 'loading'
   pError.value = ''
   try {
     const res = await getPerceptionStreams()
-    streams.value = res.streams
-    if (res.streams.length === 0) {
-      pStatus.value = 'error'
-      pError.value = '感知服务无通道数据(先运行 work/perception/tools/dump_monitor_data.py 导出)'
-      return
-    }
-    await loadStream(res.streams[0].stream_id)
-  } catch {
-    pStatus.value = 'error'
-    pError.value = '感知服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)'
-  }
-}
-
-async function loadStream(id: string): Promise<void> {
-  curId.value = id
-  pStatus.value = 'loading'
-  try {
-    det.value = await getPerceptionDetections(id)
-    resetPlayer()
+    const list: PerceptionStreamMeta[] = Array.isArray(res.streams) ? res.streams : []
+    // 只拉已导出通道的逐帧检测(未导出通道服务端没有该端点数据)
+    const settled = await Promise.allSettled(list.map((m) => getPerceptionDetections(m.stream_id)))
+    const dets: Record<string, PerceptionDetections> = {}
+    list.forEach((m, i) => {
+      const r = settled[i]
+      if (r && r.status === 'fulfilled') dets[m.stream_id] = r.value
+    })
+    streams.value = list
+    detMap.value = dets
     pStatus.value = 'ready'
+    const first = list[0]
+    if (first && !list.some((m) => m.stream_id === currentSource.value)) {
+      currentSource.value = first.stream_id
+    }
   } catch {
     pStatus.value = 'error'
-    pError.value = '检测数据加载失败'
+    pError.value = '感知演示服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)'
   }
 }
 
-const curMeta = computed(() => streams.value.find((s) => s.stream_id === curId.value) ?? null)
-const streamIndex = computed(() => streams.value.findIndex((s) => s.stream_id === curId.value))
-
-// ---------- 帧播放器(canvas) ----------
-const idx = ref(0)
-const playing = ref(true)
-const speed = ref(1)
-const canvasRef = ref<HTMLCanvasElement | null>(null)
-
-const total = computed(() => det.value?.total_frames ?? 0)
-const fpsNum = computed(() => det.value?.fps ?? 25)
-const framesArr = computed(() => det.value?.frames ?? [])
-
-// 轨迹拖尾:tid → 归一化坐标平铺数组(与上游轨迹视频同色系,琥珀色)
-const trails = new Map<number, number[]>()
-// 帧图缓存:1 起帧号 → Image
-const imgCache = new Map<number, HTMLImageElement>()
-let raf = 0
-let acc = 0
-let ctx: CanvasRenderingContext2D | null = null
-
-const CLASS_COLORS: Record<number, string> = {
-  0: '#b58cff',
-  1: '#7fd7a0',
-  2: '#37d6ff',
-  3: '#69e0e0',
-  5: '#ffd479',
-  7: '#ff9f6a',
+// 当前通道详情:汇总(感知服务,当前未实现 → 降级)+ 该映射路段的 video 槽位
+async function loadDetail(src: string): Promise<void> {
+  summary.value = null
+  summaryUnavailable.value = true
+  sourcePair.value = null
+  const def = CHANNELS.find((c) => c.source === src)
+  if (!def) return
+  const [sum, pair] = await Promise.allSettled([
+    getPerceptionSummary(src),
+    getTrafficSegmentSources(def.segmentId),
+  ])
+  if (sum.status === 'fulfilled' && sum.value && Array.isArray(sum.value.class_stats)) {
+    summary.value = sum.value
+    summaryUnavailable.value = false
+  }
+  if (pair.status === 'fulfilled') sourcePair.value = pair.value
 }
 
-function resetPlayer(): void {
-  idx.value = 0
-  playing.value = true
-  speed.value = 1
-  trails.clear()
-  imgCache.clear()
-  acc = 0
-  const meta = curMeta.value
-  const cv = canvasRef.value
-  if (meta && cv) {
-    cv.width = meta.width
-    cv.height = meta.height
-    ensureImg(meta.stream_id, 1) // 预取首帧,门控放行前先有图
+async function loadTrafficBase(): Promise<void> {
+  try {
+    const snap = await getTrafficSegments()
+    snapshotTs.value = snap.ts
+  } catch {
+    // 快照接口未起:页头时间戳留「—」,不阻塞感知数据展示
+  }
+  try {
+    assimilation.value = await getTrafficAssimilationFull()
+  } catch {
+    assimilation.value = null
   }
 }
 
-function seek(i: number): void {
-  idx.value = Math.max(0, Math.min(total.value - 1, i))
-  trails.clear()
+function onSelect(source: string): void {
+  currentSource.value = source
 }
 
-function advance(n: number): void {
-  const t = total.value
-  if (!t) return
-  const from = idx.value
-  const to = from + n
-  if (to >= t) {
-    seek(0)
-    return
-  }
-  idx.value = to
-  // 路过的每个检测帧都向拖尾贡献一个点(速度倍增时也正确)
-  const arr = framesArr.value
-  for (const e of arr) {
-    if (e.i <= from) continue
-    if (e.i > to) break
-    for (const d of e.det) pushTrail(d)
-  }
-}
-
-function pushTrail(d: Detection): void {
-  const tid = d[6]
-  let pts = trails.get(tid)
-  if (!pts) {
-    pts = []
-    trails.set(tid, pts)
-  }
-  pts.push(((d[0] + d[2]) / 2), d[3])
-  if (pts.length > 120) pts.splice(0, pts.length - 120)
-}
-
-// ≤i 的最近检测帧(二分;比维护游标对回退/跳转更稳)
-function detAt(i: number): DetectionFrame | null {
-  const arr = framesArr.value
-  let lo = 0
-  let hi = arr.length - 1
-  let ans = -1
-  while (lo <= hi) {
-    const mid = (lo + hi) >> 1
-    if (arr[mid].i <= i) {
-      ans = mid
-      lo = mid + 1
-    } else {
-      hi = mid - 1
-    }
-  }
-  return ans >= 0 ? arr[ans] : null
-}
-
-const curFrame = computed(() => detAt(idx.value))
-const activeCount = computed(() => curFrame.value?.det.length ?? 0)
-const avgConf = computed(() => {
-  const d = curFrame.value?.det ?? []
-  if (d.length === 0) return null
-  return d.reduce((s, x) => s + x[5], 0) / d.length
-})
-
-// 累计轨迹/类别计数:按 first_seen 逐帧扫描一次,预成查表数组
-const cum = computed(() => {
-  const d = det.value
-  if (!d) return null
-  const totalN = d.total_frames
-  const events = Object.values(d.first_seen)
-    .map((v) => ({ f: v.frame, cls: v.class }))
-    .sort((a, b) => a.f - b.f)
-  const clsIds = [...new Set(events.map((e) => e.cls))]
-  const byClass = new Map<number, Int32Array>(clsIds.map((c) => [c, new Int32Array(totalN + 1)]))
-  const cumTotal = new Int32Array(totalN + 1)
-  const runCls = new Map<number, number>()
-  let ei = 0
-  let run = 0
-  for (let i = 0; i <= totalN; i++) {
-    while (ei < events.length && events[ei].f <= i) {
-      run++
-      const c = events[ei].cls
-      runCls.set(c, (runCls.get(c) ?? 0) + 1)
-      ei++
-    }
-    cumTotal[i] = run
-    for (const c of clsIds) byClass.get(c)![i] = runCls.get(c) ?? 0
-  }
-  return { cumTotal, byClass }
-})
-const cumTracks = computed(() => cum.value?.cumTotal[idx.value] ?? 0)
-const clsChips = computed(() => {
-  const c = cum.value
-  if (!c) return []
-  return [...c.byClass.entries()]
-    .filter(([, arr]) => arr[idx.value] > 0)
-    .map(([cls, arr]) => ({
-      cls,
-      name: curMeta.value?.class_names[String(cls)] ?? `类${cls}`,
-      color: CLASS_COLORS[cls] ?? '#37d6ff',
-      count: arr[idx.value],
-    }))
-    .sort((a, b) => b.count - a.count)
-})
-
-// ---------- 感知判读(人眼判堵要素,像素空间近似) ----------
-// 人判断路段堵不堵看的是:车停没停/走多快、路面上塞了多少车、一分钟能过几辆、
-// 比刚才更堵还是更缓。这些都从逐帧检测框直接算(归一化坐标,无米制标定):
-//   占有率 = 当前帧车辆框面积合计 / 画面面积(近似密度 k)
-//   三态   = 每个目标按近 8 个采样帧的位移速度分 停驻/缓行/通行(近似车速 v 的定性版)
-//   断面   = 虚拟检测线(画面 55% 高度)的过车计数,近 10 秒×6 → 辆/分(近似流量 q)
-// 米制四指标(q/v/k/L_q)与判级待 M1-9 透视标定链路接入后替换,此处只做演示判读。
-const DETECT_LINE_Y = 0.55
-const SPEED_STOP = 0.0008 // 归一化位移/帧:低于≈停驻
-const SPEED_SLOW = 0.004 // 低于≈缓行,否则通行
-
-const kpi = computed(() => {
-  const d = det.value
-  if (!d) return null
-  const totalN = d.total_frames
-  const occArr = new Float32Array(totalN + 1)
-  const binStop = new Int32Array(totalN + 1)
-  const binSlow = new Int32Array(totalN + 1)
-  const binMove = new Int32Array(totalN + 1)
-  const crossArr = new Int32Array(totalN + 1)
-  const hist = new Map<number, Array<[number, number, number]>>() // tid → [帧, cx, cy]
-  let occ = 0
-  let bins: [number, number, number] = [0, 0, 0]
-  let crossings = 0
-  let ei = 0
-  for (let i = 0; i <= totalN; i++) {
-    if (ei < d.frames.length && d.frames[ei].i === i) {
-      const e = d.frames[ei]
-      ei++
-      occ = 0
-      bins = [0, 0, 0]
-      for (const dt of e.det) {
-        const [x1, y1, x2, y2, , , tid] = dt
-        occ += (x2 - x1) * (y2 - y1)
-        const cx = (x1 + x2) / 2
-        const cy = y2
-        const h = hist.get(tid)
-        if (h && h.length > 0) {
-          const k = h.length
-          const [i0, x0, y0] = h[Math.max(0, k - 8)]
-          const span = i - i0
-          if ((h[k - 1][2] - DETECT_LINE_Y) * (cy - DETECT_LINE_Y) < 0) crossings++
-          if (k >= 3 && span > 0 && span <= 12) {
-            const sp = Math.hypot(cx - x0, cy - y0) / span
-            bins[sp < SPEED_STOP ? 0 : sp < SPEED_SLOW ? 1 : 2]++
-          } else {
-            bins[2]++ // 新出现/久未更新的轨迹按通行计
-          }
-        } else {
-          bins[2]++
-        }
-        if (h) h.push([i, cx, cy])
-        else hist.set(tid, [[i, cx, cy]])
-        if (h && h.length > 40) h.shift()
-      }
-    }
-    occArr[i] = occ
-    binStop[i] = bins[0]
-    binSlow[i] = bins[1]
-    binMove[i] = bins[2]
-    crossArr[i] = crossings
-  }
-  return { occArr, binStop, binSlow, binMove, crossArr }
-})
-
-const TREND_SPAN = 90 // 3 秒前的占有率对比
-const occNow = computed(() => kpi.value?.occArr[idx.value] ?? 0)
-const occPct = computed(() => (occNow.value * 100).toFixed(1))
-const occTrend = computed<'up' | 'down' | 'flat'>(() => {
-  const k = kpi.value
-  if (!k) return 'flat'
-  const prev = k.occArr[Math.max(0, idx.value - TREND_SPAN)]
-  const delta = k.occArr[idx.value] - prev
-  if (delta > 0.02) return 'up'
-  if (delta < -0.02) return 'down'
-  return 'flat'
-})
-const TREND_LABEL = { up: '▲ 变堵', down: '▼ 缓解', flat: '▬ 平稳' } as const
-const binsNow = computed(() => ({
-  stop: kpi.value?.binStop[idx.value] ?? 0,
-  slow: kpi.value?.binSlow[idx.value] ?? 0,
-  move: kpi.value?.binMove[idx.value] ?? 0,
-}))
-const binTotal = computed(() => {
-  const b = binsNow.value
-  return Math.max(1, b.stop + b.slow + b.move)
-})
-const crossTotal = computed(() => kpi.value?.crossArr[idx.value] ?? 0)
-const crossRatePerMin = computed(() => {
-  const k = kpi.value
-  if (!k) return 0
-  const win = Math.max(1, Math.round(fpsNum.value * 10))
-  const inWin = k.crossArr[idx.value] - k.crossArr[Math.max(0, idx.value - win)]
-  return Math.round((inWin / win) * fpsNum.value * 60)
-})
-
-function hexA(hex: string, alpha: number): string {
-  const n = parseInt(hex.slice(1), 16)
-  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`
-}
-
-function ensureImg(sid: string, n: number): HTMLImageElement | null {
-  let img = imgCache.get(n)
-  if (!img) {
-    img = new Image()
-    img.src = perceptionFrameUrl(sid, n)
-    imgCache.set(n, img)
-    if (imgCache.size > 160) {
-      for (const k of imgCache.keys()) if (Math.abs(k - n) > 90) imgCache.delete(k)
-    }
-  }
-  return img
-}
-
-function drawBoxes(ctx2d: CanvasRenderingContext2D, W: number, H: number, f: DetectionFrame): void {
-  const meta = curMeta.value
-  for (const d of f.det) {
-    const [x1, y1, x2, y2, cls, conf, tid] = d
-    const color = CLASS_COLORS[cls] ?? '#37d6ff'
-    const name = meta?.class_names[String(cls)] ?? `类${cls}`
-    ctx2d.fillStyle = hexA(color, 0.1)
-    ctx2d.fillRect(x1 * W, y1 * H, (x2 - x1) * W, (y2 - y1) * H)
-    ctx2d.strokeStyle = color
-    ctx2d.lineWidth = 2
-    ctx2d.strokeRect(x1 * W, y1 * H, (x2 - x1) * W, (y2 - y1) * H)
-    const label = `${name} ${(conf * 100).toFixed(0)}% #${tid}`
-    ctx2d.font = '600 12px system-ui, sans-serif'
-    const tw = ctx2d.measureText(label).width
-    const lx = Math.min(Math.max(x1 * W, 0), W - tw - 12)
-    const ly = Math.max(y1 * H - 19, 0)
-    ctx2d.fillStyle = color
-    ctx2d.fillRect(lx, ly, tw + 10, 17)
-    ctx2d.fillStyle = '#07101e'
-    ctx2d.fillText(label, lx + 5, ly + 12.5)
-  }
-}
-
-function drawTrails(ctx2d: CanvasRenderingContext2D, W: number, H: number): void {
-  ctx2d.strokeStyle = 'rgba(250,170,0,0.55)'
-  ctx2d.lineWidth = 2
-  for (const pts of trails.values()) {
-    if (pts.length < 4) continue
-    ctx2d.beginPath()
-    ctx2d.moveTo(pts[0] * W, pts[1] * H)
-    for (let k = 2; k < pts.length; k += 2) ctx2d.lineTo(pts[k] * W, pts[k + 1] * H)
-    ctx2d.stroke()
-  }
-}
-
-function drawCountLine(ctx2d: CanvasRenderingContext2D, W: number, H: number): void {
-  const ly = DETECT_LINE_Y * H
-  ctx2d.strokeStyle = 'rgba(55,214,255,0.55)'
-  ctx2d.setLineDash([10, 8])
-  ctx2d.lineWidth = 1.5
-  ctx2d.beginPath()
-  ctx2d.moveTo(0, ly)
-  ctx2d.lineTo(W, ly)
-  ctx2d.stroke()
-  ctx2d.setLineDash([])
-  ctx2d.fillStyle = 'rgba(55,214,255,0.8)'
-  ctx2d.font = '600 11px system-ui, sans-serif'
-  ctx2d.fillText('虚拟断面 · 过车计数', 10, ly - 7)
-}
-
-function draw(): void {
-  const cv = canvasRef.value
-  if (!cv) return
-  if (!ctx) ctx = cv.getContext('2d')
-  const ctx2d = ctx
-  if (!ctx2d) return
-  const meta = curMeta.value
-  // 惰性校正缓冲尺寸:canvas 在 pStatus=ready 分支里才挂载,watch(curMeta) 可能错过挂载时机
-  if (meta && (cv.width !== meta.width || cv.height !== meta.height)) {
-    cv.width = meta.width
-    cv.height = meta.height
-  }
-  const W = cv.width
-  const H = cv.height
-  ctx2d.fillStyle = '#04080f'
-  ctx2d.fillRect(0, 0, W, H)
-  if (!meta || !det.value) return
-  const img = ensureImg(meta.stream_id, idx.value + 1)
-  if (img && img.complete && img.naturalWidth > 0) ctx2d.drawImage(img, 0, 0, W, H)
-  drawCountLine(ctx2d, W, H)
-  drawTrails(ctx2d, W, H)
-  const f = detAt(idx.value)
-  if (f) drawBoxes(ctx2d, W, H, f)
-}
-
-// 推进节奏走定时器(后台标签也会触发,配合墙钟补偿,可见性变化不影响回放进度);
-// rAF 只负责画。
-let paceTimer = 0
-let lastTick = 0
-
-function pace(): void {
-  const now = performance.now()
-  const dt = lastTick ? Math.min((now - lastTick) / 1000, 1) : 0
-  lastTick = now
-  if (!playing.value || pStatus.value !== 'ready') return
-  // 缓冲门控:当前帧图未就绪时不推进(等价视频缓冲,避免黑底浮标签)
-  const img = imgCache.get(idx.value + 1)
-  if (img && img.complete && img.naturalWidth > 0) {
-    acc += dt * fpsNum.value * speed.value
-    const n = Math.floor(acc)
-    if (n > 0) {
-      acc -= n
-      advance(Math.min(n, 60))
-    }
-  } else {
-    acc = 0
-    if (curId.value) ensureImg(curId.value, idx.value + 1)
-  }
-}
-
-function loop(): void {
-  raf = requestAnimationFrame(loop)
-  draw()
-}
-
-watch(curMeta, (meta) => {
-  const cv = canvasRef.value
-  if (meta && cv) {
-    cv.width = meta.width
-    cv.height = meta.height
-  }
-})
-
-function fmtT(s: number): string {
-  const m = Math.floor(s / 60)
-  const ss = Math.floor(s % 60)
-  return `${m}:${String(ss).padStart(2, '0')}`
-}
-const curT = computed(() => fmtT(idx.value / (fpsNum.value || 25)))
-const durT = computed(() => fmtT(total.value / (fpsNum.value || 25)))
+watch(currentSource, (src) => void loadDetail(src), { immediate: true })
 
 onMounted(() => {
-  void refresh()
-  unsubscribe = subscribeTrafficSnapshot(
-    () => {
-      void refresh()
-    },
-    (connected) => {
-      live.value = connected
-    },
-  )
   void loadStreams()
-  raf = requestAnimationFrame(loop)
-  paceTimer = window.setInterval(pace, 250)
-})
-
-onUnmounted(() => {
-  unsubscribe?.()
-  cancelAnimationFrame(raf)
-  window.clearInterval(paceTimer)
+  void loadTrafficBase()
 })
 </script>
 
 <template>
-  <div class="perc-page">
-    <header class="bar">
-      <div class="bar-left">
-        <span class="logo">◈</span>
-        <span class="app-name">感知层 · YOLO 路面监控</span>
-        <span class="badge svc">感知演示服务</span>
+  <AppShell
+    active="perception"
+    :ts="snapshotTs"
+    title="视频感知 · YOLO 链路"
+    subtitle="6 段样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标"
+  >
+    <template #headRight>
+      <span class="td-badge-warn">离线样本视频 · 非实时流 · 非本站现场</span>
+      <span class="td-mono head-ts">处理时间戳 {{ processedAt }}</span>
+    </template>
+
+    <div class="td-body">
+      <div class="td-col col-left">
+        <ChannelLedger :channels="channels" :current-id="currentSource" @select="onSelect" />
       </div>
-      <div class="bar-mid">
-        <span class="badge sim">样本视频回放(非本站现场)· 演示数据(模拟)· is_simulated = true</span>
-      </div>
-      <div class="bar-right">
-        <span class="conn" :class="live ? 'up' : 'down'">
-          <i class="dot" />
-          {{ live ? '快照流已连接' : '快照流未连接' }}
-        </span>
-        <RouterLink class="nav-link" to="/heat">拥挤度热力 ›</RouterLink>
-        <RouterLink class="nav-link" to="/decision">决策工作台 ›</RouterLink>
-        <RouterLink class="dash-link" to="/dashboard">态势大屏 ›</RouterLink>
-      </div>
-    </header>
 
-    <div class="main">
-      <section class="panel monitor-panel">
-        <div class="panel-head">监控画面 · 固定机位样本回放(YOLO 车辆轨迹跟踪)</div>
-
-        <div v-if="pStatus === 'error'" class="pstate err">
-          <p>{{ pError }}</p>
-          <button class="retry" type="button" @click="loadStreams">重试</button>
-        </div>
-        <div v-else-if="pStatus === 'loading' && !det" class="pstate">加载检测数据…</div>
-
-        <template v-else>
-          <div v-if="curMeta" class="canvas-wrap">
-            <canvas ref="canvasRef" class="scene" />
-            <div class="hud hud-tl">
-              <span class="rec-dot" />
-              回放 · 固定机位 {{ streamIndex + 1 }}({{ curMeta.source_file }})
-            </div>
-            <div class="hud hud-tr">YOLOv8n · MindSpore</div>
-            <div class="hud hud-bl">
-              置信度 ≥ {{ curMeta.conf_threshold }} · IoU {{ curMeta.iou_threshold }} ·
-              {{ curMeta.fps }} fps
-            </div>
-            <div class="hud hud-br">
-              当前目标 {{ activeCount }} · 累计轨迹 {{ cumTracks }}
-            </div>
-          </div>
-
-          <div class="controls">
-            <button class="ctl play" type="button" @click="playing = !playing">
-              {{ playing ? '⏸' : '▶' }}
-            </button>
-            <div class="spd">
-              <button
-                v-for="s in [1, 2, 4]"
-                :key="s"
-                type="button"
-                class="ctl"
-                :class="{ on: speed === s }"
-                @click="speed = s"
-              >
-                {{ s }}×
-              </button>
-            </div>
-            <input
-              class="scrub"
-              type="range"
-              min="0"
-              :max="Math.max(total - 1, 0)"
-              :value="idx"
-              @input="seek(Number(($event.target as HTMLInputElement).value))"
-            />
-            <span class="tcode">{{ curT }} / {{ durT }} · 帧 {{ idx + 1 }}/{{ total }}</span>
-          </div>
-
-          <p class="frame-meta">
-            监控形态:固定机位对固定路段的车辆轨迹跟踪——MindSpore(MindYOLO yolov8n.ckpt)逐帧检测 +
-            ByteTrack 跟踪,琥珀色轨迹线为各车辆已走过的历史轨迹(离线导出回放);
-            检测框/轨迹 ID/置信度为逐帧真实推理输出。路段指标快照(下)为契约 v2.0 mock 数据。
-          </p>
-        </template>
-      </section>
-
-      <aside class="col">
-        <section class="panel kpi-panel">
-          <div class="panel-head">感知判读 · 人眼判堵要素(像素近似)</div>
-          <div class="kpi-grid">
-            <div class="kpi">
-              <span class="kpi-num">
-                {{ occPct }}%
-                <i class="trend" :class="occTrend">{{ TREND_LABEL[occTrend] }}</i>
-              </span>
-              <span class="kpi-lbl">画面车辆占有率(近3秒对比)</span>
-            </div>
-            <div class="kpi">
-              <span class="kpi-num">{{ crossRatePerMin }}</span>
-              <span class="kpi-lbl">断面通过率(辆/分 · 近10秒)</span>
-            </div>
-            <div class="kpi">
-              <span class="kpi-num">{{ crossTotal }}</span>
-              <span class="kpi-lbl">虚拟断面累计过车</span>
-            </div>
-            <div class="kpi">
-              <span class="kpi-num">{{ cumTracks }}</span>
-              <span class="kpi-lbl">累计进入画面(轨迹)</span>
-            </div>
-          </div>
-          <div class="flow-bar" aria-hidden="true">
-            <span class="fb-seg fb-stop" :style="{ width: `${(binsNow.stop / binTotal) * 100}%` }" />
-            <span class="fb-seg fb-slow" :style="{ width: `${(binsNow.slow / binTotal) * 100}%` }" />
-            <span class="fb-seg fb-move" :style="{ width: `${(binsNow.move / binTotal) * 100}%` }" />
-          </div>
-          <div class="flow-legend">
-            <span class="fl fl-stop">停驻 {{ binsNow.stop }}</span>
-            <span class="fl fl-slow">缓行 {{ binsNow.slow }}</span>
-            <span class="fl fl-move">通行 {{ binsNow.move }}</span>
-            <span class="fl-dim">当前帧 {{ activeCount }} 个目标按位移分档</span>
-          </div>
-          <div class="chips">
-            <span
-              v-for="chip in clsChips"
-              :key="chip.cls"
-              class="chip"
-              :style="{ borderColor: chip.color, color: chip.color }"
-            >
-              {{ chip.name }} ×{{ chip.count }}
-            </span>
-            <span v-if="clsChips.length === 0" class="empty">本帧前无轨迹</span>
-          </div>
-          <p class="kpi-note">
-            口径:以上为像素空间近似值(无米制标定);流量/车速/密度/排队长度四项契约指标
-            待透视标定链路(M1-9)接入后替换,判级见下方快照。
-          </p>
-        </section>
-
-        <section class="panel">
-          <div class="panel-head">监控通道(固定机位 · 样本视频)</div>
-          <div class="ch-list">
-            <button
-              v-for="(s, i) in streams"
-              :key="s.stream_id"
-              type="button"
-              class="ch"
-              :class="{ on: s.stream_id === curId }"
-              @click="loadStream(s.stream_id)"
-            >
-              <span class="ch-name">固定机位 {{ i + 1 }} · {{ s.source_file }}</span>
-              <span class="ch-meta">
-                {{ s.duration_s ?? '—' }}s · {{ s.width }}×{{ s.height }} · {{ s.track_total }} 条轨迹
-              </span>
-            </button>
-            <p v-if="pStatus === 'ready' && streams.length === 0" class="empty">无通道数据</p>
+      <div class="td-col col-mid">
+        <section v-if="pStatus === 'error'" class="td-card">
+          <div class="td-card-body err-body">
+            <span class="err-text">{{ pError }}</span>
+            <button class="td-btn sm" type="button" @click="loadStreams">重试</button>
           </div>
         </section>
+        <MonitorWall :channels="channels" :current-id="currentSource" @select="onSelect" />
+        <PipelinePanel
+          :channels="channels"
+          :current="current.def"
+          :meta="current.meta"
+          :summary="summary"
+          :summary-unavailable="summaryUnavailable"
+        />
+        <SemanticsPanel />
+      </div>
 
-        <section class="panel">
-          <div class="panel-head">检测明细(当前回放进度)</div>
-          <div class="meta-lines">
-            <span>
-              当前帧目标 {{ activeCount }} · 平均置信度 {{ avgConf == null ? '—' : avgConf.toFixed(2) }} ·
-              累计轨迹 {{ cumTracks }}
-            </span>
-            <span>
-              画面:{{ curMeta?.width }}×{{ curMeta?.height }} · {{ fpsNum }} fps ·
-              时长 {{ curMeta?.duration_s ?? '—' }}s · {{ total }} 帧
-            </span>
-            <span>模型:{{ curMeta?.model }} · {{ curMeta?.backend }}</span>
-            <span>导出:{{ curMeta?.generated_at }} · 离线推理产物</span>
-          </div>
-        </section>
-      </aside>
+      <div class="td-col col-right">
+        <DetailPanel
+          :ch="current"
+          :summary="summary"
+          :summary-unavailable="summaryUnavailable"
+          :source-pair="sourcePair"
+          :assimilation="assimilation"
+        />
+      </div>
     </div>
 
-    <div class="bottom">
-      <section class="panel link-panel">
-        <div class="panel-head">视频感知链路(source = video)</div>
-        <div class="seg-list">
-          <div v-for="row in videoRows" :key="row.seg.segment_id" class="row" :class="{ stale: row.stale }">
-            <LevelBadge :level="row.seg.level" :stale="row.stale" />
-            <span class="meta">
-              <span class="name">{{ row.name }}</span>
-              <span class="id">{{ row.seg.segment_id }} · {{ SOURCE_LABEL[row.seg.source] }}</span>
-            </span>
-            <span class="metrics" :style="row.stale ? { color: '#8C8C8C' } : { color: row.color }">
-              <template v-if="row.stale">不可用</template>
-              <template v-else>
-                {{ row.seg.q_vph ?? '—' }} vph · {{ row.seg.v_kmh ?? '—' }} km/h · 排队
-                {{ row.seg.L_q_m ?? 0 }} m
-              </template>
-            </span>
-          </div>
-          <p v-if="videoRows.length === 0" class="empty">快照为空(接口层未起?)</p>
-        </div>
-      </section>
-
-      <section class="panel link-panel">
-        <div class="panel-head">孪生链路(source = twin)</div>
-        <div class="seg-list">
-          <div v-for="row in twinRows" :key="row.seg.segment_id" class="row" :class="{ stale: row.stale }">
-            <LevelBadge :level="row.seg.level" :stale="row.stale" />
-            <span class="meta">
-              <span class="name">{{ row.name }}</span>
-              <span class="id">{{ row.seg.segment_id }} · {{ SOURCE_LABEL[row.seg.source] }}</span>
-            </span>
-            <span class="metrics" :style="row.stale ? { color: '#8C8C8C' } : { color: row.color }">
-              <template v-if="row.stale">不可用</template>
-              <template v-else>
-                {{ row.seg.q_vph ?? '—' }} vph · {{ row.seg.v_kmh ?? '—' }} km/h · 排队
-                {{ row.seg.L_q_m ?? 0 }} m
-              </template>
-            </span>
-          </div>
-          <p v-if="twinRows.length === 0" class="empty">快照为空(接口层未起?)</p>
-        </div>
-      </section>
-    </div>
-
-    <footer class="foot">
-      <span>快照时间 {{ snapshotTs || '—' }}</span>
-      <span>检测流:感知演示服务(样本视频离线推理)· 指标快照:契约 v2.0 mock · is_simulated 恒 true</span>
-      <span>一期无实时视频流 · 现场实时画面归二期</span>
-    </footer>
-  </div>
+    <template #foot>
+      <span>视频为公开样本视频 · 非肇庆东站现场 · 非实时流</span>
+      <span class="right">
+        检测只输出路段聚合数 · 不出车牌与身份(D3) · 全局数值 is_simulated = true · 演示数据(模拟)
+      </span>
+    </template>
+  </AppShell>
 </template>
 
 <style scoped>
-.perc-page {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  height: 100vh;
-  padding: 16px 20px;
-  box-sizing: border-box;
-  background: radial-gradient(1200px 700px at 50% 38%, #0d1c33 0%, #081222 62%, #060d1a 100%);
-  color: #cfe0f5;
-  overflow: hidden;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 52px;
-  padding: 0 18px;
-  border: 1px solid #1d3354;
-  border-radius: 10px;
-  background: linear-gradient(90deg, rgba(16, 32, 58, 0.9), rgba(12, 25, 48, 0.9));
-  white-space: nowrap;
-}
-.bar-left,
-.bar-mid,
-.bar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.logo {
-  color: #37d6ff;
-  font-size: 22px;
-}
-.app-name {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 2px;
-  color: #e6eefc;
-}
-.badge {
-  font-size: 11px;
-  padding: 2px 9px;
-  border-radius: 4px;
-  border: 1px solid;
-}
-.badge.svc {
-  color: #37d6ff;
-  border-color: #2a7f9e;
-  background: rgba(55, 214, 255, 0.08);
-}
-.badge.sim {
-  color: #ffd479;
-  border-color: #8a6d1f;
-  background: rgba(255, 212, 121, 0.1);
-}
-.conn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #7c93b5;
-}
-.conn .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.conn.up .dot {
-  background: #35d08c;
-  box-shadow: 0 0 0 3px rgba(53, 208, 140, 0.18);
-}
-.conn.down .dot {
-  background: #e0564f;
-  box-shadow: 0 0 0 3px rgba(224, 86, 79, 0.18);
-}
-.nav-link {
-  font-size: 13px;
-  color: #37d6ff;
-  text-decoration: none;
-  border: 1px solid #1d3354;
-  border-radius: 6px;
-  padding: 4px 10px;
-}
-.nav-link:hover {
-  border-color: #2c4a78;
-  background: rgba(55, 214, 255, 0.08);
-}
-.dash-link {
-  font-size: 13px;
-  color: #37d6ff;
-  text-decoration: none;
-  border: 1px solid #1d3354;
-  border-radius: 6px;
-  padding: 4px 10px;
-}
-.dash-link:hover {
-  border-color: #2c4a78;
-  background: rgba(55, 214, 255, 0.08);
-}
-.main {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(320px, 1fr);
-  gap: 14px;
-}
-.col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-height: 0;
-}
-.bottom {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
-  height: 172px;
-}
-.panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 14px;
-  border: 1px solid #1d3354;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(16, 32, 58, 0.75), rgba(11, 23, 43, 0.85));
-}
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 2px;
-  color: #9fb6d9;
-  margin-bottom: 10px;
-  padding-left: 8px;
-  border-left: 3px solid #37d6ff;
-  line-height: 1.2;
-}
-.monitor-panel {
-  min-height: 0;
-}
-.pstate {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  color: #7c93b5;
-  font-size: 14px;
-  border: 1px dashed #1d3354;
-  border-radius: 8px;
-}
-.pstate.err {
-  color: #e0a04f;
-}
-.retry {
-  border: 1px solid #2a7f9e;
-  color: #37d6ff;
-  background: transparent;
-  border-radius: 6px;
-  padding: 6px 18px;
-  cursor: pointer;
-}
-.canvas-wrap {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #1d3354;
-  background: #04080f;
-}
-.scene {
-  display: block;
-  max-width: 100%;
-  max-height: 100%;
-  width: auto;
-  height: auto;
-}
-.hud {
-  position: absolute;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  line-height: 1;
-  padding: 5px 10px;
-  border-radius: 4px;
-  background: rgba(5, 10, 20, 0.62);
-  border: 1px solid rgba(29, 51, 84, 0.9);
-  color: #cfe0f5;
-  white-space: nowrap;
-}
-.hud-tl {
-  top: 10px;
-  left: 10px;
-}
-.hud-tr {
-  top: 10px;
-  right: 10px;
-  color: #7fe7ff;
-}
-.hud-bl {
-  bottom: 10px;
-  left: 10px;
-  color: #7c93b5;
-}
-.hud-br {
-  bottom: 10px;
-  right: 10px;
-  color: #ffd479;
-}
-.rec-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #e0564f;
-  animation: blink 1.4s infinite;
-}
-@keyframes blink {
-  50% {
-    opacity: 0.25;
-  }
-}
-.controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-}
-.ctl {
-  border: 1px solid #1d3354;
-  background: rgba(20, 38, 66, 0.55);
-  color: #cfe0f5;
-  border-radius: 6px;
-  padding: 5px 12px;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.2;
-}
-.ctl:hover {
-  border-color: #2c4a78;
-}
-.ctl.play {
-  width: 40px;
-  font-size: 15px;
-}
-.ctl.on {
-  color: #07101e;
-  background: #37d6ff;
-  border-color: #37d6ff;
-  font-weight: 700;
-}
-.spd {
-  display: flex;
-  gap: 4px;
-}
-.scrub {
-  flex: 1;
-  accent-color: #37d6ff;
-}
-.tcode {
-  font-size: 12px;
-  color: #7c93b5;
-  white-space: nowrap;
-}
-.frame-meta {
-  margin: 8px 2px 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #7c93b5;
-}
-.ch-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  min-height: 0;
-}
-.ch {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  text-align: left;
-  padding: 9px 10px;
-  background: rgba(20, 38, 66, 0.55);
-  border: 1px solid #1d3354;
-  border-radius: 8px;
-  color: #cfe0f5;
-  cursor: pointer;
-}
-.ch:hover {
-  border-color: #2c4a78;
-}
-.ch.on {
-  border-color: #37d6ff;
-  background: rgba(55, 214, 255, 0.08);
-}
-.ch-name {
-  font-size: 13px;
-  color: #e6eefc;
-}
-.ch-meta {
-  font-size: 11px;
-  color: #7c93b5;
-}
-.kpi-panel {
-  gap: 10px;
-}
-.kpi-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-.kpi {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 9px 10px;
-  background: rgba(20, 38, 66, 0.55);
-  border: 1px solid #1d3354;
-  border-radius: 8px;
-}
-.kpi-num {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 22px;
-  font-weight: 700;
-  color: #37d6ff;
-  line-height: 1.1;
-}
-.trend {
-  font-size: 11px;
-  font-weight: 600;
-  font-style: normal;
-}
-.trend.up {
-  color: #e0564f;
-}
-.trend.down {
-  color: #35d08c;
-}
-.trend.flat {
-  color: #8c8c8c;
-}
-.kpi-lbl {
-  font-size: 11px;
-  color: #7c93b5;
-}
-.flow-bar {
-  display: flex;
-  height: 10px;
-  border-radius: 5px;
-  overflow: hidden;
-  background: rgba(8, 18, 34, 0.8);
-}
-.fb-seg {
-  height: 100%;
-}
-.fb-stop {
-  background: #e0564f;
-}
-.fb-slow {
-  background: #ffd479;
-}
-.fb-move {
-  background: #35d08c;
-}
-.flow-legend {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 12px;
-  font-size: 12px;
-}
-.fl::before {
-  content: '●';
-  margin-right: 4px;
-  font-size: 10px;
-}
-.fl-stop {
-  color: #e0564f;
-}
-.fl-slow {
-  color: #ffd479;
-}
-.fl-move {
-  color: #35d08c;
-}
-.fl-dim {
-  margin-left: auto;
-  font-size: 11px;
-  color: #5f7396;
-}
-.kpi-note {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.5;
-  color: #5f7396;
-}
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 10px;
-}
-.chip {
-  font-size: 11px;
-  padding: 2px 9px;
-  border-radius: 4px;
-  border: 1px solid;
-  background: rgba(8, 18, 34, 0.6);
-}
-.meta-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: #7c93b5;
-}
-.seg-list {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  overflow-y: auto;
-  flex: 1;
-  min-height: 0;
-  padding-right: 2px;
-}
-.row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 7px 10px;
-  background: rgba(20, 38, 66, 0.55);
-  border: 1px solid #1d3354;
-  border-radius: 8px;
-}
-.row.stale {
-  color: #8c8c8c;
-}
-.meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  flex: 1;
+.td-body > .col-left {
+  flex: 0 0 254px;
+}
+.td-body > .col-mid {
+  flex: 1 1 auto;
   min-width: 0;
 }
-.name {
-  font-size: 13px;
-  color: #e6eefc;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.td-body > .col-right {
+  flex: 0 0 372px;
 }
-.row.stale .name {
-  color: #8c8c8c;
-}
-.id {
+.head-ts {
   font-size: 11px;
-  color: #7c93b5;
+  color: var(--td-text-color-secondary);
 }
-.metrics {
-  font-size: 12px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.empty {
-  font-size: 12px;
-  color: #5f7396;
-  padding: 8px 2px;
-}
-.foot {
+.err-body {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 30px;
-  font-size: 12px;
-  color: #5f7396;
-  white-space: nowrap;
+  gap: 10px;
 }
-@media (max-width: 1100px) {
-  .perc-page {
-    overflow-y: auto;
-    height: auto;
-  }
-  .main,
-  .bottom {
-    grid-template-columns: 1fr;
-  }
-  .bottom {
-    height: auto;
-  }
-  .canvas-wrap {
-    max-height: none;
-  }
+.err-text {
+  font-size: 12px;
+  color: var(--td-warning-color);
 }
 </style>
