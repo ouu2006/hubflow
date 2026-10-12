@@ -153,18 +153,41 @@ const writebacks = reactive<
 // 首次观测时间 + 「消失又重现」清理:
 //   告警 id 是**派生键**(`${segment_id}:stale|hard|level`),路段条件来回切换(人工置位 → 复位 → 再置位)
 //   会让同一个 id「消失又重现」。不清的话,重现的那条会沿用上一轮的首次观测时间 / 回执 / 终态(按钮已禁用)。
-//   做法:只清**本轮缺席**的 id(连续在场期间一律不清,不误丢回执);下一轮重现即从「待认领」重新开始。
-//   来源:Sourcery 行内意见(🟡 Recurring alerts retain old state)+ 独立审查同源发现。
+//   ⚠️ 但**单次缺席不足以判定"这次告警结束了"**:一次乱序 / 不完整 / 瞬时缺失的快照(SSE 慢响应、
+//      人工置位刚提交)也会让 id 缺席一次。故判据是**缺席的「快照时间」跨度**:同一 id 已连续缺席
+//      GAP_PURGE_MS 以上的快照时间(≈ 连续 2~3 个快照都没见到它)才判为本次告警结束并清态,
+//      否则保留正在处置的回执与状态(Sourcery 🟡 Alert workflow state disappears)。
+//   ⚠️ 判据**不数 watch 触发次数**:同一快照里 `segments` / `snapshotTs` 的多次赋值会让本 watch 触发多次,
+//      再叠加"两次 refresh 背靠背落地",按次数计数会把 1 个快照数成 2 个,等于没加防抖(两轮实测都踩到)。
+//   来源:Sourcery 两轮行内意见 + 独立审查同源发现。
 //   注意:本 watch 必须放在 firstSeen / dispatches / statusMap 三张表**声明之后**(immediate 会立即执行)。
+const GAP_PURGE_MS = 5000
+const lastSeenTs = new Map<string, string>() // id → 最后一次在场的快照 ts
+const missSinceTs = new Map<string, string>() // id → 首次被观察到缺席的快照 ts
 watch(
   alerts,
   (list) => {
-    const present = new Set(list.map((a) => a.id))
-    for (const id of Object.keys(firstSeen)) if (!present.has(id)) delete firstSeen[id]
-    for (const id of Object.keys(dispatches)) if (!present.has(id)) delete dispatches[id]
-    for (const id of Object.keys(statusMap)) if (!present.has(id)) delete statusMap[id]
     const ts = snapshotTs.value
+    const present = new Set(list.map((a) => a.id))
+    for (const a of list) {
+      missSinceTs.delete(a.id)
+      if (ts) lastSeenTs.set(a.id, ts)
+    }
     if (!ts) return
+    const gone = new Set<string>()
+    for (const table of [firstSeen, dispatches, statusMap]) {
+      for (const id of Object.keys(table)) if (!present.has(id)) gone.add(id)
+    }
+    for (const id of gone) {
+      if (!missSinceTs.has(id)) missSinceTs.set(id, lastSeenTs.get(id) ?? ts)
+      const since = missSinceTs.get(id) ?? ts
+      if (Date.parse(ts) - Date.parse(since) < GAP_PURGE_MS) continue // 还没确认结束:先留着,别丢回执
+      delete firstSeen[id]
+      delete dispatches[id]
+      delete statusMap[id]
+      lastSeenTs.delete(id)
+      missSinceTs.delete(id)
+    }
     for (const a of list) {
       if (firstSeen[a.id] === undefined) firstSeen[a.id] = ts
     }
