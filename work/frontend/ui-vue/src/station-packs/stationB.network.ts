@@ -277,6 +277,7 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 5,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 470 车次,均速 19.8 km/h,车道 2,平均低速在网车 4.9 辆',
+    pred: { h15: { q_vph: 987, level: 3 }, h30: { q_vph: 808, level: 2 }, model: 'L0' },
   },
   {
     segment_id: 'SEG-002',
@@ -299,6 +300,7 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 5,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 785 车次,均速 12.4 km/h,车道 2,平均低速在网车 29.4 辆',
+    pred: { h15: { q_vph: 1648, level: 3 }, h30: { q_vph: 1350, level: 2 }, model: 'L0' },
   },
   {
     segment_id: 'SEG-003',
@@ -321,6 +323,7 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 5,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 768 车次,均速 15.0 km/h,车道 2,平均低速在网车 56.7 辆',
+    pred: { h15: { q_vph: 1613, level: 3 }, h30: { q_vph: 1321, level: 2 }, model: 'L0' },
   },
   {
     segment_id: 'SEG-004',
@@ -343,6 +346,7 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 6,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 771 车次,均速 8.9 km/h,车道 2,平均低速在网车 49.6 辆',
+    pred: { h15: { q_vph: 1619, level: 4 }, h30: { q_vph: 1326, level: 3 }, model: 'L0' },
   },
   {
     segment_id: 'SEG-005',
@@ -475,6 +479,7 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 8,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 272 车次,均速 10.9 km/h,车道 1,平均低速在网车 12.7 辆',
+    pred: { h15: { q_vph: 571, level: 3 }, h30: { q_vph: 468, level: 2 }, model: 'L0' },
   },
   {
     segment_id: 'SEG-011',
@@ -541,6 +546,7 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 12,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 70 车次,均速 2.9 km/h,车道 1,平均低速在网车 9.4 辆',
+    pred: { h15: { q_vph: 147, level: 4 }, h30: { q_vph: 120, level: 3 }, model: 'L0' },
   },
   {
     segment_id: 'SEG-014',
@@ -563,5 +569,6 @@ export const STATION_B_SEGMENT_BASES: PackSegmentBase[] = [
     data_age_s: 11,
     stale: false,
     derive: 'FCD 折算:窗口 0.50 h,通过 60 车次,均速 2.9 km/h,车道 1,平均低速在网车 7.9 辆',
+    pred: { h15: { q_vph: 126, level: 4 }, h30: { q_vph: 103, level: 3 }, model: 'L0' },
   },
 ]

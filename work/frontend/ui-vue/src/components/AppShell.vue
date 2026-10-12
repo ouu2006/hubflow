@@ -23,14 +23,20 @@ const props = withDefaults(
     /** 页头副题 */
     subtitle?: string
   }>(),
-  // 站点名默认值从**站点包**取:换站时改包,不在壳层里写死站名
-  { station: activePack().station.name, ts: '', sourceMode: 'both', title: '', subtitle: '' },
+  { ts: '', sourceMode: 'both', title: '', subtitle: '' },
 )
 
 const emit = defineEmits<{ (e: 'update:sourceMode', mode: SourceMode): void }>()
 
 const slots = useSlots()
 const showHead = computed(() => props.title !== '' || !!slots.headRight)
+
+/**
+ * 顶栏站点 chip。缺省从**当前站点包**取 —— 注意不能把 `activePack().station.name`
+ * 写进 `withDefaults` 的默认值:那个表达式在**模块求值期**就跑了,早于入口
+ * (`main.ts` / vite 配置)注入包键,会恒定取到默认包 A。所以这里惰性取。
+ */
+const stationName = computed(() => props.station ?? activePack().station.name)
 </script>
 
 <template>
@@ -53,7 +59,7 @@ const showHead = computed(() => props.title !== '' || !!slots.headRight)
         </RouterLink>
       </nav>
       <div class="td-top-right">
-        <span class="td-chip">{{ station }}</span>
+        <span class="td-chip">{{ stationName }}</span>
         <span class="td-seg" role="group" aria-label="数据源视图">
           <span
             v-for="s in SOURCE_ITEMS"
