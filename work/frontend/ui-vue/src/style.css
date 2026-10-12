@@ -1,4 +1,8 @@
-/* 全局基础样式(页面级样式在各自 SFC 内) */
+/* 全局基础样式 + TDesign Light 设计令牌(手册 §6.2.1,2026-10-12 配色切换)。
+   页面级样式在各自 SFC 内;这里只放四页共用的骨架类与 token,避免四页各写一套。
+   铁律:品牌蓝只表示「可操作/当前/已选」;四级色只表示路况等级;数据不可用恒为灰。
+   深色只允许出现在视频感知页的监控画面区(.td-video-*)。 */
+
 * {
   box-sizing: border-box;
 }
@@ -12,36 +16,433 @@ body {
 
 #app {
   height: 100%;
+  color: #1a1a1a;
+  font-size: 13px;
+  background: #eeeeee;
   font-family:
-    'Helvetica Neue',
-    Helvetica,
+    'Noto Sans SC',
     'PingFang SC',
     'Hiragino Sans GB',
     'Microsoft YaHei',
     '微软雅黑',
+    'Helvetica Neue',
     Arial,
     sans-serif;
   -webkit-font-smoothing: antialiased;
-  color: #303133;
-  font-size: 14px;
 }
 
-/* 三页共用的页面容器与标题行(由 Login 之外的视图复用) */
-.page {
-  padding: 16px 20px;
+/* ---------- 设计令牌(与 src/shared/theme.ts 同源,改色两处一起改) ---------- */
+:root {
+  --td-bg-color-page: #eeeeee;
+  --td-bg-color-container: #ffffff;
+  --td-bg-color-secondarycontainer: #f3f3f3;
+  --td-bg-color-component: #e8e8e8;
+  --td-bg-color-hover: #f7f8fa;
+  --td-component-stroke: #e8e8e8;
+  --td-component-border: #dddddd;
+  --td-brand-color: #0052d9;
+  --td-brand-color-hover: #366ef4;
+  --td-brand-color-active: #003cab;
+  --td-brand-color-1: #f2f3ff;
+  --td-brand-color-3: #a0c0ff;
+  --td-success-color: #2ba471;
+  --td-success-color-1: #e3f9e9;
+  --td-warning-color: #e37318;
+  --td-warning-color-1: #fff1e9;
+  --td-error-color: #d54941;
+  --td-error-color-1: #fff0ed;
+  --td-text-color-primary: #1a1a1a;
+  --td-text-color-secondary: #666666;
+  --td-text-color-placeholder: #999999;
+  --td-text-color-disabled: #bdbdbd;
+  --td-text-color-anti: #ffffff;
+  --td-radius-sm: 3px;
+  --td-radius-md: 6px;
+  --td-radius-lg: 9px;
+  --td-font-family-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+/* ---------- 页面骨架 ---------- */
+.td-page {
+  display: flex;
+  flex-direction: column;
   height: 100%;
+  min-height: 0;
+  background: var(--td-bg-color-page);
+}
+
+/* 顶栏(48px,四页同一骨架:logo + 品牌 + 页签 + 站点 + 数据源 + 角标) */
+.td-top {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 48px;
+  flex: 0 0 48px;
+  padding: 0 16px;
+  background: var(--td-bg-color-container);
+  border-bottom: 1px solid var(--td-component-stroke);
+}
+.td-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  letter-spacing: 0.2px;
+}
+.td-logo {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.td-brand-sub {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  padding-left: 10px;
+  border-left: 1px solid var(--td-component-stroke);
+  margin-left: 2px;
+}
+.td-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+.td-tab {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+  padding: 0 12px;
+  font-size: 13px;
+  color: var(--td-text-color-secondary);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.td-tab:hover {
+  color: var(--td-brand-color);
+}
+/* 当前页 = 「当前」语义,用品牌蓝(等级色不得用于此) */
+.td-tab.on {
+  color: var(--td-brand-color);
+  border-bottom-color: var(--td-brand-color);
+  font-weight: 500;
+}
+.td-top-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* 页头(标题 + 副题 + 右侧控件) */
+.td-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 12px 16px 10px;
+}
+.td-head-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+  line-height: 1.3;
+}
+.td-head-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+.td-head-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+/* 主体区:分栏容器 */
+.td-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  gap: 10px;
+  padding: 0 16px 12px;
+}
+.td-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
   overflow-y: auto;
 }
 
-.page-head {
+/* 卡片 / 面板 */
+.td-card {
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-md);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 0 0 auto;
+}
+.td-card-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 14px;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+  flex: 0 0 auto;
+}
+.td-card-head .td-head-tag {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--td-text-color-placeholder);
+}
+.td-card-body {
+  padding: 10px 12px;
+  min-height: 0;
+}
+.td-card-body.flush {
+  padding: 0;
 }
 
-.page-head h2 {
-  margin: 0;
-  font-size: 18px;
-  color: #1f2d3d;
+/* 页脚口径条 */
+.td-foot {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 16px 10px;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+.td-foot .right {
+  margin-left: auto;
+}
+
+/* ---------- 通用控件 ---------- */
+.td-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  border-radius: var(--td-radius-sm);
+  border: 1px solid var(--td-component-border);
+  background: var(--td-bg-color-container);
+  color: var(--td-text-color-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.td-btn:hover:not(:disabled) {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+.td-btn:disabled {
+  color: var(--td-text-color-disabled);
+  background: var(--td-bg-color-component);
+  border-color: var(--td-bg-color-component);
+  cursor: not-allowed;
+}
+/* 主按钮:品牌蓝实心,文字一律反白(硬约束①) */
+.td-btn.primary {
+  background: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+}
+.td-btn.primary:hover:not(:disabled) {
+  background: var(--td-brand-color-hover);
+  border-color: var(--td-brand-color-hover);
+  color: var(--td-text-color-anti);
+}
+.td-btn.primary:disabled {
+  background: var(--td-brand-color-3);
+  border-color: var(--td-brand-color-3);
+  color: var(--td-text-color-anti);
+}
+.td-btn.sm {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 11px;
+}
+
+/* 分段控件(视图切换 / 数据源切换) */
+.td-seg {
+  display: inline-flex;
+  padding: 2px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
+}
+.td-seg-item {
+  padding: 3px 12px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+.td-seg-item:hover {
+  color: var(--td-brand-color);
+}
+/* 选中态 = 「已选/当前」语义 → 白底 + 品牌蓝字(浅底上不得反白) */
+.td-seg-item.on {
+  background: var(--td-bg-color-container);
+  color: var(--td-brand-color);
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* chip:默认中性,on = 已选(品牌浅底 + 品牌字) */
+.td-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+}
+.td-chip.on {
+  background: var(--td-brand-color-1);
+  color: var(--td-brand-color);
+}
+.td-chip.ok {
+  background: var(--td-success-color-1);
+  color: #006c45;
+}
+.td-chip.warn {
+  background: var(--td-warning-color-1);
+  color: #a06a00;
+}
+.td-chip.err {
+  background: var(--td-error-color-1);
+  color: #ad352f;
+}
+.td-chip.out {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-placeholder);
+}
+
+/* 演示/口径角标 */
+.td-badge-demo {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-brand-color-1);
+  color: var(--td-brand-color);
+}
+.td-badge-warn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-warning-color-1);
+  color: #a06a00;
+}
+
+/* ---------- 表格 ---------- */
+.td-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.td-table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--td-text-color-secondary);
+  padding: 7px 8px;
+  background: var(--td-bg-color-secondarycontainer);
+  border-bottom: 1px solid var(--td-component-stroke);
+  white-space: nowrap;
+}
+.td-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  color: var(--td-text-color-primary);
+}
+.td-table tr:last-child td {
+  border-bottom: none;
+}
+.td-table .num {
+  text-align: right;
+  font-family: var(--td-font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 列表行(可点选) */
+.td-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  cursor: pointer;
+}
+.td-row:last-child {
+  border-bottom: none;
+}
+.td-row:hover {
+  background: var(--td-bg-color-hover);
+}
+/* 选中行 = 「已选」语义 → 品牌浅底 + 左侧品牌竖条 */
+.td-row.on {
+  background: var(--td-brand-color-1);
+  box-shadow: inset 3px 0 0 var(--td-brand-color);
+}
+
+/* 数值(等宽) */
+.td-mono,
+.td-num {
+  font-family: var(--td-font-family-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 细滚动条 */
+.td-scroll {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.td-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.td-scroll::-webkit-scrollbar-thumb {
+  background: #d6d6d6;
+  border-radius: 4px;
+}
+.td-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 视频监控画面区深色例外(仅画面区,不得外溢到页面壳层) */
+.td-video {
+  background: #181818;
+  color: #ededed;
+}
+.td-video-dim {
+  color: #9e9e9e;
 }

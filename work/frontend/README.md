@@ -201,3 +201,124 @@ PR #69 合入 `main` 后,又跑了 **4 路全新上下文独立审查**(手册�
 - `NetMap.osmActive` 是无响应式依赖的 `computed`(挂载前已 `await` 载入,当前不可触发):记此不修。
 - `HeatView.refresh` 无在飞去重 / 取消(SSE 每 2s 一次,慢响应可能后到覆盖新快照):记此不修。
 
+## 十、四页重做:按设计稿替换既有四页(Issue #78,2026-10-12)
+
+**背景**:管理端四页在 Ardot 画布上整体重做,配色切换为 TDesign Light(手册 §6.2 / §6.2.1 / §6.2.2),导出件在
+`design-export/`(`png/` 2× 位图、`svg/` 矢量原件、`index.html` 自包含预览)。本次把四个 Vue 页面**按新设计稿整体重写**,
+并**依据 2026-10-11 裁定「后端接口面按前端页面重新规划」重新规划接口面**后落地。
+
+### 10.1 替换范围
+
+| 替换前 | 替换后 | 设计稿 | 主要变化 |
+|---|---|---|---|
+| `views/dashboard/DashboardView.vue`(1920×1080 **深色**大屏三栏) | **态势总览** | `png/01-态势总览.png` | KPI 条(均速+环比 / 最堵路段 / 在途与采纳率 / 生效因素)+ 等级分布 + 路段监测 + 路网 + **双数据源并排详情(TC-19)** + 因素与预测 + 底部告警条;深色大屏 → 浅色控制台 |
+| `views/heat/HeatView.vue` | **拥挤度热力** | `png/02-拥挤度热力.png` | 补 CI 色阶卡 / 路段指数排行 / 档位分布 / **路段×时间热力矩阵** / CI 走势 / 成因拆解 / 关联告警 |
+| `views/decision/DecisionView.vue` | **决策工作台** | `png/03-决策工作台.png` | 左栏**四态队列** + 中栏处置工作台(建议 + 分流比例滑杆 + 渠道单选 + 回执 + 回写) + 右栏因素置位 / 预测 / 同化门控;效果对比改由页头分段控件切到独立整幅 |
+| `views/perception/PerceptionView.vue` | **视频感知** | `png/04-视频感知.png` | 视频源台账(**6 路目录**) + 监控墙(**6 格**) + 检测流水线 5 环节 + 框线与越线语义 + 检测详情 / 回灌门控 |
+
+**新增**(四页共用,避免各写一套):
+
+| 文件 | 作用 |
+|---|---|
+| `src/components/AppShell.vue` | 顶栏(品牌 + 页签 + 站点 + 数据源切换 + 快照 + 口径角标)+ 页头 + 主体 + 页脚 |
+| `src/shared/nav.ts` | 页签目录 / 数据源视图类型 / 常驻口径角标文案(顶栏与路由共用) |
+| `src/shared/theme.ts` | **TDesign Light 令牌唯一色源**(壳层 token / 视频画面区深色 token / 车型框色 / 司机类型色 / 字体栈) |
+
+**删除**:`views/dashboard/components/` 下的 `SegmentListPanel.vue`、`SegmentDetailPanel.vue`、`RoutePanel.vue`。
+三者是旧深色大屏的栏内组件,信息层级已被新页取代;保留它们会让"同一字段两套口径"漂移。新页各自持有自己的栏内组件。
+
+**改造**:`NetMap.vue` 按浅色主题重写(白底衬 + 品牌蓝路线高亮)并新增叠加层(站点块 / 场区虚线框 / **断面标记(边界·内部)** / 落客点);
+`LevelBadge.vue` 增加**图形色与文字色分离**(TDesign 的「图形用标准阶、文字用深一阶」两列色),新增 `anti` 反色开关供深色画面区用。
+
+### 10.2 配色迁移(**本单最大的兼容项**)
+
+`src/shared/traffic.ts` 的 `LEVELS` / `UNAVAILABLE` 由旧手册值整体换成 TDesign Light(图形色 / 文字色两阶):
+
+| 等级 | 旧图形色 | 新图形色 | 新文字色 |
+|---|---|---|---|
+| 畅通 | `#1E6FD9`(蓝) | `#2BA471` | `#006C45` |
+| 缓行 | `#F2B705` | `#E9B32E` | `#A06A00` |
+| 拥堵 | `#E8760C` | `#E37318` | `#BE5A00` |
+| 严重拥堵 | `#C62828` | `#D54941` | `#AD352F` |
+| 数据不可用 | `#8C8C8C` | `#8B8B8B` | `#8B8B8B` |
+
+**最关键的一条**:**旧「畅通」是蓝色,与 TDesign 品牌蓝 `#0052D9` 语义撞车**。本次改「畅通 = success 绿」,
+并把品牌蓝**独占**给「当前 / 已选 / 可操作」(选中页签、选中行、选中路段、主按钮、当前列)。
+**任何按旧色值硬编码判断等级的代码都会静默出错**——本仓库已全量核对,无残留(CI 色阶锚点自动随 `LEVELS` 上移)。
+> 手册 §6.2.2 原写「一期尚未实现,无存量代码需要迁移」,与实际不符(`shared/traffic.ts` 曾硬编码旧值),本次已随代码一并更正。
+
+其余三条配色纪律(手册 §6.2):① 有色实心底上的文字/图标一律 `#FFFFFF`;② 数据不可用**恒为中性灰**,绝不显示为蓝/绿;
+③ **深色例外仅限视频感知页的监控画面区**(`TD_VIDEO` 一族),不得外溢到页面壳层。
+
+### 10.3 接口清单(按页面重新规划)
+
+**A. 沿用的既有端点(本次未改形状)**
+
+| 端点 | 方法 | 用途 |
+|---|---|---|
+| `/api/traffic/segments` · `/segments/{id}` | GET | 路段级指标与等级列表 / 单路段详情 |
+| `/api/traffic/vehicles` | GET | 孪生车辆位置(仅一期演示,二期下线) |
+| `/api/traffic/route/recommend` | POST | 推荐路线快照 |
+| `/api/traffic/stream` | GET(SSE) | 轻量刷新事件 `traffic_snapshot` |
+| `/api/traffic/factors` | GET / POST | 生效因素清单(**新增 `?segment_id=` 过滤**)/ 人工置位 |
+| `/api/traffic/factors/reset` | POST | 清空人工置位 |
+| `/api/traffic/assimilation` | GET | 数据同化状态(**响应新增 `counts` 与每条记录的 `role` / `point_code` / `name` / `reason`**) |
+| `/perception-api/streams` · `/streams/{sid}/detections` · `/streams/{sid}/frames/{n}.jpg` | GET | 感知检测通道 / 逐帧检测框 / 帧图 |
+
+**B. 本次新增端点(前端已接、mock 已实现、**后端待实现**)**
+
+| 端点 | 方法 | 用途 | 前端调用点 |
+|---|---|---|---|
+| `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | 四页顶栏 |
+| `/api/traffic/overview` | GET | 全网 KPI:均速 + 环比、最堵路段、在途/已引导/采纳率、生效因素数、等级分布 | 态势总览 |
+| `/api/traffic/network` | GET | 路网几何 + 断面(边界/内部)+ 落客点 + 场区 + 站点 | 态势总览 / 热力 |
+| `/api/traffic/segments/{id}/sources` | GET | **同一路段 `video` / `twin` 并排 + 差值(TC-19 展示侧)** | 态势总览 / 决策 / 视频 |
+| `/api/traffic/alerts` | GET | 告警列表(四态 + `triggered_by` + 首次观测时间 + 回执/回写留痕) | 态势总览 / 热力 / 决策 |
+| `/api/traffic/plan/dispatch` | POST | 下发分流方案(渠道 + 比例)→ 回执 | 决策工作台 |
+| `/api/traffic/plan/ack` | POST | 处置回写(认领人 / 动作 / 结果四选一)→ 状态流转 | 决策工作台 |
+| `/api/traffic/predict` | GET | 预测(`?segment_id=&h=15`)一期 **L0**,不报精度数字 | 决策工作台 |
+| `/api/traffic/thresholds` | GET | 判级阈值 + **CI 四项加权构成** + 变更留痕(只读 P1) | 热力 |
+| `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵(`?window=&bucket=`) | 热力 |
+| `/api/traffic/ci-history` | GET | 单路段 CI 走势(`?segment_id=&points=`) | 热力 |
+| `/perception-api/streams/{sid}/summary` | GET | 通道汇总(分车型 / 轨迹质量与标定 / 输出字段 / 处理口径) | 视频感知 |
+
+> **口径**:每个响应仍带 `is_simulated` 信封;SSE **只新增事件名,不改既有事件名**;新增端点一律**只读快照、不做业务计算**,
+> 只有 `plan/dispatch` 与 `plan/ack` 是状态写入(现在 mock 内存态,**后端实现时须落库并留痕**)。
+> 未匹配路径仍**一律 404**(`src/mock/index.ts` 的刻意设计)。
+
+**C. 本次未能落地、已如实降级的前端需求(待感知/站点包补齐)**
+
+| 需求 | 现状 | 页面表现 |
+|---|---|---|
+| 6 路样本视频全部就绪 | 感知服务当前只导出了 `road2` / `track1` 两路 | 台账 6 行按实际返回判定,未导出显示「未导出」;监控墙对应格显示深色占位 |
+| 越线计数 / 平均 Q / SVR / 标定 RANGE-RMSE | `/summary` 未实现 | 一律显示「—」并注明「由感知服务提供,当前不可用」,**不用前端推算值冒充** |
+| 视频感知页的回灌门控 | `SEG-004` 未在 `network.sections` 登记 | 显示「该路段未登记断面 · 不参与回灌」(不照抄设计稿文案) |
+
+### 10.4 需要注意的兼容性事项
+
+1. **等级色语义反转**(见 10.2):畅通由蓝改绿、品牌蓝专用于交互态。任何下游(截图、文档、汇报材料)沿用旧色卡都会与页面不一致。
+2. **路段命名与数量与设计稿不一致**:设计稿画的是 14 个路段与另一套名称;实现按仓库现有 `demoNetwork.ts`(10 个路段,示例路网,
+   非实测,待 #36/#37 站点包替换)。**路段命名与数量的裁定人是开发B**,前端不自行改名。
+3. **`assimilation` 响应体扩字段**(`counts` / `role` / `point_code` / `name` / `reason` / `confidence`):旧消费方按可选字段处理,
+   不会因新增字段而坏;但**后端实现时这几个字段必须端出来**,否则决策页「边界 3 / 内部 1」与视频页门控会退化为空。
+4. **`factors` 端点新增 `?segment_id=`**:不传时行为不变(返回全量),向后兼容。
+5. **页签 / 站点 / 快照时间进顶栏**:`document.title` 仍由 `router.afterEach` 写;页面标题口径不变(`meta.title`)。
+6. **时间展示统一走 `formatStamp` / `formatClock`**(`shared/traffic.ts`):此前若直接插值 ISO 串会在页面出现 `2026-10-12T16:23:54+08:00`;
+   且 `slice` 式截取在接口返回 UTC(`Z`)时会错显时区,故统一改为 `Date` 解析后本地化。
+7. **`vehicles` 端点是二期下线项**,本次未改动其形状;决策/态势页只用到其计数与采纳率,**计数来自 `overview`,不直接依赖 vehicles 条数**。
+8. **一屏密度**:四页按 1440×900 设计,主体三栏各自独立滚动(`.td-scroll`)。三栏**都要有**栏内 `overflow-y:auto`——
+   PR #70 曾因左栏漏加导致「按钮可见但点不到」,本次三栏都补齐。
+
+### 10.5 运行与自检
+
+```bash
+cd work/frontend/ui-vue
+npm install
+npm run dev                                    # http://localhost:5173/#/dashboard(根路径重定向)
+# 四页:/#/dashboard · /#/heat · /#/decision · /#/perception
+npm run build                                  # vue-tsc 类型检查 + vite 构建(本单交付前自检)
+# 视频感知页的真数据需要感知演示服务(另开一个终端):
+python work/perception/server.py               # 默认 127.0.0.1:8101;未启动时页面显示"未连接 + 重试"
+```
+
+

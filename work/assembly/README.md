@@ -17,22 +17,43 @@
 
 **一期主链路不依赖 HTTP**（文件快照当契约）。这一层**只读快照，不写快照**——它不产生任何数据，只把已经落盘的结果端出去。
 
-| 端点 | 方法 | 用途 | 期次 |
-|---|---|---|---|
-| `/api/traffic/segments` | GET | 路段级指标与等级列表 | 一期 |
-| `/api/traffic/segments/{id}` | GET | 单路段详情（含 `factors_applied` / `pred`） | 一期 |
-| `/api/traffic/route/recommend` | POST | 请求推荐（请求体含 `session_id` / `location`） | 一期 |
-| **`/api/traffic/locate`** | POST | **定位 → 路段**。一期由孪生真值调用，二期由 App 调用 | 一期 |
-| **`/api/traffic/vehicles`** | GET | **一期演示：孪生车辆位置**（读 `vehicles.json`）。**二期下线** | 一期 |
-| **`/api/traffic/factors`** | GET | 当前生效因素清单（从各路段 `factors_applied` 汇总） | 一期 |
-| **`/api/traffic/predict`** | GET | 预测：`?segment_id=&h=15`。一期 **L0**，二期 L1/L2 | 一期 |
-| `/api/traffic/alerts` | GET | 告警列表 | 一期 |
-| `/api/traffic/plan/dispatch` | POST | 下发分流方案 | 一期 |
-| `/api/traffic/plan/ack` | POST | 处置回写 | 一期 |
-| `/api/traffic/report/compare` | GET | 效果对比报表 | 一期 |
-| **`/api/traffic/assimilation`** | GET | **数据同化状态**：每个断面"是否在灌 / 门控原因 / 最近一次回灌值"；只读 `assimilation_state.json`（**不改 `segments.json` 形状**） | 一期 |
+> **2026-10-12 重订（Issue #78）**：管理端四页按 Ardot 设计稿整体重做，接口面**已按页面重新规划完成**（2026-10-11 裁定的落地动作）。
+> 下表即**重订后的接口面**。**前端已全部接通、`src/mock/traffic.ts` 已实现**；**后端按本表实现即可**，
+> 字段形状以 [`../frontend/README.md`](../frontend/README.md) §10.3 与 `work/frontend/ui-vue/src/shared/traffic.ts` 的类型定义为准（**两者是同一份口径**）。
 
-**约定**：`is_simulated` 字段在**每一个**响应里出现；事件流复用现有 SSE 形状，**新增**事件名，**不改既有事件名**；**一期是非视频端点驱动的页面**——**视频感知链路**（YOLO 跑样本视频，`source: "video"`）**一期就在跑**，但它的结果以 `segments` 快照的形式进接口层（**不新增视频流 / 画面端点**，"检测画面"页归二期）。`/api/traffic/segments` 与 `/segments/{id}` 必须能按 `source` **并排返回 `video` / `twin` 两个来源**（**TC-19 的展示侧**）。
+| 端点 | 方法 | 用途 | 状态 |
+|---|---|---|---|
+| `/api/traffic/segments` | GET | 路段级指标与等级列表 | 沿用（mock 已实现） |
+| `/api/traffic/segments/{id}` | GET | 单路段详情（含 `factors_applied` / `pred`） | 沿用（mock 已实现） |
+| `/api/traffic/segments/{id}/sources` | GET | **同一路段 `video` / `twin` 并排 + 差值（TC-19 展示侧）** | **新增**（mock 已实现，后端待实现） |
+| `/api/traffic/vehicles` | GET | 一期演示：孪生车辆位置（读 `vehicles.json`）。**二期下线** | 沿用（mock 已实现） |
+| `/api/traffic/route/recommend` | POST | 请求推荐（请求体含 `session_id` / `location`） | 沿用（mock 已实现） |
+| `/api/traffic/locate` | POST | 定位 → 路段。一期由孪生真值调用，二期由 App 调用 | 保留（未接前端） |
+| `/api/traffic/factors` | GET | 当前生效因素清单（**新增 `?segment_id=` 过滤**） | 沿用 + 扩参（mock 已实现） |
+| `/api/traffic/factors` / `/factors/reset` | POST | 人工置位 / 复位（F07 / F08 / F11，手册第 19 章） | 沿用（mock 已实现） |
+| `/api/traffic/assimilation` | GET | 数据同化状态（**响应新增 `counts` 与每条记录的 `role` / `point_code` / `name` / `reason`**） | 沿用 + 扩字段（mock 已实现） |
+| `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | **新增**（后端待实现） |
+| `/api/traffic/overview` | GET | 全网 KPI（均速 + 环比 / 最堵路段 / 在途·已引导·采纳率 / 生效因素数 / 等级分布） | **新增**（后端待实现） |
+| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点 | **新增**（后端待实现） |
+| `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **新增**（后端待实现） |
+| `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | **新增**（后端待实现；**须落库留痕**） |
+| `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | **新增**（后端待实现；**须落库留痕**） |
+| `/api/traffic/predict` | GET | 预测：`?segment_id=&h=15`。一期 **L0**，不报精度数字 | **新增**（后端待实现） |
+| `/api/traffic/thresholds` | GET | 判级阈值 + CI 四项加权构成 + 变更留痕（只读，P1） | **新增**（后端待实现；真实来源 `stations/thresholds.json`） |
+| `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵（`?window=&bucket=`） | **新增**（后端待实现） |
+| `/api/traffic/ci-history` | GET | 单路段 CI 走势（`?segment_id=&points=`） | **新增**（后端待实现） |
+| `/api/traffic/report/compare` | GET | 效果对比报表 | 保留（本次前端用 `demoDecision.ts` 演示数据，未接端点） |
+| `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **新增**（属感知面，见 [`../perception/README.md`](../perception/README.md)） |
+
+**约定**：`is_simulated` 字段在**每一个**响应里出现；事件流复用现有 SSE 形状，**新增**事件名，**不改既有事件名**；**一期是非视频端点驱动的页面**——**视频感知链路**（YOLO 跑样本视频，`source: "video"`）**一期就在跑**，但它的结果以 `segments` 快照的形式进接口层（**不新增视频流 / 画面端点**）。`/api/traffic/segments` 与 `/segments/{id}` 必须能按 `source` **并排返回 `video` / `twin` 两个来源**（**TC-19 的展示侧**，页面用 `/segments/{id}/sources` 取并排对）。
+
+**写接口的留痕要求（新增，后端实现时照此）**：`plan/dispatch` 与 `plan/ack` 是本次接口面里**仅有的两个状态写入**，
+前端已按「回执 + 回写留痕」展示（渠道、比例、认领人、动作、结果四选一、时间）。mock 里是内存态（刷新复位，页面已标「演示态」），
+**后端实现必须落库**，否则决策层的「处置闭环」无法举证。
+
+**前端当前降级说明**（后端未实现前的如实表现，不要当成 bug）：
+① 六路样本视频只有 `road2` / `track1` 已导出，其余显示「未导出」；② 越线计数 / 平均 Q / SVR / 标定 RANGE-RMSE
+由感知服务提供，`/summary` 未实现时前端显示「—」并注明出处，**不用推算值冒充**。
 
 ## 三、一键演示脚本
 
