@@ -98,11 +98,30 @@ async function loadSelectedSide(segmentId: string | null): Promise<void> {
     getTrafficSegmentSources(segmentId),
     getTrafficFactors(segmentId),
   ])
+  if (selectedId.value !== segmentId) return // 选择已变:丢弃过期响应
   pair.value = p.status === 'fulfilled' ? p.value : null
   segFactors.value = f.status === 'fulfilled' ? f.value.factors : []
 }
 
+/**
+ * 刷新序号:SSE 触发与手动刷新可能并发。只有"最新一次"的响应允许落到页面,
+ * 否则先发出、后返回的旧响应会覆盖新快照(页面显示上一版数据)。
+ */
+let refreshSeq = 0
+/** 本次刷新中失败的接口(页头提示用;失败面板保留旧值但必须标"上一版",不得冒充当前) */
+const failedPanels = ref<string[]>([])
+
+const PANEL_LABEL: Record<string, string> = {
+  overview: 'KPI',
+  segments: '路段监测',
+  vehicles: '车辆',
+  network: '路网',
+  alerts: '告警',
+  factors: '因素',
+}
+
 async function refresh(): Promise<void> {
+  const seq = ++refreshSeq
   const [ov, seg, veh, net, al, fa] = await Promise.allSettled([
     getTrafficOverview(),
     getTrafficSegments(),
@@ -111,16 +130,28 @@ async function refresh(): Promise<void> {
     getTrafficAlerts(),
     getTrafficFactors(),
   ])
+  if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
+  const failed: string[] = []
+  const track = (name: string, ok: boolean): void => {
+    if (!ok) failed.push(PANEL_LABEL[name] ?? name)
+  }
   if (ov.status === 'fulfilled') overview.value = ov.value
+  track('overview', ov.status === 'fulfilled')
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
     if (selectedId.value === null) selectedId.value = pickDefaultId(seg.value.segments)
   }
+  track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
+  track('vehicles', veh.status === 'fulfilled')
   if (net.status === 'fulfilled') network.value = net.value
+  track('network', net.status === 'fulfilled')
   if (al.status === 'fulfilled') alerts.value = al.value.alerts
+  track('alerts', al.status === 'fulfilled')
   if (fa.status === 'fulfilled') allFactors.value = fa.value.factors
+  track('factors', fa.status === 'fulfilled')
+  failedPanels.value = failed
   await loadSelectedSide(selectedId.value)
 }
 
@@ -329,6 +360,9 @@ function gotoDecision(): void {
 
 <template>
   <AppShell active="dashboard" :ts="snapshotTs" v-model:sourceMode="sourceMode" title="">
+    <div v-if="failedPanels.length > 0" class="stale-bar" role="status">
+      ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,快照时间已更新,请勿据此判断当前态势。
+    </div>
     <!-- KPI 条(取代态势总览的页头) -->
     <div class="td-card kpi-bar">
       <div class="kpi-cell">
@@ -558,6 +592,18 @@ function gotoDecision(): void {
 </template>
 
 <style scoped>
+/* 部分接口失败提示条:提醒当前页混装有上一版数据 */
+.stale-bar {
+  flex: 0 0 auto;
+  margin: 10px 16px 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-warning-color-1);
+  color: #a06a00;
+}
+
 /* ---------- KPI 条 ---------- */
 .kpi-bar {
   flex: 0 0 auto;

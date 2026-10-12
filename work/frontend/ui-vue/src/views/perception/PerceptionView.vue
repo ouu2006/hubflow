@@ -36,6 +36,8 @@ import { CHANNELS, type ChannelDef, type ChannelState } from './components/chann
 
 const streams = ref<PerceptionStreamMeta[]>([])
 const detMap = ref<Record<string, PerceptionDetections>>({})
+/** detections 请求失败的通道(meta 在、检测取不到)——失败不得冒充"无检测结果" */
+const detFailedSet = ref<Record<string, true>>({})
 const pStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const pError = ref('')
 
@@ -48,7 +50,7 @@ const sourcePair = ref<SegmentSourcePair | null>(null)
 const assimilation = ref<AssimilationSnapshotFull | null>(null)
 const snapshotTs = ref('')
 
-// 可用性一律由服务端实际返回判定:返回里有的才「就绪 / 检测中」,没有的「未导出」
+// 可用性一律由服务端实际返回判定:返回里有的才「就绪 / 检测中」,没有的「未导出」;取不到检测的标「读取失败」
 const channels = computed<ChannelState[]>(() =>
   CHANNELS.map((def) => {
     const meta = streams.value.find((m) => m.stream_id === def.source) ?? null
@@ -58,6 +60,7 @@ const channels = computed<ChannelState[]>(() =>
       meta,
       det,
       detTotal: det ? det.frames.reduce((s, f) => s + f.det.length, 0) : null,
+      detFailed: meta !== null && det === null && detFailedSet.value[def.source] === true,
     }
   }),
 )
@@ -65,11 +68,18 @@ const channels = computed<ChannelState[]>(() =>
 const fallbackDef = CHANNELS[0] as ChannelDef
 const current = computed<ChannelState>(() => {
   const hit = channels.value.find((c) => c.def.source === currentSource.value)
-  return hit ?? channels.value[0] ?? { def: fallbackDef, meta: null, det: null, detTotal: null }
+  return (
+    hit ?? channels.value[0] ?? { def: fallbackDef, meta: null, det: null, detTotal: null, detFailed: false }
+  )
 })
 
 const processedAt = computed(() =>
   current.value.meta ? formatStamp(current.value.meta.generated_at) : '—',
+)
+
+/** 检测读取失败的通道编号(页级提示:故障必须显式,不得静默成"无检出") */
+const detFailedCids = computed(() =>
+  channels.value.filter((c) => c.detFailed).map((c) => `${c.def.cid} ${c.def.source}`),
 )
 
 async function loadStreams(): Promise<void> {
@@ -81,12 +91,17 @@ async function loadStreams(): Promise<void> {
     // 只拉已导出通道的逐帧检测(未导出通道服务端没有该端点数据)
     const settled = await Promise.allSettled(list.map((m) => getPerceptionDetections(m.stream_id)))
     const dets: Record<string, PerceptionDetections> = {}
+    const failed: Record<string, true> = {}
     list.forEach((m, i) => {
       const r = settled[i]
       if (r && r.status === 'fulfilled') dets[m.stream_id] = r.value
+      // meta 在、检测取不到 = 该通道读取失败:记下来,由 UI 如实报错,
+      // 不把"请求失败"显示成"本帧无检出"(那是把故障说成结果)
+      else failed[m.stream_id] = true
     })
     streams.value = list
     detMap.value = dets
+    detFailedSet.value = failed
     pStatus.value = 'ready'
     const first = list[0]
     if (first && !list.some((m) => m.stream_id === currentSource.value)) {
@@ -154,6 +169,12 @@ onMounted(() => {
       <span class="td-mono head-ts">处理时间戳 {{ processedAt }}</span>
     </template>
 
+    <template #headExtra>
+      <div v-if="detFailedCids.length > 0" class="head-err">
+        ⚠ {{ detFailedCids.length }} 路检测读取失败({{ detFailedCids.join(' / ') }})——该路检测框不可用,是接口故障,不是"无检出"。
+      </div>
+    </template>
+
     <div class="td-body">
       <div class="td-col col-left">
         <ChannelLedger :channels="channels" :current-id="currentSource" @select="onSelect" />
@@ -211,6 +232,13 @@ onMounted(() => {
 .head-ts {
   font-size: 11px;
   color: var(--td-text-color-secondary);
+}
+/* 检测读取失败提示:接口故障显式可见 */
+.head-err {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #a06a00;
 }
 .err-body {
   display: flex;

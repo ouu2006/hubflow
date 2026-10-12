@@ -7,6 +7,7 @@
 // 视图:页头右切换「效果对比 / 处置队列」(本地视图切换,不影响顶栏数据源控件)。
 // 状态机硬口径:
 //   认领:待认领 → 处置中(仅置本地标记);下发:→ 处置中(允许覆盖回执重下发);
+//   回写:**必须先有下发回执**(TC-07 闭环顺序:下发 → 回执 → 回写),无回执不得回写;
 //   回写结果四选一 → 已消除 / 已缓解 = 已闭环;未改善 = 留在处置中;误报 = 误报;
 //   终态(已闭环 / 误报)**不得再回写、不得互相翻转**。
 // 口径:全部数据 is_simulated=true;效果对比属仿真对照不得称实测;预测只标 L0 无精度数字;
@@ -26,6 +27,7 @@ import {
   getTrafficSegmentSources,
   postPlanAck,
   postPlanDispatch,
+  postTrafficAlertsReset,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import {
@@ -55,10 +57,15 @@ const view = ref<'queue' | 'compare'>('queue')
 const sourceMode = ref<SourceMode>('both')
 const selectedId = ref<string | null>(null)
 
-// ---------- 处置工作流(页面内存态,刷新复位) ----------
+// ---------- 处置工作流 ----------
+// 下发回执与回写结果的**权威留痕在服务端 /alerts**(channels / dispatch_at / dispatch_ratio_pct / writeback),
+// 本地 map 只叠加本次会话的最新操作;接口层未起时页面仍能按本地态演示。
+// 状态存在 mock 服务端内存里(刷新页面不清,与后端落库口径一致),要清走页头「复位演示态」。
 const statusMap = reactive<Record<string, AlertStatus>>({})
 const receipts = reactive<Record<string, DispatchReceipt>>({})
 const ackResults = reactive<Record<string, WritebackResult>>({})
+/** 动作失败提示(下发 / 回写):一句话说清是哪一步失败、失败原因 */
+const actionError = ref('')
 
 const pct = ref(20)
 const channel = ref<string>(DISPATCH_CHANNELS[0])
@@ -131,9 +138,28 @@ const suggestion = computed<DiversionSuggestion | null>(() =>
     : null,
 )
 
-const receipt = computed<DispatchReceipt | null>(() =>
-  selected.value ? receipts[selected.value.alert_id] ?? null : null,
-)
+const receipt = computed<DispatchReceipt | null>(() => {
+  const a = selected.value
+  if (!a) return null
+  const local = receipts[a.alert_id]
+  if (local) return local
+  // 刷新 / 切页回来后从服务端留痕还原(channels + dispatch_at + dispatch_ratio_pct),审计不丢
+  if (a.dispatch_at && a.channels && a.channels.length > 0) {
+    const ch = a.channels[0] ?? '—'
+    return {
+      alert_id: a.alert_id,
+      channel: ch,
+      ratio_pct: a.dispatch_ratio_pct ?? 0,
+      receipt: `${ch}已确认`,
+      at: a.dispatch_at,
+      is_simulated: true,
+    }
+  }
+  return null
+})
+
+/** 是否已下发(有派发回执);回写的前置条件(TC-07:下发 → 回执 → 回写) */
+const dispatched = computed(() => receipt.value !== null)
 
 const firstSeenText = computed(() => (selected.value ? timeOf(selected.value.first_seen) : '—'))
 
@@ -152,7 +178,11 @@ const dispatchLabel = computed(() => {
 })
 
 const submitDisabled = computed(
-  () => terminal.value || wbOperator.value.trim() === '' || wbAction.value.trim() === '',
+  () =>
+    terminal.value ||
+    !dispatched.value ||
+    wbOperator.value.trim() === '' ||
+    wbAction.value.trim() === '',
 )
 
 const snapshotDisplay = computed(() => isoToStamp(snapshotIso.value))
@@ -187,23 +217,32 @@ const groups = computed(() =>
 
 // ---------- 拉取 ----------
 let unsubscribe: (() => void) | null = null
+/** 刷新序号:SSE 触发与手动刷新可能并发,只让最后一次的响应落到页面(旧响应丢弃) */
+let refreshSeq = 0
+/** 接口层未起时的降级提示(空 = 正常) */
+const dataError = ref('')
 
 async function refresh(): Promise<void> {
+  const seq = ++refreshSeq
   try {
     const [alertsSnap, segSnap] = await Promise.all([getTrafficAlerts(), getTrafficSegments()])
+    if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
     alerts.value = alertsSnap.alerts
     snapshotIso.value = alertsSnap.ts
     snapshotMs.value = parseStamp(alertsSnap.ts)
     const map: Record<string, SegmentRecord> = {}
     for (const s of segSnap.segments) map[s.segment_id] = s
     segMap.value = map
+    dataError.value = ''
     // 默认选中第一条「待认领」
     if (selectedId.value === null && alerts.value.length > 0) {
       const first = alerts.value.find((a) => a.status === '待认领') ?? alerts.value[0]
       selectedId.value = first ? first.alert_id : null
     }
-  } catch {
-    /* 联调期接口层可能未起:SSE 重连后会再拉 */
+  } catch (e) {
+    if (seq !== refreshSeq) return
+    // 联调期接口层可能未起:SSE 重连后会再拉;此处如实提示,不静默
+    dataError.value = `快照拉取失败:${e instanceof Error ? e.message : String(e)}`
   }
 }
 
@@ -239,10 +278,29 @@ function claim(): void {
   statusMap[a.alert_id] = '处置中'
 }
 
+/** 复位演示态:清服务端下发 / 回写运行态,再拉回初始快照(与 factors 复位同口径) */
+const resetting = ref(false)
+async function doReset(): Promise<void> {
+  resetting.value = true
+  actionError.value = ''
+  try {
+    await postTrafficAlertsReset()
+    for (const k of Object.keys(statusMap)) delete statusMap[k]
+    for (const k of Object.keys(receipts)) delete receipts[k]
+    for (const k of Object.keys(ackResults)) delete ackResults[k]
+    await refresh()
+  } catch (e) {
+    actionError.value = `复位失败:${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    resetting.value = false
+  }
+}
+
 async function doDispatch(): Promise<void> {
   const a = selected.value
   const s = suggestion.value
   if (!a || !s || terminal.value) return
+  actionError.value = ''
   try {
     const r = await postPlanDispatch({
       alert_id: a.alert_id,
@@ -252,8 +310,9 @@ async function doDispatch(): Promise<void> {
     })
     receipts[a.alert_id] = r
     statusMap[a.alert_id] = '处置中'
-  } catch {
-    /* 接口层未起:保持原态 */
+  } catch (e) {
+    // 动作失败必须可见:不然操作员分不清"没点到"还是"下发被拒"
+    actionError.value = `下发失败:${e instanceof Error ? e.message : String(e)}`
   }
 }
 
@@ -263,6 +322,11 @@ async function doAck(): Promise<void> {
   const operator = wbOperator.value.trim()
   const action = wbAction.value.trim()
   if (!operator || !action) return
+  if (!dispatched.value) {
+    actionError.value = '回写失败:该告警尚未下发(无派发回执),请先下发分流方案'
+    return
+  }
+  actionError.value = ''
   try {
     await postPlanAck({
       alert_id: a.alert_id,
@@ -274,8 +338,8 @@ async function doAck(): Promise<void> {
     ackResults[a.alert_id] = wbResult.value
     statusMap[a.alert_id] =
       wbResult.value === '误报' ? '误报' : wbResult.value === '未改善' ? '处置中' : '已闭环'
-  } catch {
-    /* 接口层未起:保持原态 */
+  } catch (e) {
+    actionError.value = `回写失败:${e instanceof Error ? e.message : String(e)}`
   }
 }
 
@@ -289,6 +353,7 @@ watch(selectedId, () => {
   wbOperator.value = '张工(监控)'
   wbAction.value = s ? `情报板诱导 · 分流至${s.target_name} ${s.base_pct}%` : ''
   queueRatio.value = '—'
+  actionError.value = ''
   if (a) void loadQueueRatio(a.segment_id)
 })
 
@@ -343,6 +408,11 @@ onUnmounted(() => {
         </span>
       </span>
       <span class="snapshot td-mono">快照 {{ snapshotDisplay }}</span>
+      <button type="button" class="td-btn sm" :disabled="resetting" @click="doReset">复位演示态</button>
+    </template>
+
+    <template #headExtra>
+      <div v-if="dataError" class="head-err">{{ dataError }}</div>
     </template>
 
     <div class="td-body">
@@ -452,11 +522,10 @@ onUnmounted(() => {
                   {{ dispatchLabel }}
                 </button>
                 <p v-if="receipt" class="receipt">
-                  回执:{{ receipt.receipt }} · {{ hhmmss(receipt.at) }}
+                  回执:{{ receipt.receipt }} · 分流 {{ receipt.ratio_pct }}% · {{ hhmmss(receipt.at) }}
                 </p>
                 <p class="note">渠道为展示枚举 · 一期无真实下发通道(本页展示口径)</p>
               </section>
-
               <!-- ③ 处置回写 · 结果四选一 -->
               <section class="sec">
                 <div class="sec-head">处置回写 · 结果四选一</div>
@@ -486,10 +555,14 @@ onUnmounted(() => {
                 <button type="button" class="td-btn primary" :disabled="submitDisabled" @click="doAck">
                   {{ terminal ? '结果已回写' : '提交回写' }}
                 </button>
+                <p v-if="!terminal && !dispatched" class="note warn-note">
+                  回写前置:须先下发并拿到派发回执(TC-07 闭环顺序:下发 → 回执 → 回写)。
+                </p>
                 <p v-if="terminal" class="note">终态（已闭环 / 误报）不可再回写，也不得互相翻转。</p>
                 <p v-else class="note">
                   结果四选一为展示口径 · 流转:已消除 / 已缓解 → 已闭环;未改善 → 留在处置中;误报 → 误报
                 </p>
+                <p v-if="actionError" class="note err-note">{{ actionError }}</p>
               </section>
               </div>
               <!-- 卡片右侧竖排小注:结果回写须同步至效果对比报表 -->
@@ -519,7 +592,7 @@ onUnmounted(() => {
     <template #foot>
       <span>快照时间 {{ snapshotDisplay }}</span>
       <span>效果对比属仿真对照，不得称实测</span>
-      <span>工作流状态为演示态(刷新复位)</span>
+      <span>工作流状态存于服务端演示态 · 刷新不清，页头「复位演示态」可清</span>
       <span class="right td-mono">全部数据 is_simulated = true</span>
     </template>
   </AppShell>
@@ -710,6 +783,19 @@ onUnmounted(() => {
   margin: 0;
   font-size: 12px;
   color: var(--td-text-color-placeholder);
+}
+
+/* 失败 / 前置提示:警告色文字,不引入新色轴 */
+.warn-note {
+  color: #a06a00;
+}
+.err-note {
+  color: #ad352f;
+}
+.head-err {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #ad352f;
 }
 
 @media (max-width: 1180px) {

@@ -457,6 +457,8 @@ export interface TrafficAlert {
   channels?: string[]
   /** 最近一次下发回执时间 */
   dispatch_at?: string
+  /** 最近一次下发的分流比例(%),与回执同源;刷新后据此还原下发留痕(TC-07) */
+  dispatch_ratio_pct?: number
   /** 处置回写:认领人 / 动作 / 结果四选一 / 时间 */
   writeback?: {
     operator: string

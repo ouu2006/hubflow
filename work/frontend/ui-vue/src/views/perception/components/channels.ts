@@ -38,6 +38,12 @@ export interface ChannelState {
   det: PerceptionDetections | null
   /** 逐帧检测框总数(真实数据累计);det 缺失为 null */
   detTotal: number | null
+  /**
+   * 该通道 detections 请求是否失败(meta 在、检测取不到)。
+   * 硬口径:接口失败**不得**与"这一路样本本来就没检出目标"混同——
+   * 失败要报「检测读取失败」,绝不静默成"本帧无检出"。
+   */
+  detFailed: boolean
 }
 
 /** 车型槽位短名(画面区/图例用,与 DESIGN 的四槽口径一致) */

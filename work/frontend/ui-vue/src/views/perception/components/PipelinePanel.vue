@@ -40,6 +40,8 @@ const detSum = computed(() => {
   if (known.length === 0) return null
   return known.reduce((acc, c) => acc + (c.detTotal ?? 0), 0)
 })
+/** 检测读取失败的通道数:合计口径里必须显式提示,避免"少算几路"被当成"就这么多" */
+const detFailedCount = computed(() => props.channels.filter((c) => c.detFailed).length)
 
 const summaryRows = computed(() => {
   const s = props.summary
@@ -82,6 +84,9 @@ const summaryRows = computed(() => {
         <span class="k">{{ row.k }}</span>
         <span class="v td-mono">{{ row.v }}</span>
       </div>
+      <p v-if="detFailedCount > 0" class="note err">
+        有 {{ detFailedCount }} 路检测读取失败,未计入上表合计(故障不等于该路无检出)。
+      </p>
       <p v-if="summaryUnavailable" class="note">
         累计越线计数 / 平均 Q / 处理用时由感知服务提供,当前不可用 → 显示「—」。
       </p>
@@ -165,5 +170,9 @@ const summaryRows = computed(() => {
   font-size: 11px;
   line-height: 1.5;
   color: var(--td-text-color-placeholder);
+}
+/* 接口故障提示:与"服务未提供该字段"的说明区分开 */
+.note.err {
+  color: #ad352f;
 }
 </style>
