@@ -130,6 +130,20 @@ const VEH_COLORS: Record<DriverType, string> = {
   D3: '#B58BFF',
 }
 
+// 三类司机(数据契约 :332 / 手册 :175):D1 送客 / D2 接客 / D3 往返(出租车、网约车)
+const VEH_LABEL: Record<DriverType, string> = {
+  D1: '送客车辆',
+  D2: '接客车辆',
+  D3: '往返车辆(出租车 / 网约车)',
+}
+
+// 图例**由 VEH_COLORS 生成**,不手写行——否则新增司机类型(如 D3)时地图画了、图例却漏(Sourcery 意见)
+const VEH_LEGEND = (Object.keys(VEH_COLORS) as DriverType[]).map((t) => ({
+  t,
+  color: VEH_COLORS[t],
+  label: VEH_LABEL[t],
+}))
+
 const vehPts = computed(() =>
   props.vehicles.map((v) => {
     const [x, y] = px(v.lon, v.lat)
@@ -246,6 +260,11 @@ const vehPts = computed(() =>
         <div class="lg-note strong">{{ CI_DISCLAIMER }}</div>
         <div class="lg-sep" />
         <div class="lg-row"><LevelBadge :level="1" stale />灰 = 数据不可用(缺 ci 或数据陈旧)</div>
+        <!-- 车辆动点在**任何** mode 下都照画(:220-228),图例必须跟着给,否则指数视图出现无说明的彩色圆点；
+             且行由 VEH_LEGEND 生成,D1/D2/D3 一个不落 -->
+        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+        </div>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
       <!-- 四级视图的图例(原有) -->
@@ -257,8 +276,9 @@ const vehPts = computed(() =>
         <div class="lg-row"><LevelBadge :level="4" /></div>
         <div class="lg-row"><LevelBadge :level="1" stale /></div>
         <div class="lg-sep" />
-        <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D1 }" />D1 送客车辆</div>
-        <div class="lg-row"><span class="dot" :style="{ background: VEH_COLORS.D2 }" />D2 接客车辆</div>
+        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+        </div>
         <div class="lg-row"><span class="dot flow" />路线高亮</div>
       </template>
     </div>

@@ -46,9 +46,15 @@ const rows = computed(() => {
         : `${seg.v_kmh ?? '—'} km/h`,
     valueColor: isStale(seg) || (isIndex.value && !ciAvailable(seg)) ? '#8C8C8C' : isIndex.value ? ciStyleColor(seg) : levelStyle(seg).color,
   }))
+  // 辅助排序**只对指数视图**生效(手册 §6.5 第 1 条:CI 可用于辅助排序)。
+  // 四级视图保持调用方传入的原序——不改既有调用方(/dashboard 路段监测列表)的顺序。
+  // 指数视图:可用 ci 的在前按 ci 降序,**缺 ci / 陈旧的排最后**——陈旧 ci 不可信,
+  // 不参与辅助排序(与 HeatView Top3 同口径;否则一条 `不可用` 的陈旧段会因 ci 高排在第 1 位)。
   return isIndex.value
-    ? [...mapped].sort((a, b) => (b.seg.ci ?? -1) - (a.seg.ci ?? -1))
-    : [...mapped].sort((a, b) => b.seg.level - a.seg.level)
+    ? [...mapped].sort(
+        (a, b) => (a.ciOk ? 0 : 1) - (b.ciOk ? 0 : 1) || (b.seg.ci ?? -1) - (a.seg.ci ?? -1),
+      )
+    : mapped
 })
 
 const SOURCE_LABEL: Record<TrafficSource, string> = {

@@ -192,6 +192,12 @@ function lerpColor(a: string, b: string, t: number): string {
 
 // 色阶锚点取手册 §6.2 的四级色值(档心为锚点,档间线性过渡)——
 // **不自造第五套颜色语义**;灰 #8C8C8C 仍只表示"数据不可用",不参与色阶。
+//
+// ⚠️ 已知取舍(独立审查发现,记此不改):蓝 #1E6FD9 与黄 #F2B705 在色相上互补,
+//   两者之间的线性过渡中点必然接近中性灰——本实现的过渡中点落在 ci≈25(锚点 12.5 / 37.5 的中点),
+//   视觉上与"数据不可用"灰 #8C8C8C 相近。这是**手册 §6.2 四级色顺序本身**带来的,不是自造色阶;
+//   改锚点顺序或改色相会动到手册语义,故不改。判据仍以灰档行(三重编码 + 文字「不可用」)为准,
+//   不靠颜色单通道区分"不可用"与"低 ci"。
 const CI_ANCHORS: { at: number; color: string }[] = [
   { at: 12.5, color: LEVELS[1].color },
   { at: 37.5, color: LEVELS[2].color },
@@ -201,6 +207,8 @@ const CI_ANCHORS: { at: number; color: string }[] = [
 
 /** CI → 颜色:0~100 线性映射到四级色阶(超出范围按端点夹取) */
 export function ciColor(ci: number): string {
+  // 非有限入参(NaN / ±Infinity)不落到函数末尾被画成红色"严重拥堵",与 ciAvailable 同口径交灰档
+  if (!Number.isFinite(ci)) return UNAVAILABLE.color
   const v = Math.min(CI_MAX, Math.max(0, ci))
   const first = CI_ANCHORS[0]!
   const last = CI_ANCHORS[CI_ANCHORS.length - 1]!
