@@ -1,41 +1,148 @@
 <script setup lang="ts">
-// 拥挤度热力(Issue #66,手册 §11.2 第 2 行 / 判定 C-2):
-//   四级色 + 图例 + 更新时间戳,可切**拥挤指数视图**。
-// 硬口径(手册 §6.5 第 1 条):CI 是四项加权合成的 0~100 分,**只用于热力展示与辅助排序**,
-//   不得作为判级依据;CI 与四项指标冲突时一律以四项指标为准——所以两种视图必须能在同页互证。
-// 数据:契约 v2.0 mock 快照(GET /api/traffic/segments)+ SSE traffic_snapshot;
-//   一期无真实快照,页面不出现"实时/实测"表述。
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { getTrafficSegments, getTrafficVehicles, subscribeTrafficSnapshot } from '../../api/traffic'
-import { networkSourceLabel } from '../../shared/demoNetwork'
+// 拥挤度热力(Issue #78 四页重做 · 设计稿 02,TDesign Light):
+//   左栏 = CI 色阶 / 路段指数排行 / 档位分布;中栏 = 路网拥挤指数热力 + 时段热力矩阵;
+//   右栏 = 路段指数明细(大号 CI + 四项加权 + 走势 + 成因 + 关联告警)。
+// 硬口径(手册 §6.5 第 1 条):CI 只用于热力展示与辅助排序,不得作为判级依据;
+//   页脚 / 图例 / 列表三处标注;视图切换同页互证,冲突以四级为准。
+// 数据:接口面(只读快照)+ SSE traffic_snapshot;一期全部 is_simulated=true,不出现"实时/实测"。
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import AppShell from '../../components/AppShell.vue'
+import NetMap from '../dashboard/components/NetMap.vue'
 import {
+  getTrafficAlerts,
+  getTrafficCiHistory,
+  getTrafficFactors,
+  getTrafficHeatMatrix,
+  getTrafficMeta,
+  getTrafficNetwork,
+  getTrafficOverview,
+  getTrafficSegments,
+  getTrafficThresholds,
+  getTrafficVehicles,
+  subscribeTrafficSnapshot,
+} from '../../api/traffic'
+import type { SourceMode } from '../../shared/nav'
+import {
+  CI_BANDS,
+  CI_BAND_NOTE,
   CI_DISCLAIMER,
+  LEVELS,
   ciAvailable,
+  formatStamp,
+  isStale,
+  type CiHistory,
+  type CongestionLevel,
   type CongestionViewMode,
+  type FactorApplied,
+  type HeatMatrix,
   type SegmentRecord,
+  type ThresholdSnapshot,
+  type TrafficAlert,
+  type TrafficNetwork,
+  type TrafficOverview,
   type VehicleRecord,
 } from '../../shared/traffic'
-import NetMap from '../dashboard/components/NetMap.vue'
-import SegmentListPanel from '../dashboard/components/SegmentListPanel.vue'
+import BandDistribution from './components/BandDistribution.vue'
+import CiScale from './components/CiScale.vue'
+import HeatMatrixTable from './components/HeatMatrixTable.vue'
+import SegmentIndexPanel from './components/SegmentIndexPanel.vue'
+import SegmentRankTable from './components/SegmentRankTable.vue'
 
-const mode = ref<CongestionViewMode>('level')
+const router = useRouter()
+
+// ---- 状态 ----
+const sourceMode = ref<SourceMode>('both')
+const viewMode = ref<CongestionViewMode>('index')
 const segments = ref<SegmentRecord[]>([])
 const vehicles = ref<VehicleRecord[]>([])
-// 选中态:列表与地图互通(与 /dashboard 行为一致;此前传 null + 空函数,点击无反馈)
+const network = ref<TrafficNetwork | null>(null)
+const heat = ref<HeatMatrix | null>(null)
+const thresholds = ref<ThresholdSnapshot | null>(null)
+const overview = ref<TrafficOverview | null>(null)
+const alerts = ref<TrafficAlert[]>([])
+const history = ref<CiHistory | null>(null)
+const factors = ref<(FactorApplied & { segment_id: string })[]>([])
 const selectedId = ref<string | null>(null)
 const snapshotTs = ref('')
-const live = ref(false)
-const sourceLabel = networkSourceLabel()
+const stationName = ref('肇庆东站')
 
 let unsubscribe: (() => void) | null = null
 
+/** 默认选中:CI 最高的可用路段(不可用路段不参与) */
+function pickDefault(list: SegmentRecord[]): string | null {
+  const best = [...list].filter(ciAvailable).sort((a, b) => (b.ci ?? 0) - (a.ci ?? 0))[0]
+  return best?.segment_id ?? list[0]?.segment_id ?? null
+}
+
+/** 选中路段派生数据(CI 走势 / 生效因素) */
+async function loadDerived(id: string | null): Promise<void> {
+  if (!id) {
+    history.value = null
+    factors.value = []
+    return
+  }
+  const [h, f] = await Promise.allSettled([getTrafficCiHistory(id, 12), getTrafficFactors(id)])
+  if (selectedId.value !== id) return // 选择已变:丢弃过期响应
+  if (h.status === 'fulfilled') history.value = h.value
+  if (f.status === 'fulfilled') factors.value = f.value.factors
+}
+
+/** 刷新序号:SSE 触发与手动刷新可能并发,只让最后一次的响应落页(旧响应丢弃) */
+let refreshSeq = 0
+/** 本次刷新中失败的接口(页头提示用;失败面板保留旧值但必须标"上一版") */
+const failedPanels = ref<string[]>([])
+
+const PANEL_LABEL: Record<string, string> = {
+  segments: '路段快照',
+  vehicles: '车辆',
+  network: '路网',
+  meta: '站点元信息',
+  thresholds: '阈值与 CI 权重',
+  alerts: '告警',
+  matrix: '热力矩阵',
+  overview: 'KPI',
+}
+
 async function refresh(): Promise<void> {
-  const [seg, veh] = await Promise.allSettled([getTrafficSegments(), getTrafficVehicles()])
+  const seq = ++refreshSeq
+  const [seg, veh, net, meta, thr, alert, matrix, over] = await Promise.allSettled([
+    getTrafficSegments(),
+    getTrafficVehicles(),
+    getTrafficNetwork(),
+    getTrafficMeta(),
+    getTrafficThresholds(),
+    getTrafficAlerts(),
+    getTrafficHeatMatrix(12, 60),
+    getTrafficOverview(),
+  ])
+  if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
+  const failed: string[] = []
+  const track = (name: string, ok: boolean): void => {
+    if (!ok) failed.push(PANEL_LABEL[name] ?? name)
+  }
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
+    if (selectedId.value === null) selectedId.value = pickDefault(seg.value.segments)
   }
+  track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
+  track('vehicles', veh.status === 'fulfilled')
+  if (net.status === 'fulfilled') network.value = net.value
+  track('network', net.status === 'fulfilled')
+  if (meta.status === 'fulfilled') stationName.value = meta.value.station.name
+  track('meta', meta.status === 'fulfilled')
+  if (thr.status === 'fulfilled') thresholds.value = thr.value
+  track('thresholds', thr.status === 'fulfilled')
+  if (alert.status === 'fulfilled') alerts.value = alert.value.alerts
+  track('alerts', alert.status === 'fulfilled')
+  if (matrix.status === 'fulfilled') heat.value = matrix.value
+  track('matrix', matrix.status === 'fulfilled')
+  if (over.status === 'fulfilled') overview.value = over.value
+  track('overview', over.status === 'fulfilled')
+  failedPanels.value = failed
+  await loadDerived(selectedId.value)
 }
 
 onMounted(() => {
@@ -44,8 +151,8 @@ onMounted(() => {
     () => {
       void refresh()
     },
-    (connected) => {
-      live.value = connected
+    () => {
+      /* 连接态由顶栏角标承担,本页无额外展示 */
     },
   )
 })
@@ -54,344 +161,301 @@ onUnmounted(() => {
   unsubscribe?.()
 })
 
-/** 指数视图下"最拥挤的几条"用于辅助排序举证(只展示,不改判级) */
-const topByCi = computed(() =>
-  [...segments.value]
-    // 与地图/左栏**同一口径**:陈旧或 ci 非有限的一律不进榜——
-    // 否则会出现"地图画灰、左栏写不可用、Top3 却有它"的同页自相矛盾(手册:缺 ci 或超限一律灰)
-    .filter((s) => ciAvailable(s))
-    .sort((a, b) => (b.ci ?? 0) - (a.ci ?? 0))
-    .slice(0, 3),
+watch(selectedId, (id) => {
+  void loadDerived(id)
+})
+
+// ---- 名称映射(路段名从路网 / 热力矩阵取,记录本身不含 name) ----
+const nameById = computed(() => {
+  const m = new Map<string, string>()
+  for (const r of heat.value?.rows ?? []) m.set(r.segment_id, r.name)
+  for (const s of network.value?.segments ?? []) m.set(s.segment_id, s.name)
+  return m
+})
+
+function nameOf(id: string): string {
+  return nameById.value.get(id) ?? id
+}
+
+// ---- 选中路段 ----
+const selected = computed<SegmentRecord | null>(
+  () => segments.value.find((s) => s.segment_id === selectedId.value) ?? null,
+)
+const selectedName = computed(() => (selectedId.value ? nameOf(selectedId.value) : '—'))
+
+const selectedChip = computed(() => {
+  const s = selected.value
+  if (!s) return ''
+  return ciAvailable(s) ? `${selectedName.value} · CI ${(s.ci as number).toFixed(1)}` : `${selectedName.value} · 数据不可用`
+})
+
+const selectedAlerts = computed(() =>
+  alerts.value.filter((a) => a.segment_id === selectedId.value && a.status !== '已闭环' && a.status !== '误报'),
 )
 
-/** ci 上屏文案:取色按 [0, 100] 夹取,文案同样夹取,避免越界值(如抖动后的 102)与图例刻度不符 */
-function ciText(s: SegmentRecord): string {
-  return `ci ${Math.min(100, Math.max(0, s.ci as number))}`
+// ---- 左栏:路段指数排行(可用者按 CI 降序,不可用排最后) ----
+const rankRows = computed(() =>
+  segments.value
+    .map((s) => ({
+      id: s.segment_id,
+      name: nameOf(s.segment_id),
+      ci: ciAvailable(s) ? (s.ci as number) : null,
+      level: s.level,
+      available: ciAvailable(s),
+    }))
+    .sort((a, b) => {
+      if (a.available !== b.available) return a.available ? -1 : 1
+      return (b.ci ?? 0) - (a.ci ?? 0)
+    }),
+)
+
+// ---- 左栏:档位分布(按 CI_BANDS 四档 + 不可用单独成档) ----
+const bandRows = computed(() => {
+  const avail = segments.value.filter(ciAvailable)
+  const out: { level: CongestionLevel; name: string; count: number }[] = []
+  for (let lv = 4; lv >= 1; lv--) {
+    const lo = CI_BANDS[lv - 1] ?? 0
+    const hi = CI_BANDS[lv] ?? 100
+    const count = avail.filter((s) => {
+      const ci = s.ci as number
+      return lv === 4 ? ci >= lo && ci <= hi : ci >= lo && ci < hi
+    }).length
+    out.push({ level: lv as CongestionLevel, name: LEVELS[lv as CongestionLevel].name, count })
+  }
+  return out
+})
+
+const unavailableCount = computed(() => segments.value.filter((s) => !ciAvailable(s)).length)
+const totalSegments = computed(() => overview.value?.segment_total ?? segments.value.length)
+
+// ---- 右栏:数据不可用路段清单 ----
+const unavailableRows = computed(() =>
+  segments.value
+    .filter((s) => !ciAvailable(s))
+    .map((s) => ({
+      id: s.segment_id,
+      name: nameOf(s.segment_id),
+      reason: isStale(s) ? '数据陈旧' : '缺 CI',
+      ageText: typeof s.data_age_s === 'number' ? `${s.data_age_s}s` : '—',
+      confidence: typeof s.confidence === 'number' ? s.confidence.toFixed(2) : '—',
+    })),
+)
+
+// ---- 右栏:四个 CI 权重(来自 thresholds,不写死) ----
+const weights = computed(() => thresholds.value?.ci_weights ?? [])
+const weightText = computed(() => (weights.value.length > 0 ? weights.value.map((w) => w.weight.toFixed(2)).join('/') : '—'))
+
+function goDecision(): void {
+  void router.push('/decision')
 }
 </script>
 
 <template>
-  <div class="heat-page">
-    <header class="bar">
-      <div class="bar-left">
-        <span class="logo">◈</span>
-        <span class="app-name">拥挤度热力</span>
-        <span class="badge sim">演示数据(模拟)· is_simulated = true</span>
-      </div>
-      <div class="bar-mid">
-        <span class="seg-toggle" role="group" aria-label="视图切换">
-          <button
-            type="button"
-            class="tg"
-            :class="{ on: mode === 'level' }"
-            :aria-pressed="mode === 'level'"
-            @click="mode = 'level'"
-          >
-            四级视图
-          </button>
-          <button
-            type="button"
-            class="tg"
-            :class="{ on: mode === 'index' }"
-            :aria-pressed="mode === 'index'"
-            @click="mode = 'index'"
-          >
-            拥挤指数视图
-          </button>
+  <AppShell
+    active="heat"
+    :station="stationName"
+    :ts="snapshotTs"
+    v-model:sourceMode="sourceMode"
+    title="拥挤度热力"
+    subtitle="强度晕染随 CI 单调增 · 不做断面间无标注内插"
+  >
+    <template #headRight>
+      <span class="td-seg" role="group" aria-label="视图切换">
+        <span
+          class="td-seg-item"
+          :class="{ on: viewMode === 'level' }"
+          :aria-pressed="viewMode === 'level'"
+          role="button"
+          @click="viewMode = 'level'"
+        >
+          四级视图
         </span>
-        <span class="ts">更新时间戳(快照时间) {{ snapshotTs || '—' }}</span>
-      </div>
-      <div class="bar-right">
-        <span class="conn" :class="live ? 'up' : 'down'">
-          <i class="dot" />
-          {{ live ? '快照流已连接' : '快照流未连接' }}
+        <span
+          class="td-seg-item"
+          :class="{ on: viewMode === 'index' }"
+          :aria-pressed="viewMode === 'index'"
+          role="button"
+          @click="viewMode = 'index'"
+        >
+          拥挤指数视图
         </span>
-        <RouterLink class="nav-link" to="/dashboard">态势大屏 ›</RouterLink>
-        <RouterLink class="nav-link" to="/perception">感知层 ›</RouterLink>
-        <RouterLink class="nav-link" to="/decision">决策工作台 ›</RouterLink>
-      </div>
-    </header>
+      </span>
+      <span class="head-ts td-mono">快照 {{ formatStamp(snapshotTs) }}</span>
+    </template>
 
-    <div class="main">
-      <section class="panel list-panel">
-        <div class="panel-head">
-          路段监测({{ mode === 'index' ? '按拥挤指数辅助排序' : '按等级排序' }})
+    <template #headExtra>
+      <div v-if="failedPanels.length > 0" class="head-err">
+        ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,请勿据此判断当前态势。
+      </div>
+    </template>
+
+    <div class="td-body">
+      <!-- 左栏 -->
+      <section class="td-col col-left td-scroll">
+        <div class="td-card">
+          <div class="td-card-head">CI 色阶 · 展示档位</div>
+          <div class="td-card-body">
+            <CiScale />
+            <div class="gray-row">
+              <i class="gray-swatch" />
+              <span>灰档 = 数据不可用(缺 CI 或数据陈旧),绝不落进通配色</span>
+            </div>
+            <p class="note">{{ CI_DISCLAIMER }}</p>
+            <p class="note">{{ CI_BAND_NOTE }}</p>
+          </div>
         </div>
-        <SegmentListPanel
-          :segments="segments"
-          :selected-id="selectedId"
-          :mode="mode"
-          @select="selectedId = $event"
+
+        <div class="td-card">
+          <div class="td-card-head">路段指数排行<span class="td-head-tag">按 CI 降序</span></div>
+          <div class="td-card-body flush">
+            <SegmentRankTable :items="rankRows" :selected-id="selectedId" @select="selectedId = $event" />
+          </div>
+        </div>
+
+        <div class="td-card">
+          <div class="td-card-head">档位分布 · 当前时刻</div>
+          <div class="td-card-body">
+            <BandDistribution :rows="bandRows" :unavailable="unavailableCount" />
+            <p class="note">共 {{ totalSegments }} 个路段 · 灰档不计入均值,与地图同源</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- 中栏 -->
+      <section class="td-col col-mid td-scroll">
+        <div class="td-card">
+          <div class="td-card-head">拥挤度热力 · 强度晕染随 CI 单调增 · 不做断面间无标注内插</div>
+          <div class="td-card-body flush">
+            <div class="map-wrap">
+              <NetMap
+                :segments="segments"
+                :vehicles="vehicles"
+                :selected-id="selectedId"
+                :route-segments="[]"
+                :mode="viewMode"
+                :ts="snapshotTs"
+                :sections="network?.sections ?? []"
+                :dropoffs="network?.dropoffs ?? []"
+                :zones="network?.zones ?? []"
+                :stations="network?.stations ?? []"
+                :selected-chip="selectedChip"
+                :legend="false"
+                @select="selectedId = $event"
+              />
+            </div>
+            <div class="map-legend">
+              <CiScale />
+              <div class="legend-notes">
+                <span class="legend-ts td-mono">更新 {{ formatStamp(snapshotTs) }}</span>
+                <span class="legend-gray"><i class="gray-swatch" />灰 = 数据不可用</span>
+                <span>{{ CI_DISCLAIMER }}</span>
+                <span>{{ CI_BAND_NOTE }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="td-card">
+          <div class="td-card-head">
+            路段 × 时间热力矩阵<span class="td-head-tag">最近 12 个快照 · 每 60 s 一档 · 左旧右新</span>
+          </div>
+          <div class="td-card-body flush">
+            <HeatMatrixTable :matrix="heat" />
+          </div>
+        </div>
+      </section>
+
+      <!-- 右栏 -->
+      <section class="td-col col-right td-scroll">
+        <SegmentIndexPanel
+          :record="selected"
+          :name="selectedName"
+          :weights="weights"
+          :weight-text="weightText"
+          :history="history"
+          :factors="factors"
+          :alerts="selectedAlerts"
+          :unavailable="unavailableRows"
+          @goto-decision="goDecision"
         />
       </section>
-
-      <section class="panel map-panel">
-        <div class="panel-head">
-          路网{{ mode === 'index' ? '拥挤指数' : '四级色' }}热力
-          <span class="head-note">
-            图例见左下 · 更新 {{ snapshotTs || '—' }}
-          </span>
-        </div>
-        <div class="map-body">
-          <NetMap
-            :segments="segments"
-            :vehicles="vehicles"
-            :selected-id="selectedId"
-            :route-segments="[]"
-            :mode="mode"
-            :ts="snapshotTs"
-            @select="selectedId = $event"
-          />
-        </div>
-      </section>
-
-      <aside class="panel side-panel">
-        <div class="panel-head">{{ mode === 'index' ? '拥挤指数 Top 3(辅助排序)' : '四级视图说明' }}</div>
-        <template v-if="mode === 'index'">
-          <div v-for="s in topByCi" :key="s.segment_id" class="top-row">
-            <span class="top-id">{{ s.segment_id }}</span>
-            <span class="top-ci">{{ ciText(s) }}</span>
-            <span class="top-lv">判级 {{ s.level_name ?? s.level }}</span>
-          </div>
-          <p v-if="topByCi.length === 0" class="empty">当前快照无可用 ci(接口层未起?)</p>
-          <p class="note strong">{{ CI_DISCLAIMER }}</p>
-          <p class="note">
-            指数色阶锚点复用手册 §6.2 四级色值;热力仅做「路段级色块 + 强度晕染」,不做断面间无标注内插。
-          </p>
-        </template>
-        <template v-else>
-          <p class="note">
-            四级色 = 判级产出(`level` / `level_name`),颜色 + 竖条图标 + 文字三重编码同时出现,关掉颜色也能区分四级。
-          </p>
-          <p class="note">数据陈旧或等级不可用时显示灰色「数据不可用」(TC-11),绝不显示成蓝色。</p>
-          <p class="note">切到「拥挤指数视图」可看 `ci` 色阶;两种视图同页互证,冲突时以四级为准。</p>
-        </template>
-      </aside>
     </div>
 
-    <footer class="foot">
-      <span>快照时间 {{ snapshotTs || '—' }}</span>
-      <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · {{ sourceLabel }}</span>
-      <span>CI 只用于展示与辅助排序,不作为判级依据(手册 §6.5 第 1 条)</span>
-    </footer>
-  </div>
+    <template #foot>
+      <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <span>{{ CI_DISCLAIMER }}</span>
+      <span class="right">口径:CI 图例见地图下方 · 两种视图同页互证,冲突以四级为准 · 示例数据(is_simulated)</span>
+    </template>
+  </AppShell>
 </template>
 
 <style scoped>
-.heat-page {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  height: 100vh;
-  padding: 16px 20px;
-  box-sizing: border-box;
-  background: radial-gradient(1200px 700px at 50% 38%, #0d1c33 0%, #081222 62%, #060d1a 100%);
-  color: #cfe0f5;
-  overflow: hidden;
-}
-.bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  height: 52px;
-  flex: 0 0 auto;
-  padding: 0 16px;
-  border: 1px solid #1d3354;
-  border-radius: 10px;
-  background: linear-gradient(90deg, rgba(16, 32, 58, 0.9), rgba(12, 25, 48, 0.9));
-}
-.bar-left,
-.bar-mid,
-.bar-right {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  white-space: nowrap;
-}
-.logo {
-  color: #37d6ff;
-  font-size: 22px;
-}
-.app-name {
-  font-size: 20px;
-  font-weight: 700;
-  letter-spacing: 3px;
-  color: #e6eefc;
-}
-.badge {
+/* 部分接口失败提示:提醒当前页混装有上一版数据 */
+.head-err {
+  margin-top: 4px;
   font-size: 11px;
-  padding: 2px 9px;
-  border-radius: 4px;
-  border: 1px solid #2a7f9e;
-  color: #7fe7ff;
-  background: rgba(55, 214, 255, 0.08);
+  line-height: 1.5;
+  color: #a06a00;
 }
-.seg-toggle {
-  display: inline-flex;
-  border: 1px solid #1d3354;
-  border-radius: 6px;
-  overflow: hidden;
+.col-left {
+  flex: 0 0 292px;
 }
-.tg {
-  font: inherit;
-  font-size: 13px;
-  padding: 5px 14px;
-  background: transparent;
-  color: #9fb6d9;
-  border: none;
-  cursor: pointer;
+.col-mid {
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.tg.on {
-  background: rgba(55, 214, 255, 0.16);
-  color: #8feaff;
-  font-weight: 600;
+.col-right {
+  flex: 0 0 372px;
 }
-.ts {
-  font-size: 12px;
-  color: #9fb6d9;
-  font-variant-numeric: tabular-nums;
+.head-ts {
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
 }
-.conn {
-  display: inline-flex;
+/* 数据不可用灰(非等级色) */
+.gray-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #8b8b8b;
+  flex: 0 0 auto;
+}
+.gray-row {
+  display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: #7c93b5;
-}
-.conn .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.conn.up .dot {
-  background: #35d08c;
-}
-.conn.down .dot {
-  background: #e0564f;
-}
-.nav-link {
-  font-size: 13px;
-  color: #37d6ff;
-  text-decoration: none;
-  border: 1px solid #1d3354;
-  border-radius: 6px;
-  padding: 4px 10px;
-}
-.nav-link:hover {
-  border-color: #2c4a78;
-  background: rgba(55, 214, 255, 0.08);
-}
-.main {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 2.4fr) minmax(260px, 0.85fr);
-  gap: 14px;
-}
-.panel {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 14px;
-  border: 1px solid #1d3354;
-  border-radius: 12px;
-  background: linear-gradient(180deg, rgba(16, 32, 58, 0.75), rgba(11, 23, 43, 0.85));
-}
-.panel-head {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 1px;
-  color: #9fb6d9;
-  margin-bottom: 10px;
-  padding-left: 8px;
-  border-left: 3px solid #37d6ff;
-  line-height: 1.3;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.head-note {
+  margin-top: 8px;
   font-size: 11px;
-  font-weight: 400;
-  color: #7c93b5;
-  font-variant-numeric: tabular-nums;
-}
-.map-panel {
-  padding: 8px;
-}
-.map-body {
-  flex: 1;
-  min-height: 0;
-}
-.side-panel {
-  overflow-y: auto;
-}
-.top-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 10px;
-  margin-bottom: 6px;
-  border: 1px solid #1d3354;
-  border-radius: 8px;
-  background: rgba(20, 38, 66, 0.55);
-  font-size: 12px;
-}
-.top-id {
-  color: #7c93b5;
-}
-.top-ci {
-  color: #ffd479;
-  font-weight: 600;
-}
-.top-lv {
-  color: #d9e4f5;
+  color: var(--td-text-color-secondary);
 }
 .note {
-  font-size: 11px;
-  line-height: 1.6;
-  color: #7c93b5;
-  margin: 8px 0 0;
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
 }
-.note.strong {
-  color: #ffd479;
+.map-wrap {
+  height: 360px;
 }
-.empty {
-  font-size: 12px;
-  color: #7c93b5;
+.map-legend {
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--td-component-stroke);
 }
-.foot {
+.legend-notes {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  height: 30px;
-  flex: 0 0 auto;
-  font-size: 12px;
-  color: #5f7396;
-  white-space: nowrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
 }
-@media (max-width: 1100px) {
-  .heat-page {
-    overflow: auto;
-    height: auto;
-  }
-  .main {
-    grid-template-columns: 1fr;
-  }
-  .bar {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 10px 16px;
-  }
-  .foot {
-    flex-wrap: wrap;
-    height: auto;
-    white-space: normal;
-  }
+.legend-ts {
+  color: var(--td-text-color-secondary);
+}
+.legend-gray {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
 </style>
