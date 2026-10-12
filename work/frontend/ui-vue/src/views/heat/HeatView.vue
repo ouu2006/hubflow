@@ -10,6 +10,7 @@ import { getTrafficSegments, getTrafficVehicles, subscribeTrafficSnapshot } from
 import { networkSourceLabel } from '../../shared/demoNetwork'
 import {
   CI_DISCLAIMER,
+  ciAvailable,
   type CongestionViewMode,
   type SegmentRecord,
   type VehicleRecord,
@@ -20,6 +21,8 @@ import SegmentListPanel from '../dashboard/components/SegmentListPanel.vue'
 const mode = ref<CongestionViewMode>('level')
 const segments = ref<SegmentRecord[]>([])
 const vehicles = ref<VehicleRecord[]>([])
+// 选中态:列表与地图互通(与 /dashboard 行为一致;此前传 null + 空函数,点击无反馈)
+const selectedId = ref<string | null>(null)
 const snapshotTs = ref('')
 const live = ref(false)
 const sourceLabel = networkSourceLabel()
@@ -54,10 +57,17 @@ onUnmounted(() => {
 /** 指数视图下"最拥挤的几条"用于辅助排序举证(只展示,不改判级) */
 const topByCi = computed(() =>
   [...segments.value]
-    .filter((s) => typeof s.ci === 'number')
+    // 与地图/左栏**同一口径**:陈旧或 ci 非有限的一律不进榜——
+    // 否则会出现"地图画灰、左栏写不可用、Top3 却有它"的同页自相矛盾(手册:缺 ci 或超限一律灰)
+    .filter((s) => ciAvailable(s))
     .sort((a, b) => (b.ci ?? 0) - (a.ci ?? 0))
     .slice(0, 3),
 )
+
+/** ci 上屏文案:取色按 [0, 100] 夹取,文案同样夹取,避免越界值(如抖动后的 102)与图例刻度不符 */
+function ciText(s: SegmentRecord): string {
+  return `ci ${Math.min(100, Math.max(0, s.ci as number))}`
+}
 </script>
 
 <template>
@@ -109,9 +119,9 @@ const topByCi = computed(() =>
         </div>
         <SegmentListPanel
           :segments="segments"
-          :selected-id="null"
+          :selected-id="selectedId"
           :mode="mode"
-          @select="() => {}"
+          @select="selectedId = $event"
         />
       </section>
 
@@ -126,11 +136,11 @@ const topByCi = computed(() =>
           <NetMap
             :segments="segments"
             :vehicles="vehicles"
-            :selected-id="null"
+            :selected-id="selectedId"
             :route-segments="[]"
             :mode="mode"
             :ts="snapshotTs"
-            @select="() => {}"
+            @select="selectedId = $event"
           />
         </div>
       </section>
@@ -140,7 +150,7 @@ const topByCi = computed(() =>
         <template v-if="mode === 'index'">
           <div v-for="s in topByCi" :key="s.segment_id" class="top-row">
             <span class="top-id">{{ s.segment_id }}</span>
-            <span class="top-ci">ci {{ s.ci }}</span>
+            <span class="top-ci">{{ ciText(s) }}</span>
             <span class="top-lv">判级 {{ s.level_name ?? s.level }}</span>
           </div>
           <p v-if="topByCi.length === 0" class="empty">当前快照无可用 ci(接口层未起?)</p>
