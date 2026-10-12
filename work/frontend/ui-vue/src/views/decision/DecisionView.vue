@@ -149,7 +149,8 @@ const receipt = computed<DispatchReceipt | null>(() => {
     return {
       alert_id: a.alert_id,
       channel: ch,
-      ratio_pct: a.dispatch_ratio_pct ?? 0,
+      // 后端未回比例时保持缺省:回执行显示「—」而不是 0(0% 是另一个意思)
+      ratio_pct: a.dispatch_ratio_pct,
       receipt: `${ch}已确认`,
       at: a.dispatch_at,
       is_simulated: true,
@@ -522,7 +523,7 @@ onUnmounted(() => {
                   {{ dispatchLabel }}
                 </button>
                 <p v-if="receipt" class="receipt">
-                  回执:{{ receipt.receipt }} · 分流 {{ receipt.ratio_pct }}% · {{ hhmmss(receipt.at) }}
+                  回执:{{ receipt.receipt }} · 分流 {{ receipt.ratio_pct ?? '—' }}% · {{ hhmmss(receipt.at) }}
                 </p>
                 <p class="note">渠道为展示枚举 · 一期无真实下发通道(本页展示口径)</p>
               </section>
