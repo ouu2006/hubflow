@@ -278,11 +278,11 @@ function barPct(v: number, max: number): string {
   return `${Math.round((v / Math.max(max, 0.0001)) * 100)}%`
 }
 
-/** 相对变化;基准为 0 时显示绝对值差,避免出现 ∞ 或 -100% 的假象 */
-function deltaText(from: number, to: number): string {
+/** 相对变化;基准为 0 时显示绝对值差(带单位),避免出现 ∞ 或 -100% 的假象 */
+function deltaText(from: number, to: number, unit = ''): string {
   if (Math.abs(from) < 0.0001) {
     const abs = to - from
-    return `${abs >= 0 ? '+' : ''}${Number(abs.toFixed(2))}`
+    return `${abs >= 0 ? '+' : ''}${Number(abs.toFixed(2))}${unit ? ` ${unit}` : ''}`
   }
   const d = ((to - from) / Math.abs(from)) * 100
   return `${d >= 0 ? '+' : ''}${d.toFixed(1)}%`
@@ -545,10 +545,10 @@ onUnmounted(() => {
             </div>
           </div>
           <span class="cmp-delta" :class="isGood(m, m.cooperative, m.fastest) ? 'good' : 'bad'">
-            ③vs② {{ deltaText(m.fastest, m.cooperative) }}
+            ③vs② {{ deltaText(m.fastest, m.cooperative, m.unit) }}
           </span>
           <span class="cmp-delta" :class="isGood(m, m.cooperative, m.no_guide) ? 'good' : 'bad'">
-            ③vs① {{ deltaText(m.no_guide, m.cooperative) }}
+            ③vs① {{ deltaText(m.no_guide, m.cooperative, m.unit) }}
           </span>
         </div>
       </div>
@@ -579,7 +579,7 @@ onUnmounted(() => {
             </div>
           </div>
           <span class="cmp-delta" :class="r.better === 'up' ? (r.after >= r.before ? 'good' : 'bad') : r.after <= r.before ? 'good' : 'bad'">
-            {{ deltaText(r.before, r.after) }}
+            {{ deltaText(r.before, r.after, r.unit) }}
           </span>
         </div>
       </div>
