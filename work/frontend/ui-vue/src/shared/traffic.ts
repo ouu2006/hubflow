@@ -154,6 +154,82 @@ export function levelStyle(seg: SegmentRecord): LevelStyle {
   return isStale(seg) ? UNAVAILABLE : LEVELS[seg.level]
 }
 
+// ---------- 拥挤指数(CI)展示口径(Issue #66;手册 §6.5 第 1 条) ----------
+// 硬口径:CI 只用于**热力展示与辅助排序**,**不得作为判级依据**;CI 与四项指标冲突时一律以四项指标为准。
+// 权重与档位边界不在前端定义——真实来源是 stations/thresholds.json(唯一写手开发B)。
+
+export const CI_MAX = 100
+
+/** 视图模式:'level' = 四级视图(判级产出) · 'index' = 拥挤指数视图(展示量,手册 §11.2"可切拥挤指数视图") */
+export type CongestionViewMode = 'level' | 'index'
+
+/** CI 档位边界 = **展示口径**(文档未定档,此处均分四档;判级一律以 level 为准,图例逐条写明) */
+export const CI_BANDS: readonly number[] = [0, 25, 50, 75, 100]
+
+export const CI_DISCLAIMER =
+  'CI(拥挤指数)只用于热力展示与辅助排序,不得作为判级依据;与四项指标冲突时一律以四项指标为准(手册 §6.5 第 1 条)'
+
+export const CI_BAND_NOTE = '档位边界为展示口径(文档未定档),判级一律以 level 为准'
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace('#', '')
+  return [
+    Number.parseInt(h.slice(0, 2), 16),
+    Number.parseInt(h.slice(2, 4), 16),
+    Number.parseInt(h.slice(4, 6), 16),
+  ]
+}
+
+function rgbToHex(rgb: [number, number, number]): string {
+  return `#${rgb.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('')}`
+}
+
+function lerpColor(a: string, b: string, t: number): string {
+  const [r1, g1, b1] = hexToRgb(a)
+  const [r2, g2, b2] = hexToRgb(b)
+  return rgbToHex([r1 + (r2 - r1) * t, g1 + (g2 - g1) * t, b1 + (b2 - b1) * t])
+}
+
+// 色阶锚点取手册 §6.2 的四级色值(档心为锚点,档间线性过渡)——
+// **不自造第五套颜色语义**;灰 #8C8C8C 仍只表示"数据不可用",不参与色阶。
+const CI_ANCHORS: { at: number; color: string }[] = [
+  { at: 12.5, color: LEVELS[1].color },
+  { at: 37.5, color: LEVELS[2].color },
+  { at: 62.5, color: LEVELS[3].color },
+  { at: 87.5, color: LEVELS[4].color },
+]
+
+/** CI → 颜色:0~100 线性映射到四级色阶(超出范围按端点夹取) */
+export function ciColor(ci: number): string {
+  const v = Math.min(CI_MAX, Math.max(0, ci))
+  const first = CI_ANCHORS[0]!
+  const last = CI_ANCHORS[CI_ANCHORS.length - 1]!
+  if (v <= first.at) return first.color
+  if (v >= last.at) return last.color
+  for (let i = 0; i < CI_ANCHORS.length - 1; i++) {
+    const a = CI_ANCHORS[i]!
+    const b = CI_ANCHORS[i + 1]!
+    if (v >= a.at && v <= b.at) return lerpColor(a.color, b.color, (v - a.at) / (b.at - a.at))
+  }
+  return last.color
+}
+
+/** 该路段能否画拥挤指数:缺 `ci` 或数据陈旧 → 灰色"数据不可用"(TC-11),**绝不落进通配色** */
+export function ciAvailable(seg: SegmentRecord): boolean {
+  return !isStale(seg) && typeof seg.ci === 'number' && Number.isFinite(seg.ci)
+}
+
+/** 拥挤指数渲染色(不可用即灰) */
+export function ciStyleColor(seg: SegmentRecord): string {
+  return ciAvailable(seg) ? ciColor(seg.ci as number) : UNAVAILABLE.color
+}
+
+/** 指数色阶图例的渐变色标(CSS linear-gradient 用,自低到高) */
+export function ciGradientCss(): string {
+  const stops = [0, 20, 40, 60, 80, 100]
+  return `linear-gradient(90deg, ${stops.map((s) => `${ciColor(s)} ${s}%`).join(', ')})`
+}
+
 // ---------- SSE ----------
 
 // 事件名是新增的(不改既有事件名),与 work/assembly/traffic.py 的 GET /api/traffic/stream 对齐
