@@ -73,7 +73,7 @@ work/twin/
 PowerShell 里设环境变量（当前会话）：
 
 ```powershell
-$env:SUMO_HOME = "C:\Program Files\SUMO"     # 按实际安装路径改
+$env:SUMO_HOME = "C:\Program Files\SUMO"     # 仅为示例值（MSI 默认位置）；本仓按 zip 装到自定的纯英文目录，按实际改
 $env:PYTHONPATH = "$env:SUMO_HOME\tools;$env:PYTHONPATH"
 ```
 
