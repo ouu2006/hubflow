@@ -487,7 +487,11 @@ export interface DispatchInput {
 export interface DispatchReceipt {
   alert_id: string
   channel: string
-  ratio_pct: number
+  /**
+   * 本次下发的分流比例(%)。写入回执必带;由 `/alerts` 留痕还原的展示回执在
+   * 后端未回该字段时缺省(缺省显示「—」,不显示 0——0 是另一个意思)。
+   */
+  ratio_pct?: number
   /** 回执文案(演示态:一期无真实下发通道) */
   receipt: string
   at: string

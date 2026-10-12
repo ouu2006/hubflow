@@ -361,7 +361,7 @@ function gotoDecision(): void {
 <template>
   <AppShell active="dashboard" :ts="snapshotTs" v-model:sourceMode="sourceMode" title="">
     <div v-if="failedPanels.length > 0" class="stale-bar" role="status">
-      ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,快照时间已更新,请勿据此判断当前态势。
+      ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,请勿据此判断当前态势。
     </div>
     <!-- KPI 条(取代态势总览的页头) -->
     <div class="td-card kpi-bar">
