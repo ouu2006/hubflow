@@ -4,7 +4,7 @@
 
 | 项 | 值 |
 |---|---|
-| 来源仓库 | `YONEK0/agentic-traffic-management`(本地 `D:\work\agentic-traffic-management`) |
+| 来源仓库 | `YONEK0/agentic-traffic-management`(本地 clone,与本仓库同级) |
 | 基线 | `main` 分支 commit `356361d`;工作树相对该 commit 仅有 `package-lock.json` 一处未提交修改(随拷贝带入)与若干 docs 层未提交删除(与本工程无关,未拷贝) |
 | 拷贝排除 | `node_modules/`、`dist/`、`.env`(门禁禁入名单;内容只是 `VITE_USE_MOCK=1` 开关,缺省行为见 `.env.mock`) |
 | 拷贝后修改 | `tsconfig.app.json` / `tsconfig.node.json` 去掉 JSONC 注释(仓库门禁对受管 JSON 做严格解析,注释会报红;编译行为不变) |
