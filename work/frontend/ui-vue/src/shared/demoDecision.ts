@@ -80,7 +80,8 @@ export const MANUAL_FACTOR_PRESETS: ManualFactorPreset[] = [
 ]
 
 // ---------- 分流下发渠道(Issue #66,手册 §11.2:系统建议 + 人工可编辑 + **下发渠道** + 回执) ----------
-// 口径:一期**没有真实下发通道**,回执为页面演示态(刷新复位);信号只"生成建议并推送,
+// 口径:一期**没有真实下发通道**,回执为演示态(存 mock 服务端内存态,刷新页面不清,
+// 页头「复位演示态」清);信号只"生成建议并推送,
 // 不下发到信号机"(手册 §:2262),所以渠道是**演示枚举**,不暗示已对接任何外部系统。
 export const DISPATCH_CHANNELS = ['情报板', '导航软件推送', '现场调度', '广播'] as const
 export type DispatchChannel = (typeof DISPATCH_CHANNELS)[number]

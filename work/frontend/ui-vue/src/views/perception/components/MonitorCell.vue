@@ -23,7 +23,9 @@ const meta = computed(() => props.ch.meta)
 const classNames = computed(() => meta.value?.class_names ?? {})
 const dets = computed(() => frameAt(props.ch.det, props.index))
 
-const status = computed(() => (meta.value ? (props.selected ? '检测中' : '就绪') : '未导出'))
+const status = computed(() =>
+  meta.value ? (props.ch.detFailed ? '检测读取失败' : props.selected ? '检测中' : '就绪') : '未导出',
+)
 
 const url = computed(() =>
   meta.value ? perceptionFrameUrl(props.ch.def.source, props.index + 1) : null,
@@ -76,7 +78,10 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
   <div class="cell" :class="{ on: selected }" @click="emit('select')">
     <div class="cell-top">
       <span class="ct-name">{{ ch.def.cid }} · {{ ch.def.source }}</span>
-      <span class="ct-state" :class="{ live: selected && meta !== null, off: meta === null }">
+      <span
+        class="ct-state"
+        :class="{ live: selected && meta !== null && !ch.detFailed, err: ch.detFailed, off: meta === null }"
+      >
         {{ status }}
       </span>
     </div>
@@ -118,12 +123,15 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
         </span>
       </div>
       <div class="cell-foot">
-        <span class="cf-classes">{{ classLine }}</span>
+        <span class="cf-classes">{{ ch.detFailed ? '检测读取失败' : classLine }}</span>
         <span class="cf-cnt">越线计数:未提供</span>
       </div>
       <div class="cell-sub">
-        {{ ch.def.cid }} · {{ ch.def.source }} · 缩放 {{ scaleText }} · 帧 {{ index + 1 }} · 轨迹
-        {{ trackCount }}
+        <template v-if="ch.detFailed">检测接口读取失败 · 无框可画(不是"本帧无检出")</template>
+        <template v-else>
+          {{ ch.def.cid }} · {{ ch.def.source }} · 缩放 {{ scaleText }} · 帧 {{ index + 1 }} · 轨迹
+          {{ trackCount }}
+        </template>
       </div>
     </template>
 
@@ -176,6 +184,9 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
 }
 .ct-state.live {
   color: var(--v-brand);
+}
+.ct-state.err {
+  color: #e37318;
 }
 .ct-state.off {
   color: var(--v-dim);

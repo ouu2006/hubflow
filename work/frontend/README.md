@@ -114,7 +114,7 @@ npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向�
 | 分区 | 内容 | 数据源 |
 |---|---|---|
 | 事件告警列表 | 等级、路段、指标依据(`triggered_by`)、状态(待处置/已下发/已回写) | 从契约 segments 快照派生(level ≥ 3 / 硬触发因素 / 数据陈旧) |
-| 处置工作流 | 系统建议 → **人工可编辑**(分流比例滑杆)→ 下发回执 → 处置回写(认领人/动作/结果四选一/时间戳) | 建议模板 `demoDecision.ts`;工作流状态为页面内存态(刷新复位) |
+| 处置工作流 | 系统建议 → **人工可编辑**(分流比例滑杆)→ 下发回执 → 处置回写(认领人/动作/结果四选一/时间戳) | 建议模板 `demoDecision.ts`;工作流状态存 **mock 服务端内存态**(经 `/api/traffic/alerts` 随读带回,刷新页面不清,页头「复位演示态」清);**回写前必须先有派发回执**(TC-07 闭环顺序:下发 → 回执 → 回写) |
 | 因素与预测 | `factors_applied` 明细 + `pred` h15/h30(L0,无精度数字)+ **人工置位**(大雨/大型活动/临时管制,mock 侧生效,判级随之变化)+ 复位 | 契约快照;置位走 mock `POST /api/traffic/factors`(同路径 `GET` 为契约 L440 预留的「当前生效因素清单」,mock 已实现,含预置演示因素与人工置位) |
 | 数据同化状态 | 边界断面回灌开/关 + 门控原因(置信度不足/数据过旧/偏差超标熔断) | mock `GET /api/traffic/assimilation`(接口面新增;记录按断面展开,字段与契约 §三 assimilation_state.json 的映射:`enabled`↔`assimilating`、`gate_reason`↔`gate.passed` 的门控口径、`flow_dev_pct`/`speed_dev_pct`↔`deviation.q_pct`/`v_pct`、`last_apply_at`↔`last_apply.at`,响应另带 `is_simulated` 信封) |
 | 效果对比报表 | **关推荐 vs 开推荐**四项指标同屏(饱和度/车速/排队/总行程时间),TC-14/TC-17 | `demoDecision.ts`(仿真对照演示) |
@@ -276,6 +276,7 @@ PR #69 合入 `main` 后,又跑了 **4 路全新上下文独立审查**(手册�
 | `/api/traffic/alerts` | GET | 告警列表(四态 + `triggered_by` + 首次观测时间 + 回执/回写留痕) | 态势总览 / 热力 / 决策 |
 | `/api/traffic/plan/dispatch` | POST | 下发分流方案(渠道 + 比例)→ 回执 | 决策工作台 |
 | `/api/traffic/plan/ack` | POST | 处置回写(认领人 / 动作 / 结果四选一)→ 状态流转 | 决策工作台 |
+| `/api/traffic/alerts/reset` | POST | 复位告警下发 / 回写演示态(mock 内存态,刷新不清)→ 与 `factors/reset` 同口径 | 决策工作台 |
 | `/api/traffic/predict` | GET | 预测(`?segment_id=&h=15`)一期 **L0**,不报精度数字 | 决策工作台 |
 | `/api/traffic/thresholds` | GET | 判级阈值 + **CI 四项加权构成** + 变更留痕(只读 P1) | 热力 |
 | `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵(`?window=&bucket=`) | 热力 |
@@ -308,6 +309,14 @@ PR #69 合入 `main` 后,又跑了 **4 路全新上下文独立审查**(手册�
 7. **`vehicles` 端点是二期下线项**,本次未改动其形状;决策/态势页只用到其计数与采纳率,**计数来自 `overview`,不直接依赖 vehicles 条数**。
 8. **一屏密度**:四页按 1440×900 设计,主体三栏各自独立滚动(`.td-scroll`)。三栏**都要有**栏内 `overflow-y:auto`——
    PR #70 曾因左栏漏加导致「按钮可见但点不到」,本次三栏都补齐。
+9. **告警三字段随读带回**:`/api/traffic/alerts` 元素新增 `dispatch_ratio_pct`(下发比例),与既有 `channels` / `dispatch_at` / `writeback`
+   一起构成**下发 + 回写留痕**——刷新页面后前端据此还原派发回执(不再是"刷新即丢")。后端实现时须把这三组字段落库并随读返回。
+10. **告警写入端点新增校验与状态约束**:`plan/dispatch` / `plan/ack` 现在校验告警存在(404 `ALERT_NOT_FOUND`)、
+    `segment_id` 与告警一致(400 `ALERT_SEGMENT_MISMATCH`)、`result` 必须是四选一(400 `ACK_INVALID`)、
+    终态不可再动(409 `ALERT_TERMINAL`)、**回写必须有派发回执在前**(409 `ACK_NO_DISPATCH`,TC-07 闭环顺序)。
+    新增 `POST /api/traffic/alerts/reset` 清演示态;后端实现需保持同一套状态机与错误码。
+11. **detections 读取失败与"未导出/无检出"三分**:感知页把「未导出(服务端无该路)」「读取失败(接口报错)」「无检出(数据为空)」
+    分开显示,失败一律标红并进页头提示条,**不静默成"本帧无检出"**;三处合计口径同步排除失败路并注明。后端联调时不要用空数组代替错误响应。
 
 ### 10.5 运行与自检
 

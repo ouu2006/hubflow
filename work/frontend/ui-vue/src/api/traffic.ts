@@ -119,6 +119,11 @@ export function getTrafficAlerts(): Promise<AlertsSnapshot> {
   return request<AlertsSnapshot>('GET', '/api/traffic/alerts')
 }
 
+// POST /api/traffic/alerts/reset → 复位告警下发 / 回写演示态(mock 侧内存态;刷新页面不清,要清走这里)
+export function postTrafficAlertsReset(): Promise<{ reset: boolean; is_simulated: boolean }> {
+  return request<{ reset: boolean; is_simulated: boolean }>('POST', '/api/traffic/alerts/reset')
+}
+
 // POST /api/traffic/plan/dispatch → 下发分流方案(渠道 + 分流比例),返回回执
 export function postPlanDispatch(body: DispatchInput): Promise<DispatchReceipt> {
   return request<DispatchReceipt>('POST', '/api/traffic/plan/dispatch', { body })

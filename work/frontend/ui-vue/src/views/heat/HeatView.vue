@@ -83,11 +83,29 @@ async function loadDerived(id: string | null): Promise<void> {
     return
   }
   const [h, f] = await Promise.allSettled([getTrafficCiHistory(id, 12), getTrafficFactors(id)])
+  if (selectedId.value !== id) return // 选择已变:丢弃过期响应
   if (h.status === 'fulfilled') history.value = h.value
   if (f.status === 'fulfilled') factors.value = f.value.factors
 }
 
+/** 刷新序号:SSE 触发与手动刷新可能并发,只让最后一次的响应落页(旧响应丢弃) */
+let refreshSeq = 0
+/** 本次刷新中失败的接口(页头提示用;失败面板保留旧值但必须标"上一版") */
+const failedPanels = ref<string[]>([])
+
+const PANEL_LABEL: Record<string, string> = {
+  segments: '路段快照',
+  vehicles: '车辆',
+  network: '路网',
+  meta: '站点元信息',
+  thresholds: '阈值与 CI 权重',
+  alerts: '告警',
+  matrix: '热力矩阵',
+  overview: 'KPI',
+}
+
 async function refresh(): Promise<void> {
+  const seq = ++refreshSeq
   const [seg, veh, net, meta, thr, alert, matrix, over] = await Promise.allSettled([
     getTrafficSegments(),
     getTrafficVehicles(),
@@ -98,18 +116,32 @@ async function refresh(): Promise<void> {
     getTrafficHeatMatrix(12, 60),
     getTrafficOverview(),
   ])
+  if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
+  const failed: string[] = []
+  const track = (name: string, ok: boolean): void => {
+    if (!ok) failed.push(PANEL_LABEL[name] ?? name)
+  }
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
     if (selectedId.value === null) selectedId.value = pickDefault(seg.value.segments)
   }
+  track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
+  track('vehicles', veh.status === 'fulfilled')
   if (net.status === 'fulfilled') network.value = net.value
+  track('network', net.status === 'fulfilled')
   if (meta.status === 'fulfilled') stationName.value = meta.value.station.name
+  track('meta', meta.status === 'fulfilled')
   if (thr.status === 'fulfilled') thresholds.value = thr.value
+  track('thresholds', thr.status === 'fulfilled')
   if (alert.status === 'fulfilled') alerts.value = alert.value.alerts
+  track('alerts', alert.status === 'fulfilled')
   if (matrix.status === 'fulfilled') heat.value = matrix.value
+  track('matrix', matrix.status === 'fulfilled')
   if (over.status === 'fulfilled') overview.value = over.value
+  track('overview', over.status === 'fulfilled')
+  failedPanels.value = failed
   await loadDerived(selectedId.value)
 }
 
@@ -251,6 +283,12 @@ function goDecision(): void {
       <span class="head-ts td-mono">快照 {{ formatStamp(snapshotTs) }}</span>
     </template>
 
+    <template #headExtra>
+      <div v-if="failedPanels.length > 0" class="head-err">
+        ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,请勿据此判断当前态势。
+      </div>
+    </template>
+
     <div class="td-body">
       <!-- 左栏 -->
       <section class="td-col col-left td-scroll">
@@ -352,6 +390,13 @@ function goDecision(): void {
 </template>
 
 <style scoped>
+/* 部分接口失败提示:提醒当前页混装有上一版数据 */
+.head-err {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #a06a00;
+}
 .col-left {
   flex: 0 0 292px;
 }

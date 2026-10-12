@@ -48,6 +48,7 @@ import {
   type VehiclesSnapshot,
   type WritebackInput,
   type WritebackReceipt,
+  type WritebackResult,
 } from '../shared/traffic.ts'
 
 // ---------- 预置基线(契约 v2.0 形状;x = q_vph / c_vph) ----------
@@ -871,10 +872,49 @@ interface AlertRuntime {
   status?: TrafficAlert['status']
   channels?: string[]
   dispatch_at?: string
+  /** 最近一次下发的分流比例(%)——与回执同源,供刷新后从 /alerts 还原下发留痕 */
+  dispatch_ratio_pct?: number
   writeback?: TrafficAlert['writeback']
 }
 
 const alertRuntime = new Map<string, AlertRuntime>()
+
+/** 结果四选一的唯一取值集(手册 §11.2);mock 侧校验用,前端展示枚举同源 */
+const WRITEBACK_RESULTS: readonly WritebackResult[] = ['已消除', '已缓解', '未改善', '误报']
+
+function isTerminal(status: TrafficAlert['status']): boolean {
+  return status === '已闭环' || status === '误报'
+}
+
+/** 预置「处置中」的 A-2412-015 视为已下发过:回执 / 渠道 / 比例齐备,演示可直接走回写(TC-07) */
+const SEED_DISPATCH: Record<string, { channel: string; ratio_pct: number; dispatch_ago_min: number }> = {
+  'A-2412-015': { channel: '情报板', ratio_pct: 25, dispatch_ago_min: 6 },
+}
+
+/** 复位到初始演示态:清运行态后重放预置下发留痕(供 POST /traffic/alerts/reset 调用) */
+function resetAlertRuntime(): void {
+  alertRuntime.clear()
+  const now = Date.now()
+  for (const [id, s] of Object.entries(SEED_DISPATCH)) {
+    alertRuntime.set(id, {
+      channels: [s.channel],
+      dispatch_at: stampOf(new Date(now - s.dispatch_ago_min * 60_000)),
+      dispatch_ratio_pct: s.ratio_pct,
+    })
+  }
+}
+resetAlertRuntime()
+
+/** 首次观测时间只在首次出快照时算一次,此后各快照沿用同一值(审计时间不得随刷新漂移) */
+const firstSeenCache = new Map<string, string>()
+
+function firstSeenOf(a: AlertBase, now: number): string {
+  const hit = firstSeenCache.get(a.alert_id)
+  if (hit) return hit
+  const stamp = stampOf(new Date(now - a.ago_min * 60_000))
+  firstSeenCache.set(a.alert_id, stamp)
+  return stamp
+}
 
 function buildAlerts(): AlertsSnapshot {
   const now = Date.now()
@@ -886,11 +926,12 @@ function buildAlerts(): AlertsSnapshot {
       segment_name: nameOfSegment(a.segment_id),
       level: a.level,
       triggered_by: a.triggered_by,
-      first_seen: stampOf(new Date(now - a.ago_min * 60_000)),
+      first_seen: firstSeenOf(a, now),
       status: rt.status ?? a.status,
       factor_ids: a.factor_ids,
       channels: rt.channels,
       dispatch_at: rt.dispatch_at,
+      dispatch_ratio_pct: rt.dispatch_ratio_pct,
       writeback: rt.writeback,
     }
   })
@@ -914,11 +955,13 @@ function demoLevelFromCi(ci: number): CongestionLevel {
   return 1
 }
 
-function buildPredict(segmentId: string): PredictResponse | null {
+function buildPredict(segmentId: string, only?: number): PredictResponse | null {
   const rec = buildSegmentsSnapshot().segments.find((s) => s.segment_id === segmentId)
   if (!rec) return null
   const baseCi = rec.ci ?? 0
-  const points = PREDICT_PROFILE.map(({ h, delta }) => {
+  // ?h=15|30|60 只回该档;未给或给的是别的值就回全档(调用方按需取)
+  const profile = only === 15 || only === 30 || only === 60 ? PREDICT_PROFILE.filter((p) => p.h === only) : PREDICT_PROFILE
+  const points = profile.map(({ h, delta }) => {
     const ci = round(clamp(baseCi + delta, 0, 100), 1)
     const level = demoLevelFromCi(ci)
     return { h, ci, delta_ci: round(ci - baseCi, 1), level, level_name: LEVEL_NAME[level] ?? String(level) }
@@ -1139,10 +1182,45 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
     return true
   }
 
+  // 演示复位:清空下发 / 回写运行态并重放预置留痕(与 factors/reset 同口径;
+  // 状态存在服务进程内存里,刷新页面不清,要清走这里)
+  if (path === '/traffic/alerts/reset' && method === 'POST') {
+    resetAlertRuntime()
+    json(res, 200, { reset: true, is_simulated: true })
+    return true
+  }
+
   if (path === '/traffic/plan/dispatch' && method === 'POST') {
-    const body = (await readJson(req)) as Partial<DispatchInput>
-    if (!body.alert_id || !body.channel || typeof body.ratio_pct !== 'number') {
+    const body = (await readJson(req)) as Partial<DispatchInput> | null
+    if (
+      !body ||
+      !body.alert_id ||
+      !body.channel ||
+      typeof body.ratio_pct !== 'number' ||
+      !Number.isFinite(body.ratio_pct)
+    ) {
       json(res, 400, { code: 'DISPATCH_INVALID', message: '下发参数不完整(需 alert_id/channel/ratio_pct)' })
+      return true
+    }
+    const alertBase = ALERT_BASES.find((a) => a.alert_id === body.alert_id)
+    if (!alertBase) {
+      json(res, 404, { code: 'ALERT_NOT_FOUND', message: `告警不存在: ${body.alert_id}` })
+      return true
+    }
+    if (body.segment_id && body.segment_id !== alertBase.segment_id) {
+      json(res, 400, {
+        code: 'ALERT_SEGMENT_MISMATCH',
+        message: `路段不匹配: ${body.alert_id} 属于 ${alertBase.segment_id},收到 ${body.segment_id}`,
+      })
+      return true
+    }
+    if (body.ratio_pct <= 0 || body.ratio_pct > 100) {
+      json(res, 400, { code: 'DISPATCH_INVALID', message: `分流比例须在 (0, 100]: ${body.ratio_pct}` })
+      return true
+    }
+    const nowStatus = alertRuntime.get(body.alert_id)?.status ?? alertBase.status
+    if (isTerminal(nowStatus)) {
+      json(res, 409, { code: 'ALERT_TERMINAL', message: `终态告警不可再下发: ${body.alert_id}(${nowStatus})` })
       return true
     }
     const at = stampOf(new Date())
@@ -1150,6 +1228,7 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
     rt.status = '处置中'
     rt.channels = [body.channel]
     rt.dispatch_at = at
+    rt.dispatch_ratio_pct = body.ratio_pct
     alertRuntime.set(body.alert_id, rt)
     const receipt: DispatchReceipt = {
       alert_id: body.alert_id,
@@ -1165,16 +1244,48 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
   }
 
   if (path === '/traffic/plan/ack' && method === 'POST') {
-    const body = (await readJson(req)) as Partial<WritebackInput>
-    if (!body.alert_id || !body.operator || !body.action || !body.result) {
+    const body = (await readJson(req)) as Partial<WritebackInput> | null
+    if (!body || !body.alert_id || !body.operator || !body.action || !body.result) {
       json(res, 400, { code: 'ACK_INVALID', message: '回写参数不完整(需 alert_id/operator/action/result)' })
+      return true
+    }
+    if (!WRITEBACK_RESULTS.includes(body.result)) {
+      json(res, 400, {
+        code: 'ACK_INVALID',
+        message: `结果须为四选一(${WRITEBACK_RESULTS.join(' / ')}): ${body.result}`,
+      })
+      return true
+    }
+    const alertBase = ALERT_BASES.find((a) => a.alert_id === body.alert_id)
+    if (!alertBase) {
+      json(res, 404, { code: 'ALERT_NOT_FOUND', message: `告警不存在: ${body.alert_id}` })
+      return true
+    }
+    if (body.segment_id && body.segment_id !== alertBase.segment_id) {
+      json(res, 400, {
+        code: 'ALERT_SEGMENT_MISMATCH',
+        message: `路段不匹配: ${body.alert_id} 属于 ${alertBase.segment_id},收到 ${body.segment_id}`,
+      })
+      return true
+    }
+    const rt = alertRuntime.get(body.alert_id) ?? {}
+    const nowStatus = rt.status ?? alertBase.status
+    if (isTerminal(nowStatus)) {
+      json(res, 409, { code: 'ALERT_TERMINAL', message: `终态告警不可再回写: ${body.alert_id}(${nowStatus})` })
+      return true
+    }
+    // 闭环顺序硬口径(TC-07):回写必须有下发回执在前,不能从「待认领 / 处置中未下发」直接跳终态
+    if (!rt.dispatch_at || !rt.channels || rt.channels.length === 0) {
+      json(res, 409, {
+        code: 'ACK_NO_DISPATCH',
+        message: `告警尚未下发(无派发回执),不可回写: ${body.alert_id}`,
+      })
       return true
     }
     // 结果 → 状态流转(手册 §11.2):已消除 / 已缓解 → 已闭环;未改善 → 留在处置中;误报 → 误报
     const status: TrafficAlert['status'] =
       body.result === '误报' ? '误报' : body.result === '未改善' ? '处置中' : '已闭环'
     const at = stampOf(new Date())
-    const rt = alertRuntime.get(body.alert_id) ?? {}
     rt.status = status
     rt.writeback = { operator: body.operator, action: body.action, result: body.result, at }
     alertRuntime.set(body.alert_id, rt)
@@ -1195,7 +1306,13 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
       json(res, 400, { code: 'PREDICT_INVALID', message: '缺少 segment_id' })
       return true
     }
-    const pred = buildPredict(sid)
+    const hRaw = url.searchParams.get('h')
+    const h = hRaw === null ? undefined : Number(hRaw)
+    if (h !== undefined && !Number.isFinite(h)) {
+      json(res, 400, { code: 'PREDICT_INVALID', message: `h 须为数值(15 / 30 / 60): ${hRaw}` })
+      return true
+    }
+    const pred = buildPredict(sid, h)
     if (!pred) {
       json(res, 404, { code: 'SEGMENT_NOT_FOUND', message: `路段不存在: ${sid}` })
       return true

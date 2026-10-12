@@ -175,6 +175,9 @@ const gateState = computed(() => {
           {{ cum.other }} 类未计入。
         </p>
       </template>
+      <p v-else-if="ch.detFailed" class="note err">
+        该通道检测数据读取失败(detections 接口请求失败)· 无 first_seen 可统计。这是接口故障,不是"该路无检出"。
+      </p>
       <p v-else class="note">该通道检测数据不可用 · 样本视频未导出(无 first_seen 可统计)。</p>
       <div class="kv">
         <span class="k">累计越线计数 cnt</span>
@@ -293,6 +296,10 @@ const gateState = computed(() => {
   font-size: 11px;
   line-height: 1.5;
   color: var(--td-text-color-placeholder);
+}
+/* 接口故障提示:与"该路本来没数据"的说明区分开 */
+.note.err {
+  color: #ad352f;
 }
 .reflow {
   margin-top: 6px;

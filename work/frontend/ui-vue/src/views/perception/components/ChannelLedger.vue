@@ -30,6 +30,8 @@ const linkRows = computed(() => {
 
 function stateOf(c: ChannelState): { text: string; cls: string } {
   if (!c.meta) return { text: '未导出', cls: 'out' }
+  // 检测请求失败与"未导出"是两回事:失败要显式报错,不冒充"就绪"
+  if (c.detFailed) return { text: '检测读取失败', cls: 'err' }
   if (c.def.source === props.currentId) return { text: '检测中', cls: 'on' }
   return { text: '就绪', cls: 'ok' }
 }
