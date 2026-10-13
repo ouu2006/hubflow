@@ -19,7 +19,8 @@
                 （按 `_` 分段：每段全小写，或**单个大写字母**当单位符号，见开发规范第 2 节 `L_q_m`）
   7. 填表报告   `docs/填表报告.md` 的台账行格式合法（七列 / `结果` 枚举 / 日期格式）；
                 **本次提交改动的每个 `stations/*.json` 都要有一行覆盖它**，且覆盖行不能写着
-                "还没转"（`未重跑` / `待转`）—— 业务数据只从表格进，产物动一次就要留一次出处
+                "还没转"（`未重跑` / `待转`）—— 业务数据只从表格进，产物动一次就要留一次出处。
+                「占位」= 产物在场但还没走到表格那一棒（结构骨架 / 运行产物 / 基线），算自洽但打 [注意]
 
 **受管文本**指上表用到的这些扩展名与文件名（含 `.sh` / `.ps1` / `.bat` / `.ts` / `.vue` / `.ets` 等代码类，
 以及 `.gitignore` / `.gitattributes` / `.env.example` / `CODEOWNERS`）；其余二进制或未列出的类型不看。
@@ -124,11 +125,15 @@ JSON_FENCE_STRICT_FILES = {"docs/数据契约.md"}
 FILL_REPORT = "docs/填表报告.md"
 #: 台账章节的标题（解析起点：只认这一节里的表格，前面的"一行示例"不算台账）
 FILL_LEDGER_HEADING = "填表报告台账"
-#: `结果` 只许这四种取值（"过没过"的正式判定归池·Q 的 T7，报告只如实登记）
-FILL_RESULTS = ("已转", "已核对", "未重跑", "待转")
+#: `结果` 只许这五种取值（"过没过"的正式判定归池·Q 的 T7，报告只如实登记）
+FILL_RESULTS = ("已转", "已核对", "占位", "未重跑", "待转")
+#: 「占位」：产物在场，但还没走到表格那一棒（结构骨架 / 直接运行产物 / 基线登记）。
+#: 它和 `已转` / `已核对` 有明确分工：后者说"有表格出处"，前者说"还没有，别当数据用"。
+#: 所以覆盖行取它算「自洽」，但**单独打 [注意]**——详见 docs/填表报告.md 第 3.1 节。
+FILL_RESULT_PLACEHOLDER = "占位"
 #: 这两种取值不硬拦，但会打印 [注意] 点名（需要人在 PR 里说明为什么）
 FILL_RESULTS_NOTICE = ("未重跑", "待转")
-#: 台账里代表"这一版产物有表格出处"的取值（新鲜度检查要求覆盖行取这两种之一）
+#: 台账里代表"这一版产物**有表格出处**"的取值（覆盖行取这两种之一时不需要额外说明）
 FILL_RESULTS_OK = ("已转", "已核对")
 #: 台账列数（表 / 提交者 / 表版本 / 产物 / 依据 / 结果 / 日期）
 FILL_COLUMNS = 7
@@ -556,10 +561,18 @@ def check_fill_report(repo: Repo) -> Check:
     for row in rows:
         for product in products_in(row["products"]):
             covered.setdefault(product, []).append(row)
-        if row["result"] in FILL_RESULTS_NOTICE and products_in(row["products"]):
+        if not products_in(row["products"]):
+            continue
+        if row["result"] in FILL_RESULTS_NOTICE:
             notes.append(
                 f"{FILL_REPORT}:{row['line']}  `结果` 是「{row['result']}」（{row['table']} → {row['products']}）"
                 "—— 需要有人在 PR 里说明为什么，不能就这样算了"
+            )
+        elif row["result"] == FILL_RESULT_PLACEHOLDER:
+            notes.append(
+                f"{FILL_REPORT}:{row['line']}  `结果` 是「{FILL_RESULT_PLACEHOLDER}」（{row['table']} → {row['products']}）"
+                "—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；"
+                "它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据"
             )
 
     changed = repo.changed_files()
@@ -594,9 +607,9 @@ def check_fill_report(repo: Repo) -> Check:
         if not entries or product not in (changed or set()):
             continue  # 本次没动它：不追溯历史，只保证"动的时候有行、日期对得上"
         latest = max(entries, key=lambda r: (r["date"], r["line"]))
-        if latest["result"] not in FILL_RESULTS_OK:
+        if latest["result"] not in FILL_RESULTS_OK and latest["result"] != FILL_RESULT_PLACEHOLDER:
             failures.append(
-                Failure(FILL_REPORT, f"{product} 的覆盖行 `结果` 是「{latest['result']}」—— 产物在场就必须是 已转 / 已核对", latest["line"])
+                Failure(FILL_REPORT, f"{product} 的覆盖行 `结果` 是「{latest['result']}」—— 产物在场就必须是 已转 / 已核对 / 占位", latest["line"])
             )
         product_date = repo.last_commit_date(product)
         if product_date and product_date != latest["date"]:
