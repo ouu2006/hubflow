@@ -6,7 +6,8 @@
     python scripts/doc_gate.py            # 在仓库根运行
     python scripts/doc_gate.py --root .   # 指定仓库根
 
-它检查的是"机器能判、人却常漏"的六组事（口径见 docs/开发规范.md 第 2、5、11、13 节）：
+它检查的是"机器能判、人却常漏"的七组事（口径见 docs/开发规范.md 第 2、5、11、13 节
+与 docs/填表报告.md 第四节）：
 
   1. 编码与换行  受管文本文件是 UTF-8 且**不带 BOM**；一律 LF（`.bat` / `.cmd` 除外）
   2. 大文件与禁入类型  视频 / 权重 / 数据集 / 交付物 / `.env` 一律不进仓库；单文件 > 2 MiB 报错
@@ -16,6 +17,9 @@
   5. 密钥扫描   常见密钥前缀 + `XXX_KEY=真值` + JSON 里的 `"xxx_key": "真值"`
   6. 契约字段   `stations/*.json` 与 `work/<目录>/samples/*.json` 的键名一律 `snake_case`
                 （按 `_` 分段：每段全小写，或**单个大写字母**当单位符号，见开发规范第 2 节 `L_q_m`）
+  7. 填表报告   `docs/填表报告.md` 的台账行格式合法（七列 / `结果` 枚举 / 日期格式）；
+                **本次提交改动的每个 `stations/*.json` 都要有一行覆盖它**，且覆盖行不能写着
+                "还没转"（`未重跑` / `待转`）—— 业务数据只从表格进，产物动一次就要留一次出处
 
 **受管文本**指上表用到的这些扩展名与文件名（含 `.sh` / `.ps1` / `.bat` / `.ts` / `.vue` / `.ets` 等代码类，
 以及 `.gitignore` / `.gitattributes` / `.env.example` / `CODEOWNERS`）；其余二进制或未列出的类型不看。
@@ -38,6 +42,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -115,6 +120,25 @@ CONTRACT_GLOBS = ("stations/*.json", "work/*/samples/*.json")
 #: 其余文档里的 ```json 允许是"片段"或带 `//` 注释的示意（例如手册里摘一段字段），不做严格解析。
 JSON_FENCE_STRICT_FILES = {"docs/数据契约.md"}
 
+#: 填表报告台账（第 7 组检查）。口径见 docs/填表报告.md 第四节。
+FILL_REPORT = "docs/填表报告.md"
+#: 台账章节的标题（解析起点：只认这一节里的表格，前面的"一行示例"不算台账）
+FILL_LEDGER_HEADING = "填表报告台账"
+#: `结果` 只许这四种取值（"过没过"的正式判定归池·Q 的 T7，报告只如实登记）
+FILL_RESULTS = ("已转", "已核对", "未重跑", "待转")
+#: 这两种取值不硬拦，但会打印 [注意] 点名（需要人在 PR 里说明为什么）
+FILL_RESULTS_NOTICE = ("未重跑", "待转")
+#: 台账里代表"这一版产物有表格出处"的取值（新鲜度检查要求覆盖行取这两种之一）
+FILL_RESULTS_OK = ("已转", "已核对")
+#: 台账列数（表 / 提交者 / 表版本 / 产物 / 依据 / 结果 / 日期）
+FILL_COLUMNS = 7
+#: 表格转换脚本产物（改了这些就必须在台账里留一行）
+PRODUCT_GLOB = "stations/*.json"
+#: CI 传进来的"本次改动清单"：文件路径（换行分隔的相对路径）优先，其次是内联内容。
+#: 两者都没给时回退到本地 git。详见 Repo.changed_files。
+CHANGED_FILE_ENV = "DOC_GATE_CHANGED_FILE"
+CHANGED_ENV = "DOC_GATE_CHANGED"
+
 #: 回退枚举（没有 git 时）跳过的目录名
 SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "out", "dist", ".pytest_cache"}
 
@@ -133,11 +157,12 @@ class Failure:
 
 
 class Check:
-    """一次检查的结果：失败项 + 检查了多少个目标（0 个目标不许当通过）。"""
+    """一次检查的结果：失败项 + 检查了多少个目标（0 个目标不许当通过）+ 不算失败的提醒。"""
 
-    def __init__(self, failures: list[Failure], scanned: int) -> None:
+    def __init__(self, failures: list[Failure], scanned: int, notes: list[str] | None = None) -> None:
         self.failures = failures
         self.scanned = scanned
+        self.notes = notes or []
 
 
 # ---------------------------------------------------------------- 仓库读取
@@ -218,6 +243,45 @@ class Repo:
             return False
         return rel in self.tracked
 
+    def changed_files(self) -> set[str] | None:
+        """本次提交改动的文件（相对路径）。
+
+        CI 优先读 `DOC_GATE_CHANGED_FILE`（改动清单文件，PR 相对 base），其次内联的
+        `DOC_GATE_CHANGED`；两者都**设置了**（哪怕为空串）就以它为准 —— 空串的含义是
+        "本次确实没改任何文件"，与"没设置"（不知道改了什么）是两回事。
+        本地回退到 git：`diff HEAD`（已暂存 + 未暂存）加上未跟踪的新文件。
+        都拿不到时返回 None —— 调用方按"未知"处理，不能把"不知道改了什么"当成"什么都没改"。
+        """
+        if CHANGED_FILE_ENV in os.environ:
+            try:
+                raw = Path(os.environ[CHANGED_FILE_ENV]).read_text(encoding="utf-8")
+            except OSError:
+                return None
+            return {line.strip() for line in raw.splitlines() if line.strip()}
+        if CHANGED_ENV in os.environ:
+            return {line.strip() for line in os.environ[CHANGED_ENV].splitlines() if line.strip()}
+
+        diff = self._git("diff", "--name-only", "HEAD")
+        if diff is None:
+            return None
+        names = {n for n in diff.decode("utf-8", "surrogateescape").splitlines() if n}
+        others = self._git("ls-files", "-z", "--others", "--exclude-standard")
+        if others is not None:
+            names |= {n for n in others.decode("utf-8", "surrogateescape").split("\0") if n}
+        return names
+
+    def last_commit_date(self, rel: str) -> str | None:
+        """某个文件最近一次改动的日期（YYYY-MM-DD，取**作者日期**）；查不到返回 None。
+
+        取作者日期（`%as`）而不是提交日期（`%cs`）：变基与压缩合并会重写提交日期，
+        但**作者日期会被保留** —— 否则正常的一次 rebase 就会让台账日期与产物"对不上"。
+        """
+        out = self._git("log", "-1", "--format=%as", "--", rel)
+        if out is None:
+            return None
+        text = out.decode("utf-8", "replace").strip()
+        return text or None
+
 
 def is_text_file(path: Path) -> bool:
     return path.suffix.lower() in TEXT_SUFFIXES or path.name in TEXT_NAMES
@@ -227,7 +291,7 @@ def is_text_file(path: Path) -> bool:
 
 
 def check_forbidden(repo: Repo) -> Check:
-    """2/6 不该进仓库的文件与超大文件。"""
+    """2/7 不该进仓库的文件与超大文件。"""
     failures: list[Failure] = []
     for path in repo.files:
         rel = path.relative_to(repo.root).as_posix()
@@ -243,7 +307,7 @@ def check_forbidden(repo: Repo) -> Check:
 
 
 def check_encoding_and_eol(repo: Repo) -> Check:
-    """1/6 编码（UTF-8 无 BOM）与换行（LF）。"""
+    """1/7 编码（UTF-8 无 BOM）与换行（LF）。"""
     failures: list[Failure] = []
     scanned = 0
     for path in repo.files:
@@ -273,7 +337,7 @@ def blank_out_fences(text: str) -> str:
 
 
 def check_markdown_links(repo: Repo) -> Check:
-    """3/6 Markdown 相对链接可解析（围栏代码块内的链接不算）。"""
+    """3/7 Markdown 相对链接可解析（围栏代码块内的链接不算）。"""
     failures: list[Failure] = []
     scanned = 0
     for path in repo.files:
@@ -300,7 +364,7 @@ def check_markdown_links(repo: Repo) -> Check:
 
 
 def check_json(repo: Repo) -> Check:
-    """4/6 受管 JSON + 数据契约里的 ```json 代码块可解析。"""
+    """4/7 受管 JSON + 数据契约里的 ```json 代码块可解析。"""
     failures: list[Failure] = []
     scanned = 0
     for path in repo.files:
@@ -335,7 +399,7 @@ def check_json(repo: Repo) -> Check:
 
 
 def check_secrets(repo: Repo) -> Check:
-    """5/6 常见密钥形态（含 `.env.example`：它最容易误贴真 Key）。"""
+    """5/7 常见密钥形态（含 `.env.example`：它最容易误贴真 Key）。"""
     failures: list[Failure] = []
     scanned = 0
     for path in repo.files:
@@ -359,7 +423,7 @@ def check_secrets(repo: Repo) -> Check:
 
 
 def check_contract_keys(repo: Repo) -> Check:
-    """6/6 契约文件的键名必须是 snake_case（对应 docs/开发规范.md 第 2 节）。"""
+    """6/7 契约文件的键名必须是 snake_case（对应 docs/开发规范.md 第 2 节）。"""
     failures: list[Failure] = []
     scanned = 0
     for path in repo.files:
@@ -391,14 +455,160 @@ def iter_keys(node, where: str = "$"):
             yield from iter_keys(value, f"{where}[{index}]")
 
 
+def parse_fill_ledger(text: str) -> tuple[list[dict], list[Failure]]:
+    """解析 `docs/填表报告.md` 的台账表格。
+
+    返回 (行列表, 格式失败项)。只解析 `## …填表报告台账` 之后第一个表格 —— 本文件前面的
+    "一行示例"与列说明不在台账里，不能混进来。
+    """
+    lines = text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.startswith("## ") and FILL_LEDGER_HEADING in line:
+            start = index + 1
+            break
+    if start is None:
+        return [], [Failure(FILL_REPORT, f"找不到台账章节（`## …{FILL_LEDGER_HEADING}`）—— 第 7 组检查无法判")]
+
+    rows: list[dict] = []
+    failures: list[Failure] = []
+    header_seen = False
+    for offset, line in enumerate(lines[start:], start + 1):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if header_seen and rows:
+                break          # 表格结束
+            if header_seen:
+                continue       # 表头与表体之间的分隔行
+            continue           # 还没到表格
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if all(set(c) <= set("-: ") and c for c in cells):
+            header_seen = True
+            continue           # `|---|---|` 分隔行
+        if not header_seen:
+            header_seen = True
+            continue           # 表头行
+        if len(cells) != FILL_COLUMNS:
+            failures.append(
+                Failure(FILL_REPORT, f"台账行应为 {FILL_COLUMNS} 列（表/提交者/表版本/产物/依据/结果/日期），实为 {len(cells)} 列", offset)
+            )
+            continue
+        rows.append({
+            "line": offset,
+            "table": cells[0],
+            "author": cells[1],
+            "version": cells[2],
+            "products": cells[3],
+            "basis": cells[4],
+            "result": cells[5],
+            "date": cells[6],
+        })
+
+    if not rows:
+        failures.append(Failure(FILL_REPORT, "台账里一行都没有 —— 至少要有基线行，否则第 7 组检查无法判"))
+        return [], failures
+
+    for row in rows:
+        lineno = row["line"]
+        if row["result"] not in FILL_RESULTS:
+            failures.append(
+                Failure(FILL_REPORT, f"`结果` 只能是 {' / '.join(FILL_RESULTS)} 之一，实为「{row['result']}」", lineno)
+            )
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", row["date"]):
+            failures.append(Failure(FILL_REPORT, f"`日期` 必须是 YYYY-MM-DD，实为「{row['date']}」", lineno))
+        for key, label in (("table", "表"), ("author", "提交者"), ("version", "表版本"),
+                           ("products", "产物"), ("basis", "依据")):
+            if not row[key]:
+                failures.append(Failure(FILL_REPORT, f"`{label}` 不能为空", lineno))
+    return rows, failures
+
+
+def products_in(cell: str) -> set[str]:
+    """从台账的「产物」列里抠出 `stations/*.json` 路径（反引号包裹或裸路径都认）。"""
+    return set(re.findall(r"(stations/[A-Za-z0-9_./-]+\.json)", cell))
+
+
+def check_fill_report(repo: Repo) -> Check:
+    """7/7 填表报告台账：行格式 + 本次改动的产物都被覆盖 + 覆盖行的 `结果` 与产物在场状态自洽。
+
+    日期对账只打 [注意]：变基 / 压缩合并会重写提交日期，硬拦会误伤正常流程。
+    """
+    failures: list[Failure] = []
+    notes: list[str] = []
+
+    data = repo.read(repo.root / FILL_REPORT)
+    if data is None:
+        return Check(
+            [Failure(FILL_REPORT, "文件不存在 —— 业务数据只从表格进，产物动一次就要留一次出处（见 docs/表格模板说明.md 第 1 节）")],
+            0,
+        )
+    rows, format_failures = parse_fill_ledger(data.decode("utf-8", "replace"))
+    failures.extend(format_failures)
+
+    # 仓库里当前在场的产物（含已跟踪 + 未跟踪新文件），以及它们在台账里被谁覆盖
+    present = sorted(
+        rel for rel in (p.relative_to(repo.root).as_posix() for p in repo.files)
+        if Path(rel).match(PRODUCT_GLOB)
+    )
+    scanned = len(rows) + len(present)
+
+    covered: dict[str, list[dict]] = {}
+    for row in rows:
+        for product in products_in(row["products"]):
+            covered.setdefault(product, []).append(row)
+        if row["result"] in FILL_RESULTS_NOTICE and products_in(row["products"]):
+            notes.append(
+                f"{FILL_REPORT}:{row['line']}  `结果` 是「{row['result']}」（{row['table']} → {row['products']}）"
+                "—— 需要有人在 PR 里说明为什么，不能就这样算了"
+            )
+
+    changed = repo.changed_files()
+    if changed is None:
+        notes.append(
+            f"拿不到本次改动清单（没有 {CHANGED_FILE_ENV} / {CHANGED_ENV}，且 git 不可用）"
+            "—— 只校验了台账格式，没查产物覆盖"
+        )
+    else:
+        for product in sorted(p for p in changed if Path(p).match(PRODUCT_GLOB)):
+            if product not in present:
+                failures.append(
+                    Failure(FILL_REPORT, f"本次提交删除了产物 {product}，台账里要有对应的一行说清处置（当前没有）")
+                )
+            elif product not in covered:
+                failures.append(
+                    Failure(FILL_REPORT, f"本次提交改了 {product}，但台账里没有覆盖它的行 —— 补一行说清「哪张表第几版 → 这个产物」")
+                )
+
+    # 新鲜度：覆盖某产物的最新一行，日期要与该产物最近一次改动的提交同一天。
+    # 只打 [注意] 不判失败 —— 变基 / 压缩合并会重写提交日期，硬拦会误伤正常流程；
+    # 但"覆盖行是旧的"必须看得见，否则老行会把新改动吞掉。
+    for product in present:
+        entries = covered.get(product)
+        if not entries or product not in (changed or set()):
+            continue  # 本次没动它：不追溯历史，只保证"动的时候有行、日期对得上"
+        latest = max(entries, key=lambda r: (r["date"], r["line"]))
+        if latest["result"] not in FILL_RESULTS_OK:
+            failures.append(
+                Failure(FILL_REPORT, f"{product} 的覆盖行 `结果` 是「{latest['result']}」—— 产物在场就必须是 已转 / 已核对", latest["line"])
+            )
+        product_date = repo.last_commit_date(product)
+        if product_date and product_date != latest["date"]:
+            notes.append(
+                f"{FILL_REPORT}:{latest['line']}  {product} 最近一次改动是 {product_date}，覆盖行日期是 {latest['date']}"
+                f" —— 两者应当是同一天：把覆盖行日期改成 {product_date}（变基 / 压缩合并会让两者天然不同天，那时可忽略）"
+            )
+    return Check(failures, scanned, notes)
+
+
 #: (标题, 检查函数, 是否必检——目标数为 0 时是否算失败)
 CHECKS = [
-    ("1/6 编码与换行（UTF-8 无 BOM / LF）", check_encoding_and_eol, True),
-    ("2/6 大文件与禁入类型", check_forbidden, True),
-    ("3/6 Markdown 相对链接", check_markdown_links, True),
-    ("4/6 JSON 可解析（含数据契约示例）", check_json, True),
-    ("5/6 密钥扫描", check_secrets, True),
-    ("6/6 契约字段命名（snake_case）", check_contract_keys, False),
+    ("1/7 编码与换行（UTF-8 无 BOM / LF）", check_encoding_and_eol, True),
+    ("2/7 大文件与禁入类型", check_forbidden, True),
+    ("3/7 Markdown 相对链接", check_markdown_links, True),
+    ("4/7 JSON 可解析（含数据契约示例）", check_json, True),
+    ("5/7 密钥扫描", check_secrets, True),
+    ("6/7 契约字段命名（snake_case）", check_contract_keys, False),
+    ("7/7 填表报告台账（格式 / 产物覆盖 / 结果语义）", check_fill_report, False),
 ]
 
 
@@ -415,7 +625,7 @@ def main() -> int:
     total: list[Failure] = []
     if not repo.files:
         total.append(Failure(str(root), "一个受管文件都没找到 —— 门禁拒绝在空集合上判通过（检查 --root 是否指对了仓库根）"))
-        print("[失败] 0/6 文件清单为空")
+        print("[失败] 0/7 文件清单为空")
     else:
         for title, check, mandatory in CHECKS:
             result = check(repo)
@@ -432,6 +642,8 @@ def main() -> int:
                 print(f"[跳过] {title}：当前没有这类文件（不计入通过）")
             else:
                 print(f"[通过] {title}（检查 {result.scanned} 个目标）")
+            for note in result.notes:
+                print(f"[注意] {note}")
 
     print()
     if total:
