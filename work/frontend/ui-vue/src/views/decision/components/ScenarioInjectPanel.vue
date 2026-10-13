@@ -28,6 +28,12 @@ const SESSIONS: TimeSession[] = ['早高峰', '平峰', '晚高峰', '夜间']
 const weather = ref<WeatherCondition | null>(null)
 const session = ref<TimeSession | null>(null)
 const demandMult = ref(1.0)
+/**
+ * 需求倍率是否**被显式调过**。
+ * 没调过就**不发** `demand_mult` —— 服务端只在收到该字段时才用它,否则按所选时段的
+ * F10 倍率折算(独立审查发现:恒发 `demand_mult: 1.0` 会让「时段」单独点选对判级零效果)。
+ */
+const demandTouched = ref(false)
 const result = ref<ScenarioResult | null>(null)
 const msg = ref('')
 const busy = ref(false)
@@ -46,7 +52,7 @@ async function apply(): Promise<void> {
     result.value = await postTrafficScenario({
       ...(weather.value ? { weather: weather.value } : {}),
       ...(session.value ? { session: session.value } : {}),
-      demand_mult: demandMult.value,
+      ...(demandTouched.value ? { demand_mult: demandMult.value } : {}),
       segment_id: props.segmentId || undefined,
     })
     msg.value = '已注入(服务端重算判级 / CI,演示口径)'
@@ -59,18 +65,20 @@ async function apply(): Promise<void> {
 }
 
 async function applyPreset(key: string): Promise<void> {
-  const map: Record<string, { weather?: WeatherCondition; session?: TimeSession; demand_mult: number }> = {
-    baseline: { weather: '晴', session: '平峰', demand_mult: 1.0 },
-    'rain-peak': { weather: '大雨', session: '晚高峰', demand_mult: 1.15 },
-    'fog-night': { weather: '大雾', session: '夜间', demand_mult: 1.0 },
-    'train-burst': { weather: '多云', session: '平峰', demand_mult: 1.35 },
-    'accident-loop': { weather: '多云', session: '早高峰', demand_mult: 1.2 },
+  // `demand` = 该档要显式注入的需求倍率;不给就是"按所选时段的 F10 倍率折算"(服务端算)
+  const map: Record<string, { weather?: WeatherCondition; session?: TimeSession; demand?: number }> = {
+    baseline: { weather: '晴', session: '平峰' },
+    'rain-peak': { weather: '大雨', session: '晚高峰' },
+    'fog-night': { weather: '大雾', session: '夜间' },
+    'train-burst': { weather: '多云', session: '平峰', demand: 1.35 },
+    'accident-loop': { weather: '多云', session: '早高峰', demand: 1.2 },
   }
   const p = map[key]
   if (!p) return
   weather.value = p.weather ?? null
   session.value = p.session ?? null
-  demandMult.value = p.demand_mult
+  demandTouched.value = p.demand !== undefined
+  demandMult.value = p.demand ?? 1.0
   await apply()
 }
 
@@ -81,6 +89,7 @@ async function reset(): Promise<void> {
     await postTrafficScenarioReset()
     weather.value = null
     session.value = null
+    demandTouched.value = false
     demandMult.value = 1.0
     result.value = null
     msg.value = '已复位到站点包默认环境'
@@ -156,8 +165,19 @@ async function reset(): Promise<void> {
     </div>
     <div class="ctl-row">
       <span class="ctl-k">需求倍率</span>
-      <input v-model.number="demandMult" class="range" type="range" min="0.4" max="2" step="0.05" />
+      <input
+        v-model.number="demandMult"
+        class="range"
+        type="range"
+        min="0.4"
+        max="2"
+        step="0.05"
+        @input="demandTouched = true"
+      />
       <span class="ctl-v td-num">×{{ demandMult.toFixed(2) }}</span>
+      <span class="ctl-tag" :class="{ on: demandTouched }">
+        {{ demandTouched ? '已手动指定' : '跟随所选时段' }}
+      </span>
     </div>
 
     <div class="btn-row">
@@ -227,6 +247,19 @@ async function reset(): Promise<void> {
   font-size: 11px;
   color: var(--td-text-color-primary);
   min-width: 52px;
+}
+/* 需求倍率的来源标签:未手动指定 = 跟随所选时段的 F10 倍率(服务端折算) */
+.ctl-tag {
+  padding: 0 5px;
+  border-radius: var(--td-radius-sm);
+  font-size: 10px;
+  white-space: nowrap;
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-placeholder);
+}
+.ctl-tag.on {
+  background: var(--td-brand-color-1);
+  color: var(--td-brand-color);
 }
 .range {
   flex: 1;
