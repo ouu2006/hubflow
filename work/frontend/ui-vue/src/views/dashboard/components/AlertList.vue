@@ -2,7 +2,7 @@
 // 关联告警:已过滤为「本路段 + 未闭环(待认领 / 处置中)」。
 // 行 = 告警号 + 等级徽章(三重编码) + 路段名 + 首次观测时间(取快照 ts,不另取浏览器时间)。
 import type { AlertStatus, TrafficAlert } from '../../../shared/traffic'
-import LevelBadge from '../../dashboard/components/LevelBadge.vue'
+import LevelBadge from './LevelBadge.vue'
 
 defineProps<{ alerts: TrafficAlert[] }>()
 

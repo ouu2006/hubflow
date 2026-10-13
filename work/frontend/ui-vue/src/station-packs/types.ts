@@ -155,6 +155,38 @@ export interface PackAssimilation {
   reason: string | null
 }
 
+/**
+ * 环境上下文基线(Issue #77;站点包按站给默认天气 / 日历)。
+ * ⚠️ **全部是编造的演示值**——真实数据拿不到,字段口径对齐手册第 19 章因素登记表
+ * (F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历)。不做成真值,页面标「演示数据(模拟)」。
+ *
+ * 折减系数**不在包里**——它是因素登记表的参数(F01 一期由 T5 因素表手填,二期由气象接口校准),
+ * 只在 mock 侧一张表里,免得包与代码两处各写一份再对不上。包只声明"这个站是什么天气"。
+ */
+export interface PackContext {
+  weather: {
+    condition: '晴' | '多云' | '小雨' | '大雨' | '大雾' | '台风'
+    temp_c: number
+    humidity_pct: number
+    visibility_km: number
+    precip_mm: number
+    wind: string
+  }
+  calendar: '工作日' | '周末' | '节假日'
+  /** 下一班列车口径说明(演示;真实来源 = T3 列车时刻表) */
+  next_train_note: string
+}
+
+/** 场景注入预设档(Issue #77 决策可视化用;每档 = 一组可一键应用的演示场景) */
+export interface PackScenario {
+  key: string
+  name: string
+  /** 一句话说明这一档演示什么 */
+  note: string
+  /** 对照用的因素编号(仅展示) */
+  factor_ids: string[]
+}
+
 /** 一个完整的站点包 */
 export interface StationPack {
   /** 包标识(与文件名/环境变量取值一致) */
@@ -186,6 +218,12 @@ export interface StationPack {
   assimilation: PackAssimilation[]
   assimilationGate: { confidence_min: number; data_age_max_s: number }
   recommend: PackRecommend
+
+  // ---- 环境上下文与场景注入(Issue #77;全部为编造的演示值) ----
+  /** 本站默认天气与时段基调(页面展示「能获取的环境数据」) */
+  context: PackContext
+  /** 场景注入预设档(决策可视化一键应用) */
+  scenarios: PackScenario[]
 
   /** 孪生桥接服务(TraCI 车辆真值):该站是否启用,以及端口 */
   bridge: { enabled: boolean; base: string }
