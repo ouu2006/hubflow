@@ -1,0 +1,56 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "样例站点包(演示数据(模拟)):全部是 demo 假设值,【待标定】。文件内分两组 —— grading(判级参数组) / decision(决策参数组),两组顶层键名由开发B 在 W0 定,已写入 docs/数据契约.md 第六节。唯一写手:开发B",
+  "grading": {
+    "param_version": "v0-demo",
+    "calibrated_at": "2026-10-13",
+    "sample_days": 0,
+    "weights": [
+      { "indicator": "x", "w": 0.4 },
+      { "indicator": "v", "w": 0.25 },
+      { "indicator": "L_q", "w": 0.25 },
+      { "indicator": "T_d", "w": 0.1 }
+    ],
+    "ref": { "x_ref": 1.0, "v_jam_kmh": 5, "T_ref_min": 15 },
+    "level_bounds": [
+      { "indicator": "x", "bounds": [0.6, 0.8, 0.95] },
+      { "indicator": "v", "bounds": [30, 20, 10] },
+      { "indicator": "L_q", "bounds": [80, 200, 400] },
+      { "indicator": "T_d", "bounds": [3, 8, 15] }
+    ],
+    "factor_floor": 0.4,
+    "queue_headway_m": 7,
+    "saturation_flow_vph_per_lane": 1800,
+    "data_freshness_s": 120,
+    "defaults": { "v_f_kmh": 40, "c_vph": 1600 },
+    "by_segment": [
+      { "segment_id": "SEG-001", "v_f_kmh": 50, "c_vph": 1800 },
+      { "segment_id": "SEG-002", "v_f_kmh": 30, "c_vph": 1200 },
+      { "segment_id": "SEG-003", "v_f_kmh": 30, "c_vph": 600 },
+      { "segment_id": "SEG-004", "v_f_kmh": 30, "c_vph": 600 }
+    ]
+  },
+  "decision": {
+    "param_version": "v0-demo",
+    "calibrated_at": "2026-10-13",
+    "sample_days": 0,
+    "alpha": 0.15,
+    "beta": 4.0,
+    "x_safe": 0.85,
+    "eps_harm_s": 30,
+    "k_candidates": 3,
+    "max_path_overlap": 0.7,
+    "hysteresis": 0.1,
+    "lease_expire_s": 90,
+    "reroute_max": 2,
+    "recompute_period_s": 60,
+    "slot_minutes": 1
+  },
+  "attributes": {
+    "hard_rule_ci": "CI(四项加权合成)不得作为判级依据,只用于热力展示与辅助排序;判级只看四项指标(手册 6.5 第 1 条)",
+    "hard_rule_by_segment": "判级代码里不得出现全站唯一阈值常量 —— 一律按 segment_id 从 by_segment 取,取不到用 defaults 并在 confidence 上降权(手册 6.6)",
+    "why_arrays": "weights / level_bounds / by_segment 用数组而不是对象键,是为了过 doc_gate 的契约字段 snake_case 检查(SEG-001 这类 ID 键会被判违规)",
+    "why_two_versions": "两组各自带 param_version / calibrated_at / sample_days —— 判级与决策的标定来源不同,版本会各自前进"
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "样例站点包(演示数据(模拟)):四个演示场景名固定(常态/峰值/突发/多因素),取值封闭;数据由池·S 按 T6 场景剧本表填",
+  "scenarios": [
+    {
+      "scenario_id": "S1",
+      "name": "常态",
+      "seed": 42,
+      "switches": { "recommendation": true, "reroute": true },
+      "factors": [],
+      "assimilation": {
+        "enabled": true,
+        "edges": ["E-001"],
+        "period_s": 60,
+        "gate": { "confidence_min": 0.6, "data_age_max_s": 120 }
+      }
+    },
+    {
+      "scenario_id": "S2",
+      "name": "峰值",
+      "seed": 42,
+      "switches": { "recommendation": true, "reroute": true },
+      "factors": [{ "factor_id": "F03", "target": "demand", "multiplier": 1.5, "from": "2026-01-01T00:30:00+08:00", "until": "2026-01-01T01:30:00+08:00" }],
+      "assimilation": {
+        "enabled": true,
+        "edges": ["E-001"],
+        "period_s": 60,
+        "gate": { "confidence_min": 0.6, "data_age_max_s": 120 }
+      }
+    },
+    {
+      "scenario_id": "S3",
+      "name": "突发",
+      "seed": 42,
+      "switches": { "recommendation": true, "reroute": true },
+      "factors": [{ "factor_id": "F07", "target": "lanes", "multiplier": 0.5, "from": "2026-01-01T00:40:00+08:00", "until": "2026-01-01T01:10:00+08:00", "segment_id": "SEG-003" }],
+      "assimilation": {
+        "enabled": false,
+        "edges": [],
+        "period_s": 60,
+        "gate": { "confidence_min": 0.6, "data_age_max_s": 120 }
+      }
+    },
+    {
+      "scenario_id": "S4",
+      "name": "多因素",
+      "seed": 42,
+      "switches": { "recommendation": true, "reroute": true },
+      "factors": [
+        { "factor_id": "F01", "target": "c", "multiplier": 0.75, "from": "2026-01-01T00:00:00+08:00", "until": "2026-01-01T02:00:00+08:00" },
+        { "factor_id": "F03", "target": "demand", "multiplier": 1.5, "from": "2026-01-01T00:30:00+08:00", "until": "2026-01-01T01:30:00+08:00" },
+        { "factor_id": "F10", "target": "demand", "multiplier": 1.2, "from": "2026-01-01T00:00:00+08:00", "until": "2026-01-01T03:00:00+08:00" }
+      ],
+      "assimilation": {
+        "enabled": true,
+        "edges": ["E-001"],
+        "period_s": 60,
+        "gate": { "confidence_min": 0.6, "data_age_max_s": 120 }
+      }
+    }
+  ],
+  "attributes": {
+    "source": "样例,待池·S 按 T6 场景剧本表填真值",
+    "hard_rule": "assimilation.edges 只允许放 role=\"boundary\" 断面映射出的 edge;写进 internal 的 edge 视为配置错误,脚本必须报错退出(契约 6.2)"
+  }
+}

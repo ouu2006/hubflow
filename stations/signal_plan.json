@@ -1,0 +1,37 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "样例站点包(演示数据(模拟)):demo 只配 1 个路口、2 套方案(平峰/高峰);数据由池·S 按底图与现场核对后手填",
+  "junctions": [
+    {
+      "junction_id": "J-01",
+      "node_id": "N-01",
+      "sumo_junction_id": "J-01",
+      "plans": [
+        {
+          "plan_id": "SP-A-PEAK-OFF",
+          "name": "平峰",
+          "cycle_s": 60,
+          "phases": [
+            { "phase_id": "P1", "name": "东西直行", "green_s": 30, "yellow_s": 3, "all_red_s": 0 },
+            { "phase_id": "P2", "name": "南北直行", "green_s": 24, "yellow_s": 3, "all_red_s": 0 }
+          ]
+        },
+        {
+          "plan_id": "SP-A-PEAK-ON",
+          "name": "高峰",
+          "cycle_s": 80,
+          "phases": [
+            { "phase_id": "P1", "name": "东西直行", "green_s": 44, "yellow_s": 3, "all_red_s": 0 },
+            { "phase_id": "P2", "name": "南北直行", "green_s": 30, "yellow_s": 3, "all_red_s": 0 }
+          ]
+        }
+      ]
+    }
+  ],
+  "attributes": {
+    "source": "样例,待池·S 按底图与实际配时核对补录",
+    "saturation_flow_vph_per_lane": 1800,
+    "note": "F09(信号配时)作用于 c = s0 * g / C;s0 见 thresholds.json 的 grading.saturation_flow_vph_per_lane"
+  }
+}
