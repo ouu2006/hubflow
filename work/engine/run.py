@@ -34,7 +34,8 @@ DEFAULT_STATIONS_DIR = HERE.parents[1] / "stations"
 SAMPLE_FILES = {
     "network": "network_sample.json",
     "segments": "segments_sample.json",
-    "od": "od_sample.json",
+    # 与 stations/demand.json 同形:OD 数组的容器键就是 od(开发规范 §6「样例就是契约的镜子」)
+    "demand": "demand_sample.json",
 }
 
 #: 样例用的固定请求参数(demo;真值由接口层给)
@@ -200,13 +201,14 @@ def run_sample(cfg: dict[str, Any]) -> int:
     thresholds = network.load_thresholds(cfg["stations_dir"] / "thresholds.json")
     params = thresholds["decision"]
 
-    od_pairs = payloads["od"].get("od_pairs")
+    od_pairs = payloads["demand"].get("od")
     if not isinstance(od_pairs, list) or not od_pairs:
-        raise ValueError("样例 od_pairs 缺失或为空")
+        raise ValueError("样例 demand 的 od 缺失或为空(容器键与 stations/demand.json 一致)")
 
-    now_ts = str(payloads["od"].get("ts") or payloads["segments"].get("ts") or "")
+    # demand.json 没有 ts,时间戳取 segments 的
+    now_ts = str(payloads["segments"].get("ts") or "")
     if not now_ts:
-        raise SystemExit("样例缺 ts 字段")
+        raise SystemExit("样例 segments 缺 ts 字段")
 
     network.ensure_out_dir(out_dir)
 
