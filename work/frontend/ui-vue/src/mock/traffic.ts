@@ -159,8 +159,24 @@ function localIso(d: Date): string {
   return `${date}T${t}${sign}${pad(Math.floor(Math.abs(off) / 60))}:${pad(Math.abs(off) % 60)}`
 }
 
+/**
+ * 站点包里的预置因素 `until` 是**写死的日期**(如 `2026-10-11T23:30:00+08:00`)。
+ * 演示跑到别的日子,它就变成了"早已过期却仍列在当前生效因素里"的自相矛盾。
+ * 这里把日期部分归一到快照当天(该时刻已过则顺延一天),**只改日期、保留包里的时分**——
+ * 于是"至 23:30"在任何一天演示都成立,数值与语义仍全部来自站点包。
+ */
+function normalizeUntil(until: string, now: Date): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/.exec(until)
+  if (!m) return until
+  const [, , , , hh, mm, ss] = m
+  const at = new Date(now.getFullYear(), now.getMonth(), now.getDate(), Number(hh), Number(mm), Number(ss ?? '0'))
+  if (at.getTime() <= now.getTime()) at.setDate(at.getDate() + 1) // 当天该时刻已过 → 顺延到明天
+  return localIso(at)
+}
+
 function buildSegmentsSnapshot(): SegmentsSnapshot {
   tick += 1
+  const now = new Date()
   const segments: SegmentRecord[] = segmentBases().map(({ base, stale }) => {
     const src = applyManualFactors(base) // 人工置位先生效,再走抖动
     const q_vph = Math.round(jitter(src.q_vph ?? 0, 0.04))
@@ -176,6 +192,8 @@ function buildSegmentsSnapshot(): SegmentsSnapshot {
       x: round(q_vph / Math.max(1, c_vph), 2),
       ci: round(jitter(src.ci ?? 0, 0.02), 1),
       data_age_s: stale ? ageBase + (tick % 30) * 2 : Math.min(ageBase + (tick % 6) * 2, 110),
+      // 因素生效截止时间归一到演示当天(人工置位那批本来就是相对时间,归一后不变)
+      factors_applied: (src.factors_applied ?? []).map((f) => ({ ...f, until: normalizeUntil(f.until, now) })),
       is_simulated: true,
     }
   })
@@ -691,11 +709,17 @@ function buildThresholds(): ThresholdSnapshot {
 
 // ---------- 热力矩阵 / CI 走势 ----------
 
-function buildHeatMatrix(buckets: number): HeatMatrix {
+/**
+ * `buckets` = 窗口桶数,`bucketSec` = 每桶秒数 —— 两个参数各司其职。
+ * 原先只收桶数、且把秒数当桶数读(`?bucket=60` 会被夹到 24 列),页面标「最近 12 个快照」
+ * 却画 24 列;改为按秒数铺桶间距后再夹上限,标注与实际才对得上。
+ */
+function buildHeatMatrix(buckets: number, bucketSec: number): HeatMatrix {
   const count = Math.min(24, Math.max(4, buckets))
+  const stepMs = Math.max(1, bucketSec) * 1000
   const snap = buildSegmentsSnapshot()
   const now = Date.now()
-  const labels = Array.from({ length: count }, (_, i) => clockOf(new Date(now - (count - 1 - i) * 60_000)))
+  const labels = Array.from({ length: count }, (_, i) => clockOf(new Date(now - (count - 1 - i) * stepMs)))
   const rows = snap.segments.map((s) => {
     const available = !isStaleRec(s) && typeof s.ci === 'number'
     const vals: (number | null)[] = labels.map((_, i) => {
@@ -705,7 +729,7 @@ function buildHeatMatrix(buckets: number): HeatMatrix {
     })
     return { segment_id: s.segment_id, name: nameOfSegment(s.segment_id), buckets: vals }
   })
-  return { ts: snap.ts, is_simulated: true, bucket_sec: 60, buckets: count, labels, rows }
+  return { ts: snap.ts, is_simulated: true, bucket_sec: Math.max(1, Math.round(bucketSec)), buckets: count, labels, rows }
 }
 
 function buildCiHistory(segmentId: string, points: number): CiHistory | null {
@@ -995,8 +1019,17 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
   }
 
   if (path === '/traffic/heat-matrix' && method === 'GET') {
-    const buckets = Number(url.searchParams.get('bucket') ?? url.searchParams.get('window') ?? '12')
-    json(res, 200, buildHeatMatrix(Number.isFinite(buckets) ? buckets : 12))
+    // `window` = 窗口桶数,`bucket` = 每桶秒数;两者互不替用(此前 `bucket ?? window` 会把秒数当桶数)
+    const bucketsRaw = Number(url.searchParams.get('window') ?? '12')
+    const bucketSecRaw = Number(url.searchParams.get('bucket') ?? '60')
+    json(
+      res,
+      200,
+      buildHeatMatrix(
+        Number.isFinite(bucketsRaw) ? bucketsRaw : 12,
+        Number.isFinite(bucketSecRaw) && bucketSecRaw > 0 ? bucketSecRaw : 60,
+      ),
+    )
     return true
   }
 

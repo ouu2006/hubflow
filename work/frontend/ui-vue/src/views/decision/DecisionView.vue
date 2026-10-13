@@ -40,9 +40,11 @@ import {
 import {
   isStale,
   type AlertStatus,
+  type CongestionLevel,
   type DispatchReceipt,
   type SegmentRecord,
   type TrafficAlert,
+  type TrafficSource,
   type WritebackResult,
 } from '../../shared/traffic'
 import { formatClock, formatStamp } from '../../shared/traffic'
@@ -120,6 +122,16 @@ function isTerminalStatus(s: AlertStatus): boolean {
 function segStale(segmentId: string): boolean {
   const seg = segMap.value[segmentId]
   return seg ? isStale(seg) : false
+}
+
+/**
+ * 告警行 / 工作台显示的**判级**一律取**当前路段快照**(与态势总览、热力页同源),
+ * 告警自带的 `level` 只是派生时的记录值——预置剧本与快照基线不同步时它会是旧值,
+ * 直接上屏就会出现「队列写缓行、路段快照已拥堵」的自相矛盾(mock 侧两处基线各自维护)。
+ * 快照缺该路段时退回告警记录值,不编造。
+ */
+function segLevel(a: TrafficAlert): CongestionLevel {
+  return segMap.value[a.segment_id]?.level ?? a.level
 }
 
 // ---------- 选中告警派生态 ----------
@@ -209,7 +221,7 @@ const groups = computed(() =>
         id: a.alert_id,
         segId: a.segment_id,
         name: a.segment_name,
-        level: a.level,
+        level: segLevel(a),
         stale: segStale(a.segment_id),
         time: timeOf(a.first_seen),
         chip: chipOf(a),
@@ -249,14 +261,21 @@ async function refresh(): Promise<void> {
   }
 }
 
-/** 排队比 L_q = 孪生记录 L_q_m / L_seg_m(两位小数;取不到显示「—」) */
+/**
+ * 排队比 L_q = 快照记录 L_q_m / L_seg_m(两位小数;取不到显示「—」)
+ * 数据源视图(顶栏)在这里生效:`twin` 取孪生槽位、`video` 取视频槽位;
+ * `both`(默认)沿本页原口径取**孪生链路**(= 虚拟检测器 L_q),不因接线而改变默认读数。
+ */
 async function loadQueueRatio(segmentId: string): Promise<void> {
   try {
     const pair = await getTrafficSegmentSources(segmentId)
-    const twin = pair.slots.find((s) => s.source === 'twin')?.record ?? null
+    const want: TrafficSource = sourceMode.value === 'video' ? 'video' : 'twin'
+    const slot = pair.slots.find((s) => s.source === want)?.record ?? null
+    const fallback = pair.slots.find((s) => s.source === 'twin')?.record ?? null
+    const rec = slot ?? fallback
     if (selected.value?.segment_id !== segmentId) return // 选择已变:丢弃过期响应
-    if (twin && typeof twin.L_q_m === 'number' && typeof twin.L_seg_m === 'number' && twin.L_seg_m > 0) {
-      queueRatio.value = (twin.L_q_m / twin.L_seg_m).toFixed(2)
+    if (rec && typeof rec.L_q_m === 'number' && typeof rec.L_seg_m === 'number' && rec.L_seg_m > 0) {
+      queueRatio.value = (rec.L_q_m / rec.L_seg_m).toFixed(2)
     } else {
       queueRatio.value = '—'
     }
@@ -360,6 +379,12 @@ watch(selectedId, () => {
   if (a) void loadQueueRatio(a.segment_id)
 })
 
+// 数据源视图切换(顶栏):排队比按所选链路口径重取
+watch(sourceMode, () => {
+  const a = selected.value
+  if (a) void loadQueueRatio(a.segment_id)
+})
+
 onMounted(() => {
   void refresh()
   void (async () => {
@@ -459,8 +484,8 @@ onUnmounted(() => {
                   </span>
                 </div>
                 <div class="bi">
-                  <span class="bk">当前判级</span>
-                  <LevelBadge :level="selected.level" :stale="selectedStale" />
+                  <span class="bk">当前判级(路段快照)</span>
+                  <LevelBadge :level="segLevel(selected)" :stale="selectedStale" />
                 </div>
                 <div class="bi">
                   <span class="bk">首次观测</span>

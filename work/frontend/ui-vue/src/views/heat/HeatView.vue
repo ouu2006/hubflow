@@ -22,7 +22,6 @@ import {
   getTrafficVehicles,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import type { SourceMode } from '../../shared/nav'
 import { activePack } from '../../station-packs/index'
 import {
   CI_BANDS,
@@ -53,7 +52,6 @@ import SegmentRankTable from './components/SegmentRankTable.vue'
 const router = useRouter()
 
 // ---- 状态 ----
-const sourceMode = ref<SourceMode>('both')
 const viewMode = ref<CongestionViewMode>('index')
 const segments = ref<SegmentRecord[]>([])
 const vehicles = ref<VehicleRecord[]>([])
@@ -191,8 +189,15 @@ const selectedChip = computed(() => {
   return ciAvailable(s) ? `${selectedName.value} · CI ${(s.ci as number).toFixed(1)}` : `${selectedName.value} · 数据不可用`
 })
 
+/**
+ * 关联告警的等级一律按**当前路段快照**上屏(与右侧指数明细同一口径)——
+ * 告警自带的 level 是派生时的记录值,预置剧本与快照基线不同步时会是旧值,
+ * 直接用就会出现"同一路段、两个等级"。
+ */
 const selectedAlerts = computed(() =>
-  alerts.value.filter((a) => a.segment_id === selectedId.value && a.status !== '已闭环' && a.status !== '误报'),
+  alerts.value
+    .filter((a) => a.segment_id === selectedId.value && a.status !== '已闭环' && a.status !== '误报')
+    .map((a) => ({ ...a, level: selected.value?.level ?? a.level })),
 )
 
 // ---- 左栏:路段指数排行(可用者按 CI 降序,不可用排最后) ----
@@ -257,7 +262,6 @@ function goDecision(): void {
     active="heat"
     :station="stationName"
     :ts="snapshotTs"
-    v-model:sourceMode="sourceMode"
     title="拥挤度热力"
     subtitle="强度晕染随 CI 单调增 · 不做断面间无标注内插"
   >
