@@ -1,0 +1,20 @@
+{
+  "ts": "2026-01-01T00:00:00+08:00",
+  "is_simulated": true,
+  "edges": [
+    {
+      "segment_id": "SEG-001",
+      "role": "boundary",
+      "assimilating": true,
+      "gate": { "confidence": 0.9, "data_age_s": 10, "passed": true, "reason": null },
+      "last_apply": { "at": "2026-01-01T00:00:00+08:00", "q_vph": 1000, "v_kmh": 30.0 },
+      "deviation": { "q_pct": 5.0, "v_pct": 5.0 }
+    },
+    {
+      "segment_id": "SEG-002",
+      "role": "internal",
+      "assimilating": false,
+      "gate": { "passed": false, "reason": "internal_not_allowed" }
+    }
+  ]
+}
