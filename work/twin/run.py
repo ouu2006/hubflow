@@ -25,7 +25,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--duration", type=int, default=loop.SNAPSHOT_EVERY_S, dest="duration_s")
     parser.add_argument("--out", default=str(loop.DEFAULT_OUT_DIR), dest="out_dir")
     parser.add_argument("--site", default="")
-    ns, _extra = parser.parse_known_args(argv)
+    # 不用 parse_known_args:未知参数(多半是拼写错)静默丢弃 = 用默认值假跑完,
+    # 与 work/assembly/现状核实.md 4.3 的"静默假通过"同类。有没见过的参数就报错。
+    ns, extra = parser.parse_known_args(argv)
+    if extra:
+        parser.error(f"未知参数:{' '.join(extra)}(run.py 只认 --sample/--scenario/--seed/--duration/--out/--site)")
 
     forward = [
         "--scenario", ns.scenario,
