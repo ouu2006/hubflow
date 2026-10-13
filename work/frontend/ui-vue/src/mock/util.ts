@@ -17,6 +17,32 @@ export interface ErrShape {
 export function errShape(code: string, message: string): ErrShape {
   return { code, message }
 }
+/**
+ * 状态写入端点的**同源校验**(演示态防护,独立审查 Sourcery 提出)。
+ *
+ * 背景:mock 挂在 vite dev/preview 的 loopback 上,而浏览器的**跨站表单 / 简单请求**
+ * 不受同源策略限制——宿主开着演示时,误点(或恶意页)发一个跨源 POST 打到
+ * `/api/traffic/scenario` / `/scenario/reset` / `/factors` / `/plan/*` 就能改掉
+ * 正在演示的判级与处置态。这里按 HTTP 惯例**拒绝带外源 Origin 的写请求**。
+ *
+ * 口径:`Origin` 缺失 = **放行**(curl / 脚本 / 同源老浏览器不带该头,本地联调要用;
+ * 跨站伪造**一定**会带上自己的 Origin)。所以这道门拦的是"浏览器里的别的站",不是"所有非浏览器调用"。
+ */
+export function crossSiteWriteBlocked(req: MockReq): boolean {
+  const origin = req.headers.origin
+  if (typeof origin !== 'string' || origin === '') return false
+  try {
+    const host = origin.startsWith('http') ? new URL(origin).host : ''
+    return host !== req.headers.host
+  } catch {
+    return true // 解析不了的 Origin 一律当外源
+  }
+}
+
+/** 跨站写请求的统一拒绝体(403) */
+export function forbiddenCrossSite(res: MockRes): void {
+  json(res, 403, errShape('CROSS_SITE_BLOCKED', '跨站写请求已拒绝(mock 演示态只接受同源写;缺 Origin 的本地调用放行)'))
+}
 
 export function json(res: MockRes, status: number, payload: unknown): void {
   res.statusCode = status

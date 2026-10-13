@@ -144,6 +144,21 @@ export const STATION_B: StationPack = {
   ],
   assimilationGate: { confidence_min: 0.75, data_age_max_s: 120 },
 
+  // 环境上下文与场景注入(Issue #77)。⚠️ 全部是**编造的演示值**(与包 A 同口径,数值按本站剧本另编);
+  // 字段口径对齐手册第 19 章因素登记表 F01 / F02 / F03 / F10。
+  // 包 B 的基线(FCD 折算,峰值工况)**不含**天气因素,故这里声明 `多云`(晴天口径,不折减)。
+  context: {
+    weather: { condition: '多云', temp_c: 26, humidity_pct: 74, visibility_km: 9, precip_mm: 0, wind: '偏东风 2 级' },
+    calendar: '工作日',
+    next_train_note: '演示值 · 真实来源 = T3 列车时刻表(12306 公开时刻表手填)',
+  },
+  scenarios: [
+    { key: 'baseline', name: '常态基准', note: '多云 + 平峰:不注入任何环境因素,作为对照基准', factor_ids: [] },
+    { key: 'accident-loop', name: '西侧环路事故', note: 'F07 事故封道(人工置位口径)+ F10 早高峰需求 ×1.2:本站剧本的事故段在 SEG-004', factor_ids: ['F07', 'F10'] },
+    { key: 'fog-night', name: '大雾夜间', note: 'F01 大雾(×0.7)+ F02 昼夜(检测置信度下降,不做强推荐)', factor_ids: ['F01', 'F02'] },
+    { key: 'train-burst', name: '列车集中到达', note: 'F03 列车到发:到达需求 ×1.35,地下落客通道压力最大', factor_ids: ['F03'] },
+  ],
+
   recommend: {
     location_segment_id: 'SEG-001',
     location_offset_m: 210,

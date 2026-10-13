@@ -42,8 +42,20 @@
 | `/api/traffic/thresholds` | GET | 判级阈值 + CI 四项加权构成 + 变更留痕（只读，P1） | **新增**（后端待实现；真实来源 `stations/thresholds.json`） |
 | `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵（`?window=&bucket=`） | **新增**（后端待实现） |
 | `/api/traffic/ci-history` | GET | 单路段 CI 走势（`?segment_id=&points=`） | **新增**（后端待实现） |
+| `/api/traffic/context` | GET | **环境上下文**：天气 / 时间 + 折算出的因素（F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历） | **新增**（Issue #77；mock 已实现，后端待实现） |
+| `/api/traffic/scenario` | POST | **场景注入**（天气 / 时段 / 需求倍率）→ 返回注入前后判级对照 | **新增**（Issue #77；mock 已实现，后端待实现；**属演示态写入，须落库留痕**） |
+| `/api/traffic/scenario/reset` | POST | 清场景注入（与 `factors/reset` 同口径） | **新增**（Issue #77；mock 已实现，后端待实现） |
 | `/api/traffic/report/compare` | GET | 效果对比报表 | 保留（本次前端用 `demoDecision.ts` 演示数据，未接端点） |
 | `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **新增**（属感知面，见 [`../perception/README.md`](../perception/README.md)） |
+
+**2026-10-13 页面收敛（Issue #77）后的接口面变化**：管理端 Web 由四页收敛为**三层 3 页**（感知层 / 决策层 / 监控大屏，
+详见 [`../frontend/README.md`](../frontend/README.md) 第十三节）。接口面**只增不改**——上表三个 `context` / `scenario` 端点是本单新增，
+**存量端点形状一字未动**。口径两条：
+
+1. **环境数据是编造的演示值**（真实气象 / 列车数据拿不到），响应带 `is_simulated = true` 信封，页面标「演示数据（模拟）」，
+   **不得称实测**；字段口径对齐手册第 19 章因素登记表（F01 / F02 / F03 / F10）。
+2. **场景注入 ≠ 人工置位**——手册 §:2222 的人工置位口子只有 F07 / F08 / F11（走 `POST /api/traffic/factors`）；
+   `POST /api/traffic/scenario` 是**环境侧**注入口，**后端实现时须把两者分开留痕**（谁在什么时候把环境改成了什么）。
 
 **约定**：`is_simulated` 字段在**每一个**响应里出现；事件流复用现有 SSE 形状，**新增**事件名，**不改既有事件名**；**一期是非视频端点驱动的页面**——**视频感知链路**（YOLO 跑样本视频，`source: "video"`）**一期就在跑**，但它的结果以 `segments` 快照的形式进接口层（**不新增视频流 / 画面端点**）。`/api/traffic/segments` 与 `/segments/{id}` 必须能按 `source` **并排返回 `video` / `twin` 两个来源**（**TC-19 的展示侧**，页面用 `/segments/{id}/sources` 取并排对）。
 

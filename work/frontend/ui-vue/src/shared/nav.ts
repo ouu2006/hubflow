@@ -1,9 +1,11 @@
 // 顶栏页签目录(顶栏与路由共用一处,避免两处各写一份导致漂移)。
+//
+// 2026-10-13 三页收敛(Issue #77):Web 只保留三层,顺序即分层顺序 ——
+// 感知层 → 决策层 → 监控大屏;原「拥挤度热力 /heat」并入监控大屏,不再是独立页签。
 export const APP_TABS = [
-  { key: 'dashboard', name: '态势总览', route: '/dashboard' },
-  { key: 'heat', name: '拥挤度热力', route: '/heat' },
-  { key: 'decision', name: '决策工作台', route: '/decision' },
-  { key: 'perception', name: '视频感知', route: '/perception' },
+  { key: 'perception', name: '感知层', route: '/perception' },
+  { key: 'decision', name: '决策层', route: '/decision' },
+  { key: 'dashboard', name: '监控大屏', route: '/dashboard' },
 ] as const
 
 export type AppTabKey = (typeof APP_TABS)[number]['key']

@@ -1,24 +1,36 @@
 <script setup lang="ts">
-// 态势总览(Issue #78 四页重做 · 设计稿 01),TDesign Light:
-//   顶栏(壳层) → KPI 条(4 格)→ 三栏(左:等级分布 + 路段监测;中:路网图;右:路段详情 / 双源并排 / 因素 / 预测 / 下发)
-//   → 底部告警条 → 页脚口径条。
-// 数据:全部走只读快照接口(src/api/traffic.ts 的 Issue #78 接口面),不做任何业务计算。
+// 页面结构(见 `work/frontend/README.md` 第十三节;2026-10-13 三页收敛 Issue #77):
+//   顶栏(壳层) → KPI 条(4 格)
+//   → 三栏(左:**选择监控**(视图切换 + 监控范围 + 等级分布 + 路段列表)
+//           中:**全路段状态**(路网图,四级 / 拥挤指数两视图)
+//           右:**路段信息**(详情 / 双源并排 / 因素 / CI 与四项加权 / CI 走势 / 关联告警 / 预测 / 下发))
+//   → 底部**热力带**(档位分布 | 路段×时间热力矩阵 | CI 色阶与口径)+ 告警条 → 页脚口径条。
+//
+// 为什么热力页并进来:业主 2026-10-13 裁定 Web 只保留三层(感知 / 决策 / 大屏),`/heat` 不再是独立页。
+// 并入方式是**保信息不保页**:原 `/heat` 的 8 个 widget 各有落点(见 README 第十三节落点对照表),
+// 视图切换与 CI 口径(只展示、不判级)原样保留,页脚 / 图例 / 列表三处标注一句不删。
+//
+// 数据:全部走只读快照接口(src/api/traffic.ts),不做任何业务计算。
 // 口径铁律:
 //   ① 一期全部 is_simulated=true 示例数据,页面不出现「实时 / 实测 / 现场」表述;
 //   ② 三重编码(颜色 + 竖条图标 + 文字)由 LevelBadge 保证;
 //   ③ 数据不可用(缺字段或 data_age_s > 120s)恒为灰 + 「不可用」文字分支(TC-11),绝不显示成蓝/绿;
 //   ④ 品牌蓝只用于「当前 / 已选 / 可操作」(选中行、选中路段、主按钮、当前页签),等级色只表示路况等级;
-//   ⑤ 不做 3D、不做无标注内插;所有数字带单位或口径标注,空值一律「—」,不编造。
+//   ⑤ CI 只用于热力展示与辅助排序,**不得作为判级依据**(手册 §6.5 第 1 条),冲突以四级为准;
+//   ⑥ 不做 3D、不做无断面间标注的内插;所有数字带单位或口径标注,空值一律「—」,不编造。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   getTrafficAlerts,
+  getTrafficCiHistory,
   getTrafficFactors,
+  getTrafficHeatMatrix,
   getTrafficMeta,
   getTrafficNetwork,
   getTrafficOverview,
   getTrafficSegmentSources,
   getTrafficSegments,
+  getTrafficThresholds,
   getTrafficVehicles,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
@@ -27,15 +39,23 @@ import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
 import {
+  ciAvailable,
+  CI_BAND_NOTE,
+  CI_BANDS,
+  CI_DISCLAIMER,
+  formatStamp,
   isStale,
   LEVELS,
   levelStyle,
   UNAVAILABLE,
-  formatStamp,
+  type CiHistory,
   type CongestionLevel,
+  type CongestionViewMode,
   type FactorApplied,
+  type HeatMatrix,
   type SegmentRecord,
   type SegmentSourcePair,
+  type ThresholdSnapshot,
   type TrafficAlert,
   type TrafficNetwork,
   type TrafficOverview,
@@ -44,13 +64,20 @@ import {
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from './components/LevelBadge.vue'
 import NetMap from './components/NetMap.vue'
+import AlertList from './components/AlertList.vue'
+import BandDistribution from './components/BandDistribution.vue'
+import CiScale from './components/CiScale.vue'
+import CiTrendBars from './components/CiTrendBars.vue'
+import FactorBreakdown from './components/FactorBreakdown.vue'
+import HeatMatrixTable from './components/HeatMatrixTable.vue'
+import SegmentRankTable from './components/SegmentRankTable.vue'
 
 const router = useRouter()
 /** 底图来源短文案(页面水印/页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
 const sourceLabel = networkSourceLabel()
 /** 底图是否真 OSM 路网 —— 只有它为真时地图内才有署名,底图说明文案随之分支(否则不写"署名见地图内") */
 const osmActive = isOsmNetwork()
-/** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 四页同一口径 */
+/** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
 
 // ---------- 快照状态 ----------
@@ -65,10 +92,20 @@ const allFactors = ref<(FactorApplied & { segment_id: string })[]>([])
 const pair = ref<SegmentSourcePair | null>(null)
 /** 选中路段的生效因素 */
 const segFactors = ref<(FactorApplied & { segment_id: string })[]>([])
+/** 选中路段的 CI 走势(原 /heat 右栏) */
+const history = ref<CiHistory | null>(null)
+/** 路段 × 时间热力矩阵(原 /heat 中栏) */
+const heat = ref<HeatMatrix | null>(null)
+/** 判级阈值 + CI 四项加权构成(原 /heat 右栏;权重不写死,来自接口) */
+const thresholds = ref<ThresholdSnapshot | null>(null)
 
 const selectedId = ref<string | null>(null)
 /** 数据源视图(顶栏)：决定右栏「双数据源并排」表按哪一侧口径读数 */
 const sourceMode = ref<SourceMode>('both')
+/** 视图模式:四级视图(判级产出)/ 拥挤指数视图(展示量,原 /heat 页头切换) */
+const viewMode = ref<CongestionViewMode>('level')
+/** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
+const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
 
 let unsubscribe: (() => void) | null = null
@@ -95,20 +132,23 @@ function pickDefaultId(list: SegmentRecord[]): string | null {
   return best.segment_id
 }
 
-/** 选中路段相关的两个接口(并排表 + 因素);选中变化与快照刷新都会重拉 */
+/** 选中路段相关的三个接口(并排表 + 因素 + CI 走势);选中变化与快照刷新都会重拉 */
 async function loadSelectedSide(segmentId: string | null): Promise<void> {
   if (!segmentId) {
     pair.value = null
     segFactors.value = []
+    history.value = null
     return
   }
-  const [p, f] = await Promise.allSettled([
+  const [p, f, h] = await Promise.allSettled([
     getTrafficSegmentSources(segmentId),
     getTrafficFactors(segmentId),
+    getTrafficCiHistory(segmentId, 12),
   ])
   if (selectedId.value !== segmentId) return // 选择已变:丢弃过期响应
   pair.value = p.status === 'fulfilled' ? p.value : null
   segFactors.value = f.status === 'fulfilled' ? f.value.factors : []
+  history.value = h.status === 'fulfilled' ? h.value : null
 }
 
 /**
@@ -126,11 +166,13 @@ const PANEL_LABEL: Record<string, string> = {
   network: '路网',
   alerts: '告警',
   factors: '因素',
+  matrix: '热力矩阵',
+  thresholds: '阈值与 CI 权重',
 }
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
-  const [ov, seg, veh, net, al, fa, meta] = await Promise.allSettled([
+  const [ov, seg, veh, net, al, fa, meta, matrix, thr] = await Promise.allSettled([
     getTrafficOverview(),
     getTrafficSegments(),
     getTrafficVehicles(),
@@ -138,6 +180,8 @@ async function refresh(): Promise<void> {
     getTrafficAlerts(),
     getTrafficFactors(),
     getTrafficMeta(),
+    getTrafficHeatMatrix(12, 60),
+    getTrafficThresholds(),
   ])
   if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
   const failed: string[] = []
@@ -160,6 +204,10 @@ async function refresh(): Promise<void> {
   track('alerts', al.status === 'fulfilled')
   if (fa.status === 'fulfilled') allFactors.value = fa.value.factors
   track('factors', fa.status === 'fulfilled')
+  if (matrix.status === 'fulfilled') heat.value = matrix.value
+  track('matrix', matrix.status === 'fulfilled')
+  if (thr.status === 'fulfilled') thresholds.value = thr.value
+  track('thresholds', thr.status === 'fulfilled')
   // 站名只用于顶栏 chip:取不到就保持站点包里的名字,不因此把整页标成"上一版数据"
   if (meta.status === 'fulfilled') stationName.value = meta.value.station.name
   failedPanels.value = failed
@@ -192,28 +240,14 @@ function fmt(v: number | undefined | null, digits = 2): string {
   return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : '—'
 }
 
-/** 因素作用对象 → 中文(与 SegmentDetailPanel 同口径) */
-const TARGET_LABEL: Record<string, string> = {
-  c: '通行能力',
-  v_f: '畅通速度',
-  demand: '需求',
-  lanes: '车道数',
-  confidence: '检测置信度',
-}
-
-/** 倍率显示:×0.75 / ×1.25 */
-function multText(m: number): string {
-  return `×${Number.isFinite(m) ? Number(m.toFixed(2)) : '—'}`
-}
-
-/** ISO → 'HH:mm'(生效至 / 首次观测时分) */
-function hhmm(iso: string): string {
-  return iso.length >= 16 ? iso.slice(11, 16) : iso
-}
-
-/** '2026-10-12 12:38:20' → '12:38:20' */
+/** 'YYYY-MM-DD HH:mm:ss' → 'HH:mm:ss'(告警条首次观测时间) */
 function hhmmss(stamp: string): string {
   return stamp.length >= 8 ? stamp.slice(-8) : stamp
+}
+
+/** 路段名(矩阵 / 排行里的行不带 name,统一从路网取,与地图同源) */
+function nameOf(id: string): string {
+  return demoSegment(id)?.name ?? id
 }
 
 // ---------- KPI 条 ----------
@@ -245,7 +279,7 @@ const topFactors = computed(() => {
   return out
 })
 
-// ---------- 左栏 · 等级分布 ----------
+// ---------- 左栏 · 等级分布 + 监控范围 ----------
 interface DistRow {
   level: CongestionLevel | 0
   name: string
@@ -274,7 +308,12 @@ function distWidth(r: DistRow): string {
   return `${(r.count / total) * 100}%`
 }
 
-// ---------- 左栏 · 路段监测 ----------
+/** 监控范围切换(点分布条 / 点档位图例 / 「全部」) */
+function toggleScope(level: CongestionLevel | 0): void {
+  scope.value = scope.value === level ? null : level
+}
+
+// ---------- 左栏 · 路段列表(四级 = 原序;指数视图 = 按 CI 降序,原 /heat 左栏口径) ----------
 interface SegRow {
   seg: SegmentRecord
   color: string
@@ -283,22 +322,52 @@ interface SegRow {
   name: string
 }
 
-/**
- * 左栏路段监测:按等级降序(同档取饱和度大者),与默认选中 `pickDefaultId` 同一口径 ——
- * 表头写着「按等级排序」,列表就得真排序(此前是接口返回原序,文案与实际不符)。
- */
-const segRows = computed<SegRow[]>(() =>
-  [...segments.value]
-    .sort((a, b) => b.level - a.level || (b.x ?? 0) - (a.x ?? 0))
-    .map((seg) => {
-      const st = levelStyle(seg)
-      return {
-        seg,
-        color: st.color,
-        text: st.text,
-        stale: isStale(seg),
-        name: demoSegment(seg.segment_id)?.name ?? seg.segment_id,
-      }
+/** 监控范围过滤(0 = 数据不可用档) */
+const scoped = computed<SegmentRecord[]>(() => {
+  const s = scope.value
+  if (s === null) return segments.value
+  if (s === 0) return segments.value.filter((x) => isStale(x))
+  return segments.value.filter((x) => !isStale(x) && x.level === s)
+})
+
+/** 四级视图:按等级降序、同档按饱和度降序(与默认选中同口径);指数视图:按 CI 降序、不可用排最后 */
+const segRows = computed<SegRow[]>(() => {
+  const list = [...scoped.value]
+  if (viewMode.value === 'index') {
+    list.sort((a, b) => {
+      const av = ciAvailable(a)
+      const bv = ciAvailable(b)
+      if (av !== bv) return av ? -1 : 1
+      return (b.ci ?? 0) - (a.ci ?? 0)
+    })
+  } else {
+    list.sort((a, b) => b.level - a.level || (b.x ?? 0) - (a.x ?? 0))
+  }
+  return list.map((seg) => {
+    const st = levelStyle(seg)
+    return {
+      seg,
+      color: st.color,
+      text: st.text,
+      stale: isStale(seg),
+      name: nameOf(seg.segment_id),
+    }
+  })
+})
+
+/** 指数视图的左栏排行(原 /heat 的 SegmentRankTable 口径,含不可用清单) */
+const rankRows = computed(() =>
+  scoped.value
+    .map((s) => ({
+      id: s.segment_id,
+      name: nameOf(s.segment_id),
+      ci: ciAvailable(s) ? (s.ci as number) : null,
+      level: s.level,
+      available: ciAvailable(s),
+    }))
+    .sort((a, b) => {
+      if (a.available !== b.available) return a.available ? -1 : 1
+      return (b.ci ?? 0) - (a.ci ?? 0)
     }),
 )
 
@@ -336,19 +405,7 @@ const videoAvailable = computed(
   () => pair.value?.slots.find((s) => s.source === 'video')?.available === true,
 )
 
-/**
- * 顶栏「数据源视图」= 右栏并排表的展示口径(设计稿顶栏分段控件即此义):
- *   both  → 视频 / 孪生 / 差值 三列全出(TC-19 展示侧);
- *   video → 只出视频链路一列;twin → 只出孪生链路一列。
- * 纯展示过滤,不改任何数值来源(两侧记录仍来自 /segments/{id}/sources)。
- */
-const sourceCaption = computed(() => {
-  if (sourceMode.value === 'video') return '视频链路(单源) · 孪生链路为对照,此处不展示'
-  if (sourceMode.value === 'twin') return '孪生链路(单源) · 视频链路为对照,此处不展示'
-  return '双数据源并排 · 同一路段 · 字段逐字一致(TC-19)'
-})
-
-// ---------- 右栏 · 路段详情摘要 ----------
+// ---------- 右栏 · 路段详情摘要 + CI ----------
 const detailSummary = computed<string>(() => {
   const s = selected.value
   if (!s) return ''
@@ -359,7 +416,70 @@ const detailSummary = computed<string>(() => {
   return parts.join(' · ')
 })
 
-// ---------- 底部告警条 ----------
+const ciText = computed(() => {
+  const r = selected.value
+  return r && ciAvailable(r) ? (r.ci as number).toFixed(1) : '不可用'
+})
+
+const ciTextColor = computed(() => {
+  const r = selected.value
+  return r && ciAvailable(r) ? LEVELS[r.level].text : UNAVAILABLE.color
+})
+
+/** 四个 CI 权重(来自 thresholds,不写死) */
+const weights = computed(() => thresholds.value?.ci_weights ?? [])
+const weightText = computed(() =>
+  weights.value.length > 0 ? weights.value.map((w) => w.weight.toFixed(2)).join('/') : '—',
+)
+
+/** 各权重要素的「数值」:饱和度 x / 速度比 v/v_f / 排队比 L_q/L_seg / 消散 T_d(缺字段显示「—」) */
+function metricText(key: string): string {
+  const r = selected.value
+  if (!r) return '—'
+  const ratio = (a?: number, b?: number): string =>
+    typeof a === 'number' && typeof b === 'number' && Number.isFinite(a) && Number.isFinite(b) && b !== 0
+      ? (a / b).toFixed(2)
+      : '—'
+  switch (key) {
+    case 'x':
+      return typeof r.x === 'number' ? String(r.x) : '—'
+    case 'v':
+      return ratio(r.v_kmh, r.v_f_kmh)
+    case 'k':
+      return ratio(r.L_q_m, r.L_seg_m)
+    case 'T_d':
+      return typeof r.T_d_min === 'number' ? String(r.T_d_min) : '—'
+    default:
+      return '—'
+  }
+}
+
+// ---------- 右栏 · 关联告警(原 /heat 右栏) ----------
+const selectedAlerts = computed(() =>
+  alerts.value.filter(
+    (a) => a.segment_id === selectedId.value && a.status !== '已闭环' && a.status !== '误报',
+  ),
+)
+
+// ---------- 底部 · 档位分布(原 /heat 左栏) ----------
+const bandRows = computed(() => {
+  const avail = segments.value.filter(ciAvailable)
+  const out: { level: CongestionLevel; name: string; count: number }[] = []
+  for (let lv = 4; lv >= 1; lv--) {
+    const lo = CI_BANDS[lv - 1] ?? 0
+    const hi = CI_BANDS[lv] ?? 100
+    const count = avail.filter((s) => {
+      const ci = s.ci as number
+      return lv === 4 ? ci >= lo && ci <= hi : ci >= lo && ci < hi
+    }).length
+    out.push({ level: lv as CongestionLevel, name: LEVELS[lv as CongestionLevel].name, count })
+  }
+  return out
+})
+
+const unavailableCount = computed(() => segments.value.filter((s) => !ciAvailable(s)).length)
+
+// ---------- 底部 · 告警条 ----------
 const unclosed = computed(() =>
   alerts.value.filter((a) => a.status === '待认领' || a.status === '处置中'),
 )
@@ -407,7 +527,8 @@ function gotoDecision(): void {
     <div v-if="failedPanels.length > 0" class="stale-bar" role="status">
       ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,请勿据此判断当前态势。
     </div>
-    <!-- KPI 条(取代态势总览的页头) -->
+
+    <!-- KPI 条(取代页头) -->
     <div class="td-card kpi-bar">
       <div class="kpi-cell">
         <div class="kpi-label">全网平均车速</div>
@@ -442,64 +563,111 @@ function gotoDecision(): void {
     </div>
 
     <div class="td-body">
-      <!-- 左栏 -->
+      <!-- 左栏 · 选择监控 -->
       <div class="td-col col-left">
         <section class="td-card">
           <div class="td-card-head">
-            等级分布<span class="td-head-tag">{{ distTotal }} 个路段</span>
+            选择监控<span class="td-head-tag">{{ distTotal }} 个路段</span>
           </div>
           <div class="td-card-body">
+            <div class="td-seg view-seg" role="group" aria-label="视图切换">
+              <span
+                class="td-seg-item"
+                :class="{ on: viewMode === 'level' }"
+                role="button"
+                :aria-pressed="viewMode === 'level'"
+                @click="viewMode = 'level'"
+              >
+                四级视图
+              </span>
+              <span
+                class="td-seg-item"
+                :class="{ on: viewMode === 'index' }"
+                role="button"
+                :aria-pressed="viewMode === 'index'"
+                @click="viewMode = 'index'"
+              >
+                拥挤指数视图
+              </span>
+            </div>
             <div class="dist-bar" :style="{ background: TD.bgSecondary }">
               <span
                 v-for="r in dist"
                 :key="`d-${r.level}`"
                 class="dist-seg"
+                :class="{ dim: scope !== null && scope !== r.level }"
                 :style="{ width: distWidth(r), background: r.color }"
-                :title="`${r.name} ${r.count} 个路段`"
+                role="button"
+                :title="`只看 ${r.name}(${r.count} 个路段)`"
+                @click="toggleScope(r.level)"
               />
             </div>
             <div class="dist-legend">
-              <span v-for="r in dist" :key="`lg-${r.level}`" class="dist-item">
+              <span
+                v-for="r in dist"
+                :key="`lg-${r.level}`"
+                class="dist-item"
+                :class="{ on: scope === r.level }"
+                role="button"
+                :aria-pressed="scope === r.level"
+                @click="toggleScope(r.level)"
+              >
                 <LevelBadge :level="r.level === 0 ? 1 : r.level" :stale="r.level === 0" />
                 <span class="td-num dist-count">{{ r.count }}</span>
               </span>
+              <span class="dist-item all" :class="{ on: scope === null }" role="button" @click="scope = null">
+                全部
+              </span>
             </div>
+            <p v-if="viewMode === 'index'" class="note">{{ CI_DISCLAIMER }}</p>
           </div>
         </section>
 
+        <!-- 四级视图:路段监测列表;指数视图:按 CI 降序排行(原 /heat 左栏) -->
         <section class="td-card seg-card">
           <div class="td-card-head">
-            路段监测<span class="td-head-tag">按等级排序</span>
+            路段监测
+            <span class="td-head-tag">{{ viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
           </div>
           <div class="td-card-body flush seg-body">
             <div class="td-scroll seg-list">
-              <div
-                v-for="row in segRows"
-                :key="row.seg.segment_id"
-                class="td-row"
-                :class="{ on: row.seg.segment_id === selectedId }"
-                role="button"
-                :aria-pressed="row.seg.segment_id === selectedId"
-                @click="onSelect(row.seg.segment_id)"
-              >
-                <span class="lvl-bar" :style="{ background: row.color }" />
-                <span class="seg-meta">
-                  <span class="seg-name">{{ row.name }}</span>
-                  <span class="seg-id td-mono">{{ row.seg.segment_id }}</span>
-                </span>
-                <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
-                  <template v-if="row.stale">数据不可用 · 陈旧 {{ row.seg.data_age_s ?? '—' }}s</template>
-                  <template v-else>x {{ fmt(row.seg.x) }}</template>
-                </span>
-                <LevelBadge :level="row.seg.level" :stale="row.stale" />
-              </div>
-              <p v-if="segRows.length === 0" class="empty">快照为空(接口层未起?)</p>
+              <SegmentRankTable
+                v-if="viewMode === 'index'"
+                :items="rankRows"
+                :selected-id="selectedId"
+                @select="onSelect"
+              />
+              <template v-else>
+                <div
+                  v-for="row in segRows"
+                  :key="row.seg.segment_id"
+                  class="td-row"
+                  :class="{ on: row.seg.segment_id === selectedId }"
+                  role="button"
+                  :aria-pressed="row.seg.segment_id === selectedId"
+                  @click="onSelect(row.seg.segment_id)"
+                >
+                  <span class="lvl-bar" :style="{ background: row.color }" />
+                  <span class="seg-meta">
+                    <span class="seg-name">{{ row.name }}</span>
+                    <span class="seg-id td-mono">{{ row.seg.segment_id }}</span>
+                  </span>
+                  <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
+                    <template v-if="row.stale">数据不可用 · 陈旧 {{ row.seg.data_age_s ?? '—' }}s</template>
+                    <template v-else>x {{ fmt(row.seg.x) }}</template>
+                  </span>
+                  <LevelBadge :level="row.seg.level" :stale="row.stale" />
+                </div>
+                <p v-if="segRows.length === 0" class="empty">
+                  {{ scope === null ? '快照为空(接口层未起?)' : '该范围当前没有路段' }}
+                </p>
+              </template>
             </div>
           </div>
         </section>
       </div>
 
-      <!-- 中栏 -->
+      <!-- 中栏 · 全路段状态 -->
       <div class="td-col col-mid">
         <section class="td-card map-card">
           <div class="td-card-body flush map-body">
@@ -508,7 +676,7 @@ function gotoDecision(): void {
               :vehicles="vehicles"
               :selected-id="selectedId"
               :route-segments="[]"
-              mode="level"
+              :mode="viewMode"
               :ts="snapshotTs"
               :sections="sections"
               :dropoffs="dropoffs"
@@ -525,11 +693,11 @@ function gotoDecision(): void {
         </section>
       </div>
 
-      <!-- 右栏 -->
-      <div class="td-col col-right">
+      <!-- 右栏 · 路段信息 -->
+      <div class="td-col col-right td-scroll">
         <section class="td-card">
           <div class="td-card-head">
-            路段详情<span class="td-head-tag td-mono">{{ selected?.segment_id ?? '—' }}</span>
+            路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? '—' }}</span>
           </div>
           <div class="td-card-body">
             <template v-if="selected">
@@ -539,8 +707,23 @@ function gotoDecision(): void {
               </div>
               <div class="d-summary">{{ detailSummary }}</div>
 
-              <!-- TC-19:双数据源并排(顶栏「数据源视图」决定展示哪几列) -->
-              <div class="tc19-label">{{ sourceCaption }}</div>
+              <!-- 大号 CI + 四项加权构成(原 /heat 右栏;CI 只展示不判级) -->
+              <div class="ci-head">
+                <div class="idx-ci td-num" :style="{ color: ciTextColor }">{{ ciText }}</div>
+                <div class="ci-side">
+                  <div class="ci-label">拥挤指数 CI</div>
+                  <div class="ci-sub">四项加权 {{ weightText }}</div>
+                </div>
+              </div>
+              <div v-for="w in weights" :key="w.key" class="wt-row">
+                <span class="wt-label">{{ w.label }}</span>
+                <span class="wt-val td-mono">{{ metricText(w.key) }} × {{ w.weight.toFixed(2) }}</span>
+              </div>
+
+              <!-- TC-19:双数据源并排 -->
+              <div class="sec-head">
+                双数据源并排 · 同一路段 · 字段逐字一致(TC-19)
+              </div>
               <table class="td-table tc19-table">
                 <thead>
                   <tr>
@@ -555,27 +738,29 @@ function gotoDecision(): void {
                     <td>{{ d.label }}</td>
                     <td v-if="sourceMode !== 'twin'" class="c td-num">{{ typeof d.video === 'number' ? d.video : '—' }}</td>
                     <td v-if="sourceMode !== 'video'" class="c td-num">{{ typeof d.twin === 'number' ? d.twin : '—' }}</td>
-                    <td v-if="sourceMode === 'both'" class="c td-num">{{ typeof d.delta === 'number' ? `${d.delta > 0 ? '+' : ''}${d.delta}` : '—' }}</td>
+                    <td v-if="sourceMode === 'both'" class="c td-num">
+                      {{ typeof d.delta === 'number' ? `${d.delta > 0 ? '+' : ''}${d.delta}` : '—' }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
-              <p v-if="pair && !videoAvailable && sourceMode !== 'twin'" class="tc19-none">该路段无视频链路数据</p>
+              <p v-if="pair && !videoAvailable" class="tc19-none">该路段无视频链路数据</p>
               <p class="tc19-note">
                 视频链路 = 视频感知链路(YOLO 指标快照) · 孪生链路 = 虚拟检测器 ·
                 差值 = 视频 − 孪生 · 一期均为示例数据
               </p>
 
-              <!-- 当前生效因素 -->
-              <div class="sec-head">当前生效因素 · {{ segFactors.length }} 项</div>
-              <template v-if="segFactors.length > 0">
-                <div v-for="f in segFactors" :key="f.factor_id" class="factor-row">
-                  {{ f.factor_id }} {{ f.name }}
-                  <span class="dot-sep">·</span>倍率 {{ multText(f.multiplier) }}
-                  <span class="dot-sep">·</span>作用{{ TARGET_LABEL[f.target] ?? f.target }} {{ f.target }}
-                  <span class="dot-sep">·</span>至 {{ hhmm(f.until) }}
-                </div>
-              </template>
-              <p v-else class="empty">本路段无生效因素</p>
+              <!-- 当前生效因素(原 /heat 成因拆解口径) -->
+              <div class="sec-head">
+                当前生效因素<span class="sub-tag">{{ segFactors.length }} 项</span>
+              </div>
+              <FactorBreakdown :factors="segFactors" />
+
+              <!-- CI 走势(原 /heat 右栏) -->
+              <div class="sec-head">
+                CI 走势 · 近 {{ history?.points.length ?? 12 }} 期<span class="sub-tag">阈值线 65 / 85</span>
+              </div>
+              <CiTrendBars :history="history" />
 
               <!-- 预测 -->
               <div class="sec-head">
@@ -596,6 +781,12 @@ function gotoDecision(): void {
               </div>
               <p v-else class="empty">本路段无预测</p>
 
+              <!-- 关联告警(原 /heat 右栏) -->
+              <div class="sec-head">
+                关联告警<span class="sub-tag">{{ selectedAlerts.length }} 条未闭环</span>
+              </div>
+              <AlertList :alerts="selectedAlerts" />
+
               <button class="td-btn primary act-btn" type="button" @click="gotoDecision">
                 下发分流方案 ›
               </button>
@@ -604,6 +795,42 @@ function gotoDecision(): void {
           </div>
         </section>
       </div>
+    </div>
+
+    <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径) -->
+    <div class="heat-band">
+      <section class="td-card band-card">
+        <div class="td-card-head">
+          档位分布 · 当前时刻<span class="td-head-tag">灰档 {{ unavailableCount }}</span>
+        </div>
+        <div class="td-card-body">
+          <BandDistribution :rows="bandRows" :unavailable="unavailableCount" />
+          <p class="note">共 {{ distTotal }} 个路段 · 灰档不计入均值,与地图同源</p>
+        </div>
+      </section>
+
+      <section class="td-card band-card wide">
+        <div class="td-card-head">
+          路段 × 时间热力矩阵<span class="td-head-tag">最近 12 个快照 · 每 60 s 一档 · 左旧右新</span>
+        </div>
+        <div class="td-card-body flush">
+          <HeatMatrixTable :matrix="heat" />
+        </div>
+      </section>
+
+      <section class="td-card band-card">
+        <div class="td-card-head">
+          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}</span>
+        </div>
+        <div class="td-card-body">
+          <CiScale />
+          <div class="gray-row">
+            <i class="gray-swatch" />
+            <span>灰档 = 数据不可用(缺 CI 或数据陈旧),绝不落进通配色</span>
+          </div>
+          <p class="note">{{ CI_BAND_NOTE }}</p>
+        </div>
+      </section>
     </div>
 
     <!-- 底部告警条 -->
@@ -623,14 +850,16 @@ function gotoDecision(): void {
       </div>
       <div class="alert-right">
         <span class="alert-counts">共 {{ unclaimedCount }} 条待认领 · {{ processingCount }} 条处置中</span>
-        <RouterLink class="alert-link" to="/decision">前往决策工作台处置 ›</RouterLink>
+        <RouterLink class="alert-link" to="/decision">前往决策层处置 ›</RouterLink>
       </div>
     </div>
 
     <template #foot>
       <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
       <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · 底图:{{ sourceLabel }}</span>
-      <span class="right">口径:一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)</span>
+      <span class="right">
+        口径:一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)· {{ CI_DISCLAIMER }}
+      </span>
     </template>
   </AppShell>
 </template>
@@ -707,10 +936,18 @@ function gotoDecision(): void {
   overflow: hidden;
 }
 .col-right {
-  flex: 0 0 372px;
+  flex: 0 0 396px;
 }
 
-/* ---------- 等级分布 ---------- */
+/* ---------- 左栏 · 选择监控 ---------- */
+.view-seg {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.view-seg .td-seg-item {
+  flex: 1;
+  text-align: center;
+}
 .dist-bar {
   display: flex;
   height: 14px;
@@ -719,6 +956,10 @@ function gotoDecision(): void {
 }
 .dist-seg {
   height: 100%;
+  cursor: pointer;
+}
+.dist-seg.dim {
+  opacity: 0.3;
 }
 .dist-legend {
   margin-top: 8px;
@@ -730,13 +971,23 @@ function gotoDecision(): void {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  padding: 1px 4px;
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.dist-item.on {
+  background: var(--td-brand-color-1);
+}
+.dist-item.all {
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
 }
 .dist-count {
   font-size: 12px;
   color: var(--td-text-color-primary);
 }
 
-/* ---------- 路段监测 ---------- */
+/* ---------- 左栏 · 路段监测 ---------- */
 .seg-card {
   flex: 1 1 auto;
   min-height: 0;
@@ -799,7 +1050,7 @@ function gotoDecision(): void {
   color: var(--td-text-color-placeholder);
 }
 
-/* ---------- 右栏 · 详情 ---------- */
+/* ---------- 右栏 · 路段信息 ---------- */
 .d-title {
   display: flex;
   align-items: center;
@@ -816,10 +1067,46 @@ function gotoDecision(): void {
   font-size: 11px;
   color: var(--td-text-color-secondary);
 }
-.tc19-label {
-  margin: 12px 0 6px;
+/* 大号 CI(原 /heat 右栏;CI 只展示不判级) */
+.ci-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
+}
+.idx-ci {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+.ci-side {
+  min-width: 0;
+}
+.ci-label {
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+}
+.ci-sub {
+  margin-top: 2px;
   font-size: 11px;
   color: var(--td-text-color-secondary);
+}
+.wt-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 2px;
+  font-size: 12px;
+}
+.wt-label {
+  color: var(--td-text-color-secondary);
+}
+.wt-val {
+  color: var(--td-text-color-primary);
 }
 .tc19-table th,
 .tc19-table td {
@@ -850,19 +1137,10 @@ function gotoDecision(): void {
   font-weight: 500;
   color: var(--td-text-color-primary);
 }
-.factor-row {
-  padding: 6px 9px;
-  margin-bottom: 5px;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: var(--td-radius-sm);
-  background: var(--td-bg-color-secondarycontainer);
-  font-size: 11px;
-  color: var(--td-text-color-primary);
-}
-.factor-row:last-child {
-  margin-bottom: 0;
-}
-.dot-sep {
+.sub-tag {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 400;
   color: var(--td-text-color-placeholder);
 }
 .pred-grid {
@@ -892,6 +1170,48 @@ function gotoDecision(): void {
   width: 100%;
   height: 34px;
   font-size: 13px;
+}
+
+/* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
+.heat-band {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  margin: 0 16px 8px;
+}
+.band-card {
+  flex: 0 0 240px;
+  min-height: 0;
+}
+.band-card.wide {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.band-card .td-card-body {
+  max-height: 176px;
+  overflow: hidden;
+}
+.gray-swatch {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: #8b8b8b;
+  flex: 0 0 auto;
+}
+.gray-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+}
+.note {
+  margin: 6px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
 }
 
 /* ---------- 底部告警条 ---------- */
