@@ -2,6 +2,13 @@
 // 口径:效果对比是仿真对照(TC-14/TC-17 演示数据,同输入跑两遍),不是实测;
 // 分流建议与阈值为演示值;告警与因素从契约 segments 快照派生,人工置位走
 // mock POST /api/traffic/factors(手册第 19 章管理端人工置位口子)。
+//
+// ⚠️ 2026-10-12(站点包层):**分流建议不再写在本文件里** —— "建议往哪条路分流"取决于
+// 这个站的路长什么样,属于站点包的内容,已移进 `station-packs/stationA.ts` / `stationB.ts`;
+// 本文件只把当前包的那份转发出来。阈值 / 渠道枚举 / 效果对比这些**与站点无关**的展示口径
+// 仍留在这里。
+
+import { activePack } from '../station-packs/index.ts'
 
 export interface DiversionSuggestion {
   segment_id: string
@@ -17,51 +24,19 @@ export interface DiversionSuggestion {
   why: string
 }
 
-export const DIVERSION_SUGGESTIONS: Record<string, DiversionSuggestion> = {
-  'SEG-003': {
-    segment_id: 'SEG-003',
-    target_segment_id: 'SEG-005',
-    target_name: '南进站路',
-    base_pct: 30,
-    min_pct: 10,
-    max_pct: 50,
-    expect: '落客平台排队预计 -35%,总行程时间 -2.6 分钟',
-    why: '落客平台严重拥堵(F01 大雨 + F06 违停占道,通行能力 -50%);南进站路饱和度 0.23,有余量承接,且不伤及已引导车辆(预约校验通过)。',
-  },
-  'SEG-007': {
-    segment_id: 'SEG-007',
-    target_segment_id: 'SEG-006',
-    target_name: '北出站疏解路',
-    base_pct: 25,
-    min_pct: 10,
-    max_pct: 40,
-    expect: '社会停车场联络线排队预计 -22%,消散时间 -3.1 分钟',
-    why: '社会停车场联络线拥堵(F01 大雨);北出站疏解路畅通,可承接绕行车流。',
-  },
-  'SEG-008': {
-    segment_id: 'SEG-008',
-    target_segment_id: 'SEG-002',
-    target_name: '出发层环道·东',
-    base_pct: 20,
-    min_pct: 10,
-    max_pct: 40,
-    expect: '网约车蓄车场通道排队预计 -18%,等待 -4.0 分钟',
-    why: '大型活动散场(F09,需求 +25%)推高排队;环道东侧畅通,建议网约车改东侧蓄车入口。',
-  },
+/**
+ * 当前站点包的分流建议表(按 `segment_id` 取;未命中的路段走 `fallbackSuggestion`)。
+ * 返回的是一个取值函数而不是常量:页面在挂载后读、包键在挂载前注入,常量在 `import`
+ * 阶段求值会读到还没注入的默认包。
+ */
+export function diversionSuggestions(): Record<string, DiversionSuggestion> {
+  return activePack().diversion as Record<string, DiversionSuggestion>
 }
 
-/** 建议不存在时的兜底模板 */
+/** 建议不存在时的兜底模板(来自当前站点包;承接段与 `segment_id` 回填为入参路段) */
 export function fallbackSuggestion(segmentId: string): DiversionSuggestion {
-  return {
-    segment_id: segmentId,
-    target_segment_id: 'SEG-005',
-    target_name: '南进站路',
-    base_pct: 20,
-    min_pct: 10,
-    max_pct: 40,
-    expect: '预计受影响路段排队与行程时间下降(演示模板)',
-    why: '按相邻路段饱和度排序自动选择承接路段(演示模板)。',
-  }
+  const fb = activePack().diversionFallback
+  return { ...fb, segment_id: segmentId }
 }
 
 /** 人工置位预设(手册 §19 / §:2222:人为因素走管理端人工置位口子 = **F07 事故 / F08 施工管制 / F11 大型活动**) */

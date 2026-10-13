@@ -13,6 +13,7 @@
 // 口径:全部数据 is_simulated=true;效果对比属仿真对照不得称实测;预测只标 L0 无精度数字;
 //   下发渠道 / 回写结果是**展示枚举**(一期无真实下发通道);空值一律「—」,不编造数字。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { activePack } from '../../station-packs/index'
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from '../dashboard/components/LevelBadge.vue'
 import AlertQueue from './components/AlertQueue.vue'
@@ -32,7 +33,7 @@ import {
 } from '../../api/traffic'
 import {
   DISPATCH_CHANNELS,
-  DIVERSION_SUGGESTIONS,
+  diversionSuggestions,
   fallbackSuggestion,
   type DiversionSuggestion,
 } from '../../shared/demoDecision'
@@ -52,7 +53,8 @@ const alerts = ref<TrafficAlert[]>([])
 const segMap = ref<Record<string, SegmentRecord>>({})
 const snapshotIso = ref('')
 const snapshotMs = ref(0)
-const stationName = ref('肇庆东站')
+// 站点名初始值取当前站点包;拿到 meta 后由 meta.station.name 覆盖(单一口径)
+const stationName = ref(activePack().station.name)
 const view = ref<'queue' | 'compare'>('queue')
 const sourceMode = ref<SourceMode>('both')
 const selectedId = ref<string | null>(null)
@@ -134,7 +136,7 @@ const selectedStale = computed(() => (selected.value ? segStale(selected.value.s
 
 const suggestion = computed<DiversionSuggestion | null>(() =>
   selected.value
-    ? DIVERSION_SUGGESTIONS[selected.value.segment_id] ?? fallbackSuggestion(selected.value.segment_id)
+    ? diversionSuggestions()[selected.value.segment_id] ?? fallbackSuggestion(selected.value.segment_id)
     : null,
 )
 

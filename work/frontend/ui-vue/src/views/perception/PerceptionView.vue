@@ -22,6 +22,7 @@ import {
 } from '../../api/perception'
 import {
   getTrafficAssimilationFull,
+  getTrafficMeta,
   getTrafficSegmentSources,
   getTrafficSegments,
 } from '../../api/traffic'
@@ -32,7 +33,8 @@ import DetailPanel from './components/DetailPanel.vue'
 import MonitorWall from './components/MonitorWall.vue'
 import PipelinePanel from './components/PipelinePanel.vue'
 import SemanticsPanel from './components/SemanticsPanel.vue'
-import { CHANNELS, type ChannelDef, type ChannelState } from './components/channels'
+import { channels as packChannels, type ChannelDef, type ChannelState } from './components/channels'
+import { activePack } from '../../station-packs/index'
 
 const streams = ref<PerceptionStreamMeta[]>([])
 const detMap = ref<Record<string, PerceptionDetections>>({})
@@ -49,10 +51,12 @@ const summaryUnavailable = ref(true)
 const sourcePair = ref<SegmentSourcePair | null>(null)
 const assimilation = ref<AssimilationSnapshotFull | null>(null)
 const snapshotTs = ref('')
+/** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 四页同一口径 */
+const stationName = ref(activePack().station.name)
 
 // 可用性一律由服务端实际返回判定:返回里有的才「就绪 / 检测中」,没有的「未导出」;取不到检测的标「读取失败」
 const channels = computed<ChannelState[]>(() =>
-  CHANNELS.map((def) => {
+  packChannels().map((def) => {
     const meta = streams.value.find((m) => m.stream_id === def.source) ?? null
     const det = detMap.value[def.source] ?? null
     return {
@@ -65,7 +69,7 @@ const channels = computed<ChannelState[]>(() =>
   }),
 )
 
-const fallbackDef = CHANNELS[0] as ChannelDef
+const fallbackDef = packChannels()[0] as ChannelDef
 const current = computed<ChannelState>(() => {
   const hit = channels.value.find((c) => c.def.source === currentSource.value)
   return (
@@ -118,7 +122,7 @@ async function loadDetail(src: string): Promise<void> {
   summary.value = null
   summaryUnavailable.value = true
   sourcePair.value = null
-  const def = CHANNELS.find((c) => c.source === src)
+  const def = packChannels().find((c) => c.source === src)
   if (!def) return
   const [sum, pair] = await Promise.allSettled([
     getPerceptionSummary(src),
@@ -137,6 +141,11 @@ async function loadTrafficBase(): Promise<void> {
     snapshotTs.value = snap.ts
   } catch {
     // 快照接口未起:页头时间戳留「—」,不阻塞感知数据展示
+  }
+  try {
+    stationName.value = (await getTrafficMeta()).station.name
+  } catch {
+    // meta 未起:顶栏保持站点包里的站名,不影响感知画面
   }
   try {
     assimilation.value = await getTrafficAssimilationFull()
@@ -160,6 +169,7 @@ onMounted(() => {
 <template>
   <AppShell
     active="perception"
+    :station="stationName"
     :ts="snapshotTs"
     title="视频感知 · YOLO 链路"
     subtitle="6 段样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标"
@@ -210,7 +220,7 @@ onMounted(() => {
     </div>
 
     <template #foot>
-      <span>视频为公开样本视频 · 非肇庆东站现场 · 非实时流</span>
+      <span>视频为公开样本视频 · 非{{ stationName }}现场 · 非实时流</span>
       <span class="right">
         检测只输出路段聚合数 · 不出车牌与身份(D3) · 全局数值 is_simulated = true · 演示数据(模拟)
       </span>

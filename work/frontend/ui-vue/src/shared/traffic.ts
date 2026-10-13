@@ -420,6 +420,8 @@ export interface NetworkLandmark {
   name: string
   lon: number
   lat: number
+  /** 站点块副标(站点包声明;缺省不画,免得别站被写上别的站的英文名) */
+  sub?: string
 }
 
 export interface TrafficNetwork {

@@ -14,6 +14,7 @@ import { useRouter } from 'vue-router'
 import {
   getTrafficAlerts,
   getTrafficFactors,
+  getTrafficMeta,
   getTrafficNetwork,
   getTrafficOverview,
   getTrafficSegmentSources,
@@ -22,6 +23,7 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import { demoSegment, networkSourceLabel } from '../../shared/demoNetwork'
+import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
 import {
@@ -45,6 +47,8 @@ import NetMap from './components/NetMap.vue'
 
 const router = useRouter()
 const sourceLabel = networkSourceLabel()
+/** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 四页同一口径 */
+const stationName = ref(activePack().station.name)
 
 // ---------- 快照状态 ----------
 const overview = ref<TrafficOverview | null>(null)
@@ -122,13 +126,14 @@ const PANEL_LABEL: Record<string, string> = {
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
-  const [ov, seg, veh, net, al, fa] = await Promise.allSettled([
+  const [ov, seg, veh, net, al, fa, meta] = await Promise.allSettled([
     getTrafficOverview(),
     getTrafficSegments(),
     getTrafficVehicles(),
     getTrafficNetwork(),
     getTrafficAlerts(),
     getTrafficFactors(),
+    getTrafficMeta(),
   ])
   if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
   const failed: string[] = []
@@ -151,6 +156,8 @@ async function refresh(): Promise<void> {
   track('alerts', al.status === 'fulfilled')
   if (fa.status === 'fulfilled') allFactors.value = fa.value.factors
   track('factors', fa.status === 'fulfilled')
+  // 站名只用于顶栏 chip:取不到就保持站点包里的名字,不因此把整页标成"上一版数据"
+  if (meta.status === 'fulfilled') stationName.value = meta.value.station.name
   failedPanels.value = failed
   await loadSelectedSide(selectedId.value)
 }
@@ -359,7 +366,13 @@ function gotoDecision(): void {
 </script>
 
 <template>
-  <AppShell active="dashboard" :ts="snapshotTs" v-model:sourceMode="sourceMode" title="">
+  <AppShell
+    active="dashboard"
+    :station="stationName"
+    :ts="snapshotTs"
+    v-model:sourceMode="sourceMode"
+    title=""
+  >
     <div v-if="failedPanels.length > 0" class="stale-bar" role="status">
       ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,请勿据此判断当前态势。
     </div>
