@@ -4,7 +4,12 @@
 //   分辨率 / 帧率 / 时长 / 帧数 / 轨迹数 / 类别计数一律从 /perception-api/streams 的 meta 取;
 //   服务里没有的字段(越线计数 / 轨迹质量 SVR / 标定 RANGE-RMSE / 平均 Q)一律显示「—」,
 //   绝不用前端推算值或设计稿示例值冒充。
+//
+// 2026-10-12(站点包层):**通道 ↔ 路段映射**从当前站点包读(`src/station-packs/`)——
+// "这一路画面算到哪条路段上"取决于这个站有哪些路,属于包的内容。通道目录本身(6 路、
+// cid、源文件名)是公开样本视频的属性,与站点无关,留在这里。
 import type { Detection, PerceptionDetections, PerceptionStreamMeta } from '../../../api/perception'
+import { activePack } from '../../../station-packs/index.ts'
 import { CLASS_COLORS, type VehicleClassKey } from '../../../shared/theme'
 
 /** 通道目录(6 行,与设计稿 04 一致;`source` 与感知服务 stream_id 对齐) */
@@ -19,14 +24,18 @@ export interface ChannelDef {
   segmentId: string
 }
 
-export const CHANNELS: ChannelDef[] = [
-  { cid: 'C-01', source: 'road1', name: '北出站疏解路', segmentId: 'SEG-001' },
-  { cid: 'C-02', source: 'road2', name: '西出站疏解路', segmentId: 'SEG-003' },
-  { cid: 'C-03', source: 'cross1', name: '站前主通道', segmentId: 'SEG-002' },
-  { cid: 'C-04', source: 'cross2', name: '西出站广场环道', segmentId: 'SEG-008' },
-  { cid: 'C-05', source: 'track1', name: '落客通道', segmentId: 'SEG-004' },
-  { cid: 'C-06', source: 'short_cross', name: '停车场联络线', segmentId: 'SEG-005' },
-]
+/**
+ * 当前站点包的通道映射。
+ * 取值函数而不是常量:本模块在 `import` 阶段就被求值,而包键是入口在挂载前注入的。
+ */
+export function channels(): ChannelDef[] {
+  return activePack().channels.map((c) => ({
+    cid: c.cid,
+    source: c.source,
+    name: c.name,
+    segmentId: c.segment_id,
+  }))
+}
 
 /** 越线计数线位置(归一化画面高度;手册/设计稿口径 line_position = 0.62) */
 export const COUNT_LINE_POS = 0.62
