@@ -72,12 +72,18 @@ def build_net(osm_path: Path, out_path: Path, site: str = "", netconvert: str | 
     ]
     print(f"[netbuild] site={site or '(未指定)'} → {out_path}")
     print("[netbuild] " + " ".join(cmd))
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit
+    # list 参数、shell=False;元素只来自 find_netconvert()(本机 SUMO 探测)、
+    # 调用方给的本地路径与固定参数元组,无外部可控输入,不构成注入面。
     result = subprocess.run(cmd, capture_output=True, text=True, check=False)
     tail = (result.stdout or "").strip().splitlines()[-1:] or [""]
     for line in tail:
         print(f"[netconvert] {line}")
     if result.returncode != 0:
-        raise SystemExit(f"netconvert 退出码 {result.returncode}(报错原文见上)")
+        # netconvert 的诊断多走 stderr,只打 stdout 最后一行会把真正的报错吞掉
+        for line in (result.stderr or "").strip().splitlines()[-10:]:
+            print(f"[netconvert][stderr] {line}")
+        raise SystemExit(f"netconvert 退出码 {result.returncode}(stderr 诊断见上)")
     if not out_path.is_file() or out_path.stat().st_size <= 0:
         raise SystemExit(f"产物未生成:{out_path}")
     return out_path
