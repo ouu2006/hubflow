@@ -50,6 +50,9 @@ def load_scenario(cfg: Any, samples: dict[str, dict[str, Any]]) -> ScenarioState
     真正的边界断面清单来自 stations/points.json —— 站点包未到位)。
     真孪生:读 stations/scenarios.json 的对应场景,注入事件与种子照抄(种子必须固定才能复现)。
     """
+    # 场景名取值封闭(README 第六节);拼错的场景名照跑照记,下游会当成"跑过了 scenario_x"
+    if cfg.scenario not in SCENARIOS:
+        raise ValueError(f"未知场景:{cfg.scenario!r}(仅 {SCENARIOS})")
     if cfg.no_sumo:
         return ScenarioState(
             name=cfg.scenario,

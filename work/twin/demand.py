@@ -30,7 +30,11 @@ def flow_at(curve: list[dict[str, Any]], now_ts: str) -> dict[str, float]:
     """取 now_ts 所在时段的到达流率(辆/小时,按三类司机分列)。"""
     if not curve:
         return dict.fromkeys(DEMAND_CLASSES, 0.0)
-    # 曲线按 time 升序;取最后一个不晚于 now_ts 的时段
+    # 曲线按 time 升序;取最后一个不晚于 now_ts 的时段。
+    # 早于首时段时还没有任何需求生效,必须给 0——回落到 curve[0] 会把未来时段的
+    # 流率提前套到仿真一开始(Sourcery #79 待办②)。
     candidates = [row for row in curve if str(row.get("time", "")) <= str(now_ts)]
-    row = candidates[-1] if candidates else curve[0]
+    if not candidates:
+        return dict.fromkeys(DEMAND_CLASSES, 0.0)
+    row = candidates[-1]
     return {key: float(row.get(key, 0.0)) for key in DEMAND_CLASSES}
