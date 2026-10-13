@@ -11,7 +11,7 @@
 // 本文件不出现任何"某个站才有的"常量——手册 §8.4 的判定标准。
 
 import type { MockReq, MockRes } from './util.ts'
-import { json, readJson, rid } from './util.ts'
+import { crossSiteWriteBlocked, forbiddenCrossSite, json, readJson, rid } from './util.ts'
 import { SseWriter } from './sse-writer.ts'
 import { activePack, activePackKey } from '../station-packs/index.ts'
 import type { PackAlertBase, PackVehicleBase } from '../station-packs/types.ts'
@@ -1013,16 +1013,29 @@ function buildContext(): TrafficContext {
   }
 }
 
-/** 场景注入:改环境状态(天气 / 时段 / 需求倍率),返回注入前后判级对照 */
+/**
+ * 场景注入:改环境状态(天气 / 时段 / 需求倍率),返回注入前后判级对照。
+ *
+ * 字段语义(独立审查 Sourcery 提出):**缺省 = 不改该项**,**显式 `null` = 清除该项**
+ * (天气清回站点包声明、时段清回时钟推导、需求倍率清回"跟随所选时段")。前端取消选中芯片时
+ * 发 `null` 而不是省略——省略会让服务端保留上一个值,页面显示"没选"却仍在生效。
+ */
 function applyScenario(body: ScenarioInput, before: Map<string, { level: CongestionLevel; x: number }>): ScenarioResult {
   const now = new Date()
-  if (body.weather !== undefined && body.weather in WEATHER_MULTIPLIER) scenarioState.weather = body.weather
-  if (body.session !== undefined && SESSION_ORDER.includes(body.session)) {
+  // 天气:显式 null 清回站点包声明
+  if (body.weather === null) scenarioState.weather = null
+  else if (body.weather !== undefined && body.weather in WEATHER_MULTIPLIER) scenarioState.weather = body.weather
+  // 时段:显式 null 清回时钟推导;选了时段且没显式给需求倍率,就按 F10 的时段倍率折算
+  if (body.session === null) {
+    scenarioState.session = null
+    if (body.demand_mult === undefined) scenarioState.demand_mult = null
+  } else if (body.session !== undefined && SESSION_ORDER.includes(body.session)) {
     scenarioState.session = body.session
-    // 选了时段就按 F10 的时段倍率抬 / 降需求(显式给了 demand_mult 时以显式值为准)
     if (body.demand_mult === undefined) scenarioState.demand_mult = SESSION_DEMAND_MULT[body.session]
   }
-  if (typeof body.demand_mult === 'number' && Number.isFinite(body.demand_mult)) {
+  // 需求倍率:显式 null 清回"跟随所选时段";给了数字就夹到 0.4~2
+  if (body.demand_mult === null) scenarioState.demand_mult = null
+  else if (typeof body.demand_mult === 'number' && Number.isFinite(body.demand_mult)) {
     scenarioState.demand_mult = Math.min(2, Math.max(0.4, body.demand_mult))
   }
   const factors = derivedFactors(now)
@@ -1062,6 +1075,13 @@ function resetScenario(): void {
 export async function handleTraffic(path: string, method: string, req: MockReq, res: MockRes): Promise<boolean> {
   // 查询参数(Issue #78 的 ?segment_id= / ?points= / ?window= 等);path 已由调用方去尾斜杠
   const url = new URL(req.url ?? path, 'http://mock.local')
+  // 状态写入端点的同源门(演示态防护,独立审查 Sourcery 提出):mock 挂在 loopback 上,
+  // 宿主开着演示时,浏览器里的**别的站**发一个简单 POST 就能改掉判级 / 处置态。这里把
+  // 带外源 Origin 的写请求一律 403;`Origin` 缺失(同源老浏览器 / curl / 脚本)**放行**。
+  if (method !== 'GET' && method !== 'HEAD' && crossSiteWriteBlocked(req)) {
+    forbiddenCrossSite(res)
+    return true
+  }
   let m = /^\/traffic\/segments$/.exec(path)
   if (m && method === 'GET') {
     json(res, 200, buildSegmentsSnapshot())
@@ -1371,7 +1391,6 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
     json(res, 200, applyScenario(body ?? {}, before))
     return true
   }
-
   if (path === '/traffic/scenario/reset' && method === 'POST') {
     resetScenario()
     json(res, 200, { reset: true, is_simulated: true })

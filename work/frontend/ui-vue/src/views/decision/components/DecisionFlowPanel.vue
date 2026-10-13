@@ -61,7 +61,9 @@ const inputRows = computed<InRow[]>(() => {
     { k: '流量 q', v: `${fmt(r.q_vph, 0)} 辆/h` },
     { k: '车速 v', v: `${fmt(r.v_kmh, 1)} km/h` },
     { k: '畅通速度 v_f', v: `${fmt(r.v_f_kmh, 1)} km/h` },
-    { k: '密度 k', v: `${fmt(r.v_kmh !== undefined && r.v_kmh > 0 ? (r.q_vph ?? 0) / r.v_kmh : r.k_vpk, 1)} 辆/km` },
+    // 密度直接用快照给的 `k_vpk`:本面板的口径是"把快照原样摆出来",不自己按 q / v 反算
+    // (独立审查 Sourcery 提出:反算值会与快照 / 大屏上的 k 不一致,同一个字段两处两个数)
+    { k: '密度 k', v: `${fmt(r.k_vpk, 1)} 辆/km` },
     { k: '排队长度 L_q', v: `${fmt(r.L_q_m, 0)} m` },
     { k: '路段长度 L_seg', v: `${fmt(r.L_seg_m, 0)} m` },
     { k: '消散时间 T_d', v: `${fmt(r.T_d_min, 1)} min` },

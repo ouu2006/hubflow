@@ -683,12 +683,18 @@ export interface TrafficContext {
   source: string
 }
 
-/** 场景注入输入(管理端演示口子;空字段 = 不改该项) */
+/**
+ * 场景注入输入(管理端演示口子)。
+ *
+ * 字段语义(独立审查 Sourcery 提出,别改错):**缺省 = 不改该项**,**显式 `null` = 清除该项**
+ * (天气 / 时段清回站点包声明或时钟推导,需求倍率清回"跟随所选时段")。前端把取消选中的芯片
+ * 发成 `null` 而不是省略——省略会让服务端保留上一个值,页面显示"没选"却仍在生效。
+ */
 export interface ScenarioInput {
-  weather?: WeatherCondition
-  session?: TimeSession
+  weather?: WeatherCondition | null
+  session?: TimeSession | null
   /** 需求倍率(1.0 = 不变;作用于 q_vph,与 F03 / F10 / F11 的 demand 口径一致) */
-  demand_mult?: number
+  demand_mult?: number | null
   /** 目标路段;缺省 = 全路网生效 */
   segment_id?: string
 }

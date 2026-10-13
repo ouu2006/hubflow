@@ -49,10 +49,12 @@ async function apply(): Promise<void> {
   busy.value = true
   msg.value = ''
   try {
+    // 取消选中的芯片发**显式 null**(= 清除该项),不是省略——省略会被服务端当作"不改",
+    // 页面显示"没选"而旧值仍在生效(独立审查 Sourcery 提出的口径漏洞)。
     result.value = await postTrafficScenario({
-      ...(weather.value ? { weather: weather.value } : {}),
-      ...(session.value ? { session: session.value } : {}),
-      ...(demandTouched.value ? { demand_mult: demandMult.value } : {}),
+      weather: weather.value,
+      session: session.value,
+      demand_mult: demandTouched.value ? demandMult.value : undefined,
       segment_id: props.segmentId || undefined,
     })
     msg.value = '已注入(服务端重算判级 / CI,演示口径)'
