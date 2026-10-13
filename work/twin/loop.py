@@ -143,6 +143,11 @@ def run_no_sumo(cfg: LoopConfig) -> int:
         "seed": cfg.seed,
         "site": cfg.site or "(未指定)",
         "duration_s": cfg.duration_s,
+        # --sample 的语义是"串通链路",不是"跑一段时间":时钟不推进,只出 1 帧快照。
+        # 如实标注,免得下游把 duration_s 读成"真的跑了这么久"——这与
+        # work/assembly/现状核实.md 4.3 的"静默假通过"是同一类毛病。
+        "is_duration_effective": False,
+        "snapshots": 1,
         "tick_s": TICK_S,
         "snapshot_every_s": SNAPSHOT_EVERY_S,
         "samples_dir": cfg.samples_dir.name,
@@ -153,7 +158,10 @@ def run_no_sumo(cfg: LoopConfig) -> int:
         "demand_entries": len(demand_curve),
         "drivers": len(fleet),
         "written_bytes": written,
-        "note": "样例链路(演示数据(模拟)):samples/ 进,out/ 出,不依赖 SUMO 与上游数据",
+        "note": (
+            "样例链路(演示数据(模拟)):samples/ 进,out/ 出,不依赖 SUMO 与上游数据;"
+            "--sample 只出 1 帧快照,时钟推进与 --duration 生效待 W1 的 run_with_sumo"
+        ),
     }
     written["run_log.json"] = write_json(cfg.out_dir / "run_log.json", log)
     assert_artifact(cfg.out_dir / "run_log.json")
@@ -180,7 +188,11 @@ class _TimeCursor:
         return (self._start + timedelta(seconds=self._elapsed_s)).isoformat()
 
     def advance(self, seconds: int = TICK_S) -> str:
-        """把仿真时钟推进若干秒(不超过 duration),返回推进后的时刻。"""
+        """把仿真时钟推进若干秒(不超过 duration),返回推进后的时刻。
+
+        注意:--sample(--no-sumo)路径**不调用本方法**——那条路径的语义是"串通链路",
+        只出 1 帧快照。步进由 W1 的 run_with_sumo 主循环驱动。
+        """
         self._elapsed_s = min(self._elapsed_s + seconds, self._duration_s)
         return self.now()
 
