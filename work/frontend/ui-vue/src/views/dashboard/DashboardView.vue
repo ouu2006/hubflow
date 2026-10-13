@@ -22,7 +22,7 @@ import {
   getTrafficVehicles,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import { demoSegment, networkSourceLabel } from '../../shared/demoNetwork'
+import { demoSegment, isOsmNetwork, networkSourceLabel } from '../../shared/demoNetwork'
 import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
@@ -46,7 +46,10 @@ import LevelBadge from './components/LevelBadge.vue'
 import NetMap from './components/NetMap.vue'
 
 const router = useRouter()
+/** 底图来源短文案(页面水印/页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
 const sourceLabel = networkSourceLabel()
+/** 底图是否真 OSM 路网 —— 只有它为真时地图内才有署名,底图说明文案随之分支(否则不写"署名见地图内") */
+const osmActive = isOsmNetwork()
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 四页同一口径 */
 const stationName = ref(activePack().station.name)
 
@@ -64,6 +67,7 @@ const pair = ref<SegmentSourcePair | null>(null)
 const segFactors = ref<(FactorApplied & { segment_id: string })[]>([])
 
 const selectedId = ref<string | null>(null)
+/** 数据源视图(顶栏)：决定右栏「双数据源并排」表按哪一侧口径读数 */
 const sourceMode = ref<SourceMode>('both')
 const snapshotTs = ref('')
 
@@ -279,17 +283,23 @@ interface SegRow {
   name: string
 }
 
+/**
+ * 左栏路段监测:按等级降序(同档取饱和度大者),与默认选中 `pickDefaultId` 同一口径 ——
+ * 表头写着「按等级排序」,列表就得真排序(此前是接口返回原序,文案与实际不符)。
+ */
 const segRows = computed<SegRow[]>(() =>
-  segments.value.map((seg) => {
-    const st = levelStyle(seg)
-    return {
-      seg,
-      color: st.color,
-      text: st.text,
-      stale: isStale(seg),
-      name: demoSegment(seg.segment_id)?.name ?? seg.segment_id,
-    }
-  }),
+  [...segments.value]
+    .sort((a, b) => b.level - a.level || (b.x ?? 0) - (a.x ?? 0))
+    .map((seg) => {
+      const st = levelStyle(seg)
+      return {
+        seg,
+        color: st.color,
+        text: st.text,
+        stale: isStale(seg),
+        name: demoSegment(seg.segment_id)?.name ?? seg.segment_id,
+      }
+    }),
 )
 
 // ---------- 中栏 · 地图 ----------
@@ -326,6 +336,18 @@ const videoAvailable = computed(
   () => pair.value?.slots.find((s) => s.source === 'video')?.available === true,
 )
 
+/**
+ * 顶栏「数据源视图」= 右栏并排表的展示口径(设计稿顶栏分段控件即此义):
+ *   both  → 视频 / 孪生 / 差值 三列全出(TC-19 展示侧);
+ *   video → 只出视频链路一列;twin → 只出孪生链路一列。
+ * 纯展示过滤,不改任何数值来源(两侧记录仍来自 /segments/{id}/sources)。
+ */
+const sourceCaption = computed(() => {
+  if (sourceMode.value === 'video') return '视频链路(单源) · 孪生链路为对照,此处不展示'
+  if (sourceMode.value === 'twin') return '孪生链路(单源) · 视频链路为对照,此处不展示'
+  return '双数据源并排 · 同一路段 · 字段逐字一致(TC-19)'
+})
+
 // ---------- 右栏 · 路段详情摘要 ----------
 const detailSummary = computed<string>(() => {
   const s = selected.value
@@ -346,6 +368,15 @@ const processingCount = computed(() => alerts.value.filter((a) => a.status === '
 
 /** 第一条未闭环告警(默认取列表序=待认领在前) */
 const firstAlert = computed<TrafficAlert | null>(() => unclosed.value[0] ?? null)
+
+/**
+ * 告警等级取**当前路段快照**(与左栏 / 地图 / 右栏同一口径)。
+ * 告警自带的 `level` 是派生时的记录值,预置剧本与快照基线不同步时会是旧值——
+ * 直接用会与同一页的路段列表自相矛盾。
+ */
+function segLevelOf(a: TrafficAlert): CongestionLevel {
+  return segments.value.find((s) => s.segment_id === a.segment_id)?.level ?? a.level
+}
 
 /** 告警摘要里的 x:从该路段快照取(不编造) */
 const firstAlertX = computed<string>(() => {
@@ -489,7 +520,7 @@ function gotoDecision(): void {
             />
           </div>
           <div class="map-caption">
-            底图来源:{{ sourceLabel }} · 路网为示例样例(非实测) · OSM 署名见地图内
+            底图来源:{{ sourceLabel }} · 路网为示例样例(非实测)<template v-if="osmActive"> · OSM 署名见地图内</template>
           </div>
         </section>
       </div>
@@ -508,27 +539,27 @@ function gotoDecision(): void {
               </div>
               <div class="d-summary">{{ detailSummary }}</div>
 
-              <!-- TC-19:双数据源并排 -->
-              <div class="tc19-label">双数据源并排 · 同一路段 · 字段逐字一致(TC-19)</div>
+              <!-- TC-19:双数据源并排(顶栏「数据源视图」决定展示哪几列) -->
+              <div class="tc19-label">{{ sourceCaption }}</div>
               <table class="td-table tc19-table">
                 <thead>
                   <tr>
                     <th>指标</th>
-                    <th class="c">视频链路</th>
-                    <th class="c">孪生链路</th>
-                    <th class="c">差值</th>
+                    <th v-if="sourceMode !== 'twin'" class="c">视频链路</th>
+                    <th v-if="sourceMode !== 'video'" class="c">孪生链路</th>
+                    <th v-if="sourceMode === 'both'" class="c">差值</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="d in deltaRows" :key="d.key">
                     <td>{{ d.label }}</td>
-                    <td class="c td-num">{{ typeof d.video === 'number' ? d.video : '—' }}</td>
-                    <td class="c td-num">{{ typeof d.twin === 'number' ? d.twin : '—' }}</td>
-                    <td class="c td-num">{{ typeof d.delta === 'number' ? `${d.delta > 0 ? '+' : ''}${d.delta}` : '—' }}</td>
+                    <td v-if="sourceMode !== 'twin'" class="c td-num">{{ typeof d.video === 'number' ? d.video : '—' }}</td>
+                    <td v-if="sourceMode !== 'video'" class="c td-num">{{ typeof d.twin === 'number' ? d.twin : '—' }}</td>
+                    <td v-if="sourceMode === 'both'" class="c td-num">{{ typeof d.delta === 'number' ? `${d.delta > 0 ? '+' : ''}${d.delta}` : '—' }}</td>
                   </tr>
                 </tbody>
               </table>
-              <p v-if="pair && !videoAvailable" class="tc19-none">该路段无视频链路数据</p>
+              <p v-if="pair && !videoAvailable && sourceMode !== 'twin'" class="tc19-none">该路段无视频链路数据</p>
               <p class="tc19-note">
                 视频链路 = 视频感知链路(YOLO 指标快照) · 孪生链路 = 虚拟检测器 ·
                 差值 = 视频 − 孪生 · 一期均为示例数据
@@ -580,7 +611,7 @@ function gotoDecision(): void {
       <div class="alert-left">
         <span class="alert-icon" aria-hidden="true">▲</span>
         <span class="alert-title">
-          待认领告警 · {{ firstAlert ? `${LEVELS[firstAlert.level].name}（${CN_NUM[firstAlert.level]}级）` : '—' }}
+          待认领告警 · {{ firstAlert ? `${LEVELS[segLevelOf(firstAlert)].name}（${CN_NUM[segLevelOf(firstAlert)]}级）` : '—' }}
         </span>
         <span class="alert-summary">
           <template v-if="firstAlert">
