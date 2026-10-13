@@ -1,0 +1,64 @@
+{
+  "ts": "2026-01-01T00:00:00+08:00",
+  "window_sec": 900,
+  "is_simulated": true,
+  "segments": [
+    {
+      "segment_id": "SEG-001",
+      "source": "twin",
+      "q_vph": 1000,
+      "v_kmh": 30.0,
+      "v_f_kmh": 40.0,
+      "k_vpk": 30.0,
+      "L_q_m": 100,
+      "L_seg_m": 200,
+      "T_d_min": 2.0,
+      "x": 0.5,
+      "c_base_vph": 2000,
+      "c_vph": 2000,
+      "factors_applied": [],
+      "ci": 50.0,
+      "level": 2,
+      "level_name": "缓行",
+      "triggered_by": ["x"],
+      "confidence": 0.8,
+      "data_age_s": 10,
+      "pred": {
+        "h15": { "q_vph": 1000, "level": 2 },
+        "h30": { "q_vph": 1000, "level": 2 },
+        "model": "L0"
+      },
+      "is_simulated": true
+    },
+    {
+      "segment_id": "SEG-002",
+      "source": "video",
+      "q_vph": 1500,
+      "v_kmh": 10.0,
+      "v_f_kmh": 40.0,
+      "k_vpk": 60.0,
+      "L_q_m": 300,
+      "L_seg_m": 200,
+      "T_d_min": 6.0,
+      "x": 0.75,
+      "c_base_vph": 2000,
+      "c_vph": 1500,
+      "factors_applied": [
+        {
+          "factor_id": "F01",
+          "name": "大雨",
+          "target": "c",
+          "multiplier": 0.75,
+          "until": "2026-01-01T01:00:00+08:00"
+        }
+      ],
+      "ci": 75.0,
+      "level": 3,
+      "level_name": "拥堵",
+      "triggered_by": ["x", "L_q"],
+      "confidence": 0.8,
+      "data_age_s": 20,
+      "is_simulated": true
+    }
+  ]
+}
