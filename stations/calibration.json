@@ -1,0 +1,40 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "source": "video",
+  "note": "样例站点包(演示数据(模拟)):单应矩阵与控制点都是占位值。一期=样本视频标定,二期换成现场摄像头标定 —— source 仍是 \"video\",字段不变。控制点由池·V 拾取(≥4 组,推荐 6~8 组),开发A 求解单应矩阵并写本文件",
+  "streams": [
+    {
+      "stream_id": "SAMPLE-CAM-01",
+      "video_file": "sample_cam01.mp4",
+      "segment_id": "SEG-001",
+      "calibrated_at": "2026-10-13",
+      "image_width": 1920,
+      "image_height": 1080,
+      "homography": [
+        [0.001, 0.0, -112.6495],
+        [0.0, 0.001, -23.2098],
+        [0.0, 0.0, 1.0]
+      ],
+      "control_points": [
+        { "point_id": "CP-01", "pixel_x": 400, "pixel_y": 900, "lon": 112.6495, "lat": 23.2098, "picked_by": "池·V" },
+        { "point_id": "CP-02", "pixel_x": 1200, "pixel_y": 900, "lon": 112.6508, "lat": 23.2098, "picked_by": "池·V" },
+        { "point_id": "CP-03", "pixel_x": 1200, "pixel_y": 400, "lon": 112.6508, "lat": 23.2106, "picked_by": "池·V" },
+        { "point_id": "CP-04", "pixel_x": 400, "pixel_y": 400, "lon": 112.6495, "lat": 23.2106, "picked_by": "池·V" },
+        { "point_id": "CP-05", "pixel_x": 800, "pixel_y": 650, "lon": 112.6502, "lat": 23.2102, "picked_by": "池·V" },
+        { "point_id": "CP-06", "pixel_x": 1600, "pixel_y": 700, "lon": 112.6515, "lat": 23.2101, "picked_by": "池·V" }
+      ],
+      "valid_band": {
+        "note": "有效标定带:超出这个像素范围的重投影误差会明显变大,像素轨迹不用于算速度",
+        "x_min": 200, "x_max": 1700, "y_min": 350, "y_max": 950
+      },
+      "reprojection_error_px": 2.5,
+      "status": "placeholder"
+    }
+  ],
+  "attributes": {
+    "crs": "WGS-84",
+    "acceptance": "M1-9:6 段样本视频完成透视标定,控制点 ≥4 组,重投影误差 ≤3 px【demo 目标值】",
+    "why_arrays": "control_points 用数组(每条带 point_id),过 doc_gate 的契约字段 snake_case 检查"
+  }
+}

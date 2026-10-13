@@ -1,0 +1,40 @@
+{
+  "nodes": [
+    { "id": "N-01", "type": "intersection", "x": 100.0, "y": 300.0, "signal": "SP-A" },
+    { "id": "N-02", "type": "dropoff", "capacity_type": "service_rate", "service_rate_vph": 200 },
+    { "id": "N-03", "type": "holding", "capacity_type": "slots", "slots": 20, "gate_rate_vph": 100 },
+    { "id": "N-04", "type": "pickup", "capacity_type": "service_rate", "service_rate_vph": 150 },
+    { "id": "N-05", "type": "intersection", "x": 900.0, "y": 300.0, "signal": null },
+    { "id": "N-06", "type": "intersection", "x": 500.0, "y": 100.0, "signal": null },
+    { "id": "N-07", "type": "intersection", "x": 500.0, "y": 500.0, "signal": null }
+  ],
+  "edges": [
+    { "id": "E-001", "from": "N-01", "to": "N-02", "lanes": 2, "length_m": 200, "speed_limit": 40, "capacity_vph": 1600, "detector": "DET-01", "section": "SEG-001" },
+    { "id": "E-002", "from": "N-02", "to": "N-03", "lanes": 2, "length_m": 150, "speed_limit": 30, "capacity_vph": 1200, "detector": null, "section": "SEG-002" },
+    { "id": "E-003", "from": "N-03", "to": "N-04", "lanes": 1, "length_m": 120, "speed_limit": 30, "capacity_vph": 600, "detector": "DET-02", "section": "SEG-003" },
+    { "id": "E-004", "from": "N-04", "to": "N-05", "lanes": 1, "length_m": 180, "speed_limit": 30, "capacity_vph": 600, "detector": null, "section": "SEG-004" },
+    { "id": "E-005", "from": "N-01", "to": "N-06", "lanes": 2, "length_m": 300, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-005" },
+    { "id": "E-006", "from": "N-06", "to": "N-05", "lanes": 2, "length_m": 320, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-006" },
+    { "id": "E-007", "from": "N-01", "to": "N-07", "lanes": 2, "length_m": 260, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-007" },
+    { "id": "E-008", "from": "N-07", "to": "N-05", "lanes": 2, "length_m": 300, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-008" },
+    { "id": "E-009", "from": "N-03", "to": "N-05", "lanes": 2, "length_m": 220, "speed_limit": 40, "capacity_vph": 1600, "detector": null, "section": "SEG-009" },
+    { "id": "E-010", "from": "N-05", "to": "N-01", "lanes": 2, "length_m": 640, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-010" },
+    { "id": "E-011", "from": "N-01", "to": "N-03", "lanes": 2, "length_m": 180, "speed_limit": 40, "capacity_vph": 1600, "detector": null, "section": "SEG-011" },
+    { "id": "E-012", "from": "N-02", "to": "N-05", "lanes": 2, "length_m": 300, "speed_limit": 40, "capacity_vph": 1600, "detector": null, "section": "SEG-012" },
+    { "id": "E-013", "from": "N-05", "to": "N-07", "lanes": 2, "length_m": 300, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-013" },
+    { "id": "E-014", "from": "N-07", "to": "N-01", "lanes": 2, "length_m": 260, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-014" },
+    { "id": "E-015", "from": "N-02", "to": "N-04", "lanes": 2, "length_m": 140, "speed_limit": 30, "capacity_vph": 1200, "detector": null, "section": "SEG-015" },
+    { "id": "E-016", "from": "N-05", "to": "N-06", "lanes": 2, "length_m": 320, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-016" },
+    { "id": "E-017", "from": "N-06", "to": "N-01", "lanes": 2, "length_m": 300, "speed_limit": 50, "capacity_vph": 1800, "detector": null, "section": "SEG-017" }
+  ],
+  "attributes": {
+    "is_simulated": true,
+    "schema_version": "1.0",
+    "crs": "WGS-84",
+    "node_xy_unit": "m",
+    "note": "样例站点包(演示数据(模拟)):节点/边取值都是一眼能看出是样例的整数,不是实测值",
+    "section_is_segment": "edges[].section 与 segments 的 segment_id 一一对应(SEG-00N ↔ E-00N)—— 引擎按它把现状指标接到边上;点位的 segment_id 也取这套",
+    "source": "占位样例,待 map_ingest.py(Issue #37) 从 OSM + stations/sumo/*.net.xml 产出真值",
+    "missing_fields": ["edges[].name", "nodes[].signal(除 N-01 外均未配)"]
+  }
+}
