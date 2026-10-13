@@ -3,7 +3,7 @@
 // 不可用路段恒灰、排最后、显示「不可用」(TC-11:缺 CI 或数据陈旧绝不落进通配色)。
 // 列表底部标注 CI 免责口径(手册 §6.5 第 1 条:页脚 / 图例 / 列表三处必现)。
 import { CI_DISCLAIMER, type CongestionLevel } from '../../../shared/traffic'
-import LevelBadge from '../../dashboard/components/LevelBadge.vue'
+import LevelBadge from './LevelBadge.vue'
 
 defineProps<{
   items: {

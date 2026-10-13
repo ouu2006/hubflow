@@ -16,10 +16,13 @@ import type {
   ManualFactorResult,
   PredictResponse,
   RecommendResult,
+  ScenarioInput,
+  ScenarioResult,
   SegmentRecord,
   SegmentSourcePair,
   SegmentsSnapshot,
   ThresholdSnapshot,
+  TrafficContext,
   TrafficMeta,
   TrafficNetwork,
   TrafficOverview,
@@ -169,4 +172,25 @@ export function getTrafficFactors(segmentId?: string): Promise<{ ts: string; is_
 // GET /api/traffic/assimilation → 数据同化状态(含断面 role:仅 role=boundary 允许回灌)
 export function getTrafficAssimilationFull(): Promise<AssimilationSnapshotFull> {
   return request<AssimilationSnapshotFull>('GET', '/api/traffic/assimilation')
+}
+
+// =====================================================================================
+// 三页收敛(Issue #77):环境上下文 + 场景注入
+// 口径:天气 / 时段是**编造的演示值**(拿不到真实数据),一律标「演示数据(模拟)」;
+// 场景注入与「人工置位」(F07 / F08 / F11)是两个口子,不得混称。
+// =====================================================================================
+
+// GET /api/traffic/context → 环境上下文(天气 / 时间 + 折算出的因素 F01/F02/F03/F10)
+export function getTrafficContext(): Promise<TrafficContext> {
+  return request<TrafficContext>('GET', '/api/traffic/context')
+}
+
+// POST /api/traffic/scenario → 场景注入(天气 / 时段 / 需求倍率 → 因素),返回判级前后对照
+export function postTrafficScenario(body: ScenarioInput): Promise<ScenarioResult> {
+  return request<ScenarioResult>('POST', '/api/traffic/scenario', { body })
+}
+
+// POST /api/traffic/scenario/reset → 清场景注入(演示复位,与 factors/reset 同口径)
+export function postTrafficScenarioReset(): Promise<{ reset: boolean; is_simulated: boolean }> {
+  return request<{ reset: boolean; is_simulated: boolean }>('POST', '/api/traffic/scenario/reset')
 }

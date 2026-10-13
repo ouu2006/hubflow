@@ -504,6 +504,25 @@ export const STATION_A: StationPack = {
   ],
   assimilationGate: { confidence_min: 0.6, data_age_max_s: 120 },
 
+  // 环境上下文与场景注入(Issue #77)。⚠️ 全部是**编造的演示值**——真实气象 / 列车数据拿不到;
+  // 字段口径对齐手册第 19 章因素登记表:F01 天气(折减 c 与 v_f)/ F02 昼夜(降 confidence)/
+  // F03 列车到发(抬 demand)/ F10 时段日历(demand 倍率)。页面一律标「演示数据(模拟)」。
+  //
+  // 天气必须与基线里烘入的因素一致:本包 SEG-003 / SEG-007 的基线写的就是 **F01 大雨 ×0.75**
+  // (见 `segmentBases`),所以这里声明 `大雨` —— 上下文面板与路段详情不会互相打脸。
+  // 折减系数不在包里(与时段倍率一样),只在 mock 侧一张因素表里,免得两处各写一份再对不上。
+  context: {
+    weather: { condition: '大雨', temp_c: 24, humidity_pct: 94, visibility_km: 2.5, precip_mm: 12.5, wind: '东南风 5 级' },
+    calendar: '工作日',
+    next_train_note: '演示值 · 真实来源 = T3 列车时刻表(12306 公开时刻表手填)',
+  },
+  scenarios: [
+    { key: 'baseline', name: '常态基准', note: '晴天 + 平峰:不注入任何环境因素,作为对照基准', factor_ids: [] },
+    { key: 'rain-peak', name: '大雨晚高峰', note: 'F01 大雨(通行能力 ×0.75)+ F10 晚高峰需求 ×1.15:能力下降叠加需求上升', factor_ids: ['F01', 'F10'] },
+    { key: 'fog-night', name: '大雾夜间', note: 'F01 大雾(×0.7)+ F02 昼夜(检测置信度下降,不做强推荐)', factor_ids: ['F01', 'F02'] },
+    { key: 'train-burst', name: '列车集中到达', note: 'F03 列车到发:到达需求 ×1.35,站前在途车辆抬升', factor_ids: ['F03'] },
+  ],
+
   recommend: {
     location_segment_id: 'SEG-001',
     location_offset_m: 85,

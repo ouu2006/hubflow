@@ -618,3 +618,97 @@ export interface AssimilationSnapshotFull extends AssimilationSnapshot {
   counts: { boundary: number; internal: number }
   records: AssimilationRecordV2[]
 }
+
+// =====================================================================================
+// 三页收敛(Issue #77)新增接口面:环境上下文 + 场景注入
+//
+// 口径铁律(违反即不通过):
+//   ① **天气 / 时段全部是编造的演示值**(拿不到真实数据),字段名与口径对齐手册第 19 章
+//      因素登记表,**页面与文档都不得称实测**;每个响应带 is_simulated 信封。
+//   ② **场景注入 ≠ 人工置位**:手册 §:2222 规定管理端人工置位的口子只有 F07 / F08 / F11
+//      (交通事故 / 施工管制 / 大型活动);天气(F01)、昼夜(F02)、列车到发(F03)、
+//      时段日历(F10)是**环境上下文**,按因素登记表的「一期来源 = T5 因素表手填 /
+//      T3 列车时刻表 / 场景注入」注入,单开端点,不得写成"人工置位"。
+//   ③ 注入只影响**演示基线**(mock / 站点包),不触碰契约字段(segments.json / routes.json /
+//      vehicles.json 一字未动)。
+// =====================================================================================
+
+/** 天气状况(手册 F01 一期手填口径枚举) */
+export type WeatherCondition = '晴' | '多云' | '小雨' | '大雨' | '大雾' | '台风'
+
+/** 时段类型(手册 F10 时段 / 日历口径) */
+export type TimeSession = '早高峰' | '平峰' | '晚高峰' | '夜间'
+
+export interface WeatherContext {
+  condition: WeatherCondition
+  temp_c: number
+  humidity_pct: number
+  visibility_km: number
+  precip_mm: number
+  /** 风向 / 风力(展示口径一句话) */
+  wind: string
+}
+
+export interface TimeContext {
+  /** 当前时刻 'HH:mm:ss'(取自快照时间,不另取浏览器墙钟) */
+  clock: string
+  session: TimeSession
+  calendar: '工作日' | '周末' | '节假日'
+  /** 下一班列车到达(演示值;一期来源 = T3 列车时刻表手填) */
+  next_train: string | null
+}
+
+/**
+ * 环境上下文:天气 + 时间,以及由它们**按因素登记表折算出的因素**。
+ *
+ * 口径(与 mock 侧一致):
+ *   · **默认态 = 站点包声明的那套环境**(包里基线已按它折算过),`injected = false`;
+ *   · `POST /api/traffic/scenario` 改环境状态后,环境因素**重放**(不是叠加),
+ *     包里烘进的环境因素先被剔除再按新状态折算,`injected = true`;
+ *   · 因此 `derived_factors` **始终**是当前真实生效的那套环境因素,不是"仅供参考的建议值";
+ *     页面可据 `injected` 区分「站点包默认环境」与「演示注入环境」。
+ */
+export interface TrafficContext {
+  ts: string
+  is_simulated: true
+  station_id: string
+  weather: WeatherContext
+  time: TimeContext
+  /** 当前环境折算出的因素(F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历),**已在判级里生效** */
+  derived_factors: FactorApplied[]
+  /** 环境是否已被场景注入改过(false = 站点包默认环境) */
+  injected: boolean
+  /** 环境结论一句话(展示口径,如「大雨 · 晚高峰,通行能力折减 ×0.75」) */
+  summary: string
+  source: string
+}
+
+/**
+ * 场景注入输入(管理端演示口子)。
+ *
+ * 字段语义(独立审查 Sourcery 提出,别改错):**缺省 = 不改该项**,**显式 `null` = 清除该项**
+ * (天气 / 时段清回站点包声明或时钟推导,需求倍率清回"跟随所选时段")。前端把取消选中的芯片
+ * 发成 `null` 而不是省略——省略会让服务端保留上一个值,页面显示"没选"却仍在生效。
+ */
+export interface ScenarioInput {
+  weather?: WeatherCondition | null
+  session?: TimeSession | null
+  /** 需求倍率(1.0 = 不变;作用于 q_vph,与 F03 / F10 / F11 的 demand 口径一致) */
+  demand_mult?: number | null
+  /** 目标路段;缺省 = 全路网生效 */
+  segment_id?: string
+}
+
+/** 场景注入结果(返回应用后的因素与受影响路段) */
+export interface ScenarioResult {
+  applied: true
+  ts: string
+  is_simulated: true
+  /** 本次注入折算出的因素 */
+  factors: FactorApplied[]
+  /** 受影响路段(缺省全路网) */
+  segment_ids: string[]
+  /** 受影响路段的判级变化(注入前 → 注入后) */
+  effects: { segment_id: string; name: string; level_before: CongestionLevel; level_after: CongestionLevel; x_before: number; x_after: number }[]
+  note: string
+}
