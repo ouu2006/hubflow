@@ -1,0 +1,11 @@
+{
+  "ts": "2026-01-01T00:00:00+08:00",
+  "is_simulated": true,
+  "note": "work/engine 模块样例(演示数据(模拟)):4 个 OD 对,满足 M1-4『≥3 个 OD 对出候选路线』的前置。exit_node = 送完客之后要去的节点(契约第二节 departure_route 是必填,引擎靠它算离站路线,不写死任何站点节点)",
+  "od_pairs": [
+    { "od_id": "OD-01", "from_node": "N-01", "to_node": "N-05", "exit_node": "N-01", "direction": "进场", "demand_vph": 600 },
+    { "od_id": "OD-02", "from_node": "N-01", "to_node": "N-04", "exit_node": "N-05", "direction": "进场-上客", "demand_vph": 300 },
+    { "od_id": "OD-03", "from_node": "N-05", "to_node": "N-01", "exit_node": "N-06", "direction": "离场", "demand_vph": 500 },
+    { "od_id": "OD-04", "from_node": "N-02", "to_node": "N-05", "exit_node": "N-01", "direction": "离站", "demand_vph": 400 }
+  ]
+}
