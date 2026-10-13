@@ -1,0 +1,39 @@
+{
+  "ts": "2026-01-01T00:00:00+08:00",
+  "is_simulated": true,
+  "vehicles": [
+    {
+      "vehicle_id": "twin-0001",
+      "driver_type": "D1",
+      "segment_id": "SEG-001",
+      "offset_m": 100,
+      "lon": 112.0,
+      "lat": 23.0,
+      "state": "行驶",
+      "guided": true,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "twin-0002",
+      "driver_type": "D2",
+      "segment_id": "SEG-002",
+      "offset_m": 200,
+      "lon": 112.0,
+      "lat": 23.0,
+      "state": "候客",
+      "guided": false,
+      "is_demo_bound": false
+    },
+    {
+      "vehicle_id": "twin-0003",
+      "driver_type": "D3",
+      "segment_id": "SEG-002",
+      "offset_m": 300,
+      "lon": 112.0,
+      "lat": 23.0,
+      "state": "排队",
+      "guided": true,
+      "is_demo_bound": false
+    }
+  ]
+}

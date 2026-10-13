@@ -6,6 +6,14 @@
 >
 > **角色简称**：开发A / 开发B / 开发C；**池·V / 池·S / 池·P / 池·Q** = 任务池四个系列（视频线 / 站点踏勘 / 参数调研 / 独立验收）的**认领者**（协作成员，无锁角色，原 N1~N4 定岗已作废）；**队长** = 7 人中 1 人兼任，**不参与认领**。
 
+## 〇、输入 / 输出 / 关键口径（三行）
+
+| | 内容 |
+|---|---|
+| **输入文件** | 真孪生：`stations/{network,points,demand,factors,scenarios,signal_plan}.json` + `stations/sumo/*.net.xml`；样例链路：`samples/*_sample.json`（`--sample` 时无上游数据也能跑） |
+| **输出文件** | `out/{segments,vehicles,assimilation_state}.json` + `out/run_log.json`；路网侧另有 `stations/sumo/*.net.xml`（`network.json` **不是**本模块产物，归开发B 的 `map_ingest.py`） |
+| **关键口径** | **只有一个时钟**：孪生仿真时钟，不读系统时间；同一场景跑两遍**逐字段一致**（M1-1 可复现）；只有 `role="boundary"` 的断面允许同化回灌，`internal` **永远** `assimilating:false` |
+
 ## 一、负责什么
 
 ```text

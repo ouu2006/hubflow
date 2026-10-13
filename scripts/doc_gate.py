@@ -15,6 +15,7 @@
                 （围栏写法 ```` ```json ```` / ```` ```JSON ```` / `~~~json ```` 都认）
   5. 密钥扫描   常见密钥前缀 + `XXX_KEY=真值` + JSON 里的 `"xxx_key": "真值"`
   6. 契约字段   `stations/*.json` 与 `work/<目录>/samples/*.json` 的键名一律 `snake_case`
+                （按 `_` 分段：每段全小写，或**单个大写字母**当单位符号，见开发规范第 2 节 `L_q_m`）
 
 **受管文本**指上表用到的这些扩展名与文件名（含 `.sh` / `.ps1` / `.bat` / `.ts` / `.vue` / `.ets` 等代码类，
 以及 `.gitignore` / `.gitattributes` / `.env.example` / `CODEOWNERS`）；其余二进制或未列出的类型不看。
@@ -100,8 +101,13 @@ MD_JSON_FENCE = re.compile(
     r"(?ims)^[ \t]*(?P<fence>`{3,}|~{3,})[ \t]*jsonc?[ \t]*\r?\n(?P<body>.*?)^[ \t]*(?P=fence)[ \t]*$"
 )
 
-#: 键名必须是 snake_case（对应 docs/开发规范.md 第 2 节）
-SNAKE_CASE = re.compile(r"^[a-z][a-z0-9_]*$")
+#: 键名必须是 snake_case（对应 docs/开发规范.md 第 2 节）。
+#: 该节把「小写下划线」和「单位进后缀」并列为规则，正例栏里就有 `L_q_m`、`T_d_min`
+#: ——所以**单个大写字母是合法的单位符号**（L = 长度、T = 时间），不能按"全小写"一刀切。
+#: 按 `_` 分段校验：每段要么全小写（可带数字），要么是**单个**大写字母。
+#: 这样 `L_q_m` / `L_seg_m` / `T_d_min` / `v_kmh` / `is_simulated` 通过，
+#: 而 `segmentId` / `SegmentID` / `Speed` 这些真正的驼峰 / 帕斯卡命名仍被拦下。
+SNAKE_CASE = re.compile(r"^(?:[a-z][a-z0-9]*|[A-Z])(?:_(?:[a-z][a-z0-9]*|[A-Z]))*$")
 #: 需要逐键检查的契约文件（相对仓库根）
 CONTRACT_GLOBS = ("stations/*.json", "work/*/samples/*.json")
 
