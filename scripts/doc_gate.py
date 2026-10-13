@@ -561,7 +561,15 @@ def check_fill_report(repo: Repo) -> Check:
     for row in rows:
         for product in products_in(row["products"]):
             covered.setdefault(product, []).append(row)
-        if not products_in(row["products"]):
+
+    # 提醒只看**仍然是某个产物最新覆盖行**的那几行：台账只追加，旧行会一直躺在那里，
+    # 若按行无差别提醒，产物后来转出来了也还在喊"它没有表格出处 / 还差一次转换"。
+    # （Sourcery #92 待办：Converted products retain stale warnings。）
+    latest_lines = {
+        max(entries, key=lambda r: (r["date"], r["line"]))["line"] for entries in covered.values()
+    }
+    for row in rows:
+        if row["line"] not in latest_lines:
             continue
         if row["result"] in FILL_RESULTS_NOTICE:
             notes.append(
