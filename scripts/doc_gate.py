@@ -571,9 +571,16 @@ def check_fill_report(repo: Repo) -> Check:
     else:
         for product in sorted(p for p in changed if Path(p).match(PRODUCT_GLOB)):
             if product not in present:
-                failures.append(
-                    Failure(FILL_REPORT, f"本次提交删除了产物 {product}，台账里要有对应的一行说清处置（当前没有）")
-                )
+                # 删产物也必须有出处：台账里要有一行点名这个文件（`产物` 列写它即可）。
+                if product in covered:
+                    notes.append(
+                        f"{FILL_REPORT}:{covered[product][0]['line']}  本次提交删除了产物 {product}"
+                        "，台账里已有点名它的行 —— 确认那一行说清了为什么删（复核留痕）"
+                    )
+                else:
+                    failures.append(
+                        Failure(FILL_REPORT, f"本次提交删除了产物 {product}，台账里要有对应的一行说清处置（当前没有）")
+                    )
             elif product not in covered:
                 failures.append(
                     Failure(FILL_REPORT, f"本次提交改了 {product}，但台账里没有覆盖它的行 —— 补一行说清「哪张表第几版 → 这个产物」")
@@ -608,7 +615,8 @@ CHECKS = [
     ("4/7 JSON 可解析（含数据契约示例）", check_json, True),
     ("5/7 密钥扫描", check_secrets, True),
     ("6/7 契约字段命名（snake_case）", check_contract_keys, False),
-    ("7/7 填表报告台账（格式 / 产物覆盖 / 结果语义）", check_fill_report, False),
+    # 第 7 组不是"没有目标就不判"的检查：本文件不存在、或台账为空，都在函数里直接判失败。
+    ("7/7 填表报告台账（格式 / 产物覆盖 / 结果语义）", check_fill_report, True),
 ]
 
 
