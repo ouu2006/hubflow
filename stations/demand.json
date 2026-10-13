@@ -1,0 +1,40 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "样例站点包(演示数据(模拟)):列车时刻与 OD 需求都是占位整数,不是 12306 实测数据;T3/T4 由池·S 填",
+  "trains": [
+    { "train_no": "SAMPLE-G001", "arrive_ts": "2026-01-01T00:10:00+08:00", "platform": "1", "arrivals": 200, "delay_min": 0 },
+    { "train_no": "SAMPLE-G002", "arrive_ts": "2026-01-01T00:40:00+08:00", "platform": "2", "arrivals": 300, "delay_min": 0 },
+    { "train_no": "SAMPLE-D001", "arrive_ts": "2026-01-01T01:00:00+08:00", "platform": "1", "arrivals": 100, "delay_min": 0 }
+  ],
+  "od": [
+    { "od_id": "OD-01", "from_node": "N-01", "to_node": "N-05", "exit_node": "N-01", "direction": "进场", "demand_vph": 600 },
+    { "od_id": "OD-02", "from_node": "N-01", "to_node": "N-04", "exit_node": "N-05", "direction": "进场-上客", "demand_vph": 300 },
+    { "od_id": "OD-03", "from_node": "N-05", "to_node": "N-01", "exit_node": "N-06", "direction": "离场", "demand_vph": 500 },
+    { "od_id": "OD-04", "from_node": "N-02", "to_node": "N-05", "exit_node": "N-01", "direction": "离站", "demand_vph": 400 }
+  ],
+  "mix": {
+    "driver_type_ratio": [
+      { "driver_type": "D1", "ratio": 0.5 },
+      { "driver_type": "D2", "ratio": 0.3 },
+      { "driver_type": "D3", "ratio": 0.2 }
+    ],
+    "vehicle_class_ratio": [
+      { "vehicle_class": "private", "ratio": 0.6 },
+      { "vehicle_class": "taxi", "ratio": 0.2 },
+      { "vehicle_class": "ride_hailing", "ratio": 0.15 },
+      { "vehicle_class": "bus", "ratio": 0.05 }
+    ],
+    "pcu_equivalent": [
+      { "vehicle_class": "private", "pcu": 1.0 },
+      { "vehicle_class": "taxi", "pcu": 1.0 },
+      { "vehicle_class": "ride_hailing", "pcu": 1.0 },
+      { "vehicle_class": "bus", "pcu": 2.0 }
+    ]
+  },
+  "attributes": {
+    "source": "样例,待池·S 按 T3 列车时刻表 / T4 需求比例表填真值",
+    "ratio_sum_check": "driver_type_ratio 与 vehicle_class_ratio 各自加总必须 = 1.0(分工表 §10 的 S 序判定)",
+    "why_arrays": "比例用数组而不是 {D1: 0.5} 这种对象,是为了过 doc_gate 的契约字段 snake_case 检查(D1 这类 ID 键会被判违规),也与 nodes[] / edges[] / points[] 的全仓风格一致"
+  }
+}

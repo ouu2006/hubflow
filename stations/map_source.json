@@ -1,0 +1,24 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "样例站点包(演示数据(模拟)):溯源记录。⚠️ 引擎不读本文件,它只用于复核『这个站的路网是哪天从哪家拉的、哪些字段是人工补的』(TC-15 路网核对要用)。产出方:开发B 的 map_ingest.py(Issue #37)",
+  "provider": "OpenStreetMap",
+  "provider_endpoint": "https://overpass-api.de/api/interpreter",
+  "fetched_at": "2026-10-13T00:00:00+08:00",
+  "crs": "WGS-84",
+  "bbox": { "min_lon": 112.648, "min_lat": 23.208, "max_lon": 112.654, "max_lat": 23.213 },
+  "upstream_files": [
+    { "path": "stations/sumo/station.net.xml", "produced_by": "开发A(netbuild.py + netedit)", "sha256": null }
+  ],
+  "missing_fields": [
+    { "path": "edges[].name", "reason": "OSM 站前区域缺 name 标签" },
+    { "path": "nodes[].signal", "reason": "除 N-01 外 OSM 未标信号" }
+  ],
+  "manual_patches": [
+    { "patch_id": "MP-01", "target": "edges[E-004]", "action": "netedit 补画", "reason": "OSM 缺失站前内部连接路", "by": "开发A", "date": "2026-10-13" }
+  ],
+  "extra_attributes": {
+    "note": "T2 路段属性核对表的差异原因也写在这里(TC-15 判据)",
+    "checked_against": "高德底图(仅在线核对,不缓存/不落盘/不截图 —— 条款核实.md:高德 3.5、4.12.3)"
+  }
+}
