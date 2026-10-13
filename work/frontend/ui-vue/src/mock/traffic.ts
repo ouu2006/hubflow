@@ -925,9 +925,10 @@ function contextInjected(): boolean {
  *      (包 A 声明大雨 ×0.75,与它基线里烘入的 F01 大雨逐位一致:applyFactors 先剔除再重放);
  *   ② **时段本身不产生因素**:只有显式注入的 `demand_mult` 才抬 / 降需求。否则凭空给全路网
  *      乘一个时段倍率,会把站点包预置基线整体推高一档(实测踩过);
- *   ③ F03 / F10 只在确有需求抬升时出现,由同一个倍率派生(展示口径,不叠加)。
- *
- * `deps` 是依赖注入(测试 / 抠口径用);生产路径 `applyFactors` 传当前站点包解析后的值。
+ *   ③ **F03 与 F10 由同一个总倍率拆开、乘积等于总倍率**——`applyFactors` 对每条因素各自相乘,
+ *      两条同 target 的因素会被**乘两次**(独立审查发现:1.15 会变成 1.3225)。所以这里按倍率
+ *      平方根拆:两半相乘 = 总倍率,既不夸大注入效果,也让"列车到发"与"时段日历"两个驱动
+ *      各自出现在 `factors_applied` 里(验收要看得见是哪两类因素在起作用)。
  */
 function envFactors(
   now: Date,
@@ -947,11 +948,13 @@ function envFactors(
     out.push({ factor_id: 'F02', name: '昼夜 / 能见度', target: 'confidence', multiplier: 0.8, until })
   }
   if (typeof demandMult === 'number' && demandMult > 1) {
-    // F03 列车到发 + F10 时段日历:抬需求(手册 §:2892 / §:2899)
-    out.push({ factor_id: 'F03', name: '列车到发·需求上浮', target: 'demand', multiplier: round(Math.min(1.6, demandMult), 2), until })
-    out.push({ factor_id: 'F10', name: `时段·${session}`, target: 'demand', multiplier: round(Math.min(1.4, demandMult), 2), until })
+    // F03 列车到发 + F10 时段日历:共同抬需求,拆成两半(平方根),乘积 = 总倍率(手册 §:2892 / §:2899)
+    const total = Math.min(1.6, demandMult)
+    const half = round(Math.sqrt(total), 3)
+    out.push({ factor_id: 'F03', name: '列车到发·需求上浮', target: 'demand', multiplier: half, until })
+    out.push({ factor_id: 'F10', name: `时段·${session}`, target: 'demand', multiplier: round(total / half, 3), until })
   } else if (typeof demandMult === 'number' && demandMult < 1) {
-    out.push({ factor_id: 'F10', name: `时段·${session}`, target: 'demand', multiplier: round(Math.max(0.4, demandMult), 2), until })
+    out.push({ factor_id: 'F10', name: `时段·${session}`, target: 'demand', multiplier: round(Math.max(0.4, demandMult), 3), until })
   }
   return out
 }

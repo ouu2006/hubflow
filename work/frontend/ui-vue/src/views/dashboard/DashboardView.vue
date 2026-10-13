@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 监控大屏(Issue #77 三页收敛 · 原 Issue #78 设计稿 01 的态势总览 + 设计稿 02 的拥挤度热力**并成一页**):
+// 页面结构(见 `work/frontend/README.md` 第十三节;2026-10-13 三页收敛 Issue #77):
 //   顶栏(壳层) → KPI 条(4 格)
 //   → 三栏(左:**选择监控**(视图切换 + 监控范围 + 等级分布 + 路段列表)
 //           中:**全路段状态**(路网图,四级 / 拥挤指数两视图)
@@ -7,7 +7,7 @@
 //   → 底部**热力带**(档位分布 | 路段×时间热力矩阵 | CI 色阶与口径)+ 告警条 → 页脚口径条。
 //
 // 为什么热力页并进来:业主 2026-10-13 裁定 Web 只保留三层(感知 / 决策 / 大屏),`/heat` 不再是独立页。
-// 并入方式是**保信息不保页**:原 `/heat` 的 8 个 widget 各有落点(见 README 第十二节映射表),
+// 并入方式是**保信息不保页**:原 `/heat` 的 8 个 widget 各有落点(见 README 第十三节落点对照表),
 // 视图切换与 CI 口径(只展示、不判级)原样保留,页脚 / 图例 / 列表三处标注一句不删。
 //
 // 数据:全部走只读快照接口(src/api/traffic.ts),不做任何业务计算。
@@ -489,6 +489,15 @@ const processingCount = computed(() => alerts.value.filter((a) => a.status === '
 /** 第一条未闭环告警(默认取列表序=待认领在前) */
 const firstAlert = computed<TrafficAlert | null>(() => unclosed.value[0] ?? null)
 
+/**
+ * 告警等级取**当前路段快照**(与左栏 / 地图 / 右栏同一口径)。
+ * 告警自带的 `level` 是派生时的记录值,预置剧本与快照基线不同步时会是旧值——
+ * 直接用会与同一页的路段列表自相矛盾。
+ */
+function segLevelOf(a: TrafficAlert): CongestionLevel {
+  return segments.value.find((s) => s.segment_id === a.segment_id)?.level ?? a.level
+}
+
 /** 告警摘要里的 x:从该路段快照取(不编造) */
 const firstAlertX = computed<string>(() => {
   const a = firstAlert.value
@@ -829,7 +838,7 @@ function gotoDecision(): void {
       <div class="alert-left">
         <span class="alert-icon" aria-hidden="true">▲</span>
         <span class="alert-title">
-          待认领告警 · {{ firstAlert ? `${LEVELS[firstAlert.level].name}（${CN_NUM[firstAlert.level]}级）` : '—' }}
+          待认领告警 · {{ firstAlert ? `${LEVELS[segLevelOf(firstAlert)].name}（${CN_NUM[segLevelOf(firstAlert)]}级）` : '—' }}
         </span>
         <span class="alert-summary">
           <template v-if="firstAlert">
