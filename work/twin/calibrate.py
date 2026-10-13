@@ -19,6 +19,9 @@ SECTION_ROLES = ("boundary", "internal")
 #: 内部断面被拒的固定原因码(契约第三节硬规则)
 REASON_INTERNAL = "internal_not_allowed"
 
+#: boundary 断面 gate 未过被拒的固定原因码(回灌周期内的门控拒绝,Sourcery #79 待办①)
+REASON_GATE_REJECTED = "gate_rejected"
+
 #: 回灌周期(README 第六节:每 60 s 一次)
 PERIOD_S = 60
 
@@ -47,7 +50,16 @@ def build_state(sample_state: dict[str, Any], camera_ts: str) -> dict[str, Any]:
             gate["reason"] = REASON_INTERNAL
             item["gate"] = gate
         elif item.get("assimilating"):
-            applied += 1
+            # 声称在回灌,但 gate 没过(置信度不足/数据过期)就不能算"已应用":
+            # 状态改成未回灌并写明原因,否则状态快照把被拒的实测当成生效的。
+            gate = dict(item.get("gate") or {})
+            if gate.get("passed") is True:
+                applied += 1
+            else:
+                item["assimilating"] = False
+                gate["passed"] = False
+                gate["reason"] = REASON_GATE_REJECTED
+                item["gate"] = gate
         checked.append(item)
     return {
         "ts": camera_ts,
