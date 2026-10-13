@@ -16,14 +16,16 @@ const props = withDefaults(
     station?: string
     /** 快照时间(顶栏「快照 …」) */
     ts?: string
-    /** 数据源视图:视频链路 / 孪生链路 / 并排(TC-19 展示侧) */
-    sourceMode?: SourceMode
+    /** 数据源视图:视频链路 / 孪生链路 / 并排(TC-19 展示侧)。
+     *  **不传(null)= 本页不渲染该控件** —— 只有真按它切换口径的页才给值,
+     *  免得出现「点得动、页面一字不变」的死控件(视频感知页本身即视频链路,不给)。 */
+    sourceMode?: SourceMode | null
     /** 页头标题;为空且无 headRight 插槽时不渲染页头(态势总览用 KPI 条代替页头) */
     title?: string
     /** 页头副题 */
     subtitle?: string
   }>(),
-  { ts: '', sourceMode: 'both', title: '', subtitle: '' },
+  { ts: '', sourceMode: null, title: '', subtitle: '' },
 )
 
 const emit = defineEmits<{ (e: 'update:sourceMode', mode: SourceMode): void }>()
@@ -60,7 +62,7 @@ const stationName = computed(() => props.station ?? activePack().station.name)
       </nav>
       <div class="td-top-right">
         <span class="td-chip">{{ stationName }}</span>
-        <span class="td-seg" role="group" aria-label="数据源视图">
+        <span v-if="sourceMode !== null && sourceMode !== undefined" class="td-seg" role="group" aria-label="数据源视图">
           <span
             v-for="s in SOURCE_ITEMS"
             :key="s.key"
