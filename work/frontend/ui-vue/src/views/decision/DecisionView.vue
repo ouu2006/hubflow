@@ -261,12 +261,15 @@ async function refresh(): Promise<void> {
   }
 }
 
-/** 排队比 L_q = 快照记录 L_q_m / L_seg_m(两位小数;取不到显示「—」)
- *  数据源视图(顶栏)在这里生效:both/video 取视频链路槽位,twin 取孪生链路槽位。 */
+/**
+ * 排队比 L_q = 快照记录 L_q_m / L_seg_m(两位小数;取不到显示「—」)
+ * 数据源视图(顶栏)在这里生效:`twin` 取孪生槽位、`video` 取视频槽位;
+ * `both`(默认)沿本页原口径取**孪生链路**(= 虚拟检测器 L_q),不因接线而改变默认读数。
+ */
 async function loadQueueRatio(segmentId: string): Promise<void> {
   try {
     const pair = await getTrafficSegmentSources(segmentId)
-    const want: TrafficSource = sourceMode.value === 'twin' ? 'twin' : 'video'
+    const want: TrafficSource = sourceMode.value === 'video' ? 'video' : 'twin'
     const slot = pair.slots.find((s) => s.source === want)?.record ?? null
     const fallback = pair.slots.find((s) => s.source === 'twin')?.record ?? null
     const rec = slot ?? fallback
