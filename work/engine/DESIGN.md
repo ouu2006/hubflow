@@ -160,9 +160,10 @@ ls -l out/                   # routes.json + run_log.json
 | 文件 | 新增 | 为什么 |
 |---|---|---|
 | `stations/points.json` | 顶层 **`source`** 对象（`table_file` / `table_version` / `converter` / `rows`） | 第 7 节要求产物带来源记录；`network.json` 有 `attributes.source`，`points.json` 此前没有落点 |
+| `stations/network.json` | **`attributes.t2_source`** 对象（同上形状） | `network.json` 也要登记"这次补录是哪张表第几版来的"；`attributes` 是手册 8.2 留的自由区 |
 | `stations/map_source.json` | **`t2_audit[]`** 数组 | T2 的核对痕迹（TC-15 判据）此前无处安放 |
 
-两个字段的字面形状已写进 [`docs/数据契约.md`](../../docs/数据契约.md) 第六节 6.4。
+三个字段的字面形状已写进 [`docs/数据契约.md`](../../docs/数据契约.md) 第六节 6.4。
 
 ## 九、怎么跑、怎么验
 
@@ -186,6 +187,6 @@ python3 work/engine/ingest_t2.py --in work/engine/samples/T2_sample.csv \
 
 1. **样例 CSV 是自造的**（Issue #43 的表格实体还没下发）。文件名 `T1_sample.csv` 里没有版本号，所以产物的 `table_version` 是 `无（基线）` —— 真表到位后（形如 `T1_点位表_20261013_v1.xlsx`）会自动解析出 `v1`。
    **其中 `T2_sample.csv` 的 `SEG-004` 故意与占位 `network.json` 有一处不同**（样例表写 40 km/h、占位图写 30 km/h），用来演示"补录确实把表里的数写进了边属性"。其余三行与占位图逐字段一致 —— 一致时产物**没有 diff**，那正是幂等重跑的正常结果。
-2. **不动 `stations/*.json`**：本次只交脚本与样例，`stations/` 九件仍是 Issue #39 的占位值。所以 `docs/填表报告.md` 的台账行 `结果` 填 **`待转`**。
+2. **不动 `stations/*.json`**：本次只交脚本与样例，`stations/` 九件仍是 Issue #39 的占位值。所以 `docs/填表报告.md` 的台账行 `结果` 填 **`占位`**（Issue #91 / PR #92 新增的第五种取值：脚本已在场、但还没走到"表格 → 产物"这一棒）。
 3. **五类点位覆盖只警告不报错**：那是**填表纪律**（W1 判定），不是转换硬规则；脚本把它打到 stdout/stderr 供人看，不因此中断。
 4. **`--map-source` 要求目标文件已存在**：因为它是在 `map_source.json` 上**追加** `t2_audit`，不是新建。`map_source.json` 由 Issue #37 的 `map_ingest.py` 产出。
