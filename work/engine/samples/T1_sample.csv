@@ -1,0 +1,7 @@
+point_id,name,type,lon,lat,segment_id,offset_m,direction,capacity_vph,role,sumo_edge_id,detector_role,source,verified,filler,date
+DET-01,检测断面-入口主路,detector,112.6500,23.2100,SEG-001,50,上行,1600,boundary,E-001,虚拟检测器,公开地图,待核实,池·S,2026-10-13
+DET-02,检测断面-站前内路段,detector,112.6520,23.2105,SEG-003,40,上行,600,internal,E-003,虚拟检测器,现场照片,待核实,池·S,2026-10-13
+DROP-01,站前落客区A,dropoff,112.6510,23.2110,SEG-002,30,上行,200,internal,E-002,,公开地图+现场照片,待核实,池·S,2026-10-13
+PICK-01,门口即走上客位A,pickup,112.6530,23.2115,SEG-004,20,上行,150,internal,E-004,,公开地图,待核实,池·S,2026-10-13
+WAIT-01,候客区A,waiting,112.6515,23.2108,SEG-002,80,上行,100,internal,E-002,,估算,待核实,池·S,2026-10-13
+JCT-01,入口主路口,junction,112.6495,23.2098,SEG-001,0,上行,,internal,E-001,,公开地图,待核实,池·S,2026-10-13
