@@ -7,7 +7,7 @@
 
 产物(输出目录整树不入库,.gitignore 已拦 work/perception/data/):
   <out>/<stream_id>/meta.json         视频与统计元信息
-  <out>/<stream_id>/detections.json   逐帧检测框(归一化坐标/类别/置信度/轨迹 ID)
+  <out>/<stream_id>/detections.json   逐帧检测框(归一化坐标/类别/置信度/轨迹 ID + 时间戳 t_s)
   <out>/<stream_id>/frames/000001.jpg 原始帧序列(浏览器不依赖 mp4 解码)
 
 用法(必须用上游 traffic-ms311 venv;上游仓零改动,这里只 import):
@@ -70,6 +70,7 @@ def main() -> None:
     if not cap.isOpened():
         raise SystemExit(f"无法打开视频: {video_path}")
     src_fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    frame_period_s = 1.0 / src_fps if src_fps else 0.04  # 每帧间隔(秒),逐帧时间戳靠它推
     src_w, src_h = int(cap.get(3)), int(cap.get(4))
     scale = min(1.0, FRAME_MAX_WIDTH / max(src_w, 1))
     out_w, out_h = round(src_w * scale), round(src_h * scale)
@@ -87,6 +88,8 @@ def main() -> None:
         ok, frame = cap.read()
         if not ok:
             break
+        # 该帧相对视频起点的秒数(W2 透视标定要用它把像素位移折成速度)
+        t_s = round(idx * frame_period_s, 3)
         if scale < 1.0:
             frame = cv2.resize(frame, (out_w, out_h))
         _det, boxes_xyxy, _xywh, cls, confs, _masks = detector._infer(
@@ -111,9 +114,14 @@ def main() -> None:
                     int(c), round(float(cf), 3), tid,
                 ])
                 if tid not in first_seen:
-                    first_seen[tid] = {"frame": idx, "class": int(c), "conf": round(float(cf), 3)}
+                    first_seen[tid] = {
+                        "frame": idx,
+                        "t_s": t_s,
+                        "class": int(c),
+                        "conf": round(float(cf), 3),
+                    }
         if dets:
-            frames.append({"i": idx, "det": dets})
+            frames.append({"i": idx, "t_s": t_s, "det": dets})
         _save_jpg(frame, frames_dir / f"{idx + 1:06d}.jpg")
         idx += 1
         if idx % 50 == 0:
@@ -130,6 +138,7 @@ def main() -> None:
         "source_file": video_path.name,
         "note": "样本视频回放(非本站现场)· 演示数据(模拟)",
         "fps": round(src_fps, 2),
+        "frame_period_s": round(frame_period_s, 6),
         "width": out_w,
         "height": out_h,
         "total_frames": total,
@@ -145,11 +154,15 @@ def main() -> None:
     }
     detections = {
         "fps": meta["fps"],
+        "frame_period_s": meta["frame_period_s"],
+        "t_s_unit": "s",
+        "t_s_origin": "video_start",
         "width": out_w,
         "height": out_h,
         "total_frames": total,
         "first_seen": {str(k): v for k, v in first_seen.items()},
         # 只存有检测的帧;前端按"≤当前帧号的最近一条"取框。
+        # 逐帧与 first_seen 都带 t_s(相对视频起点的秒数)——透视标定靠它算速度(W2)。
         "frames": frames,
     }
     (out_dir / "meta.json").write_text(
