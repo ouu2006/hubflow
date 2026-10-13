@@ -55,8 +55,11 @@ def _validate_segments(sample_segments: dict[str, Any]) -> list[dict[str, Any]]:
                 raise ValueError(f"路段 {segment.get('segment_id')!r} 缺必填字段 {key}")
         if segment["source"] not in SOURCES:
             raise ValueError(f"未知数据源 source={segment['source']!r}(仅 {SOURCES})")
-        if int(segment["level"]) not in LEVEL_NAMES:
-            raise ValueError(f"等级越界 level={segment['level']!r}(仅 1~4)")
+        # level 必须是真整数(bool 也是 int 的子类,单排掉);"2"/2.0 这类
+        # 能被 int() 静默转换的类型一律拒——快照里出现什么类型,下游就读到什么类型。
+        level = segment["level"]
+        if isinstance(level, bool) or not isinstance(level, int) or level not in LEVEL_NAMES:
+            raise ValueError(f"level 必须是 1~4 的整数,实际 level={level!r}")
     return [dict(segment) for segment in segments]
 
 
