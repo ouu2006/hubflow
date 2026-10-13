@@ -36,7 +36,7 @@
 
 ### ① 样例走 `samples/`，参数走 `stations/`
 
-- **用了什么**：`network_sample.json` / `segments_sample.json` / `od_sample.json` 放 `work/engine/samples/`（开发规范 §6 的硬约定）；BPR 与候选生成的参数从 `stations/thresholds.json` 的 `decision` 组读。
+- **用了什么**：`network_sample.json` / `segments_sample.json` / `demand_sample.json` 放 `work/engine/samples/`（开发规范 §6 的硬约定，**文件名与所镜像的契约文件一一对应**：`network.json` / `segments.json` / `demand.json`）；BPR 与候选生成的参数从 `stations/thresholds.json` 的 `decision` 组读。
 - **为什么不只用 `samples/`**：只读 `samples/` 的话，"**站点包能被引擎读**"这件事就没有任何实证 —— 而"九件字段齐全并冻结"正是本任务的完成判定。两头都读，同一条命令同时证掉两件事。
 - **契约与判定不变的证明**：`stations/thresholds.json` 的 `decision.k_candidates` 由 3 改为 1，`out/routes.json` 里各 OD 的备选条数由 2 条变 0 条（见第五节 ②）。参数**没有写死在代码里**，符合 README 第七节"判级阈值不得写死在代码里，必须读站点包"。
 - **影响面**：只动 `work/engine/`，未动契约字段。
