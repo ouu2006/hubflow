@@ -4,7 +4,7 @@
 // 硬口径:CI 只用于展示与辅助排序;选中路段缺 CI / 陈旧时显示灰「不可用」,绝不编造数字。
 import { computed } from 'vue'
 import { ciAvailable, ciColor, CI_MAX, UNAVAILABLE, type CiHistory, type FactorApplied, type SegmentRecord, type TrafficAlert } from '../../../shared/traffic'
-import LevelBadge from '../../dashboard/components/LevelBadge.vue'
+import LevelBadge from './LevelBadge.vue'
 import AlertList from './AlertList.vue'
 import CiTrendBars from './CiTrendBars.vue'
 import FactorBreakdown from './FactorBreakdown.vue'

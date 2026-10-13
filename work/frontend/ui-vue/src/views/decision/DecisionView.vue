@@ -11,21 +11,38 @@
 //   回写结果四选一 → 已消除 / 已缓解 = 已闭环;未改善 = 留在处置中;误报 = 误报;
 //   终态(已闭环 / 误报)**不得再回写、不得互相翻转**。
 // 口径:全部数据 is_simulated=true;效果对比属仿真对照不得称实测;预测只标 L0 无精度数字;
-//   下发渠道 / 回写结果是**展示枚举**(一期无真实下发通道);空值一律「—」,不编造数字。
+// 决策层 · 决策工作台(Issue #77 三页收敛:页头视图扩为**决策可视化 / 处置队列 / 效果对比**三段)。
+// 业务口径继承旧 DecisionView.vue 与手册 §11.2 / README 第八·九节。
+//
+// 三个视图(页头分段切换,不影响顶栏数据源控件):
+//   ① **决策可视化**(本单新增,排首位)= 全部输入数据 + 处理过程可视化 + 可调控演示 + 输出(业主口径);
+//   ② **处置队列** = 三栏:左四态队列 / 中处置工作台(建议 + 比例滑杆 + 渠道 + 回执 + 回写)/ 右因素置位 · 预测 · 同化;
+//   ③ **效果对比** = 三场景 A/B/C 仿真对照(TC-14 / TC-17)。
+// 状态机硬口径(处置队列视图):
+//   认领:待认领 → 处置中(仅置本地标记);下发:→ 处置中(允许覆盖回执重下发);
+//   回写:**必须先有下发回执**(TC-07 闭环顺序:下发 → 回执 → 回写),无回执不得回写;
+//   回写结果四选一 → 已消除 / 已缓解 = 已闭环;未改善 = 留在处置中;误报 = 误报;
+//   终态(已闭环 / 误报)**不得再回写、不得互相翻转**。
+// 口径:全部数据 is_simulated=true;效果对比属仿真对照不得称实测;预测只标 L0 无精度数字;
+//   下发渠道 / 回写结果是**展示枚举**(一期无真实下发通道);空值一律「—」,不编造数字;
+//   场景注入(环境侧)与人工置位(事件侧 F07 / F08 / F11)是两个口子,不得混称(手册 §:2222)。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { activePack } from '../../station-packs/index'
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from '../dashboard/components/LevelBadge.vue'
 import AlertQueue from './components/AlertQueue.vue'
 import AssimilationPanel from './components/AssimilationPanel.vue'
+import DecisionFlowPanel from './components/DecisionFlowPanel.vue'
 import EffectCompare from './components/EffectCompare.vue'
 import FactorsPanel from './components/FactorsPanel.vue'
 import PredictPanel from './components/PredictPanel.vue'
 import {
   getTrafficAlerts,
+  getTrafficContext,
   getTrafficMeta,
   getTrafficSegments,
   getTrafficSegmentSources,
+  getTrafficThresholds,
   postPlanAck,
   postPlanDispatch,
   postTrafficAlertsReset,
@@ -43,7 +60,9 @@ import {
   type CongestionLevel,
   type DispatchReceipt,
   type SegmentRecord,
+  type ThresholdSnapshot,
   type TrafficAlert,
+  type TrafficContext,
   type TrafficSource,
   type WritebackResult,
 } from '../../shared/traffic'
@@ -57,9 +76,13 @@ const snapshotIso = ref('')
 const snapshotMs = ref(0)
 // 站点名初始值取当前站点包;拿到 meta 后由 meta.station.name 覆盖(单一口径)
 const stationName = ref(activePack().station.name)
-const view = ref<'queue' | 'compare'>('queue')
+/** 视图:决策可视化(新) / 处置队列 / 效果对比 */
+const view = ref<'flow' | 'queue' | 'compare'>('flow')
 const sourceMode = ref<SourceMode>('both')
 const selectedId = ref<string | null>(null)
+/** 决策可视化视图用的环境上下文与阈值(判级演算口径) */
+const ctx = ref<TrafficContext | null>(null)
+const thresholds = ref<ThresholdSnapshot | null>(null)
 
 // ---------- 处置工作流 ----------
 // 下发回执与回写结果的**权威留痕在服务端 /alerts**(channels / dispatch_at / dispatch_ratio_pct / writeback),
@@ -240,7 +263,12 @@ const dataError = ref('')
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
   try {
-    const [alertsSnap, segSnap] = await Promise.all([getTrafficAlerts(), getTrafficSegments()])
+    const [alertsSnap, segSnap, ctxRes, thrRes] = await Promise.all([
+      getTrafficAlerts(),
+      getTrafficSegments(),
+      getTrafficContext(),
+      getTrafficThresholds(),
+    ])
     if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
     alerts.value = alertsSnap.alerts
     snapshotIso.value = alertsSnap.ts
@@ -248,6 +276,9 @@ async function refresh(): Promise<void> {
     const map: Record<string, SegmentRecord> = {}
     for (const s of segSnap.segments) map[s.segment_id] = s
     segMap.value = map
+    // 决策可视化用的环境上下文与阈值:取不到保持 null(面板如实显示「未取到」,不编造)
+    ctx.value = ctxRes
+    thresholds.value = thrRes
     dataError.value = ''
     // 默认选中第一条「待认领」
     if (selectedId.value === null && alerts.value.length > 0) {
@@ -403,6 +434,42 @@ onMounted(() => {
 onUnmounted(() => {
   unsubscribe?.()
 })
+
+// ---------- 决策可视化视图(本单新增)的派生数据 ----------
+/** 该视图按**路段**工作:选中告警所属路段;没有告警时退回首条路段快照 */
+const flowSegmentId = computed<string>(
+  () => selected.value?.segment_id ?? Object.keys(segMap.value)[0] ?? '',
+)
+
+const flowRecord = computed<SegmentRecord | null>(() => segMap.value[flowSegmentId.value] ?? null)
+
+const flowName = computed<string>(() => {
+  const id = flowSegmentId.value
+  if (!id) return '—'
+  return alerts.value.find((a) => a.segment_id === id)?.segment_name ?? id
+})
+
+/** 该路段的生效因素(从快照里取;与因素面板同源) */
+const flowFactors = computed(() => {
+  const r = flowRecord.value
+  if (!r) return []
+  return (r.factors_applied ?? []).map((f) => ({ ...f, segment_id: r.segment_id }))
+})
+
+/** 该路段的系统建议(站点包模板;未命中走兜底) */
+const flowSuggestion = computed<DiversionSuggestion | null>(() =>
+  flowSegmentId.value
+    ? diversionSuggestions()[flowSegmentId.value] ?? fallbackSuggestion(flowSegmentId.value)
+    : null,
+)
+
+/** 站点包的场景预设档(决策可视化的"一键注入") */
+const scenarioPresets = computed(() => activePack().scenarios.map((s) => ({ ...s })))
+
+/** 调控后重算:重拉快照(判级 / CI / 因素 / 预测随之更新) */
+function onFlowChanged(): void {
+  void refresh()
+}
 </script>
 
 <template>
@@ -411,19 +478,19 @@ onUnmounted(() => {
     :station="stationName"
     :ts="snapshotDisplay"
     v-model:sourceMode="sourceMode"
-    title="决策工作台"
-    subtitle="告警四态 · 渠道下发回执 · 处置结果回写"
+    title="决策层"
+    subtitle="决策可视化 · 处置闭环(四态 / 下发回执 / 回写)· 效果对比"
   >
     <template #headRight>
       <span class="td-seg" role="group" aria-label="视图切换">
         <span
           class="td-seg-item"
-          :class="{ on: view === 'compare' }"
+          :class="{ on: view === 'flow' }"
           role="button"
-          :aria-pressed="view === 'compare'"
-          @click="view = 'compare'"
+          :aria-pressed="view === 'flow'"
+          @click="view = 'flow'"
         >
-          效果对比
+          决策可视化
         </span>
         <span
           class="td-seg-item"
@@ -433,6 +500,15 @@ onUnmounted(() => {
           @click="view = 'queue'"
         >
           处置队列
+        </span>
+        <span
+          class="td-seg-item"
+          :class="{ on: view === 'compare' }"
+          role="button"
+          :aria-pressed="view === 'compare'"
+          @click="view = 'compare'"
+        >
+          效果对比
         </span>
       </span>
       <span class="snapshot td-mono">快照 {{ snapshotDisplay }}</span>
@@ -444,7 +520,21 @@ onUnmounted(() => {
     </template>
 
     <div class="td-body">
-      <template v-if="view === 'queue'">
+      <!-- 决策可视化视图(本单新增):全部输入 + 处理过程 + 可调控 + 输出 -->
+      <div v-if="view === 'flow'" class="td-col flow-col td-scroll">
+        <DecisionFlowPanel
+          :record="flowRecord"
+          :name="flowName"
+          :factors="flowFactors"
+          :ctx="ctx"
+          :thresholds="thresholds"
+          :suggestion="flowSuggestion"
+          :presets="scenarioPresets"
+          @changed="onFlowChanged"
+        />
+      </div>
+
+      <template v-else-if="view === 'queue'">
         <!-- 左栏 · 处置队列 -->
         <div class="td-col col-queue td-scroll">
           <AlertQueue
@@ -619,8 +709,8 @@ onUnmounted(() => {
 
     <template #foot>
       <span>快照时间 {{ snapshotDisplay }}</span>
-      <span>效果对比属仿真对照，不得称实测</span>
-      <span>工作流状态存于服务端演示态 · 刷新不清，页头「复位演示态」可清</span>
+      <span>效果对比属仿真对照,不得称实测</span>
+      <span>工作流状态存于服务端演示态 · 刷新不清,页头「复位演示态」可清</span>
       <span class="right td-mono">全部数据 is_simulated = true</span>
     </template>
   </AppShell>
@@ -640,6 +730,10 @@ onUnmounted(() => {
   flex: 0 0 380px;
 }
 .cmp-col {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.flow-col {
   flex: 1 1 auto;
   min-width: 0;
 }

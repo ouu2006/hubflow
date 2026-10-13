@@ -35,23 +35,30 @@ import {
   type CongestionLevel,
   type DispatchInput,
   type DispatchReceipt,
+  type FactorApplied,
+  type FactorTarget,
   type HeatMatrix,
   type ManualFactorInput,
   type ManualFactorResult,
   type PredictResponse,
   type RecommendResult,
+  type ScenarioInput,
+  type ScenarioResult,
   type SegmentRecord,
   type SegmentSourceDelta,
   type SegmentSourcePair,
   type SegmentsSnapshot,
   type ThresholdSnapshot,
+  type TimeSession,
   type TrafficAlert,
+  type TrafficContext,
   type TrafficMeta,
   type TrafficNetwork,
   type TrafficOverview,
   type TrafficSnapshotPing,
   type VehicleRecord,
   type VehiclesSnapshot,
+  type WeatherCondition,
   type WritebackInput,
   type WritebackReceipt,
   type WritebackResult,
@@ -88,29 +95,75 @@ function vehicleBases(): PackVehicleBase[] {
 }
 
 
-// ---------- 人工置位因素(管理端口子,手册第 19 章 F07/F08/F11;mock 内存态,Issue #59) ----------
-// 置位后对目标路段生效:target=demand 乘 q,c/lanes 乘 c,再按演示阈值重算 level(演示行为,
-// 非判级模型输出);reset 端点清空,供反复演示。
+// ---------- 注入因素(人工置位 + 环境上下文;mock 内存态) ----------
+//
+// 两个口子,一条重算路径:
+//   · **人工置位**(Issue #59,手册 §:2222):只有 F07 / F08 / F11(事故 / 管制 / 大型活动),
+//     由 `POST /api/traffic/factors` 逐路段置位,存 `manualFactors`;
+//   · **环境上下文**(Issue #77):F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历,
+//     由「当前环境状态」(`scenarioState` + 站点包声明)折算,`POST /api/traffic/scenario` 只改状态。
+//
+// 状态门控(**默认态不碰站点包基线**,实测踩过才这么写):
+//   · **未注入**(`scenarioState` 全空)→ `applyFactors` 只叠人工置位,站点包基线**逐位不动**
+//     —— 包 A 的 SEG-003 / SEG-007 各自烘了一条 F01 大雨 ×0.75,`c_vph` 也已按它折算过,
+//     默认态再去乘一遍会把整张基线推高一档(`x` 0.54→0.71、level 2→3),QA 基线全漂。
+//     此时 `context.derived_factors` 只是**环境观测**(站点包声明的那套天气),页面必须分开标注。
+//   · **已注入** → 先把包里烘入的环境因素**反算剔除**(÷倍率),再按当前环境状态乘一遍:
+//     把天气切成"晴"时 SEG-003 的折减也跟着解除,同一因素绝不乘两次。
 
 interface ManualFactor {
   segment_id: string
   factor_id: string
   name: string
-  target: 'c' | 'demand' | 'lanes'
+  /** 作用目标口径与契约 FactorTarget 一致(c / v_f / demand / lanes / confidence) */
+  target: FactorTarget
   multiplier: number
   until: string
 }
 
 const manualFactors: ManualFactor[] = []
 
-function applyManualFactors(base: Omit<SegmentRecord, 'is_simulated'>): Omit<SegmentRecord, 'is_simulated'> {
+/** 环境因素编号:剔除 / 重放只认这四个号 */
+const ENV_FACTOR_IDS = new Set(['F01', 'F02', 'F03', 'F10'])
+
+/** 该因素的作用方向(剔除时反向除回去) */
+function factorAxis(target: FactorTarget): 'q' | 'c' | 'confidence' {
+  if (target === 'demand') return 'q'
+  if (target === 'confidence') return 'confidence'
+  return 'c' // c / lanes / v_f 都折算到分母口径
+}
+
+function applyFactors(base: Omit<SegmentRecord, 'is_simulated'>): Omit<SegmentRecord, 'is_simulated'> {
+  const injected = contextInjected()
   const mine = manualFactors.filter((f) => f.segment_id === base.segment_id)
-  if (mine.length === 0) return base
+  if (!injected && mine.length === 0) return base // 默认态:站点包基线逐位不动
+
   let q = base.q_vph ?? 0
   let c = base.c_vph ?? 0
-  for (const f of mine) {
-    if (f.target === 'demand') q *= f.multiplier
-    else c *= f.multiplier // c / lanes 都折算通行能力
+  let conf = base.confidence ?? 0
+  let keptFactors: FactorApplied[] = [...(base.factors_applied ?? [])]
+  if (injected) {
+    // ① 剔除包里烘入的环境因素(反算回未折减基线;非环境因素如 F06 违停保持原样)
+    keptFactors = []
+    for (const f of base.factors_applied ?? []) {
+      if (!ENV_FACTOR_IDS.has(f.factor_id)) {
+        keptFactors.push(f)
+        continue
+      }
+      const axis = factorAxis(f.target)
+      if (axis === 'q') q /= f.multiplier
+      else if (axis === 'c') c /= f.multiplier
+      else conf /= f.multiplier
+    }
+  }
+  // ② 当前环境状态折算出的因素(注入态才有)+ ③ 人工置位(逐路段)
+  const env = injected ? derivedFactors(new Date()) : []
+  const applied = [...env, ...mine]
+  for (const f of applied) {
+    const axis = factorAxis(f.target)
+    if (axis === 'q') q *= f.multiplier
+    else if (axis === 'c') c *= f.multiplier
+    else conf *= f.multiplier
   }
   const x2 = q / Math.max(1, c)
   const xLevel: CongestionLevel = x2 >= 0.9 ? 4 : x2 >= 0.7 ? 3 : x2 >= 0.5 ? 2 : 1
@@ -127,10 +180,8 @@ function applyManualFactors(base: Omit<SegmentRecord, 'is_simulated'>): Omit<Seg
     level,
     level_name: LEVEL_NAME[level],
     triggered_by: triggered,
-    factors_applied: [
-      ...(base.factors_applied ?? []),
-      ...mine.map((f) => ({ factor_id: f.factor_id, name: f.name, target: f.target, multiplier: f.multiplier, until: f.until })),
-    ],
+    confidence: round(clamp(conf, 0, 1), 2),
+    factors_applied: [...keptFactors, ...applied.map((f) => ({ ...f }))],
   }
 }
 
@@ -178,7 +229,7 @@ function buildSegmentsSnapshot(): SegmentsSnapshot {
   tick += 1
   const now = new Date()
   const segments: SegmentRecord[] = segmentBases().map(({ base, stale }) => {
-    const src = applyManualFactors(base) // 人工置位先生效,再走抖动
+    const src = applyFactors(base) // 注入因素(人工置位 + 场景注入)先生效,再走抖动
     const q_vph = Math.round(jitter(src.q_vph ?? 0, 0.04))
     const v_kmh = round(jitter(src.v_kmh ?? 0, 0.03), 1)
     const c_vph = src.c_vph ?? 0
@@ -787,6 +838,222 @@ function buildAssimilationFull(): AssimilationSnapshotFull {
 }
 
 
+// =====================================================================================
+// 环境上下文 + 场景注入(Issue #77 三页收敛)
+//
+// ⚠️ 口径铁律:
+//   ① **天气 / 时段全部是编造的演示值**——真实气象与列车数据拿不到,页面与文档一律标
+//      「演示数据(模拟)」,**不得称实测**;字段口径对齐手册第 19 章因素登记表。
+//   ② **场景注入 ≠ 人工置位**:人工置位口子只有 F07 / F08 / F11(手册 §:2222);
+//      本段的 F01 / F02 / F03 / F10 属**环境上下文**注入,端点分开、文案分开。
+//   ③ 只影响演示基线(mock 内存态),**不触碰契约字段**。
+// =====================================================================================
+
+/** 天气 → 通行能力折减(F01 一期手填口径,手册 §:2276【demo 假设值 / 待标定】) */
+const WEATHER_MULTIPLIER: Record<WeatherCondition, number> = {
+  晴: 1.0,
+  多云: 1.0,
+  小雨: 0.9,
+  大雨: 0.75,
+  大雾: 0.7,
+  台风: 0.6,
+}
+
+/** 天气 → 能见度 / 降水 / 湿度 / 风(展示口径演示值;只用于上下文面板,不参与判级) */
+const WEATHER_PROFILE: Record<WeatherCondition, { visibility_km: number; precip_mm: number; humidity_pct: number; wind: string }> = {
+  晴: { visibility_km: 20, precip_mm: 0, humidity_pct: 45, wind: '微风 1 级' },
+  多云: { visibility_km: 15, precip_mm: 0, humidity_pct: 62, wind: '偏东风 2 级' },
+  小雨: { visibility_km: 6.5, precip_mm: 1.2, humidity_pct: 86, wind: '东南风 3 级' },
+  大雨: { visibility_km: 2.5, precip_mm: 12.5, humidity_pct: 94, wind: '东南风 5 级' },
+  大雾: { visibility_km: 0.4, precip_mm: 0.2, humidity_pct: 97, wind: '静风' },
+  台风: { visibility_km: 1.2, precip_mm: 38, humidity_pct: 96, wind: '旋转风 10 级' },
+}
+
+/** 时段 → 需求倍率(F10 演示值【待标定】) */
+const SESSION_DEMAND_MULT: Record<TimeSession, number> = {
+  早高峰: 1.2,
+  平峰: 1.0,
+  晚高峰: 1.15,
+  夜间: 0.6,
+}
+
+const SESSION_ORDER: TimeSession[] = ['早高峰', '平峰', '晚高峰', '夜间']
+
+/** 快照时钟 → 时段类型(展示口径划分;演示数据,不是真实客流统计) */
+function sessionOfClock(hour: number): TimeSession {
+  if (hour >= 6 && hour < 9) return '早高峰'
+  if (hour >= 9 && hour < 16) return '平峰'
+  if (hour >= 16 && hour < 20) return '晚高峰'
+  return '夜间'
+}
+
+/** 下一班列车(演示值:整点 + 37 分口径;真实来源 = T3 列车时刻表,一期手填) */
+function nextTrainOf(d: Date): string {
+  const n = new Date(d.getTime())
+  n.setMinutes(37, 0, 0)
+  if (n.getTime() <= d.getTime()) n.setHours(n.getHours() + 1)
+  return clockOf(n)
+}
+
+/** 场景注入当前状态(内存态;`null` = 未注入,回落站点包默认天气 / 按快照时钟推时段) */
+interface ScenarioState {
+  weather: WeatherCondition | null
+  session: TimeSession | null
+  demand_mult: number | null
+}
+const scenarioState: ScenarioState = { weather: null, session: null, demand_mult: null }
+
+function contextWeather(): WeatherCondition {
+  return scenarioState.weather ?? activePack().context.weather.condition
+}
+
+/** 当前时段:注入优先,否则按快照时钟推(站点包只声明日历与天气,不声明"现在几点") */
+function contextSession(now: Date): TimeSession {
+  return scenarioState.session ?? sessionOfClock(now.getHours())
+}
+
+/** 环境状态是否被注入改过(展示口径:区分「站点包默认环境」与「演示注入环境」) */
+function contextInjected(): boolean {
+  return scenarioState.weather !== null || scenarioState.session !== null || scenarioState.demand_mult !== null
+}
+
+/**
+ * 当前环境(天气 / 时段)折算出的因素(F01 / F02 / F03 / F10;手册第 19 章口径)。
+ *
+ * 口径(实测对齐过,别改错):
+ *   ① **默认态就带 F01**——站点包声明的天气就是当下天气,折算出的因素立刻生效
+ *      (包 A 声明大雨 ×0.75,与它基线里烘入的 F01 大雨逐位一致:applyFactors 先剔除再重放);
+ *   ② **时段本身不产生因素**:只有显式注入的 `demand_mult` 才抬 / 降需求。否则凭空给全路网
+ *      乘一个时段倍率,会把站点包预置基线整体推高一档(实测踩过);
+ *   ③ F03 / F10 只在确有需求抬升时出现,由同一个倍率派生(展示口径,不叠加)。
+ *
+ * `deps` 是依赖注入(测试 / 抠口径用);生产路径 `applyFactors` 传当前站点包解析后的值。
+ */
+function envFactors(
+  now: Date,
+  weather: WeatherCondition,
+  session: TimeSession,
+  demandMult: number | null,
+): FactorApplied[] {
+  const until = localIso(new Date(now.getTime() + 60 * 60 * 1000))
+  const out: FactorApplied[] = []
+  const wm = WEATHER_MULTIPLIER[weather]
+  if (wm < 1) {
+    // F01 天气:折减通行能力(手册 §:2276 第 ① 条)
+    out.push({ factor_id: 'F01', name: `天气·${weather}`, target: 'c', multiplier: wm, until })
+  }
+  if (weather === '大雾' || session === '夜间') {
+    // F02 昼夜 / 能见度:置信度下降(手册 §:2891),页面据此标注"不做强推荐"
+    out.push({ factor_id: 'F02', name: '昼夜 / 能见度', target: 'confidence', multiplier: 0.8, until })
+  }
+  if (typeof demandMult === 'number' && demandMult > 1) {
+    // F03 列车到发 + F10 时段日历:抬需求(手册 §:2892 / §:2899)
+    out.push({ factor_id: 'F03', name: '列车到发·需求上浮', target: 'demand', multiplier: round(Math.min(1.6, demandMult), 2), until })
+    out.push({ factor_id: 'F10', name: `时段·${session}`, target: 'demand', multiplier: round(Math.min(1.4, demandMult), 2), until })
+  } else if (typeof demandMult === 'number' && demandMult < 1) {
+    out.push({ factor_id: 'F10', name: `时段·${session}`, target: 'demand', multiplier: round(Math.max(0.4, demandMult), 2), until })
+  }
+  return out
+}
+
+/** 当前环境的折算因素(生产路径入口) */
+function derivedFactors(now: Date): FactorApplied[] {
+  return envFactors(now, contextWeather(), contextSession(now), scenarioState.demand_mult)
+}
+
+/** 全路段「注入因素后」的判级 / 饱和度(未抖动口径;场景注入的前后对照用) */
+function levelsAfterFactors(): Map<string, { level: CongestionLevel; x: number }> {
+  const out = new Map<string, { level: CongestionLevel; x: number }>()
+  for (const { base } of segmentBases()) {
+    const a = applyFactors(base)
+    out.set(a.segment_id, { level: a.level, x: a.x ?? 0 })
+  }
+  return out
+}
+
+function buildContext(): TrafficContext {
+  const now = new Date()
+  const pack = activePack()
+  const weather = contextWeather()
+  const session = contextSession(now)
+  const profile = WEATHER_PROFILE[weather]
+  const factors = derivedFactors(now)
+  const wm = WEATHER_MULTIPLIER[weather]
+  const summary =
+    factors.length === 0
+      ? `${weather} · ${session} · 无环境因素生效(基准)`
+      : `${weather} · ${session} · 生效因素 ${factors.map((f) => f.factor_id).join(' / ')}${
+          wm < 1 ? `,通行能力折减 ×${wm}` : ''
+        }`
+  return {
+    ts: localIso(now),
+    is_simulated: true,
+    station_id: pack.station.station_id,
+    weather: {
+      condition: weather,
+      temp_c: pack.context.weather.temp_c,
+      humidity_pct: profile.humidity_pct,
+      visibility_km: profile.visibility_km,
+      precip_mm: profile.precip_mm,
+      wind: profile.wind,
+    },
+    time: {
+      clock: clockOf(now),
+      session,
+      calendar: pack.context.calendar,
+      next_train: nextTrainOf(now),
+    },
+    derived_factors: factors,
+    injected: contextInjected(),
+    summary,
+    source: `站点包 ${pack.key} · ${pack.context.next_train_note}`,
+  }
+}
+
+/** 场景注入:改环境状态(天气 / 时段 / 需求倍率),返回注入前后判级对照 */
+function applyScenario(body: ScenarioInput, before: Map<string, { level: CongestionLevel; x: number }>): ScenarioResult {
+  const now = new Date()
+  if (body.weather !== undefined && body.weather in WEATHER_MULTIPLIER) scenarioState.weather = body.weather
+  if (body.session !== undefined && SESSION_ORDER.includes(body.session)) {
+    scenarioState.session = body.session
+    // 选了时段就按 F10 的时段倍率抬 / 降需求(显式给了 demand_mult 时以显式值为准)
+    if (body.demand_mult === undefined) scenarioState.demand_mult = SESSION_DEMAND_MULT[body.session]
+  }
+  if (typeof body.demand_mult === 'number' && Number.isFinite(body.demand_mult)) {
+    scenarioState.demand_mult = Math.min(2, Math.max(0.4, body.demand_mult))
+  }
+  const factors = derivedFactors(now)
+  const target = body.segment_id ?? '*'
+  const after = levelsAfterFactors()
+  const segmentIds = segmentBases().map((s) => s.base.segment_id)
+  const effects = segmentIds
+    .filter((id) => target === '*' || id === target)
+    .map((id) => ({
+      segment_id: id,
+      name: nameOfSegment(id),
+      level_before: before.get(id)?.level ?? 1,
+      level_after: after.get(id)?.level ?? 1,
+      x_before: before.get(id)?.x ?? 0,
+      x_after: after.get(id)?.x ?? 0,
+    }))
+  return {
+    applied: true,
+    ts: localIso(now),
+    is_simulated: true,
+    factors,
+    segment_ids: target === '*' ? segmentIds : [target],
+    effects,
+    note: '场景注入为演示口径(模拟),与「人工置位」(F07 / F08 / F11)是两个口子;复位走 POST /api/traffic/scenario/reset',
+  }
+}
+
+function resetScenario(): void {
+  scenarioState.weather = null
+  scenarioState.session = null
+  scenarioState.demand_mult = null
+}
+
+
 // ---------- HTTP 处理(path 不含 /api 前缀,与 mock/index.ts 的 connect 挂载一致) ----------
 
 export async function handleTraffic(path: string, method: string, req: MockReq, res: MockRes): Promise<boolean> {
@@ -1065,7 +1332,7 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
       multiplier: body.multiplier,
       until: localIso(until),
     })
-    const seg0 = applyManualFactors(seg.base)
+    const seg0 = applyFactors(seg.base)
     const result: ManualFactorResult = {
       applied: true,
       segment_id: seg0.segment_id,
@@ -1080,6 +1347,30 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
 
   if (path === '/traffic/factors/reset' && method === 'POST') {
     manualFactors.length = 0
+    json(res, 200, { reset: true, is_simulated: true })
+    return true
+  }
+
+  // ---- 环境上下文 + 场景注入(Issue #77) ----
+  if (path === '/traffic/context' && method === 'GET') {
+    json(res, 200, buildContext())
+    return true
+  }
+
+  if (path === '/traffic/scenario' && method === 'POST') {
+    const body = (await readJson(req)) as ScenarioInput
+    if (body.segment_id && !segmentBases().some((s) => s.base.segment_id === body.segment_id)) {
+      json(res, 400, { code: 'SEGMENT_NOT_FOUND', message: `路段不存在: ${body.segment_id}` })
+      return true
+    }
+    // 注入前的判级必须在**改环境状态之前**取(否则 before 与 after 是同一个状态,差恒为 0)
+    const before = levelsAfterFactors()
+    json(res, 200, applyScenario(body ?? {}, before))
+    return true
+  }
+
+  if (path === '/traffic/scenario/reset' && method === 'POST') {
+    resetScenario()
     json(res, 200, { reset: true, is_simulated: true })
     return true
   }

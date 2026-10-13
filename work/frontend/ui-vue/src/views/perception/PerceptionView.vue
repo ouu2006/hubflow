@@ -22,14 +22,17 @@ import {
 } from '../../api/perception'
 import {
   getTrafficAssimilationFull,
+  getTrafficContext,
   getTrafficMeta,
   getTrafficSegmentSources,
   getTrafficSegments,
 } from '../../api/traffic'
-import type { AssimilationSnapshotFull, SegmentSourcePair } from '../../shared/traffic'
+import type { AssimilationSnapshotFull, SegmentSourcePair, TrafficContext } from '../../shared/traffic'
 import { formatStamp } from '../../shared/traffic'
 import ChannelLedger from './components/ChannelLedger.vue'
+import DataSupplyPanel from './components/DataSupplyPanel.vue'
 import DetailPanel from './components/DetailPanel.vue'
+import EnvContextBar from './components/EnvContextBar.vue'
 import MonitorWall from './components/MonitorWall.vue'
 import PipelinePanel from './components/PipelinePanel.vue'
 import SemanticsPanel from './components/SemanticsPanel.vue'
@@ -50,6 +53,9 @@ const summary = ref<PerceptionSummary | null>(null)
 const summaryUnavailable = ref(true)
 const sourcePair = ref<SegmentSourcePair | null>(null)
 const assimilation = ref<AssimilationSnapshotFull | null>(null)
+/** 环境上下文(Issue #77:天气 / 时间 / 因地制宜的路况因子)—— 演示值,见 EnvContextBar 口径注 */
+const ctx = ref<TrafficContext | null>(null)
+const ctxError = ref('')
 const snapshotTs = ref('')
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 四页同一口径 */
 const stationName = ref(activePack().station.name)
@@ -152,6 +158,14 @@ async function loadTrafficBase(): Promise<void> {
   } catch {
     assimilation.value = null
   }
+  // 环境上下文(Issue #77):取不到就如实说"未取到",不回落到任何编造值
+  try {
+    ctx.value = await getTrafficContext()
+    ctxError.value = ''
+  } catch {
+    ctx.value = null
+    ctxError.value = '环境上下文未取到(traffic 接口层未起?)—— 本卡不显示未经确认的天气 / 时段值。'
+  }
 }
 
 function onSelect(source: string): void {
@@ -171,8 +185,8 @@ onMounted(() => {
     active="perception"
     :station="stationName"
     :ts="snapshotTs"
-    title="视频感知 · YOLO 链路"
-    subtitle="6 段样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标"
+    title="感知层 · YOLO 视频链路 + 环境上下文"
+    subtitle="6 段样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子"
   >
     <template #headRight>
       <span class="td-badge-warn">离线样本视频 · 非实时流 · 非本站现场</span>
@@ -184,6 +198,9 @@ onMounted(() => {
         ⚠ {{ detFailedCids.length }} 路检测读取失败({{ detFailedCids.join(' / ') }})——该路检测框不可用,是接口故障,不是"无检出"。
       </div>
     </template>
+
+    <!-- 环境上下文(天气 / 时间 / 因地制宜的路况因子):感知层"能获取的数据"之一 -->
+    <EnvContextBar :ctx="ctx" :error="ctxError" />
 
     <div class="td-body">
       <div class="td-col col-left">
@@ -218,6 +235,9 @@ onMounted(() => {
         />
       </div>
     </div>
+
+    <!-- 数据供给 ↔ 需求对照(能获取的数据 / 要用到的数据 + 缺口) -->
+    <DataSupplyPanel :channels="channels" :current="current.def" :source-pair="sourcePair" />
 
     <template #foot>
       <span>视频为公开样本视频 · 非{{ stationName }}现场 · 非实时流</span>
