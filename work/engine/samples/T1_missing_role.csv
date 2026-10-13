@@ -1,0 +1,2 @@
+point_id,name,type,lon,lat,segment_id,offset_m,direction,capacity_vph,sumo_edge_id,detector_role,source,verified,filler,date
+DET-01,检测断面-入口主路,detector,112.6500,23.2100,SEG-001,50,上行,1600,E-001,虚拟检测器,公开地图,待核实,池·S,2026-10-13

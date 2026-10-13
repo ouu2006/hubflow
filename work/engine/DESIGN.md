@@ -94,3 +94,98 @@ ls -l out/                   # routes.json + run_log.json
 3. **`od[].exit_node` 是本次新加的字段**（见数据契约 6.3）：`routes.json` 的 `departure_route` 必填，但"送完人之后去哪"此前无处安放。已写进契约；`demand.json` 的脚本归开发A，**开发A 若要改名请提 Issue**。
 4. **`--sample` 不接预约/不伤害/再疏导**（见第三节 ③），因此 `quota` 也恒为 `null`。
 5. **`run.py` 不带 `--sample` 会抛 `NotImplementedError`** —— 真链路要 SUMO 孪生数据（`work/twin`）与站点包路网（`network.json`，Issue #37），两者都还没到位。
+
+---
+
+# 附：T1 / T2 转换脚本（Issue #41）
+
+> 本节按 [`docs/表格模板说明.md`](../../docs/表格模板说明.md) 第十二节要求落"**列 → 字段映射表**"。
+> 脚本：`ingest_t1.py`（T1 点位表 → `stations/points.json`）、`ingest_t2.py`（T2 路段属性核对表 → 补录进 `stations/network.json`）。
+
+## 七、列 → 字段映射
+
+### 7.1 T1 点位表 → `points.json`
+
+列名与 `points.json` 的字段**一一同名**，直抄，不需要改名：
+
+`point_id` / `name` / `type` / `lon` / `lat` / `segment_id` / `offset_m` / `direction` / `capacity_vph` / `role` / `sumo_edge_id` / `detector_role` / `source` / `verified` / `filler` / `date`
+
+**必填规则**（脚本据此逐格校验，空白即报错并指出行号）：
+
+| 列 | 何时必填 |
+|---|---|
+| `point_id` `name` `type` `lon` `lat` `segment_id` `offset_m` `direction` `role` `source` `verified` `filler` `date` | **所有点位**（`role` 对所有点位都填，非 `detector` 填 `internal`） |
+| `capacity_vph` | 仅 `dropoff` / `pickup` / `waiting` |
+| `detector_role` `sumo_edge_id` | 仅 `detector` |
+
+**封闭取值**：`type` ∈ `dropoff` / `pickup` / `waiting` / `detector` / `junction`；`role` ∈ `boundary` / `internal`。越界即报错。
+
+### 7.2 T2 路段属性核对表 → `network.json`（**三处不是同名，必须显式映射**）
+
+| T2 列 | 落到哪 | 说明 |
+|---|---|---|
+| `length_m` | `edges[].length_m` | 同名直抄 |
+| `lanes` | `edges[].lanes` | 同名直抄 |
+| `speed_limit_kmh` | **`edges[].speed_limit`** | 手册 8.2 的边字段名是 `speed_limit`（**照抄，不改成 `_kmh`**） |
+| `c_vph` | **`edges[].capacity_vph`** | 手册 8.2 用 `capacity_vph`。⚠️ **别和 `segments.json` 的 `c_vph` 混了** —— 那个是**因素修正后**的通行能力，T2 这个是**路段基础通行能力** |
+| `segment_id` | 用来**定位边**：与 `edges[].section` 一一对应 | T1 的 `segment_id` 也取这套 |
+| `from_node` / `to_node` | **只做一致性校验，不写入** | 与边的 `from` / `to` 对不上 → **报错退出**（本脚本只补属性，拓扑归 Issue #37 的 `map_ingest.py`） |
+| `oneway` / 底图核对 / 差异原因 / `verified` / `filler` / `date` | **不写进 `network.json`**，写进 **`map_source.json` 的 `t2_audit[]`** | 这几个是**核对痕迹**，不是引擎要读的属性；开发规范第 7 节原话：「`network.json` 的来源记录写在 `map_source.json`」 |
+
+**`oneway` 为什么不进 `network.json`**：单向性在本图结构里是靠**"有没有反向边"**表达的（`E-012` 存在、就没有一条反向的），所以它不需要当边属性。
+
+**核对痕迹的键名映射**（`t2_audit[]` 里一律 snake_case，中文列名转过来）：
+
+| T2 列（中文表头） | `t2_audit[]` 的键 |
+|---|---|
+| 底图核对 | `basemap_check`（取值仍是 `一致` / `不一致` / `待核实`） |
+| 差异原因 | `diff_reason` |
+
+**`c_vph` 带【待标定】怎么办**：脚本**剥掉标记取值**，并把该路段记进 `t2_audit[].pending_fields` —— **不编数**，也不把标记塞进 `capacity_vph`。
+
+## 八、本批（Issue #41）需要申报的两处
+
+### ① 开发规范第 7 节里两句话互相冲突，按"幂等"优先
+
+- 「**必须幂等**：同一份表格重跑**不许产生 diff**」
+- 「来源留痕：生成物里带来源记录（**表格文件名 + 版本 + 转换时间**）」
+
+**墙钟时间一写进产物，重跑必然 diff。** 处置：产物里的来源记录只写「**表格文件名 + 版本 + 表内 `date` 列**」（`date` 是池·S 填的，重跑稳定），**转换时间不落进产物**，改为打印到 stdout 供贴进 PR。
+
+- **契约与判定不变的证明**：产物里没有任何随时间变化的字段；`cmp` 两次运行结果**逐字节一致**（见第九节 ③）。
+- **影响面**：只影响 `ingest_t1.py` / `ingest_t2.py` 的产物内容，不影响字段语义。
+
+### ② 产物新增两个来源字段（**契约变更**）
+
+| 文件 | 新增 | 为什么 |
+|---|---|---|
+| `stations/points.json` | 顶层 **`source`** 对象（`table_file` / `table_version` / `converter` / `rows`） | 第 7 节要求产物带来源记录；`network.json` 有 `attributes.source`，`points.json` 此前没有落点 |
+| `stations/map_source.json` | **`t2_audit[]`** 数组 | T2 的核对痕迹（TC-15 判据）此前无处安放 |
+
+两个字段的字面形状已写进 [`docs/数据契约.md`](../../docs/数据契约.md) 第六节 6.4。
+
+## 九、怎么跑、怎么验
+
+```bash
+cd <仓库根>
+python3 work/engine/ingest_t1.py --in work/engine/samples/T1_sample.csv --out work/engine/out/points.json
+python3 work/engine/ingest_t2.py --in work/engine/samples/T2_sample.csv \
+    --net stations/network.json --out work/engine/out/network.json --map-source work/engine/out/map_source.json
+```
+
+| # | 验证了什么 | 结果 |
+|---|---|---|
+| ① | 好样例能转出 | `T1_sample.csv` 6 行 → 6 条；五类点位各 ≥1；`boundary` 断面 1 个 |
+| ② | **坏样例必须报错**（不许静默补空） | `T1_missing_role.csv`（缺 `role` **列**）→ 退出码 1，列出缺哪些列；`T2_blank_check.csv`（底图核对列**空白格**）→ 退出码 1，指出行号 |
+| ③ | **可重建 / 幂等** | 同一份表跑两遍，产物 `cmp` **逐字节一致** |
+| ④ | `role` / `sumo_edge_id` 逐条落到产物 | 6 条点位**全部**带 `role` 与 `sumo_edge_id` |
+| ⑤ | 契约字段过门禁 | 三份产物**键名违规 0 个**（`doc_gate` 第 6 组口径） |
+| ⑥ | **补录确实写进了边属性** | `T2_sample.csv` 的 `SEG-004` 写 `speed_limit_kmh=40`，产物里 `E-004` 的 `speed_limit` 由 `30` → `40`；`attributes` 新增 `t2_source`；**节点数 7→7、边数 17→17，拓扑一个没动** |
+
+## 十、本批的已知偏差（**不粉饰**）
+
+1. **样例 CSV 是自造的**（Issue #43 的表格实体还没下发）。文件名 `T1_sample.csv` 里没有版本号，所以产物的 `table_version` 是 `无（基线）` —— 真表到位后（形如 `T1_点位表_20261013_v1.xlsx`）会自动解析出 `v1`。
+   **其中 `T2_sample.csv` 的 `SEG-004` 故意与占位 `network.json` 有一处不同**（样例表写 40 km/h、占位图写 30 km/h），用来演示"补录确实把表里的数写进了边属性"。其余三行与占位图逐字段一致 —— 一致时产物**没有 diff**，那正是幂等重跑的正常结果。
+2. **不动 `stations/*.json`**：本次只交脚本与样例，`stations/` 九件仍是 Issue #39 的占位值。所以 `docs/填表报告.md` 的台账行 `结果` 填 **`待转`**。
+3. **五类点位覆盖只警告不报错**：那是**填表纪律**（W1 判定），不是转换硬规则；脚本把它打到 stdout/stderr 供人看，不因此中断。
+4. **`--map-source` 要求目标文件已存在**：因为它是在 `map_source.json` 上**追加** `t2_audit`，不是新建。`map_source.json` 由 Issue #37 的 `map_ingest.py` 产出。
