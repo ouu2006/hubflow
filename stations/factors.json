@@ -1,0 +1,26 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "样例站点包(演示数据(模拟)):14 类因素逐条登记(手册第 19 章 F01~F14),倍率是 demo 假设值;数据由池·P 按 T5 因素表填",
+  "targets": ["c", "v_f", "demand", "lanes", "confidence"],
+  "factors": [
+    { "factor_id": "F01", "name": "天气（雨、雾、台风、高温）", "targets": ["c", "v_f"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "T5 因素表手填（时段 + 天气 + 系数）", "source_stage2": "气象数据接口", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [{ "label": "小雨", "multiplier": 0.9 }, { "label": "大雨", "multiplier": 0.75 }, { "label": "大雾", "multiplier": 0.7 }, { "label": "台风", "multiplier": 0.6 }] },
+    { "factor_id": "F02", "name": "昼夜 / 能见度", "targets": ["confidence", "v_f"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "时段表（日出日落时刻手填）", "source_stage2": "日出日落 + 摄像头画质指标", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [{ "label": "昼", "multiplier": 1.0 }, { "label": "黄昏", "multiplier": 0.9 }, { "label": "夜", "multiplier": 0.85 }] },
+    { "factor_id": "F03", "name": "列车到发（班次、晚点、客流）", "targets": ["demand"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "T3 列车时刻表手填（12306 公开时刻表）→ OD 需求", "source_stage2": "铁路部门数据", "filler": "池·S", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F04", "name": "落客区占用", "targets": ["c"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "孪生模拟（服务时长分布 + 占用状态）", "source_stage2": "摄像头（落客通道占用检测）", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F05", "name": "停车场 / 蓄车区余位", "targets": ["c"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "孪生模拟（余位随时间变化）", "source_stage2": "停车场管理系统接口", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F06", "name": "路边违停 / 占道", "targets": ["lanes", "c"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "场景注入（T6 场景剧本指定时段与路段）", "source_stage2": "摄像头事件检测 + 人工上报", "filler": "池·S", "implementer": "开发A", "demo_multipliers": [{ "label": "占一条车道", "multiplier": 0.5 }] },
+    { "factor_id": "F07", "name": "交通事故 / 故障车", "targets": ["lanes", "c"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "场景注入（场景三）", "source_stage2": "摄像头事件 + 管理端人工置位", "filler": "池·S", "implementer": "开发A", "demo_multipliers": [{ "label": "封一条车道", "multiplier": 0.5 }, { "label": "全封", "multiplier": 0.0 }] },
+    { "factor_id": "F08", "name": "施工 / 临时管制", "targets": ["lanes", "c"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "T5 因素表手填（起止时间 + 路段）", "source_stage2": "交警 / 城管通告，人工录入", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F09", "name": "信号配时", "targets": ["c"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "signal_plan.json 手填（1 路口 2 方案）", "source_stage2": "交警配时方案", "filler": "池·S", "implementer": "开发B", "demo_multipliers": [] },
+    { "factor_id": "F10", "name": "时段 / 日历（工作日、周末、节假日、春运）", "targets": ["demand"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "日历表手填", "source_stage2": "历史数据统计", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F11", "name": "大型活动（演唱会、展会）", "targets": ["demand"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "场景注入", "source_stage2": "活动日历人工录入", "filler": "池·S / 队长", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F12", "name": "车型构成（私家车 / 出租 / 网约 / 大巴）", "targets": ["demand"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "T4 需求比例表手填", "source_stage2": "摄像头车型识别", "filler": "池·S", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F13", "name": "外围路网路况", "targets": ["demand"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "孪生边界车流（围栏外的来车）", "source_stage2": "高德路况接口（App 端直连、后端不缓存；禁止用于模型训练）", "filler": "池·P", "implementer": "开发A", "demo_multipliers": [] },
+    { "factor_id": "F14", "name": "App 渗透率 / 采纳率", "targets": ["demand"], "active": false, "from": null, "until": null, "multiplier": 1.0, "source_stage1": "参数（demo 假设值）", "source_stage2": "App 实际数据", "filler": "池·P", "implementer": "开发B", "demo_multipliers": [] }
+  ],
+  "attributes": {
+    "why_arrays": "demo_multipliers 用数组而不是 {小雨: 0.9} 这种对象,是为了过 doc_gate 的契约字段 snake_case 检查(中文键会被判违规)",
+    "five_targets_only": "只允许改五样(targets 字段):c / v_f / demand / lanes / confidence;新增 target 要先改契约"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "work/engine 模块样例(演示数据(模拟)):与 stations/demand.json 同形(样例就是契约的镜子,开发规范 §6)。引擎 --sample 只用 od[];trains[] / mix 为保持同形一并给出",
+  "trains": [
+    { "train_no": "SAMPLE-G001", "arrive_ts": "2026-01-01T00:10:00+08:00", "platform": "1", "arrivals": 200, "delay_min": 0 },
+    { "train_no": "SAMPLE-G002", "arrive_ts": "2026-01-01T00:40:00+08:00", "platform": "2", "arrivals": 300, "delay_min": 0 },
+    { "train_no": "SAMPLE-D001", "arrive_ts": "2026-01-01T01:00:00+08:00", "platform": "1", "arrivals": 100, "delay_min": 0 }
+  ],
+  "od": [
+    { "od_id": "OD-01", "from_node": "N-01", "to_node": "N-05", "exit_node": "N-01", "direction": "进场", "demand_vph": 600 },
+    { "od_id": "OD-02", "from_node": "N-01", "to_node": "N-04", "exit_node": "N-05", "direction": "进场-上客", "demand_vph": 300 },
+    { "od_id": "OD-03", "from_node": "N-05", "to_node": "N-01", "exit_node": "N-06", "direction": "离场", "demand_vph": 500 },
+    { "od_id": "OD-04", "from_node": "N-02", "to_node": "N-05", "exit_node": "N-01", "direction": "离站", "demand_vph": 400 }
+  ],
+  "mix": {
+    "driver_type_ratio": [
+      { "driver_type": "D1", "ratio": 0.5 },
+      { "driver_type": "D2", "ratio": 0.3 },
+      { "driver_type": "D3", "ratio": 0.2 }
+    ],
+    "vehicle_class_ratio": [
+      { "vehicle_class": "private", "ratio": 0.6 },
+      { "vehicle_class": "taxi", "ratio": 0.2 },
+      { "vehicle_class": "ride_hailing", "ratio": 0.15 },
+      { "vehicle_class": "bus", "ratio": 0.05 }
+    ],
+    "pcu_equivalent": [
+      { "vehicle_class": "private", "pcu": 1.0 },
+      { "vehicle_class": "taxi", "pcu": 1.0 },
+      { "vehicle_class": "ride_hailing", "pcu": 1.0 },
+      { "vehicle_class": "bus", "pcu": 2.0 }
+    ]
+  },
+  "attributes": {
+    "od_container_alignment": "OD 数组的容器键是 od(与 stations/demand.json 一致);早期草稿曾用 od_pairs,已按独立审查意见对齐"
+  }
+}
