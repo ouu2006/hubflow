@@ -1,21 +1,21 @@
 {
   "segments": [
     {
-      "segment_id": "SEG-S1",
-      "name": "主线入口段·左车道",
+      "segment_id": "SEG-01",
+      "name": "主线（南入口→汇流口）",
       "source": "demo",
-      "q_vph": 2250,
-      "v_kmh": 35,
+      "q_vph": 4500,
+      "v_kmh": 40,
       "v_f_kmh": 60,
-      "k_vpk": 64,
-      "L_q_m": 60,
-      "L_seg_m": 1600,
-      "T_d_min": 1.8,
-      "x": 0.28,
-      "c_base_vph": 7500,
-      "c_vph": 7300,
+      "k_vpk": 113,
+      "L_q_m": 90,
+      "L_seg_m": 3000,
+      "T_d_min": 2.2,
+      "x": 0.3,
+      "c_base_vph": 9000,
+      "c_vph": 8600,
       "factors_applied": [],
-      "ci": 27.7,
+      "ci": 29.7,
       "level": 1,
       "level_name": "畅通",
       "triggered_by": [],
@@ -24,66 +24,32 @@
       "stale": false,
       "pred": {
         "h15": {
-          "q_vph": 2475,
+          "q_vph": 4950,
           "level": 2
         },
         "h30": {
-          "q_vph": 2700,
+          "q_vph": 5400,
           "level": 2
         },
         "model": "L0"
       }
     },
     {
-      "segment_id": "SEG-S2",
-      "name": "主线入口段·右车道",
-      "source": "demo",
-      "q_vph": 2250,
-      "v_kmh": 30,
-      "v_f_kmh": 60,
-      "k_vpk": 75,
-      "L_q_m": 80,
-      "L_seg_m": 1100,
-      "T_d_min": 2.0,
-      "x": 0.34,
-      "c_base_vph": 7500,
-      "c_vph": 7200,
-      "factors_applied": [],
-      "ci": 34.0,
-      "level": 1,
-      "level_name": "畅通",
-      "triggered_by": [],
-      "confidence": 0.95,
-      "data_age_s": 5,
-      "stale": false,
-      "pred": {
-        "h15": {
-          "q_vph": 2475,
-          "level": 2
-        },
-        "h30": {
-          "q_vph": 2700,
-          "level": 2
-        },
-        "model": "L0"
-      }
-    },
-    {
-      "segment_id": "SEG-A",
-      "name": "左支线车道（含分流段）",
+      "segment_id": "SEG-02",
+      "name": "左支线·近岔段",
       "source": "demo",
       "q_vph": 1100,
       "v_kmh": 50,
       "v_f_kmh": 60,
       "k_vpk": 22,
       "L_q_m": 20,
-      "L_seg_m": 2200,
+      "L_seg_m": 1500,
       "T_d_min": 0.8,
       "x": 0.2,
       "c_base_vph": 6000,
       "c_vph": 5800,
       "factors_applied": [],
-      "ci": 20.1,
+      "ci": 20.0,
       "level": 1,
       "level_name": "畅通",
       "triggered_by": [],
@@ -103,55 +69,21 @@
       }
     },
     {
-      "segment_id": "SEG-B",
-      "name": "右支线车道（含分流段）",
-      "source": "demo",
-      "q_vph": 1150,
-      "v_kmh": 10,
-      "v_f_kmh": 60,
-      "k_vpk": 115,
-      "L_q_m": 260,
-      "L_seg_m": 2200,
-      "T_d_min": 6.5,
-      "x": 0.94,
-      "c_base_vph": 6000,
-      "c_vph": 1250,
-      "factors_applied": [],
-      "ci": 94.2,
-      "level": 4,
-      "level_name": "严重拥堵",
-      "triggered_by": [],
-      "confidence": 0.95,
-      "data_age_s": 5,
-      "stale": false,
-      "pred": {
-        "h15": {
-          "q_vph": 1265,
-          "level": 4
-        },
-        "h30": {
-          "q_vph": 1380,
-          "level": 4
-        },
-        "model": "L0"
-      }
-    },
-    {
-      "segment_id": "SEG-A2",
-      "name": "左支线延伸段",
+      "segment_id": "SEG-03",
+      "name": "左支线·远段",
       "source": "demo",
       "q_vph": 1100,
       "v_kmh": 55,
       "v_f_kmh": 60,
       "k_vpk": 20,
       "L_q_m": 12,
-      "L_seg_m": 1000,
+      "L_seg_m": 1400,
       "T_d_min": 0.6,
-      "x": 0.14,
+      "x": 0.16,
       "c_base_vph": 6000,
       "c_vph": 5900,
       "factors_applied": [],
-      "ci": 13.6,
+      "ci": 16.1,
       "level": 1,
       "level_name": "畅通",
       "triggered_by": [],
@@ -171,21 +103,55 @@
       }
     },
     {
-      "segment_id": "SEG-B2",
-      "name": "右支线延伸段",
+      "segment_id": "SEG-04",
+      "name": "右支线·近岔段",
       "source": "demo",
-      "q_vph": 1150,
-      "v_kmh": 8,
+      "q_vph": 1200,
+      "v_kmh": 22,
       "v_f_kmh": 60,
-      "k_vpk": 144,
-      "L_q_m": 300,
-      "L_seg_m": 1000,
-      "T_d_min": 7.2,
-      "x": 0.94,
+      "k_vpk": 55,
+      "L_q_m": 150,
+      "L_seg_m": 1500,
+      "T_d_min": 3.2,
+      "x": 0.76,
       "c_base_vph": 6000,
-      "c_vph": 1200,
+      "c_vph": 1650,
       "factors_applied": [],
-      "ci": 94.3,
+      "ci": 76.2,
+      "level": 3,
+      "level_name": "拥堵",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 1320,
+          "level": 4
+        },
+        "h30": {
+          "q_vph": 1440,
+          "level": 4
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "SEG-05",
+      "name": "右支线·远段",
+      "source": "demo",
+      "q_vph": 1200,
+      "v_kmh": 12,
+      "v_f_kmh": 60,
+      "k_vpk": 100,
+      "L_q_m": 280,
+      "L_seg_m": 1400,
+      "T_d_min": 6.8,
+      "x": 0.93,
+      "c_base_vph": 6000,
+      "c_vph": 1250,
+      "factors_applied": [],
+      "ci": 92.6,
       "level": 4,
       "level_name": "严重拥堵",
       "triggered_by": [],
@@ -194,12 +160,46 @@
       "stale": false,
       "pred": {
         "h15": {
-          "q_vph": 1265,
+          "q_vph": 1320,
           "level": 4
         },
         "h30": {
-          "q_vph": 1380,
+          "q_vph": 1440,
           "level": 4
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "SEG-06",
+      "name": "站前服务段",
+      "source": "demo",
+      "q_vph": 2300,
+      "v_kmh": 28,
+      "v_f_kmh": 60,
+      "k_vpk": 82,
+      "L_q_m": 60,
+      "L_seg_m": 1200,
+      "T_d_min": 1.9,
+      "x": 0.5,
+      "c_base_vph": 6000,
+      "c_vph": 4400,
+      "factors_applied": [],
+      "ci": 50.3,
+      "level": 2,
+      "level_name": "缓行",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 2530,
+          "level": 3
+        },
+        "h30": {
+          "q_vph": 2760,
+          "level": 3
         },
         "model": "L0"
       }
@@ -208,7 +208,7 @@
   "vehicles": [
     {
       "vehicle_id": "VEH-001",
-      "segment_id": "SEG-S1",
+      "segment_id": "SEG-01",
       "state": "parked",
       "driver_type": "D1",
       "speed_kmh": 0.0,
@@ -217,7 +217,7 @@
     },
     {
       "vehicle_id": "VEH-002",
-      "segment_id": "SEG-S1",
+      "segment_id": "SEG-01",
       "state": "moving",
       "driver_type": "D1",
       "speed_kmh": 25.0,
@@ -226,7 +226,7 @@
     },
     {
       "vehicle_id": "VEH-003",
-      "segment_id": "SEG-S2",
+      "segment_id": "SEG-02",
       "state": "parked",
       "driver_type": "D1",
       "speed_kmh": 0.0,
@@ -235,7 +235,7 @@
     },
     {
       "vehicle_id": "VEH-004",
-      "segment_id": "SEG-S2",
+      "segment_id": "SEG-02",
       "state": "moving",
       "driver_type": "D1",
       "speed_kmh": 25.0,
@@ -244,7 +244,7 @@
     },
     {
       "vehicle_id": "VEH-005",
-      "segment_id": "SEG-A",
+      "segment_id": "SEG-03",
       "state": "parked",
       "driver_type": "D1",
       "speed_kmh": 0.0,
@@ -253,7 +253,7 @@
     },
     {
       "vehicle_id": "VEH-006",
-      "segment_id": "SEG-A",
+      "segment_id": "SEG-03",
       "state": "moving",
       "driver_type": "D1",
       "speed_kmh": 25.0,
@@ -262,7 +262,7 @@
     },
     {
       "vehicle_id": "VEH-007",
-      "segment_id": "SEG-B",
+      "segment_id": "SEG-04",
       "state": "parked",
       "driver_type": "D1",
       "speed_kmh": 0.0,
@@ -271,7 +271,7 @@
     },
     {
       "vehicle_id": "VEH-008",
-      "segment_id": "SEG-B",
+      "segment_id": "SEG-04",
       "state": "moving",
       "driver_type": "D1",
       "speed_kmh": 25.0,
@@ -280,7 +280,7 @@
     },
     {
       "vehicle_id": "VEH-009",
-      "segment_id": "SEG-A2",
+      "segment_id": "SEG-05",
       "state": "parked",
       "driver_type": "D1",
       "speed_kmh": 0.0,
@@ -289,7 +289,7 @@
     },
     {
       "vehicle_id": "VEH-010",
-      "segment_id": "SEG-A2",
+      "segment_id": "SEG-05",
       "state": "moving",
       "driver_type": "D1",
       "speed_kmh": 25.0,
@@ -298,7 +298,7 @@
     },
     {
       "vehicle_id": "VEH-011",
-      "segment_id": "SEG-B2",
+      "segment_id": "SEG-06",
       "state": "parked",
       "driver_type": "D1",
       "speed_kmh": 0.0,
@@ -307,7 +307,7 @@
     },
     {
       "vehicle_id": "VEH-012",
-      "segment_id": "SEG-B2",
+      "segment_id": "SEG-06",
       "state": "moving",
       "driver_type": "D1",
       "speed_kmh": 25.0,
@@ -318,7 +318,7 @@
   "overview": {
     "station_id": "YJ-001",
     "station_name": "Y 型交叉口（V0 演示）",
-    "updated_at": "2026-10-14T19:37:24.334776",
+    "updated_at": "2026-10-14T20:20:56.708847",
     "vehicles_inbound": 42,
     "vehicles_outbound": 38,
     "vehicles_guided": 15,
@@ -327,25 +327,35 @@
       {
         "level": 1,
         "name": "畅通",
-        "count": 4
+        "count": 3
+      },
+      {
+        "level": 2,
+        "name": "缓行",
+        "count": 1
+      },
+      {
+        "level": 3,
+        "name": "拥堵",
+        "count": 1
       },
       {
         "level": 4,
         "name": "严重拥堵",
-        "count": 2
+        "count": 1
       }
     ],
     "worst_segment": {
-      "segment_id": "SEG-B",
-      "name": "右支线车道（含分流段）",
+      "segment_id": "SEG-05",
+      "name": "右支线·远段",
       "level": 4,
-      "x": 0.94
+      "x": 0.93
     }
   },
   "meta": {
     "station_id": "YJ-001",
     "network_source": "y_junction_geometry.json",
-    "generated_at": "2026-10-14T19:37:29.334776",
+    "generated_at": "2026-10-14T20:21:01.708847",
     "note": "Y 型路网 V0 演示数据（右侧拥堵/左侧通畅/无小球）"
   }
 }

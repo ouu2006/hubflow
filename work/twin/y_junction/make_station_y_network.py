@@ -29,28 +29,20 @@ def fmt_coords(coords):
     return ",\n          ".join("[{}, {}]".format(c[0], c[1]) for c in coords)
 
 
-# 断面：每条车道一条上游 boundary + 一条下游 internal
+# 断面：每条路段一条上游 boundary + 一条下游 internal
+# 「分左回右去」：每条走廊在回(向汇流口)/去(离汇流口)两个方向各布一个观测断面，
+# 上游 boundary 站在走廊外端（回方向入口），下游 internal 站在走廊内端（去方向出口）。
 sections = []
-n_s = 0
-n_b = 0
+n_d = 0
 for seg in segments_geom:
     sid = seg["segment_id"]
-    if sid.startswith("SEG-S"):
-        n_s += 1
-        sections.append(
-            ("DS-%02d" % n_s, "%s·上游断面" % seg["name"], sid, "boundary", 0.08)
-        )
-        sections.append(
-            ("DS-%02d" % (n_s + 10), "%s·下游断面" % seg["name"], sid, "internal", 0.92)
-        )
-    else:
-        n_b += 1
-        sections.append(
-            ("DB-%02d" % n_b, "%s·上游断面" % seg["name"], sid, "boundary", 0.08)
-        )
-        sections.append(
-            ("DB-%02d" % (n_b + 10), "%s·下游断面" % seg["name"], sid, "internal", 0.92)
-        )
+    n_d += 1
+    sections.append(
+        ("D-%02d" % n_d, "%s·回方向断面(上游)" % seg["name"], sid, "boundary", 0.08)
+    )
+    sections.append(
+        ("D-%02d" % (n_d + 10), "%s·去方向断面(下游)" % seg["name"], sid, "internal", 0.92)
+    )
 
 section_lines = []
 for pid, pname, sid, role, off in sections:
@@ -62,8 +54,9 @@ for pid, pname, sid, role, off in sections:
 
 lines = [
     "// 站点包 Y ·「Y 型单行道路网」V0 演示站（Issue IKLR30）。",
-    "// 业主 2026-10-14 二版：真道路双车道模型——主线左/右两车道，分流后各接左/右支线车道，",
-    "// 分叉处车道弧线圆滑；右支线拥堵、左支线通畅；不画车辆小球。",
+    "// 业主 2026-10-14 三版 6 路段口径：①主线整条(SEG-01)；②左支线走廊近岔/远段(SEG-02/03)；",
+    "// ③右支线走廊近岔/远段(SEG-04/05)；④站前服务段(SEG-06)；每条走廊双向合并画，",
+    "// 「分左回右去」由断面与指标承载。右支拥堵、左支通畅；不画车辆小球。",
     "// 来源:手工几何（work/twin/y_junction/export_geometry.py 产物）+ 预置基线，",
     "// 本文件是脚本产物（make_station_y_network.py），**勿手改**。",
     "// 不依赖任何后端 / SUMO / 桥接服务。",
@@ -155,9 +148,9 @@ lines += ["]", ""]
 # 告警只挂在右支线（拥堵侧），与基线自洽
 lines += [
     "export const STATION_Y_ALERTS = [",
-    "  { alert_id: 'Y-001', segment_id: 'SEG-B2', level: 4 as const, triggered_by: ['x', 'v'], factor_ids: ['F10'], ago_min: 4, status: '待认领' as const },",
-    "  { alert_id: 'Y-002', segment_id: 'SEG-B', level: 4 as const, triggered_by: ['x', 'L_q'], factor_ids: ['F07'], ago_min: 11, status: '处置中' as const },",
-    "  { alert_id: 'Y-003', segment_id: 'SEG-S2', level: 2 as const, triggered_by: ['v'], ago_min: 38, status: '已闭环' as const },",
+    "  { alert_id: 'Y-001', segment_id: 'SEG-05', level: 4 as const, triggered_by: ['x', 'v'], factor_ids: ['F10'], ago_min: 4, status: '待认领' as const },",
+    "  { alert_id: 'Y-002', segment_id: 'SEG-04', level: 3 as const, triggered_by: ['x', 'L_q'], factor_ids: ['F07'], ago_min: 11, status: '处置中' as const },",
+    "  { alert_id: 'Y-003', segment_id: 'SEG-06', level: 2 as const, triggered_by: ['v'], ago_min: 38, status: '已闭环' as const },",
     "]",
     "",
     "export const STATION_Y_CONTEXT = {",
@@ -172,9 +165,10 @@ lines += [
     "]",
     "",
     "export const STATION_Y_CHANNELS = [",
-    "  { cid: 'C-01', source: 'cam1', name: '主线入口', segment_id: 'SEG-S1' },",
-    "  { cid: 'C-02', source: 'cam2', name: '左支线', segment_id: 'SEG-A' },",
-    "  { cid: 'C-03', source: 'cam3', name: '右支线', segment_id: 'SEG-B' },",
+    "  { cid: 'C-01', source: 'cam1', name: '主线', segment_id: 'SEG-01' },",
+    "  { cid: 'C-02', source: 'cam2', name: '左支线', segment_id: 'SEG-02' },",
+    "  { cid: 'C-03', source: 'cam3', name: '右支线', segment_id: 'SEG-04' },",
+    "  { cid: 'C-04', source: 'cam4', name: '站前服务段', segment_id: 'SEG-06' },",
     "]",
     "",
 ]

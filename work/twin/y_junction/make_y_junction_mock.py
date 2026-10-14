@@ -17,18 +17,20 @@ geom = json.loads((ROOT / "y_junction_geometry.json").read_text(encoding="utf-8"
 segments_geom = geom["segments"]
 
 # ---- 指标基线（预置演示值）----
-# 业主口径：右侧(B)严重拥堵、左侧(A)畅通、主线(S)缓行；单行道自下而上
-# SEG-A/SEG-B 含分流段+支线前半（长路段）；SEG-A2/SEG-B2 为支线远端延伸段
+# 业主口径（2026-10-14 三版 6 路段）：主线畅通、左支畅通、右支严重拥堵、站前缓行；
+# 每条支线走廊「分左回右去」——回（向汇流口）方向顺、去（离汇流口）方向同理，
+# 拥堵集中在右支线远段（去方向）。
 BASELINES = {
-    # 主线（双车道）
-    "SEG-S1": {"q_vph": 2250, "v_kmh": 35, "v_f_kmh": 60, "k_vpk": 64, "L_q_m": 60,  "L_seg_m": 1600, "T_d_min": 1.8, "x": 0.30, "c_base_vph": 7500, "c_vph": 7300},
-    "SEG-S2": {"q_vph": 2250, "v_kmh": 30, "v_f_kmh": 60, "k_vpk": 75, "L_q_m": 80,  "L_seg_m": 1100, "T_d_min": 2.0, "x": 0.34, "c_base_vph": 7500, "c_vph": 7200},
-    # 左支线（通畅）
-    "SEG-A":  {"q_vph": 1100, "v_kmh": 50, "v_f_kmh": 60, "k_vpk": 22, "L_q_m": 20,  "L_seg_m": 2200, "T_d_min": 0.8, "x": 0.20, "c_base_vph": 6000, "c_vph": 5800},
-    "SEG-A2": {"q_vph": 1100, "v_kmh": 55, "v_f_kmh": 60, "k_vpk": 20, "L_q_m": 12,  "L_seg_m": 1000, "T_d_min": 0.6, "x": 0.16, "c_base_vph": 6000, "c_vph": 5900},
-    # 右支线（拥堵）
-    "SEG-B":  {"q_vph": 1150, "v_kmh": 10, "v_f_kmh": 60, "k_vpk": 115, "L_q_m": 260, "L_seg_m": 2200, "T_d_min": 6.5, "x": 0.92, "c_base_vph": 6000, "c_vph": 1250},
-    "SEG-B2": {"q_vph": 1150, "v_kmh": 8,  "v_f_kmh": 60, "k_vpk": 144, "L_q_m": 300, "L_seg_m": 1000, "T_d_min": 7.2, "x": 0.96, "c_base_vph": 6000, "c_vph": 1200},
+    # ① 主线整条
+    "SEG-01": {"q_vph": 4500, "v_kmh": 40, "v_f_kmh": 60, "k_vpk": 113, "L_q_m": 90,  "L_seg_m": 3000, "T_d_min": 2.2, "x": 0.32, "c_base_vph": 9000, "c_vph": 8600},
+    # ② 左支线（通畅）
+    "SEG-02": {"q_vph": 1100, "v_kmh": 50, "v_f_kmh": 60, "k_vpk": 22, "L_q_m": 20,  "L_seg_m": 1500, "T_d_min": 0.8, "x": 0.20, "c_base_vph": 6000, "c_vph": 5800},
+    "SEG-03": {"q_vph": 1100, "v_kmh": 55, "v_f_kmh": 60, "k_vpk": 20, "L_q_m": 12,  "L_seg_m": 1400, "T_d_min": 0.6, "x": 0.16, "c_base_vph": 6000, "c_vph": 5900},
+    # ③ 右支线（拥堵：近岔开始排队，远段最重）
+    "SEG-04": {"q_vph": 1200, "v_kmh": 22, "v_f_kmh": 60, "k_vpk": 55, "L_q_m": 150, "L_seg_m": 1500, "T_d_min": 3.2, "x": 0.74, "c_base_vph": 6000, "c_vph": 1650},
+    "SEG-05": {"q_vph": 1200, "v_kmh": 12, "v_f_kmh": 60, "k_vpk": 100, "L_q_m": 280, "L_seg_m": 1400, "T_d_min": 6.8, "x": 0.95, "c_base_vph": 6000, "c_vph": 1250},
+    # ⑥ 站前服务段（汇流口上方公共段，缓行）
+    "SEG-06": {"q_vph": 2300, "v_kmh": 28, "v_f_kmh": 60, "k_vpk": 82, "L_q_m": 60,  "L_seg_m": 1200, "T_d_min": 1.9, "x": 0.52, "c_base_vph": 6000, "c_vph": 4400},
 }
 
 # ---- 判级（基于饱和度 x）----

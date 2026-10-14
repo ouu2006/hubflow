@@ -86,41 +86,41 @@ def make_segment(seg_id, name, pts):
 segments = []
 
 # ---- 主线走廊：中心线从南端到汇流口，双车道 = 中心线 ± LANE_OFF ----
+# 路段划分（业主 2026-10-14 三版口径，共 6 条）：
+#   ① 主线整条 = 1 条路段（黑框：从南端入口到汇流口，双车道合并成走廊中心线宽画）
+#   ② 左支线走廊 = 分 2 条路段（近岔段→远段），每条「分左回右去」双向合并画
+#   ③ 右支线走廊 = 同上分 2 条
+# 主线只有一条走廊线（不再是左右两条车道线），支线也只有一条走廊线——
+# 前端按走廊宽度渲染，「分左回右去」的语义由断面/指标承载，几何上不再拆车道。
 main_center = lin((0.0, MAIN_BOT), JUNC, N_LINE)
-main_left = offset_line(main_center, -LANE_OFF)   # 左车道（行驶方向左侧）
-main_right = offset_line(main_center, +LANE_OFF)  # 右车道
 
-# 入口段 / 分流段以 MAIN_MID 分界
-main_mid_idx = next(
-    i for i, (_, y) in enumerate(main_center) if y >= MAIN_MID
-)
-segments.append(make_segment("SEG-S1", "主线入口段·左车道", main_left[: main_mid_idx + 1]))
-segments.append(make_segment("SEG-S2", "主线入口段·右车道", main_right[: main_mid_idx + 1]))
+# ① 主线整条 = 1 条路段
+segments.append(make_segment("SEG-01", "主线（南入口→汇流口）", main_center))
 
-# 分流段：左车道直连左支线车道；右车道直连右支线车道
-# 支线车道 = 支线走廊中心线 ± LANE_OFF（各只有 1 条，取「内侧」使分叉连续不交叉）
+# ② 左支线走廊：整条贝塞尔，分近岔段 / 远段两条
 branch_l_center = bez(JUNC, BR_CTRL_L, BR_END_L)
+half_l = len(branch_l_center) // 2
+segments.append(make_segment("SEG-02", "左支线·近岔段", branch_l_center[: half_l + 1]))
+segments.append(make_segment("SEG-03", "左支线·远段", branch_l_center[half_l:]))
+
+# ③ 右支线走廊：镜像
 branch_r_center = bez(JUNC, BR_CTRL_R, BR_END_R)
-branch_l_lane = offset_line(branch_l_center, +LANE_OFF)  # 左支线内侧车道（靠走廊中心一侧）
-branch_r_lane = offset_line(branch_r_center, -LANE_OFF)  # 右支线内侧车道
+half_r = len(branch_r_center) // 2
+segments.append(make_segment("SEG-04", "右支线·近岔段", branch_r_center[: half_r + 1]))
+segments.append(make_segment("SEG-05", "右支线·远段", branch_r_center[half_r:]))
 
-# 主线分流段 = 从 MAIN_MID 到汇流口 + 支线前半段（合并成一条连续车道，保证分叉处圆滑）
+# ⑥ 站前服务段（汇流口正上方的公共段，三分走廊在此合流）
 segments.append(
-    make_segment("SEG-A", "左支线车道（含分流段）", main_left[main_mid_idx:] + branch_l_lane[1:])
+    make_segment("SEG-06", "站前服务段", lin((0.0, 30.0), (0.0, 150.0), 24))
 )
-segments.append(
-    make_segment("SEG-B", "右支线车道（含分流段）", main_right[main_mid_idx:] + branch_r_lane[1:])
-)
-
-# 支线延伸段（远端直行段）
-segments.append(make_segment("SEG-A2", "左支线延伸段", branch_l_lane[len(branch_l_lane) // 2:]))
-segments.append(make_segment("SEG-B2", "右支线延伸段", branch_r_lane[len(branch_r_lane) // 2:]))
 
 # ---- 输出 ----
 data = {
     "description": (
-        "Y 型单行道演示路网（业主 2026-10-14 二版：真道路双车道模型——"
-        "主线左右两车道，分流后各接左/右支线车道，分叉处车道弧线圆滑）；"
+        "Y 型单行道演示路网（业主 2026-10-14 三版：6 路段口径——"
+        "①主线整条 1 条(南入口→汇流口)；②左支线走廊分近岔/远段 2 条；"
+        "③右支线走廊同 2 条；④站前服务段 1 条；每条走廊双向合并画，"
+        "「分左回右去」的语义由断面与指标承载，几何上不拆车道）；"
         "坐标为局部平面坐标(米)，原点=汇流口，非任何真实地点。"
         "生成脚本：work/twin/y_junction/export_geometry.py（勿手改产物）。"
     ),
