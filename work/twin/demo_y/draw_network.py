@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import xml.etree.ElementTree as ET
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -24,6 +25,15 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 NET = HERE / "network" / "demo_y.net.xml"
 FIG_DIR = HERE / "figures"
+
+#: 字体候选：**优先 macOS 系统字体**（本仓库的演示环境是 macOS）。
+#: ⚠️ 这是**系统字体目录**、不是本机个人路径，但换到非 macOS 会全落空 ——
+#: 那时**打印一行说明**再退回 PIL 自带字体（**不静默降级**）。
+FONT_CANDIDATES = (
+    "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",   # macOS：带中文
+    "/System/Library/Fonts/Helvetica.ttc",                    # macOS
+    "/System/Library/Fonts/Supplemental/Arial.ttf",           # macOS
+)
 
 #: 画布与留白
 W, H, PAD = 1400, 900, 110
@@ -37,14 +47,16 @@ THEMES = {
 
 
 def font(size: int):
-    for name in ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-                 "/System/Library/Fonts/Helvetica.ttc",
-                 "/System/Library/Fonts/Supplemental/Arial.ttf"):
+    """取一个能画中文的字体；**用到哪个会打印出来，找不到也不静默降级**。"""
+    for name in FONT_CANDIDATES:
         if Path(name).is_file():
             try:
                 return ImageFont.truetype(name, size)
             except OSError:
                 continue
+    print("[draw_network] ⚠️ 候选系统字体一个都没找到（见 FONT_CANDIDATES），"
+          "退回 PIL 自带位图字体 —— 中文标签可能画不出来。换台机器请改 FONT_CANDIDATES。",
+          file=sys.stderr)
     return ImageFont.load_default()
 
 

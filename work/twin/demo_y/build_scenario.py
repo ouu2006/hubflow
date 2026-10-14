@@ -40,7 +40,7 @@ SEED = 42
 #: 仿真区间（秒）
 BEGIN, END = 0, 600
 
-#: 四类车流：路线 id、边序列、基础发车率（辆/小时）、车型
+#: 四类车流：车流 id、路线 id、基础发车率（辆/小时）—— 车型在 `vType id="car"` 里统一给，不随车流变
 FLOWS = [
     ("flow_stem_to_a", "r_stem_to_a", 600),
     ("flow_stem_to_b", "r_stem_to_b", 600),
