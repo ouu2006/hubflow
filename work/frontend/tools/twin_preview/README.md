@@ -16,7 +16,7 @@
 ## 跑法
 
 ```bash
-# 1. 桥接服务(需 SUMO_HOME、PYTHONPATH 含 %SUMO_HOME%\tools、fastapi+uvicorn)
+# 1. 桥接服务(需 SUMO_HOME、PYTHONPATH 含 $SUMO_HOME/tools、fastapi+uvicorn)
 python work/frontend/tools/twin_preview/server.py
 
 # 2. 前端(任一 ui-vue 工作树)
@@ -26,6 +26,28 @@ npm run dev   # /twin-api 代理指向 8102
 打开 `/#/dashboard`:底图自动替换为 OSM 真路网(吉庆大道/鼎湖大道 + 站区连接线),
 车辆动点为 SUMO 真值(D1 送客会驶向落客段停驻约 12 s 再离开)。**桥接服务不在时页面
 自动回落示例路网 + 合成车**,不白屏。
+
+### 换一张网(全部走参数，代码里没有任何站点分支)
+
+```bash
+python server.py --net <别的>.net.xml --port 8103            # 换网 + 换端口(两站可同时开)
+python server.py --net <别的>.net.xml --assignment <表>.json  # 换网 + 直接给 SEG→边链 映射表
+python server.py --station-lonlat 112.43,23.06 --seg-count 14 # 不给表时：换站房锚点/路段数
+```
+
+| 参数 | 默认 | 说明 |
+|---|---|---|
+| `--net` | 本目录 `station.net.xml` | SUMO 路网 |
+| `--assignment` | 无 | **「SEG → SUMO 边链」映射表**；给了它**就不再从路网里猜路段** |
+| `--station-lonlat` | 现站房锚点 | 只在不给映射表时用于挑路段 |
+| `--seg-count` | 10 | 只在不给映射表时用于补足路段数 |
+| `--host` / `--port` | `127.0.0.1` / `8102` | 二站建议 8103，好两站同时开对着比 |
+| `--site-name` | 空（用网名） | 仅展示用 |
+
+**为什么要 `--assignment`**：老路子（不给表）靠**街名 + 站房位置**分组，只适用于
+「OSM 衍生的、有名字、有地理配准」的网。**换到无名路 / 无地理配准的网就失效** ——
+那种网必须给映射表。生成表：`python make_assignment.py --net station.net.xml -o assignment.json`
+（它用的是**老路子那把尺子**，所以只对能跑通启发式的网有效；别的网的表要按该网自己的 SEG 划分手写）。
 
 ## 口径
 
