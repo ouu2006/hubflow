@@ -85,41 +85,30 @@ def make_segment(seg_id, name, pts):
 
 segments = []
 
-# ---- 主线走廊：中心线从南端到汇流口，双车道 = 中心线 ± LANE_OFF ----
-# 路段划分（业主 2026-10-14 三版口径，共 6 条）：
-#   ① 主线整条 = 1 条路段（黑框：从南端入口到汇流口，双车道合并成走廊中心线宽画）
-#   ② 左支线走廊 = 分 2 条路段（近岔段→远段），每条「分左回右去」双向合并画
-#   ③ 右支线走廊 = 同上分 2 条
-# 主线只有一条走廊线（不再是左右两条车道线），支线也只有一条走廊线——
-# 前端按走廊宽度渲染，「分左回右去」的语义由断面/指标承载，几何上不再拆车道。
+# ---- 主线走廊：中心线从南端到汇流口 ----
+# 路段划分（业主 2026-10-14 五版口径，共 3 条；站前服务段已裁掉、
+# 左右支线各合并为整条走廊一段）：
+#   ① 主线整条 = 1 条路段（黑框：从南端入口到汇流口）
+#   ② 左支线整条 = 1 条路段（汇流口→远端）
+#   ③ 右支线整条 = 1 条路段
+# 每条走廊双向合并画，「分左回右去」的语义由断面/指标承载，几何上不拆车道。
 main_center = lin((0.0, MAIN_BOT), JUNC, N_LINE)
 
 # ① 主线整条 = 1 条路段
 segments.append(make_segment("SEG-01", "主线（南入口→汇流口）", main_center))
 
-# ② 左支线走廊：整条贝塞尔，分近岔段 / 远段两条
-branch_l_center = bez(JUNC, BR_CTRL_L, BR_END_L)
-half_l = len(branch_l_center) // 2
-segments.append(make_segment("SEG-02", "左支线·近岔段", branch_l_center[: half_l + 1]))
-segments.append(make_segment("SEG-03", "左支线·远段", branch_l_center[half_l:]))
+# ② 左支线整条
+segments.append(make_segment("SEG-02", "左支线（汇流口→远端）", bez(JUNC, BR_CTRL_L, BR_END_L)))
 
-# ③ 右支线走廊：镜像
-branch_r_center = bez(JUNC, BR_CTRL_R, BR_END_R)
-half_r = len(branch_r_center) // 2
-segments.append(make_segment("SEG-04", "右支线·近岔段", branch_r_center[: half_r + 1]))
-segments.append(make_segment("SEG-05", "右支线·远段", branch_r_center[half_r:]))
-
-# ⑥ 站前服务段（汇流口正上方的公共段，三分走廊在此合流）
-segments.append(
-    make_segment("SEG-06", "站前服务段", lin((0.0, 30.0), (0.0, 150.0), 24))
-)
+# ③ 右支线整条
+segments.append(make_segment("SEG-03", "右支线（汇流口→远端）", bez(JUNC, BR_CTRL_R, BR_END_R)))
 
 # ---- 输出 ----
 data = {
     "description": (
-        "Y 型单行道演示路网（业主 2026-10-14 三版：6 路段口径——"
-        "①主线整条 1 条(南入口→汇流口)；②左支线走廊分近岔/远段 2 条；"
-        "③右支线走廊同 2 条；④站前服务段 1 条；每条走廊双向合并画，"
+        "Y 型单行道演示路网（业主 2026-10-14 五版：3 路段口径——"
+        "①主线整条 1 条(南入口→汇流口)；②左支线整条 1 条；③右支线整条 1 条；"
+        "站前服务段已裁掉、左右支线不再分段；每条走廊双向合并画，"
         "「分左回右去」的语义由断面与指标承载，几何上不拆车道）；"
         "坐标为局部平面坐标(米)，原点=汇流口，非任何真实地点。"
         "生成脚本：work/twin/y_junction/export_geometry.py（勿手改产物）。"
