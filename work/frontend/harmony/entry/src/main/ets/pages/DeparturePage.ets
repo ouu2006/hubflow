@@ -36,7 +36,7 @@ export struct DeparturePage {
             Row({ space: 6 }) {
               ForEach(ROUTES_FIXTURE.departure_route.segments, (seg: string) => {
                 SegmentBar({ segmentId: seg, unavailable: this.store.unavailable, colorBlind: this.store.colorBlind })
-              }, (seg: string) => seg)
+              }, (seg: string) => `${seg}_${this.store.unavailable}_${this.store.colorBlind}`)
             }
             .width('100%')
           }
@@ -51,7 +51,7 @@ export struct DeparturePage {
             .fontColor('#666666')
             .width('100%')
 
-          LevelLegend({ colorBlind: this.store.colorBlind })
+          LevelLegend({ colorBlind: this.store.colorBlind, unavailable: this.store.unavailable })
 
           Text(DISCLAIMER_TEXT)
             .fontSize(12)

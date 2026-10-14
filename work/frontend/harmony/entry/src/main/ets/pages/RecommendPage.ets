@@ -12,50 +12,67 @@ function demoVehicle(): Vehicle {
   return VEHICLES_FIXTURE.vehicles[0];
 }
 
-/** 页一：当前建议（推荐路线 + ≥2 条备选 + why + 前后车协同说明） */
+/**
+ * 路线卡（推荐 / 备选通用）。
+ *
+ * 【为什么做成子组件而不是 @Builder】
+ * @Builder 的值参数只在创建时求值一次，其内部对状态属性的读取不保证随状态重算
+ * （实测：点开关后卡片不变）。做成 @Component 子组件、参数用 @Prop 声明后，
+ * 父态一变必然整卡重绘。
+ */
 @Component
-export struct RecommendPage {
-  // @ObjectLink：与 Index 持有的同一个 DemoStore 实例双向同步
-  // （Tabs 会缓存已创建的页签，只有 ObjectLink 这种显式链接才能保证父态一变就重绘）
-  @ObjectLink store: DemoStore;
+export struct RouteCard {
+  @Prop pathId: string = '';
+  @Prop etaMin: number = 0;
+  @Prop segments: string[] = [];
+  @Prop highlight: boolean = false;
+  @Prop unavailable: boolean = false;
+  @Prop colorBlind: boolean = false;
 
-  @State pickedRoad: string = 'SEG-002';
-
-  @Builder
-  routeCard(pathId: string, etaMin: number, segments: string[], highlight: boolean) {
+  build() {
     Column({ space: 6 }) {
       Row() {
-        Text(highlight ? '推荐' : '备选')
+        Text(this.highlight ? '推荐' : '备选')
           .fontSize(11)
-          .fontColor(highlight ? '#FFFFFF' : '#666666')
+          .fontColor(this.highlight ? '#FFFFFF' : '#666666')
           .padding({ top: 2, bottom: 2, left: 6, right: 6 })
-          .backgroundColor(highlight ? '#0052D9' : '#E8E8E8')
+          .backgroundColor(this.highlight ? '#0052D9' : '#E8E8E8')
           .borderRadius(4)
-        Text(pathId)
+        Text(this.pathId)
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
           .fontColor('#1A1A1A')
           .margin({ left: 8 })
         Blank()
-        Text(`约 ${etaMin} 分钟`)
+        Text(`约 ${this.etaMin} 分钟`)
           .fontSize(14)
           .fontColor('#1A1A1A')
       }
       .width('100%')
 
       Row({ space: 6 }) {
-        ForEach(segments, (seg: string) => {
-          SegmentBar({ segmentId: seg, unavailable: this.store.unavailable, colorBlind: this.store.colorBlind })
-        }, (seg: string) => seg)
+        ForEach(this.segments, (seg: string) => {
+          SegmentBar({ segmentId: seg, unavailable: this.unavailable, colorBlind: this.colorBlind })
+        }, (seg: string) => `${seg}_${this.unavailable}_${this.colorBlind}`)
       }
       .width('100%')
     }
     .width('100%')
     .padding(12)
-    .backgroundColor(highlight ? '#F0F5FF' : '#FAFAFA')
+    .backgroundColor(this.highlight ? '#F0F5FF' : '#FAFAFA')
     .borderRadius(10)
-    .border(highlight ? { width: 1, color: '#0052D9' } : { width: 0 })
+    .border(this.highlight ? { width: 1, color: '#0052D9' } : { width: 0 })
   }
+}
+
+/** 页一：当前建议（推荐路线 + ≥2 条备选 + why + 前后车协同说明） */
+@Component
+export struct RecommendPage {
+  // @ObjectLink：与 Index 持有的同一个 DemoStore 实例双向同步
+  // （Tabs 会缓存已创建的页签，@ObjectLink 才能保证父态一变就重绘）
+  @ObjectLink store: DemoStore;
+
+  @State pickedRoad: string = 'SEG-002';
 
   build() {
     Scroll() {
@@ -74,18 +91,19 @@ export struct RecommendPage {
               Row() {
                 Text(road).fontSize(13).fontColor('#1A1A1A')
                 Blank()
-                Text(this.pickedRoad === road ? '已选' : '')
+                Text(this.pickedRoad === road ? '已选' : '未选')
                   .fontSize(12)
-                  .fontColor('#0052D9')
+                  .fontColor(this.pickedRoad === road ? '#0052D9' : '#A6A6A6')
               }
               .width('100%')
               .padding(10)
               .backgroundColor(this.pickedRoad === road ? '#F0F5FF' : '#F5F5F5')
+              .border(this.pickedRoad === road ? { width: 1, color: '#0052D9' } : { width: 0 })
               .borderRadius(8)
               .onClick(() => {
                 this.pickedRoad = road;
               })
-            }, (road: string) => road)
+            }, (road: string) => `${road}_${this.pickedRoad}`)
           }
           .width('100%')
           .padding(12)
@@ -93,8 +111,14 @@ export struct RecommendPage {
           .borderRadius(10)
         } else {
           // 推荐路线（arrival_route）
-          this.routeCard(ROUTES_FIXTURE.arrival_route.path_id, ROUTES_FIXTURE.arrival_route.eta_min,
-            ROUTES_FIXTURE.arrival_route.segments, true)
+          RouteCard({
+            pathId: ROUTES_FIXTURE.arrival_route.path_id,
+            etaMin: ROUTES_FIXTURE.arrival_route.eta_min,
+            segments: ROUTES_FIXTURE.arrival_route.segments,
+            highlight: true,
+            unavailable: this.store.unavailable,
+            colorBlind: this.store.colorBlind
+          })
           InfoRow({
             label: '落客点',
             value: `${ROUTES_FIXTURE.arrival_route.dropoff_point} · 步行接驳约 ${ROUTES_FIXTURE.arrival_route.walk_min} 分钟`
@@ -165,7 +189,7 @@ export struct RecommendPage {
             .textAlign(TextAlign.Start)
 
           // 四级图例（三重编码）
-          LevelLegend({ colorBlind: this.store.colorBlind })
+          LevelLegend({ colorBlind: this.store.colorBlind, unavailable: this.store.unavailable })
         }
 
         // 绑定演示车（C-3）

@@ -19,7 +19,7 @@ export struct SimBadge {
 /** 段落标题 */
 @Component
 export struct SectionTitle {
-  text: string = '';
+  @Prop text: string = '';
 
   build() {
     Text(this.text)
@@ -33,8 +33,8 @@ export struct SectionTitle {
 /** 通用键值行 */
 @Component
 export struct InfoRow {
-  label: string = '';
-  value: string = '';
+  @Prop label: string = '';
+  @Prop value: string = '';
 
   build() {
     Row() {
@@ -47,12 +47,20 @@ export struct InfoRow {
   }
 }
 
-/** 等级标签：颜色 + 图标 + 文字三重编码（colorBlind 开启时颜色抽掉） */
+/**
+ * 等级标签：颜色 + 图标 + 文字三重编码（手册 §11.3）
+ *
+ * 【为什么这三个参数必须加 @Prop】
+ * 早期版本它们是普通成员变量，父组件用 ForEach 渲染 SegmentBar 时，
+ * ForEach 的缓存键（segmentId）不变 → ArkUI 复用缓存节点、不重新执行 itemBuilder，
+ * 于是「数据不可用 / 去色校验」开启后路段颜色不变（实测 bug）。
+ * 加 @Prop 后这三个值是响应式的：父层一变，子组件必然重绘。
+ */
 @Component
 export struct LevelChip {
-  level: number = 0;
-  unavailable: boolean = false;
-  colorBlind: boolean = false;
+  @Prop level: number = 0;
+  @Prop unavailable: boolean = false;
+  @Prop colorBlind: boolean = false;
 
   build() {
     Row({ space: 4 }) {
@@ -69,34 +77,55 @@ export struct LevelChip {
   }
 }
 
-/** 四级图例（颜色 + 图标 + 文字；去色校验时颜色抽掉，图标与文字保留） */
+/**
+ * 四级图例（颜色 + 图标 + 文字；去色校验时颜色抽掉，图标与文字保留）
+ * @Prop 必要性同 LevelChip：去色校验开关必须能让图例立刻变灰。
+ *
+ * 【unavailable 也要抽掉颜色】
+ * 数据不可用时若图例仍是彩色，等于还在暗示"数据正常"，与 TC-11 冲突，
+ * 也会让司机误以为灰色路段是真实路况。所以数据不可用 → 图例整体灰。
+ */
 @Component
 export struct LevelLegend {
-  colorBlind: boolean = false;
+  @Prop colorBlind: boolean = false;
+  @Prop unavailable: boolean = false;
 
   build() {
-    Row({ space: 12 }) {
-      ForEach(LEVEL_META_LIST, (meta: LevelMeta) => {
+    Column({ space: 6 }) {
+      Row({ space: 12 }) {
+        ForEach(LEVEL_META_LIST, (meta: LevelMeta) => {
+          Row({ space: 4 }) {
+            Text(meta.glyph)
+              .fontSize(12)
+              .fontColor(levelGlyphColorOf(meta.level, false, this.colorBlind || this.unavailable))
+            Text(meta.name)
+              .fontSize(12)
+              .fontColor(levelTextColorOf(meta.level, false, this.colorBlind || this.unavailable))
+          }
+        }, (meta: LevelMeta) => `${meta.name}_${this.colorBlind}_${this.unavailable}`)
         Row({ space: 4 }) {
-          Text(meta.glyph)
+          Text(LEVEL_UNAVAILABLE.glyph)
             .fontSize(12)
-            .fontColor(levelGlyphColorOf(meta.level, false, this.colorBlind))
-          Text(meta.name)
+            .fontColor(levelGlyphColorOf(0, true, this.colorBlind))
+          Text(LEVEL_UNAVAILABLE.name)
             .fontSize(12)
-            .fontColor(levelTextColorOf(meta.level, false, this.colorBlind))
+            .fontColor(levelTextColorOf(0, true, this.colorBlind))
         }
-      }, (meta: LevelMeta) => meta.name)
-      Row({ space: 4 }) {
-        Text(LEVEL_UNAVAILABLE.glyph)
-          .fontSize(12)
-          .fontColor(levelGlyphColorOf(0, true, this.colorBlind))
-        Text(LEVEL_UNAVAILABLE.name)
-          .fontSize(12)
-          .fontColor(levelTextColorOf(0, true, this.colorBlind))
       }
+      .width('100%')
+
+      // 图例顺序固定在底部一行，四级顺序始终一致，避免司机对照时需要重新扫视
+      Text(this.unavailable
+        ? '数据不可用：等级暂不可判读，以下色阶仅作对照，不表示当前路况'
+        : '图例顺序固定：畅通 → 缓行 → 拥堵 → 严重拥堵（颜色抽掉后靠图标 + 文字区分）')
+        .fontSize(10)
+        .fontColor(this.unavailable ? '#8B8B8B' : '#A6A6A6')
+        .width('100%')
     }
     .width('100%')
-    .padding({ top: 4, bottom: 4 })
+    .padding({ top: 6, bottom: 6, left: 8, right: 8 })
+    .backgroundColor('#FAFAFA')
+    .borderRadius(8)
   }
 }
 
@@ -124,12 +153,15 @@ export struct EmergencyCard {
   }
 }
 
-/** 路段条（路线上的每一段；数据不可用时整段变灰） */
+/**
+ * 路段条（路线上的每一段；数据不可用时整段变灰）
+ * @Prop 必要性同 LevelChip。
+ */
 @Component
 export struct SegmentBar {
-  segmentId: string = '';
-  unavailable: boolean = false;
-  colorBlind: boolean = false;
+  @Prop segmentId: string = '';
+  @Prop unavailable: boolean = false;
+  @Prop colorBlind: boolean = false;
 
   build() {
     Column({ space: 4 }) {
