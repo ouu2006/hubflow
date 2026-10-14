@@ -17,23 +17,18 @@ geom = json.loads((ROOT / "y_junction_geometry.json").read_text(encoding="utf-8"
 segments_geom = geom["segments"]
 
 # ---- 指标基线（预置演示值）----
-# 业主口径：右侧(B)拥堵(level 3/2)、左侧(A)畅通(level 0/1)、主线(S)缓行(level 1/2)
+# 业主口径：右侧(B)严重拥堵、左侧(A)畅通、主线(S)缓行；单行道自下而上
+# SEG-A/SEG-B 含分流段+支线前半（长路段）；SEG-A2/SEG-B2 为支线远端延伸段
 BASELINES = {
-    # boundary
-    "BND-SB":  {"q_vph": 3200, "v_kmh": 28, "v_f_kmh": 60, "k_vpk": 114, "L_q_m": 180, "L_seg_m": 2100, "T_d_min": 4.2,  "x": 0.72, "c_base_vph": 4200, "c_vph": 3900},
-    "BND-BA":  {"q_vph": 3600, "v_kmh": 22, "v_f_kmh": 60, "k_vpk": 164, "L_q_m": 280, "L_seg_m": 2300, "T_d_min": 5.8,  "x": 0.85, "c_base_vph": 4200, "c_vph": 3600},
-    "BND-AS":  {"q_vph": 2100, "v_kmh": 45, "v_f_kmh": 60, "k_vpk": 47,  "L_q_m": 60,  "L_seg_m": 2000, "T_d_min": 2.1,  "x": 0.42, "c_base_vph": 4200, "c_vph": 4000},
-    # internal
-    "INT-S-CW":  {"q_vph": 2400, "v_kmh": 40, "v_f_kmh": 60, "k_vpk": 60,  "L_q_m": 70,  "L_seg_m": 1800, "T_d_min": 2.4,  "x": 0.48, "c_base_vph": 4200, "c_vph": 3900},
-    "INT-S-CCW": {"q_vph": 1800, "v_kmh": 52, "v_f_kmh": 60, "k_vpk": 35,  "L_q_m": 40,  "L_seg_m": 1800, "T_d_min": 1.5,  "x": 0.32, "c_base_vph": 4200, "c_vph": 4100},
-    "INT-B-CW":  {"q_vph": 3400, "v_kmh": 18, "v_f_kmh": 60, "k_vpk": 189, "L_q_m": 310, "L_seg_m": 1700, "T_d_min": 6.5,  "x": 0.91, "c_base_vph": 3800, "c_vph": 3000},
-    "INT-B-CCW": {"q_vph": 800,  "v_kmh": 55, "v_f_kmh": 60, "k_vpk": 15,  "L_q_m": 15,  "L_seg_m": 1700, "T_d_min": 0.8,  "x": 0.15, "c_base_vph": 3800, "c_vph": 3700},
-    "INT-A-CW":  {"q_vph": 900,  "v_kmh": 54, "v_f_kmh": 60, "k_vpk": 17,  "L_q_m": 18,  "L_seg_m": 1600, "T_d_min": 0.9,  "x": 0.16, "c_base_vph": 3800, "c_vph": 3700},
-    "INT-A-CCW": {"q_vph": 600,  "v_kmh": 58, "v_f_kmh": 60, "k_vpk": 10,  "L_q_m": 10,  "L_seg_m": 1600, "T_d_min": 0.6,  "x": 0.10, "c_base_vph": 3800, "c_vph": 3750},
-    # road
-    "RD-S": {"q_vph": 4500, "v_kmh": 35, "v_f_kmh": 60, "k_vpk": 129, "L_q_m": 120, "L_seg_m": 5000, "T_d_min": 3.5,  "x": 0.60, "c_base_vph": 7500, "c_vph": 6800},
-    "RD-B": {"q_vph": 3800, "v_kmh": 20, "v_f_kmh": 60, "k_vpk": 190, "L_q_m": 350, "L_seg_m": 4500, "T_d_min": 7.0,  "x": 0.88, "c_base_vph": 5000, "c_vph": 3800},
-    "RD-A": {"q_vph": 1500, "v_kmh": 55, "v_f_kmh": 60, "k_vpk": 27,  "L_q_m": 30,  "L_seg_m": 4200, "T_d_min": 1.4,  "x": 0.25, "c_base_vph": 5000, "c_vph": 4800},
+    # 主线（双车道）
+    "SEG-S1": {"q_vph": 2250, "v_kmh": 35, "v_f_kmh": 60, "k_vpk": 64, "L_q_m": 60,  "L_seg_m": 1600, "T_d_min": 1.8, "x": 0.30, "c_base_vph": 7500, "c_vph": 7300},
+    "SEG-S2": {"q_vph": 2250, "v_kmh": 30, "v_f_kmh": 60, "k_vpk": 75, "L_q_m": 80,  "L_seg_m": 1100, "T_d_min": 2.0, "x": 0.34, "c_base_vph": 7500, "c_vph": 7200},
+    # 左支线（通畅）
+    "SEG-A":  {"q_vph": 1100, "v_kmh": 50, "v_f_kmh": 60, "k_vpk": 22, "L_q_m": 20,  "L_seg_m": 2200, "T_d_min": 0.8, "x": 0.20, "c_base_vph": 6000, "c_vph": 5800},
+    "SEG-A2": {"q_vph": 1100, "v_kmh": 55, "v_f_kmh": 60, "k_vpk": 20, "L_q_m": 12,  "L_seg_m": 1000, "T_d_min": 0.6, "x": 0.16, "c_base_vph": 6000, "c_vph": 5900},
+    # 右支线（拥堵）
+    "SEG-B":  {"q_vph": 1150, "v_kmh": 10, "v_f_kmh": 60, "k_vpk": 115, "L_q_m": 260, "L_seg_m": 2200, "T_d_min": 6.5, "x": 0.92, "c_base_vph": 6000, "c_vph": 1250},
+    "SEG-B2": {"q_vph": 1150, "v_kmh": 8,  "v_f_kmh": 60, "k_vpk": 144, "L_q_m": 300, "L_seg_m": 1000, "T_d_min": 7.2, "x": 0.96, "c_base_vph": 6000, "c_vph": 1200},
 }
 
 # ---- 判级（基于饱和度 x）----
@@ -99,15 +94,15 @@ for i, sg in enumerate(segments_geom[:6]):  # 前 6 条路段各放 2 辆车
         })
 
 # ---- 生成 overview ----
+# level_dist 档位口径对齐前端 CongestionLevel = 1|2|3|4
 level_dist = []
-for lv in range(4):
+for lv in range(1, 5):
     count = sum(1 for s in segments if s["level"] == lv)
     if count > 0:
         level_dist.append({
             "level": lv,
-            "name": {0: "畅通", 1: "缓行", 2: "拥堵", 3: "严重拥堵"}[lv],
+            "name": {1: "畅通", 2: "缓行", 3: "拥堵", 4: "严重拥堵"}[lv],
             "count": count,
-            "color": {0: "#4caf50", 1: "#ffeb3b", 2: "#ff9800", 3: "#f44336"}[lv]
         })
 
 overview = {
@@ -119,7 +114,12 @@ overview = {
     "vehicles_guided": 15,
     "guided_rate": 0.35,
     "level_distribution": level_dist,
-    "worst_segment": max(segments, key=lambda s: s["x"]),
+    "worst_segment": {
+        "segment_id": max(segments, key=lambda s: s["x"])["segment_id"],
+        "name": max(segments, key=lambda s: s["x"])["name"],
+        "level": max(segments, key=lambda s: s["x"])["level"],
+        "x": max(segments, key=lambda s: s["x"])["x"],
+    },
 }
 
 # ---- 输出 ----

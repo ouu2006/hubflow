@@ -1,192 +1,132 @@
 # -*- coding: utf-8 -*-
-"""导出 Y 型路网几何为 JSON（对齐 stationB.network.ts 的 segments[] 形状）。"""
-import os, json, math
-import numpy as np
+"""
+导出 Y 型单行道路网几何为 JSON（对齐站点包 PackSegment 契约）。
 
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)))
-OUT = os.path.join(OUT_DIR, "y_junction_geometry.json")
+口径（业主 2026-10-14）：
+  · 单行道：车辆自下方主线驶入，经汇流口后向左/右两条支线分流出去；
+  · 真正的「路」：不是一根细线——每条走廊按**车道双线**建模，
+    主线 2 条车道（左/右），左右支线各 1 条车道；车道即前端渲染的路段 polyline；
+  · 车道线 = 中心线沿法向偏移，分流段用车道弧线圆滑转弯（二次贝塞尔），
+    车道之间只在汇流口前共享、分流后各走各的，不互相重叠；
+  · 坐标为局部平面坐标（米），原点 = 汇流口中心，不做地理配准。
 
-H_PAV  = 7.5
-H_EDGE = 7.0
-R_FIL  = 5.0
-# 单行道 Y 型：从下往上分流
-# S 腿 = 下方来车（向上）
-# A 腿 = 左上分叉
-# B 腿 = 右上分叉
-ARM_S_DEG = 90.0    # 下方来车，向上
-ARM_A_DEG = 150.0   # 左上分叉
-ARM_B_DEG = 30.0    # 右上分叉
+布局（坐标 y 向上，x 向右）：
+                 A2                 B2
+                ／                     ＼
+             A1(左车道)             B1(右车道)
+                ＼    ↖ 分流口 ↗    ／
+                 S2 —— S1 —— 主线入口(南)
+"""
+import json
+import math
+from pathlib import Path
 
-def unit(deg):
-    a = math.radians(deg)
-    return np.array([math.cos(a), math.sin(a)])
+ROOT = Path(__file__).resolve().parent
+OUT = ROOT / "y_junction_geometry.json"
 
-class Arm:
-    def __init__(self, name, deg):
-        self.name = name
-        self.deg = deg
-        self.u = unit(deg)
-        self.n = np.array([-self.u[1], self.u[0]])
+# ---- 几何参数（米）----
+LANE_OFF = 4.0        # 车道中心线相对走廊中心线的横向偏移（半幅）
+MAIN_BOT = -300.0     # 主线南端（入口）
+MAIN_MID = -140.0     # 主线近岔段 / 分流段分界
+JUNC = (0.0, 0.0)     # 汇流口中心
 
-ARM_A = Arm("A", ARM_A_DEG)
-ARM_B = Arm("B", ARM_B_DEG)
-ARM_S = Arm("S", ARM_S_DEG)
-ORDER = [ARM_S, ARM_B, ARM_A]
-PAIRS = list(zip(ORDER, ORDER[1:] + ORDER[:1]))
-NEXT_CCW = {ORDER[k].name: ORDER[(k + 1) % 3].name for k in range(3)}
-PREV_CCW = {ORDER[k].name: ORDER[(k - 1) % 3].name for k in range(3)}
+# 支线走廊：贝塞尔（起点=汇流口，控制点决定出射角，终点=远端）
+BR_CTRL_L = (-45.0, 130.0)
+BR_END_L = (-240.0, 230.0)
+BR_CTRL_R = (45.0, 130.0)
+BR_END_R = (240.0, 230.0)
 
-def corner_geom(i, j, h, r):
-    ui, uj, ni, nj = i.u, j.u, i.n, j.n
-    M = np.array([[ui[0], -uj[0]], [ui[1], -uj[1]]])
-    t1, t2 = np.linalg.solve(M, -h * (ni + nj))
-    V = t1 * ui + h * ni
-    th = np.degrees(math.acos(np.clip(np.dot(ui, uj), -1.0, 1.0)))
-    al = math.radians(th / 2.0)
-    L = r / math.tan(al)
-    d = r / math.sin(al)
-    bis = ui + uj
-    bis = bis / np.linalg.norm(bis)
-    C = V + d * bis
-    T1 = V + L * ui
-    T2 = V + L * uj
-    a1 = math.atan2(T1[1] - C[1], T1[0] - C[0])
-    a2 = math.atan2(T2[1] - C[1], T2[0] - C[0])
-    dth = math.radians(((a2 - a1 + math.pi) % (2*math.pi)) - math.pi)
-    ang = a1 + np.linspace(0.0, dth, 48)
-    arc = np.column_stack([C[0] + r * np.cos(ang), C[1] + r * np.sin(ang)])
-    return dict(V=V, T1=T1, T2=T2, C=C, arc=arc)
-
-# CORN[(leg_cw, leg_ccw)] = corner geometry
-CORN  = {(i.name, j.name): corner_geom(i, j, H_PAV,  R_FIL) for i, j in PAIRS}
-CORN_E = {(i.name, j.name): corner_geom(i, j, H_EDGE, R_FIL) for i, j in PAIRS}
+N_LINE = 64  # 每条曲线采样点数
 
 
-def make_boundary_segment(seg_id, name, leg_name, corner_pair):
-    """
-    corner_pair = (cw_leg, ccw_leg) — 这条 boundary 属于该 corner。
-    几何：从 corner_pair[0] 腿的 T1 → corner arc → corner_pair[1] 腿的 T2 → 直延伸。
-    """
-    c = CORN[corner_pair]
-    c_e = CORN_E[corner_pair]
-    arm_i = {"A": ARM_A, "B": ARM_B, "S": ARM_S}[corner_pair[0]]
-    arm_j = {"A": ARM_A, "B": ARM_B, "S": ARM_S}[corner_pair[1]]
+def bez(p0, p1, p2, n=N_LINE):
+    """二次贝塞尔采样。"""
+    return [
+        (
+            (1 - t) ** 2 * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+            (1 - t) ** 2 * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1],
+        )
+        for t in (i / (n - 1) for i in range(n))
+    ]
 
-    pts = []
-    # 从 corner_pair[0] 腿的 +n 侧切点 T1 出发
-    pts.append(c["T1"].tolist())
-    pts.extend(c["arc"].tolist())
-    pts.append(c["T2"].tolist())
-    # 沿 corner_pair[1] 腿直行
-    pts.append((c["T2"] + 400.0 * arm_j.u).tolist())
-    # 沿 corner_pair[0] 腿反向（从 T1 往回）—— 补全成一个闭环的一半
-    pts_rev = [(c_e["T1"] - 80.0 * arm_i.u).tolist()]
-    pts_rev.extend(c_e["arc"][::-1].tolist())
-    pts_rev.append(c_e["T2"].tolist())
 
-    full = pts + pts_rev
-    # 简化采样
-    if len(full) > 120:
-        idx = np.linspace(0, len(full) - 1, 120).astype(int)
-        full = [full[i] for i in idx]
+def lin(p0, p1, n):
+    return [
+        (p0[0] + (p1[0] - p0[0]) * i / (n - 1), p0[1] + (p1[1] - p0[1]) * i / (n - 1))
+        for i in range(n)
+    ]
+
+
+def offset_line(pts, off):
+    """折线沿左法向（行进方向左侧）偏移 off。"""
+    n = len(pts)
+    out = []
+    for i, (x, y) in enumerate(pts):
+        if i == 0:
+            dx, dy = pts[1][0] - x, pts[1][1] - y
+        elif i == n - 1:
+            dx, dy = x - pts[i - 1][0], y - pts[i - 1][1]
+        else:
+            dx, dy = pts[i + 1][0] - pts[i - 1][0], pts[i + 1][1] - pts[i - 1][1]
+        L = math.hypot(dx, dy) or 1.0
+        # 左法向 = (-dy, dx) / L
+        out.append((x - dy / L * off, y + dx / L * off))
+    return out
+
+
+def make_segment(seg_id, name, pts):
     return {
         "segment_id": seg_id,
         "name": name,
-        "role": "boundary",
-        "coords": [[round(float(p[0]), 3), round(float(p[1]), 3)] for p in full],
+        "kind": "main",
+        "coords": [[round(x, 2), round(y, 2)] for x, y in pts],
     }
 
 
-def make_internal_segment(seg_id, name, arm_name, offset_sign, t_start, t_end, n_pts=60):
-    a = {"A": ARM_A, "B": ARM_B, "S": ARM_S}[arm_name]
-    ts = np.linspace(t_start, t_end, n_pts)
-    pts = []
-    for t in ts:
-        p = t * a.u + offset_sign * 0.5 * a.n
-        pts.append([round(float(p[0]), 3), round(float(p[1]), 3)])
-    return {
-        "segment_id": seg_id,
-        "name": name,
-        "role": "internal",
-        "coords": pts,
-    }
-
-
-def make_road_segment(seg_id, name, arm_name, offset, t_start, t_end, n_pts=80):
-    a = {"A": ARM_A, "B": ARM_B, "S": ARM_S}[arm_name]
-    ts = np.linspace(t_start, t_end, n_pts)
-    pts = []
-    for t in ts:
-        p = t * a.u + offset * a.n
-        pts.append([round(float(p[0]), 3), round(float(p[1]), 3)])
-    return {
-        "segment_id": seg_id,
-        "name": name,
-        "role": "road",
-        "coords": pts,
-    }
-
-
-# ---- 构建 segments ----
 segments = []
 
-# 边界 segment：6 个 corner，顺时针顺序 (S,B) (B,A) (A,S)
-boundary_defs = [
-    ("BND-SB", "S-B 转角缘石", ("S", "B")),
-    ("BND-BA", "B-A 转角缘石", ("B", "A")),
-    ("BND-AS", "A-S 转角缘石", ("A", "S")),
-]
-for sid, sname, cpair in boundary_defs:
-    segments.append(make_boundary_segment(sid, sname, cpair[0], cpair))
+# ---- 主线走廊：中心线从南端到汇流口，双车道 = 中心线 ± LANE_OFF ----
+main_center = lin((0.0, MAIN_BOT), JUNC, N_LINE)
+main_left = offset_line(main_center, -LANE_OFF)   # 左车道（行驶方向左侧）
+main_right = offset_line(main_center, +LANE_OFF)  # 右车道
 
-# 内部参考线（每条腿 2 条 = 6 条）
-internal_defs = [
-    ("INT-S-CW",  "S 腿内侧参考线(+n)", "S", +1, 1.0, 34.0),
-    ("INT-S-CCW", "S 腿外侧参考线(-n)", "S", -1, 1.0, 34.0),
-    ("INT-B-CW",  "B 腿内侧参考线(+n)", "B", +1, 1.0, 34.0),
-    ("INT-B-CCW", "B 腿外侧参考线(-n)", "B", -1, 1.0, 34.0),
-    ("INT-A-CW",  "A 腿内侧参考线(+n)", "A", +1, 1.0, 34.0),
-    ("INT-A-CCW", "A 腿外侧参考线(-n)", "A", -1, 1.0, 34.0),
-]
-for sid, sname, arm, sgn, t0, t1 in internal_defs:
-    segments.append(make_internal_segment(sid, sname, arm, sgn, t0, t1))
+# 入口段 / 分流段以 MAIN_MID 分界
+main_mid_idx = next(
+    i for i, (_, y) in enumerate(main_center) if y >= MAIN_MID
+)
+segments.append(make_segment("SEG-S1", "主线入口段·左车道", main_left[: main_mid_idx + 1]))
+segments.append(make_segment("SEG-S2", "主线入口段·右车道", main_right[: main_mid_idx + 1]))
 
-# 路面中心线（road）
-road_defs = [
-    ("RD-S", "S 腿路面中心线", "S",  0.0, 0.5, 35.0),
-    ("RD-B", "B 腿路面中心线", "B",  0.0, 0.5, 35.0),
-    ("RD-A", "A 腿路面中心线", "A",  0.0, 0.5, 35.0),
-]
-for sid, sname, arm, off, t0, t1 in road_defs:
-    segments.append(make_road_segment(sid, sname, arm, off, t0, t1))
+# 分流段：左车道直连左支线车道；右车道直连右支线车道
+# 支线车道 = 支线走廊中心线 ± LANE_OFF（各只有 1 条，取「内侧」使分叉连续不交叉）
+branch_l_center = bez(JUNC, BR_CTRL_L, BR_END_L)
+branch_r_center = bez(JUNC, BR_CTRL_R, BR_END_R)
+branch_l_lane = offset_line(branch_l_center, +LANE_OFF)  # 左支线内侧车道（靠走廊中心一侧）
+branch_r_lane = offset_line(branch_r_center, -LANE_OFF)  # 右支线内侧车道
 
-# ---- 默认 congestion 分级 ----
-# 业主口径：右侧(B)拥堵、左侧(A)畅通、主线(S)缓行
-default_congestion = {
-    "BND-SB":  1,   # S↔B 转角 = 右上方 → 缓行
-    "BND-BA":  3,   # B↔A 转角 = 右上方更重 → 严重拥堵
-    "BND-AS":  0,   # A↔S 转角 = 左侧 → 畅通
-    "INT-S-CW":  1,
-    "INT-S-CCW": 0,
-    "INT-B-CW":  3,
-    "INT-B-CCW": 0,
-    "INT-A-CW":  0,
-    "INT-A-CCW": 0,
-    "RD-S": 1,
-    "RD-B": 3,
-    "RD-A": 0,
-}
+# 主线分流段 = 从 MAIN_MID 到汇流口 + 支线前半段（合并成一条连续车道，保证分叉处圆滑）
+segments.append(
+    make_segment("SEG-A", "左支线车道（含分流段）", main_left[main_mid_idx:] + branch_l_lane[1:])
+)
+segments.append(
+    make_segment("SEG-B", "右支线车道（含分流段）", main_right[main_mid_idx:] + branch_r_lane[1:])
+)
 
-for seg in segments:
-    seg["congestion_level"] = default_congestion.get(seg["segment_id"], 0)
+# 支线延伸段（远端直行段）
+segments.append(make_segment("SEG-A2", "左支线延伸段", branch_l_lane[len(branch_l_lane) // 2:]))
+segments.append(make_segment("SEG-B2", "右支线延伸段", branch_r_lane[len(branch_r_lane) // 2:]))
 
 # ---- 输出 ----
-with open(OUT, "w", encoding="utf-8") as f:
-    json.dump({
-        "description": "Y 型路网几何（手工生成，对齐 stationB.network.ts segments[] 结构）",
-        "segments": segments,
-    }, f, ensure_ascii=False, indent=2)
-
+data = {
+    "description": (
+        "Y 型单行道演示路网（业主 2026-10-14 二版：真道路双车道模型——"
+        "主线左右两车道，分流后各接左/右支线车道，分叉处车道弧线圆滑）；"
+        "坐标为局部平面坐标(米)，原点=汇流口，非任何真实地点。"
+        "生成脚本：work/twin/y_junction/export_geometry.py（勿手改产物）。"
+    ),
+    "segments": segments,
+}
+OUT.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 print("saved:", OUT)
-print("total segments:", len(segments))
-print("segment ids:", [s["segment_id"] for s in segments])
+for s in segments:
+    print(s["segment_id"], s["name"], len(s["coords"]), "pts")

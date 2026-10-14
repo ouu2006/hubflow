@@ -152,11 +152,12 @@ function heatWidth(seg: DemoSegment): number {
 }
 
 function baseWidth(seg: DemoSegment): number {
-  return seg.kind === 'main' ? 11 : 8
+  // 车道级渲染：路幅宽度按车道模型取值(双车道比单车道宽)
+  return seg.kind === 'main' ? 18 : 14
 }
 
 function casingWidth(seg: DemoSegment): number {
-  return baseWidth(seg) + 5
+  return baseWidth(seg) + 6
 }
 
 const osmActive = computed(() => isOsmNetwork())
