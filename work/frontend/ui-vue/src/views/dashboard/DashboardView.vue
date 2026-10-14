@@ -483,10 +483,8 @@ const rankRows = computed(() =>
 )
 
 // ---------- 中栏 · 地图 ----------
-const sections = computed(() => network.value?.sections ?? [])
-const dropoffs = computed(() => network.value?.dropoffs ?? [])
-const zones = computed(() => network.value?.zones ?? [])
-const stations = computed(() => network.value?.stations ?? [])
+// 极简口径(业主 2026-10-14):图上只画路段线,断面/落客点/场区/站点不再下发地图;
+// 文字只出现在跟随鼠标的浮牌(hover-chip)里。
 
 /** 选中 chip:SEG-003 拥堵 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
 const mapChip = computed<string>(() => {
@@ -800,11 +798,7 @@ function gotoDecision(): void {
                   :route-segments="[]"
                   :mode="viewMode"
                   :ts="snapshotTs"
-                  :sections="sections"
-                  :dropoffs="dropoffs"
-                  :zones="zones"
-                  :stations="stations"
-                  :selected-chip="mapChip"
+                  :hover-chip="mapChip"
                   :legend="true"
                   @select="onSelect"
                 />

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 // 中央路网图:零依赖 SVG 渲染(TDesign Light,2026-10-12 配色切换)。
 //   mode = 'level' → 四级染色(判级产出);mode = 'index' → 拥挤指数色阶(ci,仅展示)。
-// 叠加层:站点块 / 场区(虚线框)/ 断面标记(边界·内部)/ 落客点 / 孪生车辆动点 / 路线高亮。
+// 叠加层:路线高亮 / 车辆动点 / **跟随鼠标的信息浮牌**(业主 2026-10-14:
+//   鼠标放在哪条路段上,蓝框信息牌就出现在那条线上、跟着鼠标沿线移动)。
 // 底图数据 = 示例路网(非实测,#36/#37 站点包落地后替换;真路网时触发 OSM 署名)。
 // 语义纪律:品牌蓝只画"当前/已选/推荐路线";路段色只表示等级;数据不可用一律灰。
-import { computed } from 'vue'
+// 极简口径(业主 2026-10-14):图上**只画路段线本身**——站点块/场区/断面/落客点/
+//   节点白点等标注一律不画;文字只出现在跟随鼠标的浮牌里。
+import { computed, ref } from 'vue'
 import {
   DEMO_NETWORK,
   isOsmNetwork,
@@ -26,8 +29,6 @@ import {
   UNAVAILABLE,
   type CongestionViewMode,
   type DriverType,
-  type NetworkLandmark,
-  type NetworkSection,
   type SegmentRecord,
   type VehicleRecord,
 } from '../../../shared/traffic'
@@ -49,32 +50,25 @@ const props = withDefaults(
     mode?: MapMode
     /** 快照时间(热力视图的"更新时间戳",手册 §11.2 必现) */
     ts?: string
-    /** 断面标记(边界断面允许回灌 / 内部断面禁止) */
-    sections?: NetworkSection[]
-    /** 落客点 */
-    dropoffs?: NetworkLandmark[]
-    /** 场区(车辆候客区 / 社会停车场) */
-    zones?: NetworkLandmark[]
-    /** 站点 */
-    stations?: NetworkLandmark[]
-    /** 选中所属来源标签(选中 chip 上的 x / 双源值;缺省不画 chip) */
-    selectedChip?: string
+    /** 跟随鼠标的信息浮牌文字(空串不画) */
+    hoverChip?: string
     /** 紧凑图例(右栏无独立图例时用) */
     legend?: boolean
   }>(),
   {
     mode: 'level',
     ts: '',
-    sections: () => [],
-    dropoffs: () => [],
-    zones: () => [],
-    stations: () => [],
-    selectedChip: '',
+    hoverChip: '',
     legend: true,
   },
 )
 
 const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
+
+/** hover 即切换选中(业主 2026-10-14:不要"靠点击才切换");点击仍保留同一行为 */
+function hoverSelect(seg: DemoSegment): void {
+  emit('select', seg.segment_id)
+}
 
 // ---- 投影:经纬度 → SVG 用户坐标(等距圆柱近似,经度按 cos(纬度) 修正) ----
 
@@ -106,22 +100,6 @@ function pointsFor(seg: DemoSegment): string {
   return seg.coords.map(([lon, lat]) => px(lon, lat).join(',')).join(' ')
 }
 
-/** 路段端点(节点白点) */
-const nodes = computed(() => {
-  const seen = new Set<string>()
-  const out: { x: number; y: number; id: string }[] = []
-  for (const s of net) {
-    for (const [lon, lat] of [s.coords[0], s.coords[s.coords.length - 1]]) {
-      const [x, y] = px(lon, lat)
-      const key = `${Math.round(x)}:${Math.round(y)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push({ x, y, id: `${s.segment_id}-${key}` })
-    }
-  }
-  return out
-})
-
 // ---- 路段染色(两种视图模式) ----
 
 const segById = computed(() => new Map(props.segments.map((s) => [s.segment_id, s])))
@@ -152,58 +130,89 @@ function heatWidth(seg: DemoSegment): number {
 }
 
 function baseWidth(seg: DemoSegment): number {
-  return seg.kind === 'main' ? 11 : 8
+  return seg.kind === 'main' ? 18 : 14
 }
 
 function casingWidth(seg: DemoSegment): number {
-  return baseWidth(seg) + 5
+  return baseWidth(seg) + 6
 }
 
 const osmActive = computed(() => isOsmNetwork())
 
-// ---- 路线高亮与落客点 ----
+// ---- 路线高亮 ----
 
 const routeSet = computed(() => new Set(props.routeSegments))
 
-const dropoffPts = computed(() =>
-  props.dropoffs.map((d) => {
-    const [x, y] = px(d.lon, d.lat)
-    return { ...d, x, y }
-  }),
-)
+// ---- 跟随鼠标的信息浮牌(业主 2026-10-14) ----
+// 坐标系:鼠标事件落在 HTML 元素上,拿的是相对 .netmap 的 CSS 像素;
+// 浮牌画在 HTML 层(div,不在 SVG 里),避掉 SVG viewBox 缩放换算。
+// 显示口径(业主 2026-10-14 定稿):鼠标一旦悬停上某条线,浮牌**常驻不消失**,
+//   只是"吸附"在那条线上——鼠标在图上任何地方移动,浮牌都钉在
+//   **当前悬停选中的那条路段**上,顺着线走;鼠标离开整张图才整体隐藏。
 
-const zoneRects = computed(() =>
-  props.zones.map((z) => {
-    const [x, y] = px(z.lon, z.lat)
-    return { ...z, x: x - 52, y: y - 28 }
-  }),
-)
+const CHIP_W = 210
+const CHIP_H = 26
 
-const stationRects = computed(() =>
-  props.stations.map((s) => {
-    const [x, y] = px(s.lon, s.lat)
-    return { ...s, x: x - 78, y: y - 34 }
-  }),
-)
+const mouse = ref<{ x: number; y: number } | null>(null)
+const overRoad = ref(false)
 
-/** 断面标记落点:沿路段按 offset 取点 */
-const sectionPts = computed(() =>
-  props.sections.map((s) => {
-    const seg = net.find((x) => x.segment_id === s.segment_id)
-    if (!seg) return { ...s, x: 0, y: 0, ok: false }
-    const idx = Math.max(0, Math.min(seg.coords.length - 1, Math.round(s.offset * (seg.coords.length - 1))))
-    const [x, y] = px(seg.coords[idx][0], seg.coords[idx][1])
-    return { ...s, x, y, ok: true }
-  }),
-)
+function onMapMouseMove(ev: MouseEvent): void {
+  const host = ev.currentTarget as HTMLElement
+  const rect = host.getBoundingClientRect()
+  mouse.value = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+}
 
-/** 选中路段 chip 的落点:选中路段的中点 */
-const selectedPt = computed<{ x: number; y: number } | null>(() => {
-  if (!props.selectedId) return null
+function onMapMouseLeave(): void {
+  mouse.value = null
+  overRoad.value = false
+}
+
+/** 悬停进/出某条路段线 */
+function onRoadEnter(): void {
+  overRoad.value = true
+}
+
+function onRoadLeave(): void {
+  overRoad.value = false
+}
+
+/**
+ * 浮牌落点 = 选中路段折线上**离鼠标最近的那个采样点**——
+ * 鼠标沿线走,浮牌就贴在线上跟着走;鼠标离开线,浮牌停在线上不动(不消失)。
+ * px() 与 pointsFor() 用同一套投影,单位 = CSS 像素(viewBox 等比缩放已含在 SCALE 内)。
+ */
+const chipStyle = computed(() => {
+  if (!mouse.value || !props.selectedId) return {}
   const seg = net.find((s) => s.segment_id === props.selectedId)
-  if (!seg) return null
-  const [x, y] = px(seg.coords[0][0], seg.coords[0][1])
-  return { x, y }
+  if (!seg) return {}
+  let best = px(seg.coords[0][0], seg.coords[0][1])
+  let bestD = Infinity
+  for (const [lon, lat] of seg.coords) {
+    const [x, y] = px(lon, lat)
+    const d = (x - mouse.value.x) ** 2 + (y - mouse.value.y) ** 2
+    if (d < bestD) {
+      bestD = d
+      best = [x, y]
+    }
+  }
+  // 注意:SVG 用户坐标 == CSS 像素(外层 svg width/height 都是 100%,
+  // viewBox 等比缩放,浏览器把用户坐标映射到显示尺寸;这里直接按用户坐标摆,
+  // 除以实际显示/viewBox 比例即可——用 getBoundingClientRect 换算)
+  const svg = document.querySelector('.netmap svg')
+  if (!svg) return {}
+  const rect = svg.getBoundingClientRect()
+  const kx = rect.width / W
+  const ky = rect.height / H
+  const cx = best[0] * kx
+  const cy = best[1] * ky
+  const chipW = CHIP_W * kx
+  const chipH = CHIP_H * ky
+  const flipX = cx + chipW + 18 > rect.width
+  const flipY = cy - chipH - 14 < 0
+  return {
+    left: `${flipX ? cx - chipW - 14 : cx + 14}px`,
+    top: `${flipY ? cy + 16 : cy - chipH - 12}px`,
+  }
 })
 
 // ---- 车辆动点 ----
@@ -230,42 +239,10 @@ const vehPts = computed(() =>
 </script>
 
 <template>
-  <div class="netmap">
+  <div class="netmap" @mousemove="onMapMouseMove" @mouseleave="onMapMouseLeave">
     <svg :viewBox="`0 0 ${W} ${H}`" preserveAspectRatio="xMidYMid meet" role="img" aria-label="路网态势图">
       <!-- 底:浅灰画布 -->
       <rect :x="0" :y="0" :width="W" :height="H" :fill="'#F7F8FA'" />
-
-      <!-- 场区(虚线框) -->
-      <g v-for="z in zoneRects" :key="`zone-${z.id}`">
-        <rect
-          :x="z.x"
-          :y="z.y"
-          width="104"
-          height="56"
-          rx="6"
-          fill="#FFFFFF"
-          stroke="#DDDDDD"
-          stroke-width="1.2"
-          stroke-dasharray="5 4"
-        />
-        <text :x="z.x + 52" :y="z.y + 56 + 15" text-anchor="middle" class="lbl">{{ z.name }}</text>
-      </g>
-
-      <!-- 站点块:副标由站点包给(包没给就不画,别站的图上不出现别的站的英文名) -->
-      <g v-for="st in stationRects" :key="`station-${st.id}`">
-        <rect :x="st.x" :y="st.y" width="156" height="68" rx="6" fill="#FFFFFF" stroke="#E8E8E8" />
-        <text
-          :x="st.x + 78"
-          :y="st.y + (st.sub ? 30 : 39)"
-          text-anchor="middle"
-          class="station-name"
-        >
-          {{ st.name }}
-        </text>
-        <text v-if="st.sub" :x="st.x + 78" :y="st.y + 48" text-anchor="middle" class="station-en">
-          {{ st.sub }}
-        </text>
-      </g>
 
       <!-- 路基描边(白色底衬,让彩色路段在浅底上分离) -->
       <g v-for="s in net" :key="`casing-${s.segment_id}`">
@@ -279,11 +256,13 @@ const vehPts = computed(() =>
         />
       </g>
 
-      <!-- 路段:四级染色 + 路线高亮 + 选中描边 -->
+      <!-- 路段:四级染色 + 路线高亮 + 选中描边(hover 即切换选中,业主 2026-10-14) -->
       <g
         v-for="s in net"
         :key="`road-${s.segment_id}`"
         class="road"
+        @mouseenter="hoverSelect(s); onRoadEnter()"
+        @mouseleave="onRoadLeave()"
         @click="emit('select', s.segment_id)"
       >
         <!-- 热力晕染(仅拥挤指数视图):强度随 ci 单调增,不改变任何路段的判级着色 -->
@@ -338,46 +317,6 @@ const vehPts = computed(() =>
         />
       </g>
 
-      <!-- 节点(白心圆点) -->
-      <circle
-        v-for="n in nodes"
-        :key="n.id"
-        :cx="n.x"
-        :cy="n.y"
-        r="4.4"
-        fill="#FFFFFF"
-        stroke="#C9CDD4"
-        stroke-width="1.4"
-      />
-
-      <!-- 断面标记:边界断面 = 品牌蓝方块(可回灌);内部断面 = 灰方块(禁止回灌) -->
-      <g v-for="sec in sectionPts" :key="`sec-${sec.point_id}`" v-show="sec.ok">
-        <rect
-          :x="sec.x - 4.5"
-          :y="sec.y - 4.5"
-          width="9"
-          height="9"
-          rx="1.5"
-          :fill="sec.role === 'boundary' ? BRAND : '#8B8B8B'"
-        />
-        <text :x="sec.x + 10" :y="sec.y + 4" class="sec-lbl">
-          {{ sec.point_id }} {{ sec.role === 'boundary' ? '边界断面' : '内部断面' }}
-        </text>
-      </g>
-
-      <!-- 落客点 -->
-      <g v-for="d in dropoffPts" :key="`drop-${d.id}`" :transform="`translate(${d.x},${d.y})`">
-        <circle r="8" fill="#FFFFFF" :stroke="BRAND" stroke-width="2.4" />
-        <circle r="3" :fill="BRAND" />
-        <text y="-14" text-anchor="middle" class="drop-lbl">{{ d.name }}</text>
-      </g>
-
-      <!-- 选中路段 chip -->
-      <g v-if="selectedPt && selectedChip" :transform="`translate(${selectedPt.x},${selectedPt.y})`">
-        <rect x="-4" y="-40" width="190" height="24" rx="4" fill="#FFFFFF" :stroke="BRAND" stroke-width="1.2" />
-        <text x="6" y="-23" class="sel-chip">{{ selectedChip }}</text>
-      </g>
-
       <!-- 孪生车辆动点(位置随快照刷新平滑移动) -->
       <g
         v-for="v in vehPts"
@@ -389,6 +328,11 @@ const vehPts = computed(() =>
         <title>{{ v.vehicle_id }} · {{ v.state }} · {{ v.segment_id }}{{ v.is_demo_bound ? ' · 演示绑定车' : '' }}</title>
       </g>
     </svg>
+
+    <!-- 跟随鼠标的信息浮牌:吸附在当前选中路段上,沿线走,不消失(业主 2026-10-14) -->
+    <div v-if="mouse && overRoad && hoverChip" class="hover-chip" :style="chipStyle">
+      {{ hoverChip }}
+    </div>
 
     <div class="watermark">{{ sourceLabel }}</div>
 
@@ -460,31 +404,22 @@ svg {
 .veh {
   transition: transform 1.9s linear;
 }
-.lbl {
-  fill: #666666;
-  font-size: 12px;
-}
-.station-name {
-  fill: #1a1a1a;
-  font-size: 13px;
-  font-weight: 600;
-}
-.station-en {
-  fill: #999999;
-  font-size: 10px;
-}
-.sec-lbl {
-  fill: #666666;
-  font-size: 11px;
-}
-.drop-lbl {
-  fill: #0052d9;
-  font-size: 11px;
-}
-.sel-chip {
-  fill: #0052d9;
+/* 跟随鼠标的信息浮牌:蓝框白底,贴鼠标右上、越界翻面,不挡鼠标(pointer-events:none) */
+.hover-chip {
+  position: absolute;
+  min-width: 120px;
+  max-width: 260px;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1.2px solid v-bind('BRAND');
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
   font-size: 11px;
   font-weight: 500;
+  color: v-bind('BRAND');
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 3;
 }
 .watermark {
   position: absolute;
@@ -525,58 +460,22 @@ svg {
   margin-right: 7px;
   display: inline-block;
 }
-.lg-row .dot.flow {
-  background: repeating-linear-gradient(90deg, #0052d9 0 6px, transparent 6px 10px);
-  border-radius: 0;
-}
-.lg-sep {
-  height: 1px;
-  background: #e8e8e8;
-  margin: 3px 0;
-}
-.lg-ramp {
-  height: 10px;
-  width: 186px;
-  border-radius: 3px;
-  border: 1px solid #e8e8e8;
-}
-.lg-scale {
-  display: flex;
-  justify-content: space-between;
-  width: 186px;
-  font-size: 10px;
+.lg-row.ts {
   color: #999999;
 }
 .lg-note {
-  max-width: 210px;
   font-size: 10px;
-  line-height: 1.5;
-  color: #666666;
-  white-space: normal;
+  color: #999999;
 }
 .lg-note.strong {
-  color: #a06a00;
+  color: #666666;
 }
-.lg-row.ts {
-  font-size: 10px;
-  color: #999999;
+.lg-sep {
+  height: 1px;
+  background: #eeeeee;
+  margin: 2px 0;
 }
-.heat {
-  filter: blur(7px);
-}
-.attribution {
-  position: absolute;
-  right: 14px;
-  bottom: 10px;
-  font-size: 10px;
-  pointer-events: auto;
-}
-.attribution a {
-  color: #999999;
-  text-decoration: none;
-}
-.attribution a:hover {
-  color: #0052d9;
-  text-decoration: underline;
+.dot.flow {
+  background: linear-gradient(90deg, transparent 40%, #0052d9 40%);
 }
 </style>

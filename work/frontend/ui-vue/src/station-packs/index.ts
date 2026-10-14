@@ -10,11 +10,13 @@
 
 import { STATION_A } from './stationA.ts'
 import { STATION_B } from './stationB.ts'
+import { STATION_Y } from './stationY.ts'
 import type { StationPack } from './types.ts'
 
 export const PACKS: Record<string, StationPack> = {
   A: STATION_A,
   B: STATION_B,
+  Y: STATION_Y,
 }
 
 export const DEFAULT_PACK_KEY = 'A'
