@@ -47,7 +47,8 @@ export struct DropoffPage {
 
           if (this.store.unavailable) {
             // 数据不可用：灰色，绝不显示成蓝色（TC-11）
-            Text('停靠点实时余量：数据不可用')
+            // 口径红线：页面不出现「实测 / 实时 / 现场」，故此处写「当前余量」而非「实时余量」
+            Text('停靠点当前余量：数据不可用')
               .fontSize(13)
               .fontColor('#8B8B8B')
               .width('100%')

@@ -83,7 +83,9 @@ struct Index {
       .padding({ left: 14, right: 14, bottom: 4 })
       .justifyContent(FlexAlign.Start)
 
-      Text('四个开关互斥：点一个自动关掉其余。应急态 = 停止路线引导、改为「请服从现场指挥」。')
+      // 这行是给验收人看的操作提示：录屏举证时评审需要知道四个开关互斥、应急态的语义。
+      // 措辞已精简（原来两句话太啰嗦）；正式 App 交付时由 #93 接真实数据后移除。
+      Text('演示开关·互斥，再点取消。应急态 = 停止路线引导，改为「请服从现场指挥」')
         .fontSize(10)
         .fontColor('#8B8B8B')
         .width('100%')
