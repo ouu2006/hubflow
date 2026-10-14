@@ -76,6 +76,11 @@ const props = withDefaults(
 
 const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
 
+/** hover 即切换选中(业主 2026-10-14:不要"靠点击才切换");点击仍保留同一行为 */
+function hoverSelect(seg: DemoSegment): void {
+  emit('select', seg.segment_id)
+}
+
 // ---- 投影:经纬度 → SVG 用户坐标(等距圆柱近似,经度按 cos(纬度) 修正) ----
 
 const W = 1100
@@ -105,22 +110,6 @@ function px(lon: number, lat: number): [number, number] {
 function pointsFor(seg: DemoSegment): string {
   return seg.coords.map(([lon, lat]) => px(lon, lat).join(',')).join(' ')
 }
-
-/** 路段端点(节点白点) */
-const nodes = computed(() => {
-  const seen = new Set<string>()
-  const out: { x: number; y: number; id: string }[] = []
-  for (const s of net) {
-    for (const [lon, lat] of [s.coords[0], s.coords[s.coords.length - 1]]) {
-      const [x, y] = px(lon, lat)
-      const key = `${Math.round(x)}:${Math.round(y)}`
-      if (seen.has(key)) continue
-      seen.add(key)
-      out.push({ x, y, id: `${s.segment_id}-${key}` })
-    }
-  }
-  return out
-})
 
 // ---- 路段染色(两种视图模式) ----
 
@@ -162,50 +151,9 @@ function casingWidth(seg: DemoSegment): number {
 
 const osmActive = computed(() => isOsmNetwork())
 
-// ---- 路线高亮与落客点 ----
+// ---- 路线高亮 ----
 
 const routeSet = computed(() => new Set(props.routeSegments))
-
-const dropoffPts = computed(() =>
-  props.dropoffs.map((d) => {
-    const [x, y] = px(d.lon, d.lat)
-    return { ...d, x, y }
-  }),
-)
-
-const zoneRects = computed(() =>
-  props.zones.map((z) => {
-    const [x, y] = px(z.lon, z.lat)
-    return { ...z, x: x - 52, y: y - 28 }
-  }),
-)
-
-const stationRects = computed(() =>
-  props.stations.map((s) => {
-    const [x, y] = px(s.lon, s.lat)
-    return { ...s, x: x - 78, y: y - 34 }
-  }),
-)
-
-/** 断面标记落点:沿路段按 offset 取点 */
-const sectionPts = computed(() =>
-  props.sections.map((s) => {
-    const seg = net.find((x) => x.segment_id === s.segment_id)
-    if (!seg) return { ...s, x: 0, y: 0, ok: false }
-    const idx = Math.max(0, Math.min(seg.coords.length - 1, Math.round(s.offset * (seg.coords.length - 1))))
-    const [x, y] = px(seg.coords[idx][0], seg.coords[idx][1])
-    return { ...s, x, y, ok: true }
-  }),
-)
-
-/** 选中路段 chip 的落点:选中路段的中点 */
-const selectedPt = computed<{ x: number; y: number } | null>(() => {
-  if (!props.selectedId) return null
-  const seg = net.find((s) => s.segment_id === props.selectedId)
-  if (!seg) return null
-  const [x, y] = px(seg.coords[0][0], seg.coords[0][1])
-  return { x, y }
-})
 
 // ---- 车辆动点 ----
 
@@ -236,38 +184,6 @@ const vehPts = computed(() =>
       <!-- 底:浅灰画布 -->
       <rect :x="0" :y="0" :width="W" :height="H" :fill="'#F7F8FA'" />
 
-      <!-- 场区(虚线框) -->
-      <g v-for="z in zoneRects" :key="`zone-${z.id}`">
-        <rect
-          :x="z.x"
-          :y="z.y"
-          width="104"
-          height="56"
-          rx="6"
-          fill="#FFFFFF"
-          stroke="#DDDDDD"
-          stroke-width="1.2"
-          stroke-dasharray="5 4"
-        />
-        <text :x="z.x + 52" :y="z.y + 56 + 15" text-anchor="middle" class="lbl">{{ z.name }}</text>
-      </g>
-
-      <!-- 站点块:副标由站点包给(包没给就不画,别站的图上不出现别的站的英文名) -->
-      <g v-for="st in stationRects" :key="`station-${st.id}`">
-        <rect :x="st.x" :y="st.y" width="156" height="68" rx="6" fill="#FFFFFF" stroke="#E8E8E8" />
-        <text
-          :x="st.x + 78"
-          :y="st.y + (st.sub ? 30 : 39)"
-          text-anchor="middle"
-          class="station-name"
-        >
-          {{ st.name }}
-        </text>
-        <text v-if="st.sub" :x="st.x + 78" :y="st.y + 48" text-anchor="middle" class="station-en">
-          {{ st.sub }}
-        </text>
-      </g>
-
       <!-- 路基描边(白色底衬,让彩色路段在浅底上分离) -->
       <g v-for="s in net" :key="`casing-${s.segment_id}`">
         <polyline
@@ -280,11 +196,12 @@ const vehPts = computed(() =>
         />
       </g>
 
-      <!-- 路段:四级染色 + 路线高亮 + 选中描边 -->
+      <!-- 路段:四级染色 + 路线高亮 + 选中描边(hover 即切换选中,业主 2026-10-14) -->
       <g
         v-for="s in net"
         :key="`road-${s.segment_id}`"
         class="road"
+        @mouseenter="hoverSelect(s)"
         @click="emit('select', s.segment_id)"
       >
         <!-- 热力晕染(仅拥挤指数视图):强度随 ci 单调增,不改变任何路段的判级着色 -->
@@ -337,46 +254,6 @@ const vehPts = computed(() =>
           stroke-dasharray="4 6"
           stroke-linecap="round"
         />
-      </g>
-
-      <!-- 节点(白心圆点) -->
-      <circle
-        v-for="n in nodes"
-        :key="n.id"
-        :cx="n.x"
-        :cy="n.y"
-        r="4.4"
-        fill="#FFFFFF"
-        stroke="#C9CDD4"
-        stroke-width="1.4"
-      />
-
-      <!-- 断面标记:边界断面 = 品牌蓝方块(可回灌);内部断面 = 灰方块(禁止回灌) -->
-      <g v-for="sec in sectionPts" :key="`sec-${sec.point_id}`" v-show="sec.ok">
-        <rect
-          :x="sec.x - 4.5"
-          :y="sec.y - 4.5"
-          width="9"
-          height="9"
-          rx="1.5"
-          :fill="sec.role === 'boundary' ? BRAND : '#8B8B8B'"
-        />
-        <text :x="sec.x + 10" :y="sec.y + 4" class="sec-lbl">
-          {{ sec.point_id }} {{ sec.role === 'boundary' ? '边界断面' : '内部断面' }}
-        </text>
-      </g>
-
-      <!-- 落客点 -->
-      <g v-for="d in dropoffPts" :key="`drop-${d.id}`" :transform="`translate(${d.x},${d.y})`">
-        <circle r="8" fill="#FFFFFF" :stroke="BRAND" stroke-width="2.4" />
-        <circle r="3" :fill="BRAND" />
-        <text y="-14" text-anchor="middle" class="drop-lbl">{{ d.name }}</text>
-      </g>
-
-      <!-- 选中路段 chip -->
-      <g v-if="selectedPt && selectedChip" :transform="`translate(${selectedPt.x},${selectedPt.y})`">
-        <rect x="-4" y="-40" width="190" height="24" rx="4" fill="#FFFFFF" :stroke="BRAND" stroke-width="1.2" />
-        <text x="6" y="-23" class="sel-chip">{{ selectedChip }}</text>
       </g>
 
       <!-- 孪生车辆动点(位置随快照刷新平滑移动) -->
