@@ -1,10 +1,12 @@
 # 来源说明(工程落位留痕)
 
-本目录 = 上游仓 `agentic-traffic-management/harness-core/ui-vue` 的**整体拷贝**(Issue #52,2026-10-11),作为 hubflow 一期管理端的开发基线。上游仓保持零改动。
+> ⚠️ **该外部仓库自 2026-10-14 起不再是本项目的依赖**——本文只保留"这份代码从哪儿来"的**来源留痕**（工程合规要求），**clone 地址与依赖关系已作废**。
+
+本目录 = 一份外部仓库的 `harness-core/ui-vue` 的**整体拷贝**(Issue #52,2026-10-11),作为 hubflow 一期管理端的开发基线。**自拷贝之日起本仓自包含**。
 
 | 项 | 值 |
 |---|---|
-| 来源仓库 | `YONEK0/agentic-traffic-management`(本地 clone,与本仓库同级) |
+| 来源仓库 | 一份外部仓库(已不再作为依赖;名称与地址不再维护) |
 | 基线 | `main` 分支 commit `356361d`;工作树相对该 commit 仅有 `package-lock.json` 一处未提交修改(随拷贝带入)与若干 docs 层未提交删除(与本工程无关,未拷贝) |
 | 拷贝排除 | `node_modules/`、`dist/`、`.env`(门禁禁入名单;内容只是 `VITE_USE_MOCK=1` 开关,缺省行为见 `.env.mock`) |
 | 拷贝后修改 | `tsconfig.app.json` / `tsconfig.node.json` 去掉 JSONC 注释(仓库门禁对受管 JSON 做严格解析,注释会报红;编译行为不变) |
@@ -31,4 +33,4 @@
 |---|---|
 | 整体移除 | harness 四页(`views/LoginView.vue` / `ChatView.vue` / `DocumentsView.vue` / `TraceView.vue`)、冻结 8 端点调用面(`api/index.ts` / `api/upload.ts` / `api/sse.ts`)、harness mock 数据与假流(`mock/db.ts` 及 `mock/sse-writer.ts` 假流编排)、登录态(`stores/auth.ts`)、harness 协议类型(`shared/protocol.ts`) |
 | 裁剪 | `api/http.ts` 去 Bearer/401 处置;`router/index.ts` 去登录守卫,仅存 `/dashboard`(根路径重定向);`App.vue` 去管理台壳与 health 轮询,仅存路由出口;`mock/index.ts` 仅存 traffic 转发;`mock/util.ts` 去鉴权/上传解析工具;`mock/sse-writer.ts` 仅存 `SseWriter`(traffic SSE 假流复用);`vite.config.ts` 去 `VITE_MOCK_ERROR` 注入;`scripts/verify-mock.sh` 重写为 traffic 冒烟 |
-| 不变 | traffic 调用面(`api/traffic.ts`)与 traffic mock、`shared/traffic.ts` / `demoNetwork.ts`、态势大屏页面;上游仓零改动 |
+| 不变 | traffic 调用面(`api/traffic.ts`)与 traffic mock、`shared/traffic.ts` / `demoNetwork.ts`、态势大屏页面;**不做外部仓库改动** |
