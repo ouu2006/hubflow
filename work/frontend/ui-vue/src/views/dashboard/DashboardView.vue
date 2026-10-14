@@ -73,6 +73,117 @@ import HeatMatrixTable from './components/HeatMatrixTable.vue'
 import SegmentRankTable from './components/SegmentRankTable.vue'
 
 const router = useRouter()
+
+// ---------- 三栏可拖拽(Issue #81,业主 2026-10-13 口径:「宽度谁定」交给用户) ----------
+//
+// 组件选型:**不加任何新依赖**,用现有 element-plus 自带的 `ElSplitter` / `ElSplitterPanel`
+// (element-plus@2.14.5 已装,`main.ts` 已全局注册)。用别的做法(自己写拖拽 / 换组件库)
+// 须按 `docs/开发规范.md` 文首总原则在 PR 的「实现方式」栏申报。
+//
+// 默认宽度**不许改**:设计稿按 1440×900 对齐,左 296 / 中 弹性 / 右 396(口径红线第 3 条)。
+// 最小宽度建议值(Issue #81 第 2 条,数值写进注释):左 220 / 中 320 / 右 280。
+// 拖到最小宽度时内容不叠压、不溢出、按钮仍点得到。
+//
+// ⚠️ 三个易踩点(实现时逐一处理,勿删本注释):
+//   ① `.el-splitter-panel` 自带 `overflow: auto`(element-plus theme-chalk 实测),
+//      而滚动容器是内部 `.td-col`(含 `.td-scroll`)。**panel 不滚、内部 .td-col 照旧滚**,
+//      否则出双层滚动条或「滚不动」——见本文件 <style> 内 `.el-splitter.td-splitter > .el-splitter-panel` 覆盖规则。
+//   ② `.el-splitter-bar` 宽度是 0(只有 16px 的 dragger 绝对定位覆盖),
+//      且 `.td-body { gap: 10px }` 换成 splitter 后不再生效 → 需给 bar 一个宽度维持栏间距。
+//   ③ 中栏 NetMap 自己按 `getBoundingClientRect()` 换算拖拽位移(`NetMap.vue` 内),
+//      栏宽变化本身不会坏(viewBox + preserveAspectRatio 自适应),但**改完要亲手拖一次地图栏**。
+//
+// ⚠️ 第四个易踩点(实测 CDP 拖拽才暴露,静态检查看不出来):
+//   `ElSplitterPanel` 内部拖完后改的是**它自己的** panel.size,并 emit `update:size`;
+//   `:size="colLeft"` 是**单向**绑定,不会回写 colLeft → colLeft 永远停在 296,
+//   `@resize-end="saveColMem"` 存进去的永远是默认值(刷新后宽度归零,功能形同虚设)。
+//   正确做法:① `:size` 改成 `v-model:size`(双向,colLeft/colRight 跟着拖拽实时变);
+//            ② resize-end 回调的第二个形参就是 pxSizes 全量数组,用它在松手那一刻落盘。
+//
+// ⚠️ 第五个易踩点:element-plus 的激活态类名是 `.el-splitter-bar__dragger-active`,
+//   **不是** `.is-active`(写错时鼠标一移开、还按着不放,就露出默认蓝 #409EFF)。
+//
+// 已知限制如实记:**ElSplitter 只有鼠标 / 触摸拖拽,没有键盘操作**
+// (实测 split-bar 只有 mousedown / touchstart,无 tabindex / keydown / role)。
+// 本单不补键盘可达,也不得对外称「无障碍已达标」。
+const COL_DEFAULT_LEFT = 296
+const COL_DEFAULT_RIGHT = 396
+const COL_MIN_LEFT = 220
+const COL_MIN_MID = 320
+const COL_MIN_RIGHT = 280
+/** 记忆用户拖过的宽度(可选加分项 #5);键名带页面前缀,不与别的页串味 */
+const COL_MEM_KEY = 'hubflow.dashboard.colWidth'
+
+/** 左栏 / 右栏宽度(px)。中栏弹性,不给 size —— 交给 ElSplitter 自动伸缩(第 1 条判定) */
+const colLeft = ref<number | string>(COL_DEFAULT_LEFT)
+const colRight = ref<number | string>(COL_DEFAULT_RIGHT)
+
+/** 拖完写一次记忆。切页 / 刷新时读回来;读不到或读坏了就用默认值,不影响可用性 */
+function loadColMem(): void {
+  try {
+    const raw = localStorage.getItem(COL_MEM_KEY)
+    if (!raw) return
+    const v = JSON.parse(raw) as { left?: unknown; right?: unknown }
+    if (typeof v.left === 'number' && Number.isFinite(v.left)) colLeft.value = v.left
+    if (typeof v.right === 'number' && Number.isFinite(v.right)) colRight.value = v.right
+  } catch {
+    /* localStorage 不可用 / 内容坏了:静默退回默认值,不算错 */
+  }
+}
+
+/**
+ * 拖完写一次记忆。切页 / 刷新时读回来;读不到或读坏了就用默认值,不影响可用性。
+ * `ElSplitter` 的 `resize-end` 形参是 `(index, pxSizes)`,第二个是全量 px 宽度数组,
+ * 但**不要**拿它算要记的值:左/右两栏已由 `v-model:size` 同步到 colLeft/colRight,
+ * 直接记这两个即可(中栏是弹性栏,宽度由两侧和视口决定,记了下次打开也对不上)。
+ */
+function saveColMem(): void {
+  try {
+    localStorage.setItem(COL_MEM_KEY, JSON.stringify({ left: colLeft.value, right: colRight.value }))
+  } catch {
+    /* 隐私模式等场景写不进去:不影响拖拽本身,只是不记忆 */
+  }
+}
+
+/** 三栏回到默认宽度(左 296 / 中弹性 / 右 396)。双击分隔条时调用;默认态即此值,故本函数幂等 */
+function resetCols(): void {
+  colLeft.value = COL_DEFAULT_LEFT
+  colRight.value = COL_DEFAULT_RIGHT
+  saveColMem()
+}
+
+loadColMem()
+
+/**
+ * 分隔条上的鼠标按下:自己识别双击并调 `resetCols()`(可选加分项 #6)。
+ *
+ * ⚠️ 这里**不能靠 `@dblclick`** —— 实测(CDP 真实鼠标事件序列)事件根本不会派发到分隔条上:
+ *   第 1 次 mousedown 落在 `.el-splitter-bar__dragger`,而 ElSplitter 在 `moveStart` 时
+ *   会盖一层 `z-index:999` 的 `.el-splitter__mask`(用于吞掉 iframe 的 touch 事件)。
+ *   mouseup 就落在这层 mask 上 → mousedown 与 mouseup 的 target 不一致 →
+ *   浏览器不派发 `click`,更没有 `dblclick`。事件日志实测:
+ *     mousedown:el-splitter-bar__dragger → mouseup:el-splitter__mask(无 click、无 dblclick)
+ *   换成页面上任何普通元素双击,click×2 + dblclick 照常派发 —— 说明是遮罩的问题,不是探针。
+ *   所以改成在 `mousedown` 上自己计次:mousedown 始终落在 dragger 上,是可靠的。
+ *
+ * 另外只在**分隔条自身**命中时计数:直接挂根元素裸监听会把「双击栏内任意空白处」也当复位。
+ */
+const DBL_MS = 400
+let lastBarDown = { at: 0, x: 0, y: 0 }
+
+function onBarMouseDown(e: MouseEvent): void {
+  const t = e.target as HTMLElement | null
+  if (!t || !t.classList.contains('el-splitter-bar__dragger')) return
+  const now = e.timeStamp || Date.now()
+  // 同一根分隔条、相邻 400ms 内的第二次按下 = 双击
+  if (now - lastBarDown.at < DBL_MS && Math.abs(e.clientX - lastBarDown.x) < 8 && Math.abs(e.clientY - lastBarDown.y) < 8) {
+    lastBarDown = { at: 0, x: 0, y: 0 }
+    resetCols()
+    return
+  }
+  lastBarDown = { at: now, x: e.clientX, y: e.clientY }
+}
+
 /** 底图来源短文案(页面水印/页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
 const sourceLabel = networkSourceLabel()
 /** 底图是否真 OSM 路网 —— 只有它为真时地图内才有署名,底图说明文案随之分支(否则不写"署名见地图内") */
@@ -562,139 +673,152 @@ function gotoDecision(): void {
       </div>
     </div>
 
+    <!-- 主体三栏 · 横向可拖(Issue #81)。
+         ElSplitter 的每个 panel 后面自带一条 bar,两条 bar 把三栏隔开;
+         bar 宽度为 0(只有 16px dragger 绝对定位),栏间距由 .spl-gap 补回 10px。
+         中栏不传 size → 弹性伸缩(默认仍是弹性栏,口径红线第 3 条)。 -->
     <div class="td-body">
-      <!-- 左栏 · 选择监控 -->
-      <div class="td-col col-left">
-        <section class="td-card">
-          <div class="td-card-head">
-            选择监控<span class="td-head-tag">{{ distTotal }} 个路段</span>
-          </div>
-          <div class="td-card-body">
-            <div class="td-seg view-seg" role="group" aria-label="视图切换">
-              <span
-                class="td-seg-item"
-                :class="{ on: viewMode === 'level' }"
-                role="button"
-                :aria-pressed="viewMode === 'level'"
-                @click="viewMode = 'level'"
-              >
-                四级视图
-              </span>
-              <span
-                class="td-seg-item"
-                :class="{ on: viewMode === 'index' }"
-                role="button"
-                :aria-pressed="viewMode === 'index'"
-                @click="viewMode = 'index'"
-              >
-                拥挤指数视图
-              </span>
-            </div>
-            <div class="dist-bar" :style="{ background: TD.bgSecondary }">
-              <span
-                v-for="r in dist"
-                :key="`d-${r.level}`"
-                class="dist-seg"
-                :class="{ dim: scope !== null && scope !== r.level }"
-                :style="{ width: distWidth(r), background: r.color }"
-                role="button"
-                :title="`只看 ${r.name}(${r.count} 个路段)`"
-                @click="toggleScope(r.level)"
-              />
-            </div>
-            <div class="dist-legend">
-              <span
-                v-for="r in dist"
-                :key="`lg-${r.level}`"
-                class="dist-item"
-                :class="{ on: scope === r.level }"
-                role="button"
-                :aria-pressed="scope === r.level"
-                @click="toggleScope(r.level)"
-              >
-                <LevelBadge :level="r.level === 0 ? 1 : r.level" :stale="r.level === 0" />
-                <span class="td-num dist-count">{{ r.count }}</span>
-              </span>
-              <span class="dist-item all" :class="{ on: scope === null }" role="button" @click="scope = null">
-                全部
-              </span>
-            </div>
-            <p v-if="viewMode === 'index'" class="note">{{ CI_DISCLAIMER }}</p>
-          </div>
-        </section>
-
-        <!-- 四级视图:路段监测列表;指数视图:按 CI 降序排行(原 /heat 左栏) -->
-        <section class="td-card seg-card">
-          <div class="td-card-head">
-            路段监测
-            <span class="td-head-tag">{{ viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
-          </div>
-          <div class="td-card-body flush seg-body">
-            <div class="td-scroll seg-list">
-              <SegmentRankTable
-                v-if="viewMode === 'index'"
-                :items="rankRows"
-                :selected-id="selectedId"
-                @select="onSelect"
-              />
-              <template v-else>
-                <div
-                  v-for="row in segRows"
-                  :key="row.seg.segment_id"
-                  class="td-row"
-                  :class="{ on: row.seg.segment_id === selectedId }"
-                  role="button"
-                  :aria-pressed="row.seg.segment_id === selectedId"
-                  @click="onSelect(row.seg.segment_id)"
-                >
-                  <span class="lvl-bar" :style="{ background: row.color }" />
-                  <span class="seg-meta">
-                    <span class="seg-name">{{ row.name }}</span>
-                    <span class="seg-id td-mono">{{ row.seg.segment_id }}</span>
+      <el-splitter class="el-splitter td-splitter" @resize-end="saveColMem" @mousedown="onBarMouseDown">
+        <!-- `v-model:size` 而不是 `:size`:单向绑定不会把 ElSplitter 拖出来的 px 宽度
+             回写到 colLeft/colRight,那样 @resize-end 存的一直是默认值,记忆功能等于没有。
+             两个 ref 都是 `number | string`(元素自身声明 `size: { type: [String, Number] }`)。 -->
+        <el-splitter-panel v-model:size="colLeft" :min="COL_MIN_LEFT">
+          <!-- 左栏 · 选择监控 -->
+          <div class="td-col col-left">
+            <section class="td-card">
+              <div class="td-card-head">
+                选择监控<span class="td-head-tag">{{ distTotal }} 个路段</span>
+              </div>
+              <div class="td-card-body">
+                <div class="td-seg view-seg" role="group" aria-label="视图切换">
+                  <span
+                    class="td-seg-item"
+                    :class="{ on: viewMode === 'level' }"
+                    role="button"
+                    :aria-pressed="viewMode === 'level'"
+                    @click="viewMode = 'level'"
+                  >
+                    四级视图
                   </span>
-                  <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
-                    <template v-if="row.stale">数据不可用 · 陈旧 {{ row.seg.data_age_s ?? '—' }}s</template>
-                    <template v-else>x {{ fmt(row.seg.x) }}</template>
+                  <span
+                    class="td-seg-item"
+                    :class="{ on: viewMode === 'index' }"
+                    role="button"
+                    :aria-pressed="viewMode === 'index'"
+                    @click="viewMode = 'index'"
+                  >
+                    拥挤指数视图
                   </span>
-                  <LevelBadge :level="row.seg.level" :stale="row.stale" />
                 </div>
-                <p v-if="segRows.length === 0" class="empty">
-                  {{ scope === null ? '快照为空(接口层未起?)' : '该范围当前没有路段' }}
-                </p>
-              </template>
+                <div class="dist-bar" :style="{ background: TD.bgSecondary }">
+                  <span
+                    v-for="r in dist"
+                    :key="`d-${r.level}`"
+                    class="dist-seg"
+                    :class="{ dim: scope !== null && scope !== r.level }"
+                    :style="{ width: distWidth(r), background: r.color }"
+                    role="button"
+                    :title="`只看 ${r.name}(${r.count} 个路段)`"
+                    @click="toggleScope(r.level)"
+                  />
+                </div>
+                <div class="dist-legend">
+                  <span
+                    v-for="r in dist"
+                    :key="`lg-${r.level}`"
+                    class="dist-item"
+                    :class="{ on: scope === r.level }"
+                    role="button"
+                    :aria-pressed="scope === r.level"
+                    @click="toggleScope(r.level)"
+                  >
+                    <LevelBadge :level="r.level === 0 ? 1 : r.level" :stale="r.level === 0" />
+                    <span class="td-num dist-count">{{ r.count }}</span>
+                  </span>
+                  <span class="dist-item all" :class="{ on: scope === null }" role="button" @click="scope = null">
+                    全部
+                  </span>
+                </div>
+                <p v-if="viewMode === 'index'" class="note">{{ CI_DISCLAIMER }}</p>
+              </div>
+            </section>
+
+            <!-- 四级视图:路段监测列表;指数视图:按 CI 降序排行(原 /heat 左栏) -->
+            <section class="td-card seg-card">
+              <div class="td-card-head">
+                路段监测
+                <span class="td-head-tag">{{ viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
+              </div>
+              <div class="td-card-body flush seg-body">
+                <div class="td-scroll seg-list">
+                  <SegmentRankTable
+                    v-if="viewMode === 'index'"
+                    :items="rankRows"
+                    :selected-id="selectedId"
+                    @select="onSelect"
+                  />
+                  <template v-else>
+                    <div
+                      v-for="row in segRows"
+                      :key="row.seg.segment_id"
+                      class="td-row"
+                      :class="{ on: row.seg.segment_id === selectedId }"
+                      role="button"
+                      :aria-pressed="row.seg.segment_id === selectedId"
+                      @click="onSelect(row.seg.segment_id)"
+                    >
+                      <span class="lvl-bar" :style="{ background: row.color }" />
+                      <span class="seg-meta">
+                        <span class="seg-name">{{ row.name }}</span>
+                        <span class="seg-id td-mono">{{ row.seg.segment_id }}</span>
+                      </span>
+                      <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
+                        <template v-if="row.stale">数据不可用 · 陈旧 {{ row.seg.data_age_s ?? '—' }}s</template>
+                        <template v-else>x {{ fmt(row.seg.x) }}</template>
+                      </span>
+                      <LevelBadge :level="row.seg.level" :stale="row.stale" />
+                    </div>
+                    <p v-if="segRows.length === 0" class="empty">
+                      {{ scope === null ? '快照为空(接口层未起?)' : '该范围当前没有路段' }}
+                    </p>
+                  </template>
+                </div>
+              </div>
+            </section>
             </div>
-          </div>
-        </section>
-      </div>
+        </el-splitter-panel>
 
-      <!-- 中栏 · 全路段状态 -->
-      <div class="td-col col-mid">
-        <section class="td-card map-card">
-          <div class="td-card-body flush map-body">
-            <NetMap
-              :segments="segments"
-              :vehicles="vehicles"
-              :selected-id="selectedId"
-              :route-segments="[]"
-              :mode="viewMode"
-              :ts="snapshotTs"
-              :sections="sections"
-              :dropoffs="dropoffs"
-              :zones="zones"
-              :stations="stations"
-              :selected-chip="mapChip"
-              :legend="true"
-              @select="onSelect"
-            />
+        <el-splitter-panel :min="COL_MIN_MID">
+          <!-- 中栏 · 全路段状态 -->
+          <div class="td-col col-mid">
+            <section class="td-card map-card">
+              <div class="td-card-body flush map-body">
+                <NetMap
+                  :segments="segments"
+                  :vehicles="vehicles"
+                  :selected-id="selectedId"
+                  :route-segments="[]"
+                  :mode="viewMode"
+                  :ts="snapshotTs"
+                  :sections="sections"
+                  :dropoffs="dropoffs"
+                  :zones="zones"
+                  :stations="stations"
+                  :selected-chip="mapChip"
+                  :legend="true"
+                  @select="onSelect"
+                />
+              </div>
+              <div class="map-caption">
+                底图来源:{{ sourceLabel }} · 路网为示例样例(非实测)<template v-if="osmActive"> · OSM 署名见地图内</template>
+              </div>
+            </section>
           </div>
-          <div class="map-caption">
-            底图来源:{{ sourceLabel }} · 路网为示例样例(非实测)<template v-if="osmActive"> · OSM 署名见地图内</template>
-          </div>
-        </section>
-      </div>
+        </el-splitter-panel>
 
-      <!-- 右栏 · 路段信息 -->
-      <div class="td-col col-right td-scroll">
+        <el-splitter-panel v-model:size="colRight" :min="COL_MIN_RIGHT">
+          <!-- 右栏 · 路段信息 -->
+          <div class="td-col col-right td-scroll">
         <section class="td-card">
           <div class="td-card-head">
             路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? '—' }}</span>
@@ -793,8 +917,10 @@ function gotoDecision(): void {
             </template>
             <p v-else class="empty">点击左侧列表或地图中的路段查看详情</p>
           </div>
-        </section>
-      </div>
+          </section>
+        </div>
+        </el-splitter-panel>
+      </el-splitter>
     </div>
 
     <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径) -->
@@ -925,18 +1051,80 @@ function gotoDecision(): void {
   color: var(--td-text-color-placeholder);
 }
 
-/* ---------- 三栏 ---------- */
+/* ---------- 三栏 · 横向可拖(Issue #81) ----------
+   ① 必须用 `:deep()`:本 <style> 是 scoped,编译后会给选择器加 [data-v-xxx] 属性。
+      而 `.el-splitter-panel` / `.el-splitter-bar` / `__dragger` 都是 **ElSplitter 子组件内部**
+      渲染的元素,不会带上**本组件**的 scope 属性 —— 写成 `.td-splitter > .el-splitter-bar` 会被
+      编译成 `.td-splitter[data-v-x] > .el-splitter-bar[data-v-x]`,后者永远匹配不上,规则整条失效。
+      `:deep()` 后半段不带属性,只对根元素(.td-splitter 在本模板里,带属性)生效,才是对的。
+   ② 每条规则都以 `.el-splitter.td-splitter` **双类**开头,不是装饰:element-plus 自带的
+      `.el-splitter-bar__dragger:hover:not(.is-disabled):before` 权重 (0,3,1);
+      单类 + :deep 只能到 (0,4,1) 勉强压过 hover 那条,而默认态那条
+      `.el-splitter-bar__dragger:before` 只有 (0,1,1),用单类也够。双类是为了让 hover/active
+      与默认态都稳定压过,不依赖打包后的 CSS 注入顺序。改这几条时别把双类删掉。 */
+.el-splitter.td-splitter {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+}
+.el-splitter.td-splitter :deep(> .el-splitter-panel) {
+  /* panel 自带 overflow:auto 会和内部 .td-scroll 叠成双层滚动条 ——
+     显式关掉,滚动职责仍归各栏内部的 .td-scroll(左: .td-scroll/seg-list,右: .td-scroll)。 */
+  overflow: hidden;
+}
+.el-splitter.td-splitter :deep(> .el-splitter-bar) {
+  /* bar 自身宽度是 0(行内 style `width:0`,element-plus 只让 16px 的 dragger 绝对定位盖在上面),
+     而原 .td-body{gap:10px} 换成 splitter 后不再作用在栏之间 → 必须给 bar 一个宽度。
+     取 **16px** 而不是照搬原来的 10px:dragger 的拖拽热区宽度是 16px(行内 style),
+     若 bar 只有 10px,热区会向左右各溢出 3px 盖到面板边缘上,吃掉面板最边上 3px 的点击。
+     16px 让热区正好落在 bar 内,零重叠;代价是栏间距 10px→16px(中栏随之宽 12px,
+     三栏默认宽度 296/弹性/396 一律未动,不影响设计稿对齐)。 */
+  flex: 0 0 16px;
+  background: transparent;
+}
+.el-splitter.td-splitter :deep(.el-splitter-bar .el-splitter-bar__dragger::before) {
+  /* 真正画出那条竖线的伪元素。拖拽热区 dragger 本体是 16px 宽且**行内 style**,
+     CSS 改不动也不该改 —— 只改伪元素的可见竖线。
+     默认色 var(--el-border-color-light)=#E4E7ED、hover/active 是 --el-color-primary-light-5/3
+     即 element-plus 默认蓝 #409EFF:既违反「品牌蓝只表示当前/已选/可操作」,
+     又与 --td-brand-color 构成第二套蓝。这里换成设计令牌的中性边框色。
+     ⚠️ 这里**不能写 `> .el-splitter-bar__dragger`**:dragger 是 .el-splitter-bar 的子元素
+     (实测 split-bar 模板:.el-splitter-bar > [collapse-icon] + .el-splitter-bar__dragger),
+     不是 splitter 的直接子元素 —— 用子代组合符会让整条规则永远匹配不上(已踩过)。 */
+  background-color: var(--td-component-border);
+  width: 1px;
+}
+/* element-plus 另有 `.el-splitter-bar__dragger:after`(激活时偏移的第二道线,默认 opacity .4),
+   会叠出一条半透明默认蓝 —— 一并改掉,否则拖拽时仍见默认蓝。 */
+.el-splitter.td-splitter :deep(.el-splitter-bar .el-splitter-bar__dragger::after) {
+  background-color: var(--td-component-border);
+}
+.el-splitter.td-splitter :deep(.el-splitter-bar .el-splitter-bar__dragger:hover:not(.is-disabled)::before),
+.el-splitter.td-splitter :deep(.el-splitter-bar .el-splitter-bar__dragger-active::before) {
+  /* hover/拖拽中用品牌蓝:此时分隔条是「正在被操作」的对象,符合品牌蓝语义 */
+  background-color: var(--td-brand-color);
+  width: 2px;
+}
+
+/* ---------- 三栏内部列宽 ----------
+   宽度改由 ElSplitter 的 :size 驱动(见 script 内 COL_DEFAULT_* / COL_MIN_*),
+   这里的 flex 硬编码宽度已撤掉,只保留 flex 列布局与不换行的最小约束。 */
 .col-left {
-  flex: 0 0 296px;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
   overflow: hidden;
 }
 .col-mid {
   flex: 1 1 auto;
+  height: 100%;
   min-width: 0;
   overflow: hidden;
 }
 .col-right {
-  flex: 0 0 396px;
+  flex: 0 0 auto;
+  height: 100%;
+  min-width: 0;
 }
 
 /* ---------- 左栏 · 选择监控 ---------- */
