@@ -1,4 +1,3 @@
-import { DemoState } from '../common/DemoState';
 import { TRIPS_FIXTURE } from '../common/Fixture';
 import { EmergencyCard, SectionTitle } from '../components/Common';
 import { TripRecord } from '../common/Contract';
@@ -6,12 +5,12 @@ import { TripRecord } from '../common/Contract';
 /** 页四：我的行程（本地会话记录，如实标注「未采纳推荐」） */
 @Component
 export struct HistoryPage {
-  @ObjectLink demo: DemoState;
+  @Prop emergency: boolean = false;
 
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.demo.emergency) {
+        if (this.emergency) {
           EmergencyCard()
         }
         SectionTitle({ text: '我的行程（本次会话）' })

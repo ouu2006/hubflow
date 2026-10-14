@@ -1,6 +1,4 @@
-import { DemoState } from '../common/DemoState';
-import { ROUTES_FIXTURE, VEHICLES_FIXTURE } from '../common/Fixture';
-import { setColorBlind } from '../common/LevelMeta';
+import { ROUTES_FIXTURE } from '../common/Fixture';
 import { RecommendPage } from './RecommendPage';
 import { DropoffPage } from './DropoffPage';
 import { DeparturePage } from './DeparturePage';
@@ -10,7 +8,11 @@ import { SimBadge } from '../components/Common';
 @Entry
 @Component
 struct Index {
-  @State demo: DemoState = new DemoState();
+  // 四个演示开关：Index 用 @State 持有、@Prop 下发（按钮高亮与页面内容同源，不会不同步）
+  @State emergency: boolean = false;
+  @State unavailable: boolean = false;
+  @State degraded: boolean = false;
+  @State colorBlind: boolean = false;
 
   @Builder
   demoButton(label: string, active: boolean, onTap: () => void) {
@@ -38,20 +40,19 @@ struct Index {
       .padding({ top: 10, bottom: 6, left: 14, right: 14 })
       .alignItems(HorizontalAlign.Start)
 
-      // 演示态开关：用于触发应急态 / 数据不可用 / 降级态 / 去色校验截图举证
+      // 演示态开关：点一下变红 = 开启，再点一下变灰 = 关闭（可反复来回）
       Row({ space: 8 }) {
-        this.demoButton('应急态', this.demo.emergency, () => {
-          this.demo.toggleEmergency();
+        this.demoButton('应急态', this.emergency, () => {
+          this.emergency = !this.emergency;
         })
-        this.demoButton('数据不可用', this.demo.unavailable, () => {
-          this.demo.toggleUnavailable();
+        this.demoButton('数据不可用', this.unavailable, () => {
+          this.unavailable = !this.unavailable;
         })
-        this.demoButton('拒绝授权(降级)', this.demo.degraded, () => {
-          this.demo.toggleDegraded();
+        this.demoButton('拒绝授权(降级)', this.degraded, () => {
+          this.degraded = !this.degraded;
         })
-        this.demoButton('去色校验', this.demo.colorBlind, () => {
-          this.demo.toggleColorBlind();
-          setColorBlind(this.demo.colorBlind);
+        this.demoButton('去色校验', this.colorBlind, () => {
+          this.colorBlind = !this.colorBlind;
         })
       }
       .width('100%')
@@ -61,22 +62,35 @@ struct Index {
       // P0 四页
       Tabs({ barPosition: BarPosition.End }) {
         TabContent() {
-          RecommendPage({ demo: this.demo })
+          RecommendPage({
+            emergency: this.emergency,
+            unavailable: this.unavailable,
+            degraded: this.degraded,
+            colorBlind: this.colorBlind
+          })
         }
         .tabBar('推荐路线')
 
         TabContent() {
-          DropoffPage({ demo: this.demo })
+          DropoffPage({
+            emergency: this.emergency,
+            unavailable: this.unavailable,
+            colorBlind: this.colorBlind
+          })
         }
         .tabBar('落客候客')
 
         TabContent() {
-          DeparturePage({ demo: this.demo })
+          DeparturePage({
+            emergency: this.emergency,
+            unavailable: this.unavailable,
+            colorBlind: this.colorBlind
+          })
         }
         .tabBar('离站路线')
 
         TabContent() {
-          HistoryPage({ demo: this.demo })
+          HistoryPage({ emergency: this.emergency })
         }
         .tabBar('我的行程')
       }

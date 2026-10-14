@@ -1,16 +1,17 @@
-import { DemoState } from '../common/DemoState';
 import { ROUTES_FIXTURE } from '../common/Fixture';
 import { EmergencyCard, InfoRow, SectionTitle } from '../components/Common';
 
 /** 页二：落客 / 候客指引（停靠点类型、位置、步行接驳时长） */
 @Component
 export struct DropoffPage {
-  @ObjectLink demo: DemoState;
+  @Prop emergency: boolean = false;
+  @Prop unavailable: boolean = false;
+  @Prop colorBlind: boolean = false;
 
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.demo.emergency) {
+        if (this.emergency) {
           EmergencyCard()
         } else {
           SectionTitle({ text: '落客 / 候客指引' })
@@ -42,7 +43,7 @@ export struct DropoffPage {
           .backgroundColor('#F5F5F5')
           .borderRadius(10)
 
-          if (this.demo.unavailable) {
+          if (this.unavailable) {
             // 数据不可用：灰色，绝不显示成蓝色（TC-11）
             Text('停靠点实时余量：数据不可用')
               .fontSize(13)

@@ -1,16 +1,17 @@
-import { DemoState } from '../common/DemoState';
 import { ROUTES_FIXTURE, DISCLAIMER_TEXT } from '../common/Fixture';
 import { EmergencyCard, SectionTitle, SegmentBar, LevelLegend } from '../components/Common';
 
 /** 页三：离站路线（送完人之后怎么走，本项目独有；departure_route 必现 = TC-12） */
 @Component
 export struct DeparturePage {
-  @ObjectLink demo: DemoState;
+  @Prop emergency: boolean = false;
+  @Prop unavailable: boolean = false;
+  @Prop colorBlind: boolean = false;
 
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.demo.emergency) {
+        if (this.emergency) {
           // 应急态：停止路线引导
           EmergencyCard()
         } else {
@@ -32,7 +33,7 @@ export struct DeparturePage {
 
             Row({ space: 6 }) {
               ForEach(ROUTES_FIXTURE.departure_route.segments, (seg: string) => {
-                SegmentBar({ segmentId: seg, unavailable: this.demo.unavailable })
+                SegmentBar({ segmentId: seg, unavailable: this.unavailable, colorBlind: this.colorBlind })
               }, (seg: string) => seg)
             }
             .width('100%')
@@ -48,7 +49,7 @@ export struct DeparturePage {
             .fontColor('#666666')
             .width('100%')
 
-          LevelLegend()
+          LevelLegend({ colorBlind: this.colorBlind })
 
           Text(DISCLAIMER_TEXT)
             .fontSize(12)

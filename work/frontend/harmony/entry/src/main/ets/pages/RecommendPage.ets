@@ -1,4 +1,3 @@
-import { DemoState } from '../common/DemoState';
 import { ROUTES_FIXTURE, VEHICLES_FIXTURE, DEMO_VEHICLE_ID, DISCLAIMER_TEXT } from '../common/Fixture';
 import { EmergencyCard, InfoRow, SectionTitle, LevelLegend, SegmentBar } from '../components/Common';
 import { Vehicle, Alternative } from '../common/Contract';
@@ -15,7 +14,11 @@ function demoVehicle(): Vehicle {
 /** 页一：当前建议（推荐路线 + ≥2 条备选 + why + 前后车协同说明） */
 @Component
 export struct RecommendPage {
-  @ObjectLink demo: DemoState;
+  @Prop emergency: boolean = false;
+  @Prop unavailable: boolean = false;
+  @Prop degraded: boolean = false;
+  @Prop colorBlind: boolean = false;
+  @State pickedRoad: string = 'SEG-002';
 
   @Builder
   routeCard(pathId: string, etaMin: number, segments: string[], highlight: boolean) {
@@ -41,7 +44,7 @@ export struct RecommendPage {
 
       Row({ space: 6 }) {
         ForEach(segments, (seg: string) => {
-          SegmentBar({ segmentId: seg, unavailable: this.demo.unavailable })
+          SegmentBar({ segmentId: seg, unavailable: this.unavailable, colorBlind: this.colorBlind })
         }, (seg: string) => seg)
       }
       .width('100%')
@@ -56,10 +59,10 @@ export struct RecommendPage {
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.demo.emergency) {
+        if (this.emergency) {
           // 应急态：停止路线引导，替换为「请服从现场指挥」
           EmergencyCard()
-        } else if (this.demo.degraded) {
+        } else if (this.degraded) {
           // 拒绝授权降级：手动选所在道路 / 只看路况，流程不中断
           Column({ space: 8 }) {
             SectionTitle({ text: '已降级：手动选所在道路 / 只看路况' })
@@ -70,16 +73,16 @@ export struct RecommendPage {
               Row() {
                 Text(road).fontSize(13).fontColor('#1A1A1A')
                 Blank()
-                Text(this.demo.degradedRoad === road ? '已选' : '')
+                Text(this.pickedRoad === road ? '已选' : '')
                   .fontSize(12)
                   .fontColor('#0052D9')
               }
               .width('100%')
               .padding(10)
-              .backgroundColor(this.demo.degradedRoad === road ? '#F0F5FF' : '#F5F5F5')
+              .backgroundColor(this.pickedRoad === road ? '#F0F5FF' : '#F5F5F5')
               .borderRadius(8)
               .onClick(() => {
-                this.demo.pickRoad(road);
+                this.pickedRoad = road;
               })
             }, (road: string) => road)
           }
@@ -161,7 +164,7 @@ export struct RecommendPage {
             .textAlign(TextAlign.Start)
 
           // 四级图例（三重编码）
-          LevelLegend()
+          LevelLegend({ colorBlind: this.colorBlind })
         }
 
         // 绑定演示车（C-3）

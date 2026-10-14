@@ -16,7 +16,7 @@ export struct SimBadge {
   }
 }
 
-/** 三级文字标题 */
+/** 段落标题 */
 @Component
 export struct SectionTitle {
   text: string = '';
@@ -47,20 +47,21 @@ export struct InfoRow {
   }
 }
 
-/** 等级标签：颜色 + 图标 + 文字三重编码（关掉颜色也能区分） */
+/** 等级标签：颜色 + 图标 + 文字三重编码（colorBlind 开启时颜色抽掉） */
 @Component
 export struct LevelChip {
   level: number = 0;
   unavailable: boolean = false;
+  colorBlind: boolean = false;
 
   build() {
     Row({ space: 4 }) {
       Text(levelMetaOf(this.level, this.unavailable).glyph)
         .fontSize(13)
-        .fontColor(levelGlyphColorOf(this.level, this.unavailable))
+        .fontColor(levelGlyphColorOf(this.level, this.unavailable, this.colorBlind))
       Text(levelMetaOf(this.level, this.unavailable).name)
         .fontSize(13)
-        .fontColor(levelTextColorOf(this.level, this.unavailable))
+        .fontColor(levelTextColorOf(this.level, this.unavailable, this.colorBlind))
     }
     .padding({ top: 3, bottom: 3, left: 8, right: 8 })
     .backgroundColor('#F5F5F5')
@@ -68,20 +69,30 @@ export struct LevelChip {
   }
 }
 
-/** 四级图例（颜色 + 图标 + 文字；去色校验时同样保留图标与文字） */
+/** 四级图例（颜色 + 图标 + 文字；去色校验时颜色抽掉，图标与文字保留） */
 @Component
 export struct LevelLegend {
+  colorBlind: boolean = false;
+
   build() {
     Row({ space: 12 }) {
       ForEach(LEVEL_META_LIST, (meta: LevelMeta) => {
         Row({ space: 4 }) {
-          Text(meta.glyph).fontSize(12).fontColor(levelGlyphColorOf(meta.level, false))
-          Text(meta.name).fontSize(12).fontColor(levelTextColorOf(meta.level, false))
+          Text(meta.glyph)
+            .fontSize(12)
+            .fontColor(levelGlyphColorOf(meta.level, false, this.colorBlind))
+          Text(meta.name)
+            .fontSize(12)
+            .fontColor(levelTextColorOf(meta.level, false, this.colorBlind))
         }
       }, (meta: LevelMeta) => meta.name)
       Row({ space: 4 }) {
-        Text(LEVEL_UNAVAILABLE.glyph).fontSize(12).fontColor(LEVEL_UNAVAILABLE.color)
-        Text(LEVEL_UNAVAILABLE.name).fontSize(12).fontColor(LEVEL_UNAVAILABLE.textColor)
+        Text(LEVEL_UNAVAILABLE.glyph)
+          .fontSize(12)
+          .fontColor(levelGlyphColorOf(0, true, this.colorBlind))
+        Text(LEVEL_UNAVAILABLE.name)
+          .fontSize(12)
+          .fontColor(levelTextColorOf(0, true, this.colorBlind))
       }
     }
     .width('100%')
@@ -118,13 +129,18 @@ export struct EmergencyCard {
 export struct SegmentBar {
   segmentId: string = '';
   unavailable: boolean = false;
+  colorBlind: boolean = false;
 
   build() {
     Column({ space: 4 }) {
       Text(this.segmentId)
         .fontSize(12)
         .fontColor(this.unavailable ? '#8B8B8B' : '#1A1A1A')
-      LevelChip({ level: segmentLevelOf(this.segmentId), unavailable: this.unavailable })
+      LevelChip({
+        level: segmentLevelOf(this.segmentId),
+        unavailable: this.unavailable,
+        colorBlind: this.colorBlind
+      })
     }
     .padding(8)
     .backgroundColor('#F5F5F5')
