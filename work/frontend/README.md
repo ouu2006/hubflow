@@ -491,6 +491,40 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 **实测记录（2026-10-13，1440×900，Chromium）**：三页均无横向溢出、无 console 报错；`/#/heat` 落到监控大屏；大屏拥挤指数视图排行按 CI 降序、不可用路段排最后并标「不可用」；感知层环境条显示「大雨 · 平峰 · 生效因素 F01，通行能力折减 ×0.75」并标「站点包默认环境」；决策可视化点「大雨晚高峰」预设后，本路段对照 **判级 2 → 2、饱和度 0.43 → 0.66**，处理过程同步显示 `c = 1600 × 0.75 = 1200 辆/h`、`x = q / c = 803 / 1200 = 0.67`、恰好未跨 2 档上界 0.7（**需求倍率由 F03+F10 各出一半（平方根），乘积 = 所选时段的 1.15**——独立审查发现「两条同 target 因素会把需求平方」，已按平方根拆开修掉）；「复位环境」后恢复默认态。
 
+### 13.5 监控大屏三栏可拖拽(Issue #81)
+
+主体三栏改成 Element Plus 自带 `ElSplitter` / `ElSplitterPanel`（不加任何新依赖），底部热力带三卡保持原样。
+
+| 项 | 值 |
+|---|---|
+| 可拖范围 | **仅 `/dashboard` 主体三栏**（左「选择监控」/ 中「全路段状态」/ 右「路段信息」）；底部热力带三卡本单不动 |
+| 默认宽度 | 左 **296px**、中弹性、右 **396px**（设计稿按 1440×900 对齐，未改） |
+| 最小宽度 | 左 **220px** / 中 **320px** / 右 **280px**（拖到最窄内容不叠压、不溢出，按钮仍点得到） |
+| 复位方式 | **双击任意分隔条** → 三栏回到默认 296 / 弹性 / 396 |
+| 记忆方式 | 拖完自动写 `localStorage` 键 `hubflow.dashboard.colWidth`（只记左、右两栏，中栏弹性不记）；清缓存或双击即回默认 |
+| 换站点包 | 无影响。`npm run dev`（包 A）与 `npm run dev:station2`（包 B）行为一致 |
+
+**已知限制（如实记，不得写成「无障碍已达标」）**：
+
+1. **分隔条只有鼠标 / 触摸拖拽，没有键盘操作**——`ElSplitter` 的 dragger 没有 `tabindex` / `role` / `keydown`（element-plus 2.14.5 源码实测），键盘用户无法调整三栏宽度。宽度本身不影响信息读取（内容都在 DOM 里、可滚动浏览），但**「可调整」这一项对键盘用户不成立**。
+2. **双击复位只能用 `mousedown` 自计次实现**，不能挂 `@dblclick`：`ElSplitter` 在 `moveStart` 时会盖一层 `z-index:999` 的 `.el-splitter__mask`（用于吞掉 iframe 的 touch 事件），mouseup 落在遮罩上，mousedown 与 mouseup 的 target 不一致，浏览器不派发 `click`，更没有 `dblclick`。实测事件序列：
+   `mousedown:.el-splitter-bar__dragger → mouseup:.el-splitter__mask`。故改为在 `mousedown` 上按 400ms 窗口 + 8px 位移自计次。
+3. **记忆宽度不随站点包区分**——同一个浏览器切包 A / 包 B 共用同一份左、右栏宽度。
+
+**其余易踩点（改这块前先看）**：
+
+- `.el-splitter-panel` 自带 `overflow: auto`，与既有 `.td-col` / `.td-scroll` 的滚动职责冲突 → panel 一律覆盖成 `overflow: hidden`，滚动仍由内部 `.td-col` 负责（避免双层滚动条或「滚不动」）。
+- `.el-splitter-bar` 宽度是 0（只有 16px 的 dragger 绝对定位覆盖在边界上）→ 必须显式给 bar 宽度，本单取 10px，补回原 `.td-body { gap: 10px }` 的栏间距。
+- `:size` **必须用 `v-model:size`**，单向绑定不会把拖出来的 px 宽度回写到源变量，`@resize-end` 存进 `localStorage` 的就永远是默认值。
+- 中栏**不给 `size`**——`ElSplitter` 会把剩余空间自动瓜分给未指定 `size` 的 panel（中栏不用自己算）。
+- 激活态类名是 `.el-splitter-bar__dragger-active`（不是 `.is-active`）。
+- 中栏 `NetMap` 自己按 `getBoundingClientRect()` 换算拖拽位移（`components/NetMap.vue`），**改完必须亲手拖一次地图栏**，确认缩放 / 平移仍准。
+- scoped 样式下，`ElSplitter` 子组件内部渲染的元素不带本组件的 scope 属性 → 覆盖规则一律写成 `.el-splitter.td-splitter :deep(...)`，且**后半段不能带 `>` 去直接指向 splitter 的子元素**（dragger 是 `.el-splitter-bar` 的子元素，不是 splitter 的直接子元素）。
+
+**配色（守 §6.2「品牌蓝只表示当前 / 已选 / 可操作」「等级色不得出现在壳层」）**：分隔条竖线默认取 `var(--td-component-border)` 中性灰，hover / 拖拽中取 `var(--td-brand-color)` #0052D9（= 正在被操作）。**刻意不覆盖 element-plus 默认主题蓝之外的状态色**——全仓库不新增任何 `--el-` 变量覆盖，`src/style.css` 的 `--td-*` 仍是唯一色源。
+
+**实测记录（2026-10-14，1440×900，Chromium CDP 真实鼠标事件 + `npm run build`）**：默认态三栏 289 / 700 / 387px（= 设计稿减掉两条各 10px 的分隔条），无横向溢出（`scrollWidth === clientWidth`）；第一根 bar 右拖 120px → 407 / 582 / 387，第二根左拖 100px → 407 / 485 / 485，中栏确实跟着伸缩；两条 bar 各猛拖 900px → 停在 215 / 887 / 274（受左 220 + bar 10 / 中 320 / 右 280 三道 min 夹紧）；最小宽下左栏 `.td-seg-item`（92.5×40）与右栏 `.act-btn`（237.64×34）均点击成功、宽度不受影响；刷新后仍是 215 / 887 / 274 且 `localStorage` 为 `{"left":220,"right":280}`（记忆生效）；双击分隔条 → 回到 289 / 700 / 387，落盘回到 `{"left":296,"right":396}`。分隔条配色实测：默认线 `rgb(221,221,221)`（= `--td-component-border`）、hover / 拖拽中 `rgb(0,82,217)`（= `--td-brand-color`），**无 element-plus 默认蓝 `rgb(64,158,255)`**。`vue-tsc --noEmit` exit 0，`vite build` exit 0（`dist/assets/index-*.css` 406.05 kB、`index-*.js` 1149.26 kB），`python scripts/doc_gate.py` 七组全过。
+
 ---
 
 ## 十四、司机端鸿蒙 App：工程骨架 + P0 四页 UI（Issue #88，2026-10-14）
