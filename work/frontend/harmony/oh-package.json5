@@ -1,0 +1,6 @@
+{
+  "modelVersion": "6.1.1",
+  "description": "hubflow 司机端鸿蒙 App（一期 P0 四页，数据为工程内 fixture，不联网）",
+  "dependencies": {},
+  "devDependencies": {}
+}
