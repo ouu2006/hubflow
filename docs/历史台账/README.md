@@ -32,14 +32,14 @@ GitHub 侧账号被封后，**原仓库的 39 条 Issue 与 56 条 PR 全部不�
 
 | # | 标题 | 状态 | 标签 | 正文 | 取回来源 | 评论 |
 |---|---|---|---|---|---|---|
-| 2 | [感知线] W1：跑通 segments.json | OPEN | — | 1553 字 | `edit-append` | 1 |
-| 3 | [决策线] W1：站点包结构定稿 + 跑通 routes.json + 地图 Key 申请 | OPEN | — | 1879 字 | `edit-append` | 0 |
-| 4 | [前端] W1：管理端页面壳 + 鸿蒙最小可用页 | OPEN | — | 1520 字 | `edit-append` | 0 |
-| 5 | [后端] W1：run_all.py 骨架 + 契约冻结通知 + 中文路径裁定 | OPEN | — | 1824 字 | `edit-append` | 1 |
-| 6 | [数据与标注] W1：抽帧启动 + 标注规范 v1 + 控制点拾取 | OPEN | — | 1199 字 | `edit-append` | 1 |
-| 7 | [验收与测试] W1：验收用例转可勾选检查表 + 缺陷清单模板 | OPEN | — | 1111 字 | `edit-append` | 0 |
-| 8 | [文档与演示] W1：数据来源清单模板 + 演示脚本骨架 | OPEN | — | 1019 字 | `edit-append` | 0 |
-| 9 | [队长] 开工阻塞项：填分工表 + 邀请协作者 + 裁定中文路径 + 离线缓存许可 | OPEN | — | 1139 字 | `prior-heredoc` | 4 |
+| 2 | [感知线] W1：跑通 segments.json | CLOSED | — | 1553 字 | `edit-append` | 1 |
+| 3 | [决策线] W1：站点包结构定稿 + 跑通 routes.json + 地图 Key 申请 | CLOSED | — | 1879 字 | `edit-append` | 0 |
+| 4 | [前端] W1：管理端页面壳 + 鸿蒙最小可用页 | CLOSED | — | 1520 字 | `edit-append` | 0 |
+| 5 | [后端] W1：run_all.py 骨架 + 契约冻结通知 + 中文路径裁定 | CLOSED | — | 1824 字 | `edit-append` | 1 |
+| 6 | [数据与标注] W1：抽帧启动 + 标注规范 v1 + 控制点拾取 | CLOSED | — | 1199 字 | `edit-append` | 1 |
+| 7 | [验收与测试] W1：验收用例转可勾选检查表 + 缺陷清单模板 | CLOSED | — | 1111 字 | `edit-append` | 0 |
+| 8 | [文档与演示] W1：数据来源清单模板 + 演示脚本骨架 | CLOSED | — | 1019 字 | `edit-append` | 0 |
+| 9 | [队长] 开工阻塞项：填分工表 + 邀请协作者 + 裁定中文路径 + 离线缓存许可 | CLOSED | — | 1139 字 | `prior-heredoc` | 4 |
 | 29 | [阶段0·0-2] SUMO 安装与官方示例验证（L0 · 系列 S） | CLOSED | L0, 系列S | 2352 字 | `Write-tool-global` | 3 |
 | 36 | [阶段0·0-3A] 站点 OSM → netbuild.py → stations/sumo/*.net.xml（L1 · 站点/踏勘） | OPEN | L1 | 4562 字 | `disk:D:/hubflow/_issue_draft/_ready/A1-0-3-netbuild.body.md` | 1 |
 | 37 | [阶段0·0-3B] map_ingest.py → network.json + map_source.json（L1 · 站点/踏勘） | OPEN | L1, L0 | 4599 字 | `disk-manual:D:/hubflow/_issue_draft/_ready/B1-0-3-map-ingest.body.md` | 1 |
