@@ -1,6 +1,7 @@
 import { ROUTES_FIXTURE } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, InfoRow, SectionTitle } from '../components/Common';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER } from '../common/Colors';
 
 /** 页二：落客 / 候客指引（停靠点类型、位置、步行接驳时长） */
 @Component
@@ -15,6 +16,12 @@ export struct DropoffPage {
       Column({ space: 12 }) {
         if (this.store.emergency) {
           EmergencyCard()
+        } else if (this.store.degraded) {
+          SectionTitle({ text: '已降级：手动确认停靠点 / 只看路况' })
+          Text('未授权定位时仍可查看停靠点与路况，流程不中断（TC-05）。')
+            .fontSize(12)
+            .fontColor(TEXT_SECONDARY)
+            .width('100%')
         } else {
           SectionTitle({ text: '落客 / 候客指引' })
 
@@ -26,23 +33,23 @@ export struct DropoffPage {
           }
           .width('100%')
           .padding(12)
-          .backgroundColor('#FAFAFA')
+          .backgroundColor(BG_GRAY_LIGHT)
           .borderRadius(10)
 
           Column({ space: 4 }) {
             SectionTitle({ text: '提示' })
             Text('请在预约时段内到达停靠点；超时未确认将自动释放时段预约。')
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
               .width('100%')
             Text('送完乘客后请查看「离站路线」页，系统已为您规划离站方向。')
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
               .width('100%')
           }
           .width('100%')
           .padding(12)
-          .backgroundColor('#F5F5F5')
+          .backgroundColor(BG_GRAY_LIGHTER)
           .borderRadius(10)
 
           if (this.store.unavailable) {
@@ -50,10 +57,10 @@ export struct DropoffPage {
             // 口径红线：页面不出现「实测 / 实时 / 现场」，故此处写「当前余量」而非「实时余量」
             Text('停靠点当前余量：数据不可用')
               .fontSize(13)
-              .fontColor('#8B8B8B')
+              .fontColor(TEXT_TERTIARY)
               .width('100%')
               .padding(10)
-              .backgroundColor('#F5F5F5')
+              .backgroundColor(BG_GRAY_LIGHTER)
               .borderRadius(8)
           }
         }

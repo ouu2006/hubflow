@@ -1,8 +1,8 @@
 import { TRIPS_FIXTURE } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
-import { SectionTitle } from '../components/Common';
-
+import { EmergencyCard, SectionTitle } from '../components/Common';
 import { TripRecord } from '../common/Contract';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, STATE_ADOPTED, STATE_REJECTED } from '../common/Colors';
 
 /** 页四：我的行程（本地会话记录，如实标注「未采纳推荐」） */
 @Component
@@ -17,21 +17,13 @@ export struct HistoryPage {
       Column({ space: 12 }) {
         // 应急态只提示、不替换本页内容：应急停的是「路线引导」，行程记录与应急无关，仍应可读
         if (this.store.emergency) {
-          Row({ space: 6 }) {
-            Text('应急状态')
-              .fontSize(12)
-              .fontColor('#FFFFFF')
-              .padding({ top: 2, bottom: 2, left: 6, right: 6 })
-              .backgroundColor('#C62828')
-              .borderRadius(4)
-            Text('请服从现场指挥（路线引导已停止；行程记录不受影响）')
-              .fontSize(12)
-              .fontColor('#8A1F1F')
+          Column({ space: 4 }) {
+            EmergencyCard()
+            Text('行程记录不受影响，仍可查看。')
+              .fontSize(11)
+              .fontColor(TEXT_TERTIARY)
           }
           .width('100%')
-          .padding(10)
-          .backgroundColor('#FDECEA')
-          .borderRadius(8)
         }
         SectionTitle({ text: '我的行程（本次会话）' })
 
@@ -41,37 +33,37 @@ export struct HistoryPage {
               Text(trip.session_id)
                 .fontSize(13)
                 .fontWeight(FontWeight.Medium)
-                .fontColor('#1A1A1A')
+                .fontColor(TEXT_PRIMARY)
               Blank()
               Text(trip.time_label)
                 .fontSize(11)
-                .fontColor('#8B8B8B')
+                .fontColor(TEXT_TERTIARY)
             }
             .width('100%')
             Row() {
               Text(`路线 ${trip.path_id}`)
                 .fontSize(12)
-                .fontColor('#666666')
+                .fontColor(TEXT_SECONDARY)
               Blank()
               Text(trip.adopted ? '已采纳推荐' : '未采纳推荐')
                 .fontSize(12)
-                .fontColor(trip.adopted ? '#006C45' : '#A06A00')
+                .fontColor(trip.adopted ? STATE_ADOPTED : STATE_REJECTED)
             }
             .width('100%')
             Text(trip.note)
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
               .width('100%')
           }
           .width('100%')
           .padding(10)
-          .backgroundColor('#FAFAFA')
+          .backgroundColor(BG_GRAY_LIGHT)
           .borderRadius(8)
-        }, (trip: TripRecord) => trip.session_id)
+        }, (trip: TripRecord) => `${trip.session_id}_${trip.adopted}`)
 
         Text('行程记录仅保存在本机，行程结束即删除；不含车牌、身份等个人信息。')
           .fontSize(11)
-          .fontColor('#8B8B8B')
+          .fontColor(TEXT_TERTIARY)
           .width('100%')
       }
       .width('100%')

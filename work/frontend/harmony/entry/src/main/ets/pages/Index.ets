@@ -5,15 +5,12 @@ import { DropoffPage } from './DropoffPage';
 import { DeparturePage } from './DeparturePage';
 import { HistoryPage } from './HistoryPage';
 import { SimBadge } from '../components/Common';
+import { TEXT_WHITE, ACCENT_EMERGENCY, ACCENT_UNAVAILABLE, ACCENT_DEGRADED, ACCENT_COLOR_BLIND, BG_GRAY_OFF, TEXT_TERTIARY } from '../common/Colors';
 
-// 四个演示开关的专属色（各状态一色，不用统一红；未开启为浅灰）
-const COLOR_ON: string = '#FFFFFF';
-const ACCENT_EMERGENCY: string = '#C62828';
-const ACCENT_UNAVAILABLE: string = '#5F5E5A';
-const ACCENT_DEGRADED: string = '#A06A00';
-const ACCENT_COLOR_BLIND: string = '#0052D9';
-const COLOR_OFF_BG: string = '#F0F0F0';
-const COLOR_OFF_TEXT: string = '#5F5E5A';
+// 四个演示开关的专属色（各状态一色；未开启为浅灰）
+const COLOR_ON: string = TEXT_WHITE;
+const COLOR_OFF_BG: string = BG_GRAY_OFF;
+const COLOR_OFF_TEXT: string = TEXT_TERTIARY;
 
 @Entry
 @Component
@@ -29,13 +26,13 @@ struct Index {
         Text('hubflow 司机端')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
         Text(`快照 ${ROUTES_FIXTURE.request_id} · is_simulated=${ROUTES_FIXTURE.is_simulated} · session ${ROUTES_FIXTURE.session_id}`)
           .fontSize(11)
-          .fontColor('#8B8B8B')
+          .fontColor(TEXT_TERTIARY)
         Text(`当前演示态：${this.store.activeName()}`)
           .fontSize(11)
-          .fontColor('#0052D9')
+          .fontColor(ACCENT_COLOR_BLIND)
       }
       .width('100%')
       .padding({ top: 10, bottom: 6, left: 14, right: 14 })
@@ -87,7 +84,7 @@ struct Index {
       // 措辞已精简（原来两句话太啰嗦）；正式 App 交付时由 #93 接真实数据后移除。
       Text('演示开关·互斥，再点取消。应急态 = 停止路线引导，改为「请服从现场指挥」')
         .fontSize(10)
-        .fontColor('#8B8B8B')
+        .fontColor(TEXT_TERTIARY)
         .width('100%')
         .padding({ left: 14, right: 14, bottom: 6 })
 
@@ -125,6 +122,6 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(BG_BASE)
   }
 }
