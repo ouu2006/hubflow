@@ -1,0 +1,9 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "hubflow 司机端入口模块（一期 P0 四页）",
+  "main": "",
+  "author": "hubflow",
+  "license": "",
+  "dependencies": {}
+}

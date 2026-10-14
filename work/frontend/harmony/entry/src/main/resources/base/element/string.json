@@ -1,0 +1,16 @@
+{
+  "string": [
+    {
+      "name": "module_desc",
+      "value": "hubflow 司机端入口模块"
+    },
+    {
+      "name": "EntryAbility_desc",
+      "value": "hubflow 司机端"
+    },
+    {
+      "name": "app_name",
+      "value": "hubflow 司机端"
+    }
+  ]
+}

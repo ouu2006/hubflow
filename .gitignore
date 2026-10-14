@@ -69,6 +69,21 @@ desktop.ini
 *.bak
 *.swp
 
+# ── 鸿蒙工程（DevEco Studio / hvigor）────────────────────────────
+oh_modules/
+oh-package-lock.json5
+.hvigor/
+.cxx/
+*.hap
+*.hsp
+*.har
+*.p12
+*.cer
+*.p7b
+local.properties
+.clangd
+.clang-format
+
 # ── 本地环境变量（含密钥，绝不提交）──────────────────────────────
 .env
 .env.local
