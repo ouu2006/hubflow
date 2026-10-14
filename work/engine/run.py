@@ -44,6 +44,52 @@ SAMPLE_PARKING_MODE = "S2"
 #: 到站步行时间(demo 假设值,【待标定】)
 SAMPLE_WALK_MIN = 2.0
 
+#: 终点节点类型 → 司机类型(契约第四节 D1 送客 / D2 接客 / D3 往返)
+#: 按**终点类型**推,不再一律 D1 —— 否则上客行程会被描述成落客(见 Issue #94 第②条)。
+#: D3(往返)在样例里没有,不处理;终点是路口等其它类型时退回默认 D1。
+DRIVER_TYPE_BY_STOP = {"dropoff": "D1", "pickup": "D2"}
+
+
+def load_points(stations_dir: Path) -> list[dict[str, Any]]:
+    """读站点包 `stations/points.json` 的点位表(取 `point_id` / `type` / `segment_id`)。
+
+    引擎里**不许出现站点相关的字符串常量**(换站只换数据),所以点位一律从这里查。
+    """
+    path = stations_dir / "points.json"
+    if not path.is_file():
+        raise SystemExit(f"缺站点包点位表:{path}(--sample 要用它把终点折成点位 id)")
+    payload = network.read_json(path)
+    points = payload.get("points")
+    if not isinstance(points, list) or not points:
+        raise ValueError("points.json 缺 points 数组(契约第六节)")
+    return points
+
+
+def stop_point_of(
+    points: list[dict[str, Any]],
+    graph: network.Graph,
+    node_id: str,
+    path: list[str],
+) -> dict[str, Any] | None:
+    """终点节点对应的落客 / 上客点位(按 `type` + 相邻路段的 `segment_id` 查表)。
+
+    - **不退回图节点 id**:查不到就返回 None,由调用方在 `why` 里写明"点位未在站点包登记";
+    - 匹配范围是**终点节点的相邻路段**(入边 + 出边)的 `section`,不是单看最后一条边 ——
+      点位可能登记在驶离该节点的那条路上(如样例的 `P-02` 挂在 `SEG-004`,而到达走的是 `SEG-003`);
+    - `path` 为空或终点不是落客 / 上客型节点时返回 None。
+    """
+    node_type = graph.node(node_id).get("type")
+    if node_type not in DRIVER_TYPE_BY_STOP:
+        return None
+
+    sections = {str(graph.edge(eid).get("section")) for eid in path}
+    for edge_id in graph.out_edges(node_id):
+        sections.add(str(graph.edge(edge_id).get("section")))
+    for point in points:
+        if point.get("type") == node_type and str(point.get("segment_id")) in sections:
+            return point
+    return None
+
 
 def load_samples(samples_dir: Path) -> dict[str, dict[str, Any]]:
     """读 --sample 用的三份样例(缺失即报错,不静默降级)。"""
@@ -85,6 +131,7 @@ def build_request(
     graph: network.Graph,
     segments_state: dict[str, dict[str, Any]],
     params: dict[str, Any],
+    points: list[dict[str, Any]],
     index: int,
     now_ts: str,
 ) -> dict[str, Any]:
@@ -104,11 +151,13 @@ def build_request(
     )
 
     od_id = str(od.get("od_id") or f"OD-{index:02d}")
+    # 司机类型按**终点类型**推(见 DRIVER_TYPE_BY_STOP);终点是路口等其它类型时退回默认 D1
+    driver_type = DRIVER_TYPE_BY_STOP.get(str(graph.node(dst).get("type")), SAMPLE_DRIVER_TYPE)
     request: dict[str, Any] = {
         "request_id": f"REQ-SAMPLE-{index:04d}",
         "session_id": f"S-sample-{index:04d}",
         "od_id": od_id,
-        "driver_type": SAMPLE_DRIVER_TYPE,
+        "driver_type": driver_type,
         "parking_mode": SAMPLE_PARKING_MODE,
         "location": {
             "segment_id": str(graph.edge(picked[0][0]).get("section")) if picked else None,
@@ -132,13 +181,20 @@ def build_request(
         return request
 
     best_eta_s, best_path = scored[0]
+    stop = stop_point_of(points, graph, dst, best_path)
+    # 落客点写**点位 id**(契约第二节示例是 "DROP-03"),不写图节点 id。
+    # D2(接客)行程的终点是**上客点**,不写进 arrival_route.dropoff_point(Issue #94 第②条)——
+    # 契约里 arrival_route 只有 dropoff_point 一个点位字段,把上客写进去就是把行程描述成落客。
+    is_dropoff_stop = driver_type == "D1" and stop is not None
     request["arrival_route"] = {
         "path_id": f"{od_id}-P1",
         "segments": _segments_of(graph, best_path),
         "edges": list(best_path),
         "eta_min": round(best_eta_s / 60.0, 2),
-        "dropoff_point": dst if graph.node(dst)["type"] in ("dropoff", "pickup") else None,
-        "walk_min": SAMPLE_WALK_MIN if graph.node(dst)["type"] in ("dropoff", "pickup") else None,
+        "dropoff_point": stop["point_id"] if is_dropoff_stop else None,
+        # walk_min 跟**点位**走、不跟 dropoff_point 走:上客行程(D2)也有"从站厅走到上车点"的时间,
+        # 所以 D2 下 dropoff_point 为 null 但 walk_min 仍在 —— 与改动前行为一致,不给下游制造空值。
+        "walk_min": SAMPLE_WALK_MIN if stop is not None else None,
     }
 
     if len(scored) == 1:
@@ -158,8 +214,20 @@ def build_request(
             for i, (eta_s, path) in enumerate(scored[1:])
         ]
 
+    # 离站路线:契约标它**必填**、TC-12 要求必现 —— 算不出时**不静默置 null**,
+    # 把原因并进 why(Issue #94 第③条;不加新字段,省一次契约变更)。
+    notes: list[str] = []
     exit_node = od.get("exit_node")
-    if exit_node and str(exit_node) in graph.node_ids and str(exit_node) != dst:
+    if not exit_node:
+        request["departure_route"] = None
+        notes.append("离站路线未计算:od[] 缺 exit_node(契约 6.3),无法确定送完客往哪走")
+    elif str(exit_node) not in graph.node_ids:
+        request["departure_route"] = None
+        notes.append(f"离站路线未计算:exit_node={exit_node!r} 不在路网 nodes 里")
+    elif str(exit_node) == dst:
+        request["departure_route"] = None
+        notes.append("离站路线未计算:exit_node 与终点相同,无需离站路线")
+    else:
         dep = candidates.select_candidates(graph, dst, str(exit_node), k=1, max_overlap=1.0, weight=weight)
         if dep:
             dep_eta = network.path_travel_time_s(graph, dep[0], segments_state, params)
@@ -171,8 +239,16 @@ def build_request(
             }
         else:
             request["departure_route"] = None
-    else:
-        request["departure_route"] = None
+            notes.append(f"离站路线未计算:{dst} → {exit_node} 之间无可行路径")
+
+    # 点位登记情况也进 why:查不到**不退回图节点 id**,而是在这里说清(Issue #94 第①条)。
+    # 只在**终点确是落客/上客点**时才说 —— 终点是路口这类节点时本就没有落客点位,不该报"未登记"。
+    dst_type = str(graph.node(dst).get("type"))
+    if dst_type == "pickup":
+        detail = f";对应点位 {stop['point_id']}" if stop else ";上客点位未在站点包登记"
+        notes.append("终点是上客点,不写进 arrival_route.dropoff_point" + detail)
+    elif dst_type == "dropoff" and stop is None:
+        notes.append(f"落客点位未在站点包登记({dst} 的相邻路段里查不到 type=dropoff 的点位)")
 
     request["reservation"] = None
     request["quota"] = None
@@ -187,6 +263,8 @@ def build_request(
         "。⚠️ 本输出是「此刻最快」基线(手册 7.6 的对照组口径),"
         "**不是协同推荐** —— 时段容量预约与不伤害前车约束尚未实现(W3),故 reservation 为 null。"
     )
+    if notes:
+        request["why"] += " " + " ".join(f"[{n}]" for n in notes)
     return request
 
 
@@ -200,6 +278,8 @@ def run_sample(cfg: dict[str, Any]) -> int:
     segments_state = network.load_segments(samples_dir / SAMPLE_FILES["segments"])
     thresholds = network.load_thresholds(cfg["stations_dir"] / "thresholds.json")
     params = thresholds["decision"]
+    # 点位表也读站点包:终点要折成**点位 id**(Issue #94 第①条),引擎里不许写站点相关的字符串常量
+    points = load_points(cfg["stations_dir"])
 
     od_pairs = payloads["demand"].get("od")
     if not isinstance(od_pairs, list) or not od_pairs:
@@ -213,7 +293,7 @@ def run_sample(cfg: dict[str, Any]) -> int:
     network.ensure_out_dir(out_dir)
 
     requests = [
-        build_request(od, graph, segments_state, params, i + 1, now_ts)
+        build_request(od, graph, segments_state, params, points, i + 1, now_ts)
         for i, od in enumerate(od_pairs)
     ]
 
