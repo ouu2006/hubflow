@@ -18,10 +18,9 @@ const COLOR_OFF_TEXT: string = '#5F5E5A';
 @Entry
 @Component
 struct Index {
-  // 四页与按钮共享同一个状态对象：直接订阅，不再靠 @Prop 往下传
-  private store(): DemoStore {
-    return DemoStore.instance();
-  }
+  // @State + @Observed 组合 = 深度观察：store.emergency 等属性变化会触发本页重绘。
+  // 注意必须挂在被装饰的成员变量上，不能用方法返回临时对象，否则订阅挂不上（点了没反应）。
+  @State store: DemoStore = DemoStore.instance();
 
   build() {
     Column() {
@@ -34,7 +33,7 @@ struct Index {
         Text(`快照 ${ROUTES_FIXTURE.request_id} · is_simulated=${ROUTES_FIXTURE.is_simulated} · session ${ROUTES_FIXTURE.session_id}`)
           .fontSize(11)
           .fontColor('#8B8B8B')
-        Text(`当前演示态：${this.store().activeName()}`)
+        Text(`当前演示态：${this.store.activeName()}`)
           .fontSize(11)
           .fontColor('#0052D9')
       }
@@ -42,42 +41,42 @@ struct Index {
       .padding({ top: 10, bottom: 6, left: 14, right: 14 })
       .alignItems(HorizontalAlign.Start)
 
-      // 演示态开关：互斥（点一个自动关其他），按钮内联写在 build 里，样式随状态即时刷新
+      // 演示态开关：互斥（点一个自动关其他）；按钮内联写在 build 里，样式随状态即时刷新
       Row({ space: 8 }) {
         Button('应急态')
           .fontSize(11)
           .height(28)
-          .backgroundColor(this.store().emergency ? ACCENT_EMERGENCY : COLOR_OFF_BG)
-          .fontColor(this.store().emergency ? COLOR_ON : COLOR_OFF_TEXT)
+          .backgroundColor(this.store.emergency ? ACCENT_EMERGENCY : COLOR_OFF_BG)
+          .fontColor(this.store.emergency ? COLOR_ON : COLOR_OFF_TEXT)
           .onClick(() => {
-            this.store().setEmergency(!this.store().emergency);
+            this.store.setEmergency(!this.store.emergency);
           })
 
         Button('数据不可用')
           .fontSize(11)
           .height(28)
-          .backgroundColor(this.store().unavailable ? ACCENT_UNAVAILABLE : COLOR_OFF_BG)
-          .fontColor(this.store().unavailable ? COLOR_ON : COLOR_OFF_TEXT)
+          .backgroundColor(this.store.unavailable ? ACCENT_UNAVAILABLE : COLOR_OFF_BG)
+          .fontColor(this.store.unavailable ? COLOR_ON : COLOR_OFF_TEXT)
           .onClick(() => {
-            this.store().setUnavailable(!this.store().unavailable);
+            this.store.setUnavailable(!this.store.unavailable);
           })
 
         Button('拒绝授权(降级)')
           .fontSize(11)
           .height(28)
-          .backgroundColor(this.store().degraded ? ACCENT_DEGRADED : COLOR_OFF_BG)
-          .fontColor(this.store().degraded ? COLOR_ON : COLOR_OFF_TEXT)
+          .backgroundColor(this.store.degraded ? ACCENT_DEGRADED : COLOR_OFF_BG)
+          .fontColor(this.store.degraded ? COLOR_ON : COLOR_OFF_TEXT)
           .onClick(() => {
-            this.store().setDegraded(!this.store().degraded);
+            this.store.setDegraded(!this.store.degraded);
           })
 
         Button('去色校验')
           .fontSize(11)
           .height(28)
-          .backgroundColor(this.store().colorBlind ? ACCENT_COLOR_BLIND : COLOR_OFF_BG)
-          .fontColor(this.store().colorBlind ? COLOR_ON : COLOR_OFF_TEXT)
+          .backgroundColor(this.store.colorBlind ? ACCENT_COLOR_BLIND : COLOR_OFF_BG)
+          .fontColor(this.store.colorBlind ? COLOR_ON : COLOR_OFF_TEXT)
           .onClick(() => {
-            this.store().setColorBlind(!this.store().colorBlind);
+            this.store.setColorBlind(!this.store.colorBlind);
           })
       }
       .width('100%')
@@ -90,25 +89,25 @@ struct Index {
         .width('100%')
         .padding({ left: 14, right: 14, bottom: 6 })
 
-      // P0 四页
+      // P0 四页：@ObjectLink 双向同步同一实例，能穿透 Tabs 页签缓存
       Tabs({ barPosition: BarPosition.End }) {
         TabContent() {
-          RecommendPage()
+          RecommendPage({ store: this.store })
         }
         .tabBar('推荐路线')
 
         TabContent() {
-          DropoffPage()
+          DropoffPage({ store: this.store })
         }
         .tabBar('落客候客')
 
         TabContent() {
-          DeparturePage()
+          DeparturePage({ store: this.store })
         }
         .tabBar('离站路线')
 
         TabContent() {
-          HistoryPage()
+          HistoryPage({ store: this.store })
         }
         .tabBar('我的行程')
       }

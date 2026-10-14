@@ -7,16 +7,16 @@ import { TripRecord } from '../common/Contract';
 /** 页四：我的行程（本地会话记录，如实标注「未采纳推荐」） */
 @Component
 export struct HistoryPage {
-  private store(): DemoStore {
-    return DemoStore.instance();
-  }
+  // @ObjectLink：与 Index 持有的同一个 DemoStore 实例双向同步
+  // （Tabs 会缓存已创建的页签，只有 ObjectLink 这种显式链接才能保证父态一变就重绘）
+  @ObjectLink store: DemoStore;
 
 
   build() {
     Scroll() {
       Column({ space: 12 }) {
         // 应急态只提示、不替换本页内容：应急停的是「路线引导」，行程记录与应急无关，仍应可读
-        if (this.store().emergency) {
+        if (this.store.emergency) {
           Row({ space: 6 }) {
             Text('应急状态')
               .fontSize(12)

@@ -15,9 +15,9 @@ function demoVehicle(): Vehicle {
 /** 页一：当前建议（推荐路线 + ≥2 条备选 + why + 前后车协同说明） */
 @Component
 export struct RecommendPage {
-  private store(): DemoStore {
-    return DemoStore.instance();
-  }
+  // @ObjectLink：与 Index 持有的同一个 DemoStore 实例双向同步
+  // （Tabs 会缓存已创建的页签，只有 ObjectLink 这种显式链接才能保证父态一变就重绘）
+  @ObjectLink store: DemoStore;
 
   @State pickedRoad: string = 'SEG-002';
 
@@ -45,7 +45,7 @@ export struct RecommendPage {
 
       Row({ space: 6 }) {
         ForEach(segments, (seg: string) => {
-          SegmentBar({ segmentId: seg, unavailable: this.store().unavailable, colorBlind: this.store().colorBlind })
+          SegmentBar({ segmentId: seg, unavailable: this.store.unavailable, colorBlind: this.store.colorBlind })
         }, (seg: string) => seg)
       }
       .width('100%')
@@ -60,10 +60,10 @@ export struct RecommendPage {
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.store().emergency) {
+        if (this.store.emergency) {
           // 应急态：停止路线引导，替换为「请服从现场指挥」
           EmergencyCard()
-        } else if (this.store().degraded) {
+        } else if (this.store.degraded) {
           // 拒绝授权降级：手动选所在道路 / 只看路况，流程不中断
           Column({ space: 8 }) {
             SectionTitle({ text: '已降级：手动选所在道路 / 只看路况' })
@@ -165,7 +165,7 @@ export struct RecommendPage {
             .textAlign(TextAlign.Start)
 
           // 四级图例（三重编码）
-          LevelLegend({ colorBlind: this.store().colorBlind })
+          LevelLegend({ colorBlind: this.store.colorBlind })
         }
 
         // 绑定演示车（C-3）
