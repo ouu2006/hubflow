@@ -10,6 +10,7 @@ export class DemoState {
   emergency: boolean = false;
   unavailable: boolean = false;
   degraded: boolean = false;
+  colorBlind: boolean = false;
   degradedRoad: string = 'SEG-002';
 
   toggleEmergency(): void {
@@ -22,6 +23,10 @@ export class DemoState {
 
   toggleDegraded(): void {
     this.degraded = !this.degraded;
+  }
+
+  toggleColorBlind(): void {
+    this.colorBlind = !this.colorBlind;
   }
 
   pickRoad(road: string): void {

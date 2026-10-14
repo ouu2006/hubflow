@@ -1,5 +1,5 @@
-import { LevelMeta, levelMetaOf, LEVEL_META_LIST, LEVEL_UNAVAILABLE } from '../common/LevelMeta';
-import { SIM_BADGE_TEXT } from '../common/Fixture';
+import { LevelMeta, levelMetaOf, levelGlyphColorOf, levelTextColorOf, LEVEL_META_LIST, LEVEL_UNAVAILABLE } from '../common/LevelMeta';
+import { SIM_BADGE_TEXT, segmentLevelOf } from '../common/Fixture';
 
 /** 数据来源角标（M1-7）：每页必现 */
 @Component
@@ -57,10 +57,10 @@ export struct LevelChip {
     Row({ space: 4 }) {
       Text(levelMetaOf(this.level, this.unavailable).glyph)
         .fontSize(13)
-        .fontColor(levelMetaOf(this.level, this.unavailable).color)
+        .fontColor(levelGlyphColorOf(this.level, this.unavailable))
       Text(levelMetaOf(this.level, this.unavailable).name)
         .fontSize(13)
-        .fontColor(levelMetaOf(this.level, this.unavailable).textColor)
+        .fontColor(levelTextColorOf(this.level, this.unavailable))
     }
     .padding({ top: 3, bottom: 3, left: 8, right: 8 })
     .backgroundColor('#F5F5F5')
@@ -68,15 +68,15 @@ export struct LevelChip {
   }
 }
 
-/** 四级图例（颜色 + 图标 + 文字） */
+/** 四级图例（颜色 + 图标 + 文字；去色校验时同样保留图标与文字） */
 @Component
 export struct LevelLegend {
   build() {
     Row({ space: 12 }) {
       ForEach(LEVEL_META_LIST, (meta: LevelMeta) => {
         Row({ space: 4 }) {
-          Text(meta.glyph).fontSize(12).fontColor(meta.color)
-          Text(meta.name).fontSize(12).fontColor(meta.textColor)
+          Text(meta.glyph).fontSize(12).fontColor(levelGlyphColorOf(meta.level, false))
+          Text(meta.name).fontSize(12).fontColor(levelTextColorOf(meta.level, false))
         }
       }, (meta: LevelMeta) => meta.name)
       Row({ space: 4 }) {
@@ -117,7 +117,6 @@ export struct EmergencyCard {
 @Component
 export struct SegmentBar {
   segmentId: string = '';
-  level: number = 1;
   unavailable: boolean = false;
 
   build() {
@@ -125,7 +124,7 @@ export struct SegmentBar {
       Text(this.segmentId)
         .fontSize(12)
         .fontColor(this.unavailable ? '#8B8B8B' : '#1A1A1A')
-      LevelChip({ level: this.level, unavailable: this.unavailable })
+      LevelChip({ level: segmentLevelOf(this.segmentId), unavailable: this.unavailable })
     }
     .padding(8)
     .backgroundColor('#F5F5F5')

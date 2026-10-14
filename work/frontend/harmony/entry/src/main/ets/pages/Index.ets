@@ -1,5 +1,6 @@
 import { DemoState } from '../common/DemoState';
 import { ROUTES_FIXTURE, VEHICLES_FIXTURE } from '../common/Fixture';
+import { setColorBlind } from '../common/LevelMeta';
 import { RecommendPage } from './RecommendPage';
 import { DropoffPage } from './DropoffPage';
 import { DeparturePage } from './DeparturePage';
@@ -37,7 +38,7 @@ struct Index {
       .padding({ top: 10, bottom: 6, left: 14, right: 14 })
       .alignItems(HorizontalAlign.Start)
 
-      // 演示态开关：用于触发应急态 / 数据不可用 / 降级态截图举证
+      // 演示态开关：用于触发应急态 / 数据不可用 / 降级态 / 去色校验截图举证
       Row({ space: 8 }) {
         this.demoButton('应急态', this.demo.emergency, () => {
           this.demo.toggleEmergency();
@@ -47,6 +48,10 @@ struct Index {
         })
         this.demoButton('拒绝授权(降级)', this.demo.degraded, () => {
           this.demo.toggleDegraded();
+        })
+        this.demoButton('去色校验', this.demo.colorBlind, () => {
+          this.demo.toggleColorBlind();
+          setColorBlind(this.demo.colorBlind);
         })
       }
       .width('100%')

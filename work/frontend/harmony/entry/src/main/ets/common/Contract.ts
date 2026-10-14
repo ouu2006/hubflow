@@ -99,3 +99,19 @@ export interface TripRecord {
   adopted: boolean;
   note: string;
 }
+
+/** segments.json 的路段项（契约 §一，本单只取四页要显示的字段） */
+export interface Segment {
+  segment_id: string;
+  source: string;
+  level: number;
+  level_name: string;
+  is_simulated: boolean;
+}
+
+/** segments.json 顶层信封（契约 §一） */
+export interface SegmentsSnapshot {
+  ts: string;
+  is_simulated: boolean;
+  segments: Segment[];
+}

@@ -1,6 +1,6 @@
 import { DemoState } from '../common/DemoState';
 import { ROUTES_FIXTURE, DISCLAIMER_TEXT } from '../common/Fixture';
-import { EmergencyCard, SectionTitle } from '../components/Common';
+import { EmergencyCard, SectionTitle, SegmentBar, LevelLegend } from '../components/Common';
 
 /** 页三：离站路线（送完人之后怎么走，本项目独有；departure_route 必现 = TC-12） */
 @Component
@@ -32,18 +32,7 @@ export struct DeparturePage {
 
             Row({ space: 6 }) {
               ForEach(ROUTES_FIXTURE.departure_route.segments, (seg: string) => {
-                Column({ space: 4 }) {
-                  Text(seg)
-                    .fontSize(12)
-                    .fontColor(this.demo.unavailable ? '#8B8B8B' : '#1A1A1A')
-                  Text(this.demo.unavailable ? '数据不可用' : '离站方向')
-                    .fontSize(11)
-                    .fontColor(this.demo.unavailable ? '#8B8B8B' : '#006C45')
-                }
-                .padding(6)
-                .backgroundColor('#F5F5F5')
-                .borderRadius(6)
-                .layoutWeight(1)
+                SegmentBar({ segmentId: seg, unavailable: this.demo.unavailable })
               }, (seg: string) => seg)
             }
             .width('100%')
@@ -58,6 +47,8 @@ export struct DeparturePage {
             .fontSize(12)
             .fontColor('#666666')
             .width('100%')
+
+          LevelLegend()
 
           Text(DISCLAIMER_TEXT)
             .fontSize(12)

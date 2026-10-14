@@ -1,7 +1,7 @@
 import { DemoState } from '../common/DemoState';
 import { ROUTES_FIXTURE, VEHICLES_FIXTURE, DEMO_VEHICLE_ID, DISCLAIMER_TEXT } from '../common/Fixture';
-import { EmergencyCard, InfoRow, SectionTitle, LevelLegend } from '../components/Common';
-import { Vehicle } from '../common/Contract';
+import { EmergencyCard, InfoRow, SectionTitle, LevelLegend, SegmentBar } from '../components/Common';
+import { Vehicle, Alternative } from '../common/Contract';
 
 function demoVehicle(): Vehicle {
   for (let i = 0; i < VEHICLES_FIXTURE.vehicles.length; i++) {
@@ -41,18 +41,7 @@ export struct RecommendPage {
 
       Row({ space: 6 }) {
         ForEach(segments, (seg: string) => {
-          Column({ space: 4 }) {
-            Text(seg)
-              .fontSize(12)
-              .fontColor(this.demo.unavailable ? '#8B8B8B' : '#1A1A1A')
-            Text(this.demo.unavailable ? '数据不可用' : '—')
-              .fontSize(11)
-              .fontColor('#8B8B8B')
-          }
-          .padding(6)
-          .backgroundColor('#F5F5F5')
-          .borderRadius(6)
-          .layoutWeight(1)
+          SegmentBar({ segmentId: seg, unavailable: this.demo.unavailable })
         }, (seg: string) => seg)
       }
       .width('100%')
@@ -126,7 +115,7 @@ export struct RecommendPage {
 
           // 备选（≥2 条，各带 reason）
           SectionTitle({ text: `备选路线（${ROUTES_FIXTURE.alternatives.length} 条）` })
-          ForEach(ROUTES_FIXTURE.alternatives, (alt: { path_id: string, eta_min: number, reason: string }) => {
+          ForEach(ROUTES_FIXTURE.alternatives, (alt: Alternative) => {
             Column({ space: 4 }) {
               Row() {
                 Text(alt.path_id).fontSize(13).fontWeight(FontWeight.Medium).fontColor('#1A1A1A')
@@ -143,7 +132,7 @@ export struct RecommendPage {
             .padding(10)
             .backgroundColor('#FAFAFA')
             .borderRadius(8)
-          }, (alt: { path_id: string, eta_min: number, reason: string }) => alt.path_id)
+          }, (alt: Alternative) => alt.path_id)
 
           // why 与因素说明
           Column({ space: 4 }) {
@@ -181,7 +170,7 @@ export struct RecommendPage {
           InfoRow({ label: 'vehicle_id', value: demoVehicle().vehicle_id })
           InfoRow({ label: '所在路段', value: `${demoVehicle().segment_id} · ${demoVehicle().offset_m} m` })
           InfoRow({ label: '状态 / 已引导', value: `${demoVehicle().state} / ${demoVehicle().guided ? '是' : '否'}` })
-          InfoRow({ label: '位置来源', value: `${demoVehicle() && ROUTES_FIXTURE.location.source}（一期孪生真值，非真实定位）` })
+          InfoRow({ label: '位置来源', value: `${ROUTES_FIXTURE.location.source}（一期孪生真值，非真实定位）` })
         }
         .width('100%')
         .padding(12)

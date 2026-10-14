@@ -1,4 +1,4 @@
-import { RouteRecommend, VehiclesSnapshot, TripRecord } from './Contract';
+import { RouteRecommend, VehiclesSnapshot, TripRecord, SegmentsSnapshot, Segment } from './Contract';
 
 /**
  * 工程内 fixture（#88 单：不写网络代码，四页只读这里）。
@@ -109,3 +109,30 @@ export const DISCLAIMER_TEXT: string = '该建议基于当前路况，可能随�
 
 /** 数据来源角标（M1-7，每页必现） */
 export const SIM_BADGE_TEXT: string = '演示数据（模拟）· 双数据源（视频链路 + 孪生链路）';
+
+/**
+ * 路段等级快照（契约 §一 形状，#88 单只用它显示路段等级）。
+ * 取值全部为演示数据；`source` 一期两条链路并存（视频链路 + 孪生链路）。
+ */
+export const SEGMENTS_FIXTURE: SegmentsSnapshot = {
+  ts: '2026-10-10T17:32:00+08:00',
+  is_simulated: true,
+  segments: [
+    { segment_id: 'SEG-001', source: 'video', level: 1, level_name: '畅通', is_simulated: true },
+    { segment_id: 'SEG-002', source: 'twin', level: 2, level_name: '缓行', is_simulated: true },
+    { segment_id: 'SEG-004', source: 'video', level: 3, level_name: '拥堵', is_simulated: true },
+    { segment_id: 'SEG-007', source: 'twin', level: 1, level_name: '畅通', is_simulated: true },
+    { segment_id: 'SEG-009', source: 'video', level: 2, level_name: '缓行', is_simulated: true }
+  ]
+};
+
+/** 取路段等级；取不到返回 -1（页面按「数据不可用」灰档处理） */
+export function segmentLevelOf(segmentId: string): number {
+  for (let i = 0; i < SEGMENTS_FIXTURE.segments.length; i++) {
+    const seg: Segment = SEGMENTS_FIXTURE.segments[i];
+    if (seg.segment_id === segmentId) {
+      return seg.level;
+    }
+  }
+  return -1;
+}
