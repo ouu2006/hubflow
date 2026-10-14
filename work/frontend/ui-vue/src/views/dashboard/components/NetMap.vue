@@ -146,11 +146,14 @@ const routeSet = computed(() => new Set(props.routeSegments))
 // ---- 跟随鼠标的信息浮牌(业主 2026-10-14) ----
 // 坐标系:鼠标事件落在 HTML 元素上,拿的是相对 .netmap 的 CSS 像素;
 // 浮牌画在 HTML 层(div,不在 SVG 里),避掉 SVG viewBox 缩放换算。
+// 显示条件(业主 2026-10-14 补充):**只在鼠标悬停于路段线上时显示**——
+// 悬停空白处不显示;mousemove 只负责跟随,显示与否由 onRoadEnter/Leave 决定。
 
 const CHIP_W = 210
 const CHIP_H = 26
 
 const chip = ref<{ x: number; y: number } | null>(null)
+const overRoad = ref(false)
 
 function onMapMouseMove(ev: MouseEvent): void {
   const host = ev.currentTarget as HTMLElement
@@ -160,6 +163,16 @@ function onMapMouseMove(ev: MouseEvent): void {
 
 function onMapMouseLeave(): void {
   chip.value = null
+  overRoad.value = false
+}
+
+/** 悬停进/出某条路段线:只有这时候浮牌才出现(空白处不显示) */
+function onRoadEnter(): void {
+  overRoad.value = true
+}
+
+function onRoadLeave(): void {
+  overRoad.value = false
 }
 
 // 浮牌贴着鼠标右上,越界自动翻到左下,不出图
@@ -219,7 +232,8 @@ const vehPts = computed(() =>
         v-for="s in net"
         :key="`road-${s.segment_id}`"
         class="road"
-        @mouseenter="hoverSelect(s)"
+        @mouseenter="hoverSelect(s); onRoadEnter()"
+        @mouseleave="onRoadLeave()"
         @click="emit('select', s.segment_id)"
       >
         <!-- 热力晕染(仅拥挤指数视图):强度随 ci 单调增,不改变任何路段的判级着色 -->
@@ -287,7 +301,7 @@ const vehPts = computed(() =>
     </svg>
 
     <!-- 跟随鼠标的信息浮牌(业主 2026-10-14:悬停哪条线,蓝框信息就贴着鼠标走) -->
-    <div v-if="chip && hoverChip" class="hover-chip" :style="chipStyle">
+    <div v-if="chip && overRoad && hoverChip" class="hover-chip" :style="chipStyle">
       {{ hoverChip }}
     </div>
 
