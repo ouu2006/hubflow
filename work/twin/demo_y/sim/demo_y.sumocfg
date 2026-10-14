@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <input>
+        <net-file value="../network/demo_y.net.xml" />
+        <route-files value="demo_y.rou.xml" />
+    </input>
+    <time>
+        <begin value="0" />
+        <end value="600" />
+    </time>
+    <processing>
+        <time-to-teleport value="-1" />
+    </processing>
+    <random_number>
+        <seed value="42" />
+    </random_number>
+    <output>
+        <fcd-output value="../out/fcd.xml" />
+        <tripinfo-output value="../out/tripinfo.xml" />
+    </output>
+    <report>
+        <no-step-log value="true" />
+        <duration-log.statistics value="true" />
+    </report>
+</configuration>

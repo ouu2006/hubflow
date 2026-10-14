@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<routes>
+    <vType id="car" vClass="passenger" accel="2.6" decel="4.5" length="5" minGap="2.5" maxSpeed="16.67" />
+    <route id="r_stem_to_a" edges="e_stem_in e_arm_a_in" />
+    <route id="r_stem_to_b" edges="e_stem_in e_arm_b_in" />
+    <route id="r_a_to_stem" edges="e_arm_a_out e_stem_out" />
+    <route id="r_b_to_stem" edges="e_arm_b_out e_stem_out" />
+    <flow id="flow_stem_to_a" route="r_stem_to_a" begin="0" end="600" vehsPerHour="600" />
+    <flow id="flow_stem_to_b" route="r_stem_to_b" begin="0" end="600" vehsPerHour="600" />
+    <flow id="flow_a_to_stem" route="r_a_to_stem" begin="0" end="600" vehsPerHour="400" />
+    <flow id="flow_b_to_stem" route="r_b_to_stem" begin="0" end="600" vehsPerHour="400" />
+</routes>

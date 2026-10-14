@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<nodes>
+    <node id="n_stem" x="0.00" y="0.00" type="priority" />
+    <node id="n_junction" x="500.00" y="0.00" type="priority" />
+    <node id="n_arm_a" x="900.00" y="300.00" type="priority" />
+    <node id="n_arm_b" x="900.00" y="-300.00" type="priority" />
+</nodes>
