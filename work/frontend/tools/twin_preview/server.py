@@ -307,7 +307,13 @@ def run_sim(state: SimState, cfg: BridgeConfig) -> None:
         if cfg.assignment_file:
             # **有映射表就不再从路网里猜** —— 换一张网只换这张表;代码里没有任何站点分支
             segs, drop_id = load_assignment(cfg.assignment_file, net)
-            drop = next((s for s in segs if s["segment_id"] == drop_id), segs[0])
+            drop = next((s for s in segs if s["segment_id"] == drop_id), None)
+            if drop is None:
+                # **不许静默回退 segs[0]**——映射表写错一个字必须当场暴露（落 state.error,health 显式报）
+                raise ValueError(
+                    f"映射表里 drop_segment_id={drop_id!r} 在 segments 里找不到；"
+                    f"可用的是 {[s['segment_id'] for s in segs]}"
+                )
         else:
             # 老路子:靠街名 + 站房位置猜(只适用于 OSM 衍生的有名字、有地理配准的网)
             segs = select_segments(net, cfg.station_lonlat, cfg.seg_count)
