@@ -146,27 +146,28 @@ const routeSet = computed(() => new Set(props.routeSegments))
 // ---- 跟随鼠标的信息浮牌(业主 2026-10-14) ----
 // 坐标系:鼠标事件落在 HTML 元素上,拿的是相对 .netmap 的 CSS 像素;
 // 浮牌画在 HTML 层(div,不在 SVG 里),避掉 SVG viewBox 缩放换算。
-// 显示条件(业主 2026-10-14 补充):**只在鼠标悬停于路段线上时显示**——
-// 悬停空白处不显示;mousemove 只负责跟随,显示与否由 onRoadEnter/Leave 决定。
+// 显示口径(业主 2026-10-14 定稿):鼠标一旦悬停上某条线,浮牌**常驻不消失**,
+//   只是"吸附"在那条线上——鼠标在图上任何地方移动,浮牌都钉在
+//   **当前悬停选中的那条路段**上,顺着线走;鼠标离开整张图才整体隐藏。
 
 const CHIP_W = 210
 const CHIP_H = 26
 
-const chip = ref<{ x: number; y: number } | null>(null)
+const mouse = ref<{ x: number; y: number } | null>(null)
 const overRoad = ref(false)
 
 function onMapMouseMove(ev: MouseEvent): void {
   const host = ev.currentTarget as HTMLElement
   const rect = host.getBoundingClientRect()
-  chip.value = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
+  mouse.value = { x: ev.clientX - rect.left, y: ev.clientY - rect.top }
 }
 
 function onMapMouseLeave(): void {
-  chip.value = null
+  mouse.value = null
   overRoad.value = false
 }
 
-/** 悬停进/出某条路段线:只有这时候浮牌才出现(空白处不显示) */
+/** 悬停进/出某条路段线 */
 function onRoadEnter(): void {
   overRoad.value = true
 }
@@ -175,14 +176,42 @@ function onRoadLeave(): void {
   overRoad.value = false
 }
 
-// 浮牌贴着鼠标右上,越界自动翻到左下,不出图
+/**
+ * 浮牌落点 = 选中路段折线上**离鼠标最近的那个采样点**——
+ * 鼠标沿线走,浮牌就贴在线上跟着走;鼠标离开线,浮牌停在线上不动(不消失)。
+ * px() 与 pointsFor() 用同一套投影,单位 = CSS 像素(viewBox 等比缩放已含在 SCALE 内)。
+ */
 const chipStyle = computed(() => {
-  if (!chip.value) return {}
-  const flipX = chip.value.x + CHIP_W + 18 > W
-  const flipY = chip.value.y - CHIP_H - 14 < 0
+  if (!mouse.value || !props.selectedId) return {}
+  const seg = net.find((s) => s.segment_id === props.selectedId)
+  if (!seg) return {}
+  let best = px(seg.coords[0][0], seg.coords[0][1])
+  let bestD = Infinity
+  for (const [lon, lat] of seg.coords) {
+    const [x, y] = px(lon, lat)
+    const d = (x - mouse.value.x) ** 2 + (y - mouse.value.y) ** 2
+    if (d < bestD) {
+      bestD = d
+      best = [x, y]
+    }
+  }
+  // 注意:SVG 用户坐标 == CSS 像素(外层 svg width/height 都是 100%,
+  // viewBox 等比缩放,浏览器把用户坐标映射到显示尺寸;这里直接按用户坐标摆,
+  // 除以实际显示/viewBox 比例即可——用 getBoundingClientRect 换算)
+  const svg = document.querySelector('.netmap svg')
+  if (!svg) return {}
+  const rect = svg.getBoundingClientRect()
+  const kx = rect.width / W
+  const ky = rect.height / H
+  const cx = best[0] * kx
+  const cy = best[1] * ky
+  const chipW = CHIP_W * kx
+  const chipH = CHIP_H * ky
+  const flipX = cx + chipW + 18 > rect.width
+  const flipY = cy - chipH - 14 < 0
   return {
-    left: `${flipX ? chip.value.x - CHIP_W - 14 : chip.value.x + 14}px`,
-    top: `${flipY ? chip.value.y + 16 : chip.value.y - CHIP_H - 12}px`,
+    left: `${flipX ? cx - chipW - 14 : cx + 14}px`,
+    top: `${flipY ? cy + 16 : cy - chipH - 12}px`,
   }
 })
 
@@ -300,8 +329,8 @@ const vehPts = computed(() =>
       </g>
     </svg>
 
-    <!-- 跟随鼠标的信息浮牌(业主 2026-10-14:悬停哪条线,蓝框信息就贴着鼠标走) -->
-    <div v-if="chip && overRoad && hoverChip" class="hover-chip" :style="chipStyle">
+    <!-- 跟随鼠标的信息浮牌:吸附在当前选中路段上,沿线走,不消失(业主 2026-10-14) -->
+    <div v-if="mouse && overRoad && hoverChip" class="hover-chip" :style="chipStyle">
       {{ hoverChip }}
     </div>
 
