@@ -21,10 +21,13 @@ PYTHONPATH 含 %SUMO_HOME%\tools):
 """
 from __future__ import annotations
 
+import argparse
+import json
 import math
 import random
 import threading
 import time
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
@@ -35,11 +38,62 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 DIR = Path(__file__).resolve().parent
-NET_FILE = DIR / "station.net.xml"
 
-# 肇庆东站站房(Nominatim way 407489593),用于路段排序与落客段选择
-STATION_LONLAT = (112.6551321, 23.2166791)
-SEG_COUNT = 10
+#: 默认门牌（**向后兼容**：不传参数就是原来那一套，不是给某个站加的分支）
+DEFAULT_NET_FILE = DIR / "station.net.xml"
+#: 默认站房锚点（经纬度）——仅**启发式选路段**那条路用；有映射表时完全不读它
+DEFAULT_STATION_LONLAT = (112.6551321, 23.2166791)
+DEFAULT_SEG_COUNT = 10
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8102
+
+
+@dataclass
+class BridgeConfig:
+    """一次运行的配置 —— **全部可换**：换站 / 换网只改参数，不改代码，也不加站点分支。"""
+
+    net_file: Path = DEFAULT_NET_FILE
+    assignment_file: Path | None = None
+    station_lonlat: tuple[float, float] = DEFAULT_STATION_LONLAT
+    seg_count: int = DEFAULT_SEG_COUNT
+    host: str = DEFAULT_HOST
+    port: int = DEFAULT_PORT
+    site_name: str = ""
+
+
+def load_assignment(path: Path, net) -> tuple[list[dict], str | None]:
+    """读「SEG → SUMO 边链」映射表，返回 (segments, drop_segment_id)。
+
+    **有它就不再从路网里猜路段** —— `select_segments()` 那套依赖**街名 + 站房位置**，
+    换一张网（无名路、无地理配准）立刻失效。映射表形状：
+
+        {"segments": [{"segment_id": "SEG-001", "name": "站前路", "kind": "main",
+                       "edge_ids": ["E1_1", "E1_2"],
+                       "coords": [[lon, lat], ...]           # 或直接给 shape_xy
+                      }, ...],
+         "drop_segment_id": "SEG-002"}                       # 可选
+
+    `coords`（经纬度）会在这里换算成 `shape_xy`（供就近吸附与落客段距离用）。
+    """
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    segs = payload.get("segments")
+    if not isinstance(segs, list) or not segs:
+        raise SystemExit(f"映射表缺 segments 数组：{path}")
+    for seg in segs:
+        for key in ("segment_id", "edge_ids"):
+            if not seg.get(key):
+                raise SystemExit(f"映射表里有一条缺 {key}：{seg}")
+        if "shape_xy" not in seg:
+            coords = seg.get("coords")
+            if not coords:
+                raise SystemExit(f"{seg['segment_id']} 既没有 shape_xy 也没有 coords —— 两者给一个")
+            seg["shape_xy"] = [tuple(net.convertLonLat2XY(lon, lat)) for lon, lat in coords]
+        # name / kind 可省：name 缺就填 segment_id，kind 缺按 main（只影响展示与落客段偏好）
+        seg.setdefault("name", seg["segment_id"])
+        seg.setdefault("kind", "main")
+    return segs, payload.get("drop_segment_id")
+
+
 MAX_VEHICLES = 24
 MAX_PENDING = 8
 SPAWN_PROBABILITY = 0.45
@@ -104,9 +158,13 @@ def _chain_shape(edge) -> tuple[list, list[str]]:
     return shape, edge_ids
 
 
-def select_segments(net) -> list:
-    """主干每条路取一条方向链(离站最近),站区未命名连接线按到站距离补足到 SEG_COUNT。"""
-    station_xy = net.convertLonLat2XY(*STATION_LONLAT)
+def select_segments(net, station_lonlat: tuple[float, float], seg_count: int) -> list:
+    """主干每条路取一条方向链(离站最近),站区未命名连接线按到站距离补足到 seg_count。
+
+    ⚠️ **这条路依赖街名与站房位置** —— 换一张无名 / 无地理配准的网就会失效。
+    这类网请用 `--assignment` 直接给映射表（见 `load_assignment`）。
+    """
+    station_xy = net.convertLonLat2XY(*station_lonlat)
 
     def min_dist(shape) -> float:
         return min(math.dist(p, station_xy) for p in shape)
@@ -137,7 +195,7 @@ def select_segments(net) -> list:
     ramps.sort(key=lambda t: t[0])
     letter = 0
     for _, e in ramps:
-        if len(picked) >= SEG_COUNT:
+        if len(picked) >= seg_count:
             break
         key = _section_key(e.getID())
         if key in used_keys:
@@ -153,7 +211,7 @@ def select_segments(net) -> list:
         )
         letter += 1
 
-    picked = picked[:SEG_COUNT]
+    picked = picked[:seg_count]
     picked.sort(key=lambda s: 0 if s["kind"] == "main" else 1)
 
     segs = []
@@ -174,9 +232,9 @@ def select_segments(net) -> list:
     return segs
 
 
-def pick_drop_segment(net, segs: list) -> dict:
-    """落客段 = 离站房最近的站区连接线(ramp);没有则取最近路段。"""
-    station_xy = net.convertLonLat2XY(*STATION_LONLAT)
+def pick_drop_segment(net, segs: list, station_lonlat: tuple[float, float]) -> dict:
+    """落客段 = 离站房最近的站区连接线(ramp);没有则取最近路段。**有映射表时整条不走**。"""
+    station_xy = net.convertLonLat2XY(*station_lonlat)
 
     def dist(seg):
         return min(math.dist(p, station_xy) for p in seg["shape_xy"])
@@ -239,15 +297,27 @@ def _read_vehicles(net, edge2seg: dict, segs: list, driver_of: dict) -> list:
     return out
 
 
-def run_sim(state: SimState) -> None:
+def run_sim(state: SimState, cfg: BridgeConfig) -> None:
     # 整个线程体包进 try:路网缺失/TraCI 起不动都要落 state.error(health 显式报),不让前端猜
     rng = random.Random(SEED)
     driver_of: dict[str, str] = {}
     seq = 0
     try:
-        net = sumolib.net.readNet(str(NET_FILE))
-        segs = select_segments(net)
-        drop = pick_drop_segment(net, segs)
+        net = sumolib.net.readNet(str(cfg.net_file))
+        if cfg.assignment_file:
+            # **有映射表就不再从路网里猜** —— 换一张网只换这张表;代码里没有任何站点分支
+            segs, drop_id = load_assignment(cfg.assignment_file, net)
+            drop = next((s for s in segs if s["segment_id"] == drop_id), None)
+            if drop is None:
+                # **不许静默回退 segs[0]**——映射表写错一个字必须当场暴露（落 state.error,health 显式报）
+                raise ValueError(
+                    f"映射表里 drop_segment_id={drop_id!r} 在 segments 里找不到；"
+                    f"可用的是 {[s['segment_id'] for s in segs]}"
+                )
+        else:
+            # 老路子:靠街名 + 站房位置猜(只适用于 OSM 衍生的有名字、有地理配准的网)
+            segs = select_segments(net, cfg.station_lonlat, cfg.seg_count)
+            drop = pick_drop_segment(net, segs, cfg.station_lonlat)
         drop_edge = drop["edge_ids"][0]
 
         edge2seg: dict[str, str] = {}
@@ -265,7 +335,7 @@ def run_sim(state: SimState) -> None:
         traci.start(
             [
                 sumolib.checkBinary("sumo"),
-                "-n", str(NET_FILE),
+                "-n", str(cfg.net_file),
                 "--no-step-log", "1",
                 "--duration-log.disable", "1",
                 "--ignore-route-errors", "true",
@@ -311,6 +381,8 @@ def run_sim(state: SimState) -> None:
 
 
 state = SimState()
+#: 运行配置 —— 由 `parse_args()` 在 `__main__` 里填；不走命令行时即默认值（**向后兼容**）
+CONFIG = BridgeConfig()
 
 
 @app.get("/api/twin/health")
@@ -328,10 +400,12 @@ def health() -> JSONResponse:
 
 @app.get("/api/twin/network")
 def network() -> JSONResponse:
+    # note 由配置生成（站点名 / 网名都不写死在代码里 —— 手册 §8.4 / M1-1 口径）
+    label = CONFIG.site_name or CONFIG.net_file.name
     with state.lock:
         return _envelope(
             {
-                "note": "OSM 路网(肇庆东站一带,Overpass 切片 + netconvert)· SUMO 仿真演示 · 正式路网归 #36/#37",
+                "note": f"{label} · SUMO 仿真演示（演示数据（模拟））· 正式路网归 #36/#37",
                 "segments": state.segments,
             }
         )
@@ -343,8 +417,42 @@ def vehicles() -> JSONResponse:
         return _envelope({"ts": _local_iso(), "vehicles": state.vehicles})
 
 
+def parse_args(argv: list[str] | None = None) -> BridgeConfig:
+    """命令行参数 —— **换站 / 换网只改参数，不改代码，也不加任何站点分支**。"""
+    parser = argparse.ArgumentParser(description="twin_preview：SUMO TraCI 小仿真 → 车辆真值")
+    parser.add_argument("--net", default=str(DEFAULT_NET_FILE), dest="net_file",
+                        help="SUMO 路网 .net.xml（默认：本目录的 station.net.xml）")
+    parser.add_argument("--assignment", default="", dest="assignment_file",
+                        help="「SEG → SUMO 边链」映射表 JSON；**给了它就不再从路网里猜路段**"
+                             "（无名路 / 无地理配准的网必须给）")
+    parser.add_argument("--station-lonlat", default=",".join(map(str, DEFAULT_STATION_LONLAT)),
+                        dest="station_lonlat", help="站房锚点「经度,纬度」——只在不给映射表时用于挑路段")
+    parser.add_argument("--seg-count", type=int, default=DEFAULT_SEG_COUNT, dest="seg_count",
+                        help="不给映射表时，路段数补足到几条")
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT,
+                        help=f"默认 {DEFAULT_PORT}；二站可换 8103 好两站同时开")
+    parser.add_argument("--site-name", default="", dest="site_name",
+                        help="展示用站点名（可空；不填就用路网文件名）")
+    ns = parser.parse_args(argv)
+    lon, lat = (float(v) for v in str(ns.station_lonlat).split(","))
+    return BridgeConfig(
+        net_file=Path(ns.net_file),
+        assignment_file=Path(ns.assignment_file) if ns.assignment_file else None,
+        station_lonlat=(lon, lat),
+        seg_count=ns.seg_count,
+        host=ns.host,
+        port=ns.port,
+        site_name=ns.site_name,
+    )
+
+
 if __name__ == "__main__":
     import uvicorn
 
-    threading.Thread(target=run_sim, args=(state,), daemon=True).start()
-    uvicorn.run(app, host="127.0.0.1", port=8102, log_level="warning")
+    CONFIG = parse_args()
+    print(f"[twin_preview] 路网 {CONFIG.net_file.name}"
+          f"｜映射表 {CONFIG.assignment_file.name if CONFIG.assignment_file else '(无,走启发式)'}"
+          f"｜{CONFIG.host}:{CONFIG.port}")
+    threading.Thread(target=run_sim, args=(state, CONFIG), daemon=True).start()
+    uvicorn.run(app, host=CONFIG.host, port=CONFIG.port, log_level="warning")
