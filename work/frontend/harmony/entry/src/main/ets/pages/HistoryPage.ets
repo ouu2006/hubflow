@@ -1,17 +1,37 @@
 import { TRIPS_FIXTURE } from '../common/Fixture';
-import { EmergencyCard, SectionTitle } from '../components/Common';
+import { DemoStore } from '../common/DemoStore';
+import { SectionTitle } from '../components/Common';
+
 import { TripRecord } from '../common/Contract';
 
 /** 页四：我的行程（本地会话记录，如实标注「未采纳推荐」） */
 @Component
 export struct HistoryPage {
-  @Prop emergency: boolean = false;
+  private store(): DemoStore {
+    return DemoStore.instance();
+  }
+
 
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.emergency) {
-          EmergencyCard()
+        // 应急态只提示、不替换本页内容：应急停的是「路线引导」，行程记录与应急无关，仍应可读
+        if (this.store().emergency) {
+          Row({ space: 6 }) {
+            Text('应急状态')
+              .fontSize(12)
+              .fontColor('#FFFFFF')
+              .padding({ top: 2, bottom: 2, left: 6, right: 6 })
+              .backgroundColor('#C62828')
+              .borderRadius(4)
+            Text('请服从现场指挥（路线引导已停止；行程记录不受影响）')
+              .fontSize(12)
+              .fontColor('#8A1F1F')
+          }
+          .width('100%')
+          .padding(10)
+          .backgroundColor('#FDECEA')
+          .borderRadius(8)
         }
         SectionTitle({ text: '我的行程（本次会话）' })
 

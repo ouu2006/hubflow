@@ -1,4 +1,5 @@
 import { ROUTES_FIXTURE, VEHICLES_FIXTURE, DEMO_VEHICLE_ID, DISCLAIMER_TEXT } from '../common/Fixture';
+import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, InfoRow, SectionTitle, LevelLegend, SegmentBar } from '../components/Common';
 import { Vehicle, Alternative } from '../common/Contract';
 
@@ -14,10 +15,10 @@ function demoVehicle(): Vehicle {
 /** 页一：当前建议（推荐路线 + ≥2 条备选 + why + 前后车协同说明） */
 @Component
 export struct RecommendPage {
-  @Prop emergency: boolean = false;
-  @Prop unavailable: boolean = false;
-  @Prop degraded: boolean = false;
-  @Prop colorBlind: boolean = false;
+  private store(): DemoStore {
+    return DemoStore.instance();
+  }
+
   @State pickedRoad: string = 'SEG-002';
 
   @Builder
@@ -44,7 +45,7 @@ export struct RecommendPage {
 
       Row({ space: 6 }) {
         ForEach(segments, (seg: string) => {
-          SegmentBar({ segmentId: seg, unavailable: this.unavailable, colorBlind: this.colorBlind })
+          SegmentBar({ segmentId: seg, unavailable: this.store().unavailable, colorBlind: this.store().colorBlind })
         }, (seg: string) => seg)
       }
       .width('100%')
@@ -59,10 +60,10 @@ export struct RecommendPage {
   build() {
     Scroll() {
       Column({ space: 12 }) {
-        if (this.emergency) {
+        if (this.store().emergency) {
           // 应急态：停止路线引导，替换为「请服从现场指挥」
           EmergencyCard()
-        } else if (this.degraded) {
+        } else if (this.store().degraded) {
           // 拒绝授权降级：手动选所在道路 / 只看路况，流程不中断
           Column({ space: 8 }) {
             SectionTitle({ text: '已降级：手动选所在道路 / 只看路况' })
@@ -164,7 +165,7 @@ export struct RecommendPage {
             .textAlign(TextAlign.Start)
 
           // 四级图例（三重编码）
-          LevelLegend({ colorBlind: this.colorBlind })
+          LevelLegend({ colorBlind: this.store().colorBlind })
         }
 
         // 绑定演示车（C-3）
