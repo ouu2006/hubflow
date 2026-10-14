@@ -2,9 +2,16 @@ import { ROUTES_FIXTURE, VEHICLES_FIXTURE, DEMO_VEHICLE_ID, DISCLAIMER_TEXT } fr
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, InfoRow, SectionTitle, LevelLegend, SegmentBar } from '../components/Common';
 import { Vehicle, Alternative } from '../common/Contract';
-import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_OFF, BG_GRAY_LIGHTER, ACCENT_COLOR_BLIND, BORDER_ACCENT, STATE_ADOPTED, STATE_REJECTED } from '../common/Colors';
+import {TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, TEXT_WHITE, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, BG_HIGHLIGHT, ACCENT_COLOR_BLIND, ACCENT_DEGRADED, BORDER_ACCENT} from '../common/Colors';
 
-@State private demoVehicleCache: Vehicle = (() => {
+/**
+ * 绑定的演示车（C-3）。
+ *
+ * 【为什么是模块级常量而不是 @State】
+ * fixture 是工程内静态数据，全程不变；@State 只能声明在 struct 内（ArkTS 不允许修饰模块级变量），
+ * 且它不是响应式状态，没有重绘需求，所以直接用模块级常量。
+ */
+const DEMO_VEHICLE_CACHE: Vehicle = (() => {
   for (let i = 0; i < VEHICLES_FIXTURE.vehicles.length; i++) {
     if (VEHICLES_FIXTURE.vehicles[i].vehicle_id === DEMO_VEHICLE_ID) {
       return VEHICLES_FIXTURE.vehicles[i];
@@ -196,9 +203,9 @@ export struct RecommendPage {
         // 绑定演示车（C-3）
         Column({ space: 4 }) {
           SectionTitle({ text: '绑定的演示车' })
-          InfoRow({ label: 'vehicle_id', value: this.demoVehicleCache.vehicle_id })
-          InfoRow({ label: '所在路段', value: `${this.demoVehicleCache.segment_id} · ${this.demoVehicleCache.offset_m} m` })
-          InfoRow({ label: '状态 / 已引导', value: `${this.demoVehicleCache.state} / ${this.demoVehicleCache.guided ? '是' : '否'}` })
+          InfoRow({ label: 'vehicle_id', value: DEMO_VEHICLE_CACHE.vehicle_id })
+          InfoRow({ label: '所在路段', value: `${DEMO_VEHICLE_CACHE.segment_id} · ${DEMO_VEHICLE_CACHE.offset_m} m` })
+          InfoRow({ label: '状态 / 已引导', value: `${DEMO_VEHICLE_CACHE.state} / ${DEMO_VEHICLE_CACHE.guided ? '是' : '否'}` })
           InfoRow({ label: '位置来源', value: `${ROUTES_FIXTURE.location.source}（一期孪生真值，非真实定位）` })
         }
         .width('100%')

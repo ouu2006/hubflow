@@ -1,7 +1,7 @@
 import { ROUTES_FIXTURE, DISCLAIMER_TEXT } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, SectionTitle, SegmentBar, LevelLegend } from '../components/Common';
-import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, ACCENT_COLOR_BLIND, BORDER_ACCENT } from '../common/Colors';
+import {TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BORDER_ACCENT} from '../common/Colors';
 
 /** 页三：离站路线（送完人之后怎么走，本项目独有；departure_route 必现 = TC-12） */
 @Component

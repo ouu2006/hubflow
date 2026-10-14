@@ -1,7 +1,7 @@
 import { ROUTES_FIXTURE } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, InfoRow, SectionTitle } from '../components/Common';
-import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER } from '../common/Colors';
+import {TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER} from '../common/Colors';
 
 /** 页二：落客 / 候客指引（停靠点类型、位置、步行接驳时长） */
 @Component

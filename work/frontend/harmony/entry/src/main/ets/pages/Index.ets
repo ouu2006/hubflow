@@ -5,7 +5,7 @@ import { DropoffPage } from './DropoffPage';
 import { DeparturePage } from './DeparturePage';
 import { HistoryPage } from './HistoryPage';
 import { SimBadge } from '../components/Common';
-import { TEXT_WHITE, ACCENT_EMERGENCY, ACCENT_UNAVAILABLE, ACCENT_DEGRADED, ACCENT_COLOR_BLIND, BG_GRAY_OFF, TEXT_TERTIARY } from '../common/Colors';
+import { TEXT_PRIMARY, TEXT_WHITE, ACCENT_EMERGENCY, ACCENT_UNAVAILABLE, ACCENT_DEGRADED, ACCENT_COLOR_BLIND, BG_BASE, BG_GRAY_OFF, TEXT_TERTIARY } from '../common/Colors';
 
 // 四个演示开关的专属色（各状态一色；未开启为浅灰）
 const COLOR_ON: string = TEXT_WHITE;
