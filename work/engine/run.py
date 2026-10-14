@@ -192,7 +192,9 @@ def build_request(
         "edges": list(best_path),
         "eta_min": round(best_eta_s / 60.0, 2),
         "dropoff_point": stop["point_id"] if is_dropoff_stop else None,
-        "walk_min": SAMPLE_WALK_MIN if is_dropoff_stop else None,
+        # walk_min 跟**点位**走、不跟 dropoff_point 走:上客行程(D2)也有"从站厅走到上车点"的时间,
+        # 所以 D2 下 dropoff_point 为 null 但 walk_min 仍在 —— 与改动前行为一致,不给下游制造空值。
+        "walk_min": SAMPLE_WALK_MIN if stop is not None else None,
     }
 
     if len(scored) == 1:
@@ -239,11 +241,13 @@ def build_request(
             request["departure_route"] = None
             notes.append(f"离站路线未计算:{dst} → {exit_node} 之间无可行路径")
 
-    # 点位登记情况也进 why:查不到**不退回图节点 id**,而是在这里说清(Issue #94 第①条)
-    if driver_type == "D2":
+    # 点位登记情况也进 why:查不到**不退回图节点 id**,而是在这里说清(Issue #94 第①条)。
+    # 只在**终点确是落客/上客点**时才说 —— 终点是路口这类节点时本就没有落客点位,不该报"未登记"。
+    dst_type = str(graph.node(dst).get("type"))
+    if dst_type == "pickup":
         detail = f";对应点位 {stop['point_id']}" if stop else ";上客点位未在站点包登记"
         notes.append("终点是上客点,不写进 arrival_route.dropoff_point" + detail)
-    elif driver_type == "D1" and stop is None:
+    elif dst_type == "dropoff" and stop is None:
         notes.append(f"落客点位未在站点包登记({dst} 的相邻路段里查不到 type=dropoff 的点位)")
 
     request["reservation"] = None
