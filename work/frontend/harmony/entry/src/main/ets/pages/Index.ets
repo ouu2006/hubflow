@@ -8,21 +8,13 @@ import { SimBadge } from '../components/Common';
 @Entry
 @Component
 struct Index {
-  // 四个演示开关：Index 用 @State 持有、@Prop 下发（按钮高亮与页面内容同源，不会不同步）
+  // 四个演示开关：Index 用 @State 持有、@Prop 下发
+  // 注意：按钮一律内联写在 build 里，不用 @Builder 传 active 参数——
+  // @Builder 的值参数在 @State 变化时不会刷新内部样式（高亮不变、点击迟钝），实测踩过。
   @State emergency: boolean = false;
   @State unavailable: boolean = false;
   @State degraded: boolean = false;
   @State colorBlind: boolean = false;
-
-  @Builder
-  demoButton(label: string, active: boolean, onTap: () => void) {
-    Button(label)
-      .fontSize(11)
-      .height(28)
-      .backgroundColor(active ? '#D54941' : '#E8E8E8')
-      .fontColor(active ? '#FFFFFF' : '#666666')
-      .onClick(onTap)
-  }
 
   build() {
     Column() {
@@ -42,18 +34,41 @@ struct Index {
 
       // 演示态开关：点一下变红 = 开启，再点一下变灰 = 关闭（可反复来回）
       Row({ space: 8 }) {
-        this.demoButton('应急态', this.emergency, () => {
-          this.emergency = !this.emergency;
-        })
-        this.demoButton('数据不可用', this.unavailable, () => {
-          this.unavailable = !this.unavailable;
-        })
-        this.demoButton('拒绝授权(降级)', this.degraded, () => {
-          this.degraded = !this.degraded;
-        })
-        this.demoButton('去色校验', this.colorBlind, () => {
-          this.colorBlind = !this.colorBlind;
-        })
+        Button('应急态')
+          .fontSize(11)
+          .height(28)
+          .backgroundColor(this.emergency ? '#D54941' : '#E8E8E8')
+          .fontColor(this.emergency ? '#FFFFFF' : '#666666')
+          .onClick(() => {
+            this.emergency = !this.emergency;
+          })
+
+        Button('数据不可用')
+          .fontSize(11)
+          .height(28)
+          .backgroundColor(this.unavailable ? '#D54941' : '#E8E8E8')
+          .fontColor(this.unavailable ? '#FFFFFF' : '#666666')
+          .onClick(() => {
+            this.unavailable = !this.unavailable;
+          })
+
+        Button('拒绝授权(降级)')
+          .fontSize(11)
+          .height(28)
+          .backgroundColor(this.degraded ? '#D54941' : '#E8E8E8')
+          .fontColor(this.degraded ? '#FFFFFF' : '#666666')
+          .onClick(() => {
+            this.degraded = !this.degraded;
+          })
+
+        Button('去色校验')
+          .fontSize(11)
+          .height(28)
+          .backgroundColor(this.colorBlind ? '#D54941' : '#E8E8E8')
+          .fontColor(this.colorBlind ? '#FFFFFF' : '#666666')
+          .onClick(() => {
+            this.colorBlind = !this.colorBlind;
+          })
       }
       .width('100%')
       .padding({ left: 14, right: 14, bottom: 6 })
