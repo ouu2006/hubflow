@@ -1,5 +1,6 @@
 import { LevelMeta, levelMetaOf, levelGlyphColorOf, levelTextColorOf, LEVEL_META_LIST, LEVEL_UNAVAILABLE } from '../common/LevelMeta';
 import { SIM_BADGE_TEXT, segmentLevelOf } from '../common/Fixture';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, TEXT_WHITE, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, ACCENT_EMERGENCY, ACCENT_EMERGENCY_BG, TEXT_ON_EMERGENCY, TEXT_ON_EMERGENCY_SUB } from '../common/Colors';
 
 /** 数据来源角标（M1-7）：每页必现 */
 @Component
@@ -7,9 +8,9 @@ export struct SimBadge {
   build() {
     Text(SIM_BADGE_TEXT)
       .fontSize(11)
-      .fontColor('#8B8B8B')
+      .fontColor(TEXT_TERTIARY)
       .padding({ top: 6, bottom: 6, left: 10, right: 10 })
-      .backgroundColor('#F1F1F1')
+      .backgroundColor(BG_GRAY_LIGHT)
       .borderRadius(6)
       .width('100%')
       .textAlign(TextAlign.Center)
@@ -25,7 +26,7 @@ export struct SectionTitle {
     Text(this.text)
       .fontSize(15)
       .fontWeight(FontWeight.Medium)
-      .fontColor('#1A1A1A')
+      .fontColor(TEXT_PRIMARY)
       .width('100%')
   }
 }
@@ -38,9 +39,9 @@ export struct InfoRow {
 
   build() {
     Row() {
-      Text(this.label).fontSize(13).fontColor('#666666')
+      Text(this.label).fontSize(13).fontColor(TEXT_SECONDARY)
       Blank()
-      Text(this.value).fontSize(13).fontColor('#1A1A1A')
+      Text(this.value).fontSize(13).fontColor(TEXT_PRIMARY)
     }
     .width('100%')
     .padding({ top: 4, bottom: 4 })
@@ -72,7 +73,7 @@ export struct LevelChip {
         .fontColor(levelTextColorOf(this.level, this.unavailable, this.colorBlind))
     }
     .padding({ top: 3, bottom: 3, left: 8, right: 8 })
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(BG_GRAY_LIGHTER)
     .borderRadius(6)
   }
 }
@@ -119,12 +120,12 @@ export struct LevelLegend {
         ? '数据不可用：等级暂不可判读，以下色阶仅作对照，不表示当前路况'
         : '图例顺序固定：畅通 → 缓行 → 拥堵 → 严重拥堵（颜色抽掉后靠图标 + 文字区分）')
         .fontSize(10)
-        .fontColor(this.unavailable ? '#8B8B8B' : '#A6A6A6')
+        .fontColor(this.unavailable ? TEXT_TERTIARY : TEXT_SECONDARY)
         .width('100%')
     }
     .width('100%')
     .padding({ top: 6, bottom: 6, left: 8, right: 8 })
-    .backgroundColor('#FAFAFA')
+    .backgroundColor(BG_GRAY_LIGHT)
     .borderRadius(8)
   }
 }
@@ -136,19 +137,19 @@ export struct EmergencyCard {
     Column({ space: 6 }) {
       Text('应急状态')
         .fontSize(13)
-        .fontColor('#FFFFFF')
+        .fontColor(TEXT_ON_EMERGENCY)
         .fontWeight(FontWeight.Medium)
       Text('请服从现场指挥')
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#FFFFFF')
+        .fontColor(TEXT_ON_EMERGENCY)
       Text('已停止路线引导，恢复后自动继续。')
         .fontSize(12)
-        .fontColor('#FBE9E7')
+        .fontColor(TEXT_ON_EMERGENCY_SUB)
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#D54941')
+    .backgroundColor(ACCENT_EMERGENCY_BG)
     .borderRadius(10)
   }
 }
@@ -167,7 +168,7 @@ export struct SegmentBar {
     Column({ space: 4 }) {
       Text(this.segmentId)
         .fontSize(12)
-        .fontColor(this.unavailable ? '#8B8B8B' : '#1A1A1A')
+        .fontColor(this.unavailable ? TEXT_TERTIARY : TEXT_PRIMARY)
       LevelChip({
         level: segmentLevelOf(this.segmentId),
         unavailable: this.unavailable,
@@ -175,7 +176,7 @@ export struct SegmentBar {
       })
     }
     .padding(8)
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(BG_GRAY_LIGHTER)
     .borderRadius(8)
     .layoutWeight(1)
   }

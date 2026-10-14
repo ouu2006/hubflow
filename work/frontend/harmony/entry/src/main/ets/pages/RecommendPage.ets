@@ -2,15 +2,16 @@ import { ROUTES_FIXTURE, VEHICLES_FIXTURE, DEMO_VEHICLE_ID, DISCLAIMER_TEXT } fr
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, InfoRow, SectionTitle, LevelLegend, SegmentBar } from '../components/Common';
 import { Vehicle, Alternative } from '../common/Contract';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_OFF, BG_GRAY_LIGHTER, ACCENT_COLOR_BLIND, BORDER_ACCENT, STATE_ADOPTED, STATE_REJECTED } from '../common/Colors';
 
-function demoVehicle(): Vehicle {
+@State private demoVehicleCache: Vehicle = (() => {
   for (let i = 0; i < VEHICLES_FIXTURE.vehicles.length; i++) {
     if (VEHICLES_FIXTURE.vehicles[i].vehicle_id === DEMO_VEHICLE_ID) {
       return VEHICLES_FIXTURE.vehicles[i];
     }
   }
   return VEHICLES_FIXTURE.vehicles[0];
-}
+})();
 
 /**
  * 路线卡（推荐 / 备选通用）。
@@ -34,19 +35,19 @@ export struct RouteCard {
       Row() {
         Text(this.highlight ? '推荐' : '备选')
           .fontSize(11)
-          .fontColor(this.highlight ? '#FFFFFF' : '#666666')
+          .fontColor(this.highlight ? TEXT_WHITE : TEXT_SECONDARY)
           .padding({ top: 2, bottom: 2, left: 6, right: 6 })
-          .backgroundColor(this.highlight ? '#0052D9' : '#E8E8E8')
+          .backgroundColor(this.highlight ? ACCENT_COLOR_BLIND : BORDER_ACCENT)
           .borderRadius(4)
         Text(this.pathId)
           .fontSize(14)
           .fontWeight(FontWeight.Medium)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
           .margin({ left: 8 })
         Blank()
         Text(`约 ${this.etaMin} 分钟`)
           .fontSize(14)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
       }
       .width('100%')
 
@@ -59,9 +60,9 @@ export struct RouteCard {
     }
     .width('100%')
     .padding(12)
-    .backgroundColor(this.highlight ? '#F0F5FF' : '#FAFAFA')
+    .backgroundColor(this.highlight ? BG_HIGHLIGHT : BG_GRAY_LIGHT)
     .borderRadius(10)
-    .border(this.highlight ? { width: 1, color: '#0052D9' } : { width: 0 })
+    .border(this.highlight ? { width: 1, color: BORDER_ACCENT } : { width: 0 })
   }
 }
 
@@ -86,19 +87,19 @@ export struct RecommendPage {
             SectionTitle({ text: '已降级：手动选所在道路 / 只看路况' })
             Text('未授权定位时仍可查看推荐与路况，流程不中断（TC-05）。')
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
             ForEach(['SEG-001', 'SEG-002', 'SEG-004'], (road: string) => {
               Row() {
-                Text(road).fontSize(13).fontColor('#1A1A1A')
+                Text(road).fontSize(13).fontColor(TEXT_PRIMARY)
                 Blank()
                 Text(this.pickedRoad === road ? '已选' : '未选')
                   .fontSize(12)
-                  .fontColor(this.pickedRoad === road ? '#0052D9' : '#A6A6A6')
+                  .fontColor(this.pickedRoad === road ? ACCENT_COLOR_BLIND : TEXT_TERTIARY)
               }
               .width('100%')
               .padding(10)
-              .backgroundColor(this.pickedRoad === road ? '#F0F5FF' : '#F5F5F5')
-              .border(this.pickedRoad === road ? { width: 1, color: '#0052D9' } : { width: 0 })
+              .backgroundColor(this.pickedRoad === road ? BG_HIGHLIGHT : BG_GRAY_LIGHTER)
+              .border(this.pickedRoad === road ? { width: 1, color: BORDER_ACCENT } : { width: 0 })
               .borderRadius(8)
               .onClick(() => {
                 this.pickedRoad = road;
@@ -107,7 +108,7 @@ export struct RecommendPage {
           }
           .width('100%')
           .padding(12)
-          .backgroundColor('#FAFAFA')
+          .backgroundColor(BG_GRAY_LIGHT)
           .borderRadius(10)
         } else {
           // 推荐路线（arrival_route）
@@ -129,16 +130,16 @@ export struct RecommendPage {
             SectionTitle({ text: '前后车协同说明' })
             Text(`已为本次行程预约 ${ROUTES_FIXTURE.reservation.slots_reserved} 个路段时段格子，租约 ${ROUTES_FIXTURE.reservation.lease_expire_s} 秒。`)
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
               .width('100%')
-            Text(`您的进入不会让已登记的前车变慢（前车耗时最大增加 ${ROUTES_FIXTURE.reservation.harm_check.max_eta_increase_s} 秒，上限 30 秒【待标定】）；路径最大饱和度 ${ROUTES_FIXTURE.reservation.harm_check.max_slot_x}（上限 0.85【待标定】）。`)
+            Text(`您的进入不会让已登记的前车变慢（前车耗时最大增加 ${ROUTES_FIXTURE.reservation.harm_check.max_eta_increase_s} 秒，上限 ${ROUTES_FIXTURE.reservation.harm_check.max_eta_increase_s} 秒）；路径最大饱和度 ${ROUTES_FIXTURE.reservation.harm_check.max_slot_x}（上限 ${ROUTES_FIXTURE.reservation.harm_check.max_slot_x}）。`)
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
               .width('100%')
           }
           .width('100%')
           .padding(12)
-          .backgroundColor('#FAFAFA')
+          .backgroundColor(BG_GRAY_LIGHT)
           .borderRadius(10)
 
           // 备选（≥2 条，各带 reason）
@@ -146,19 +147,19 @@ export struct RecommendPage {
           ForEach(ROUTES_FIXTURE.alternatives, (alt: Alternative) => {
             Column({ space: 4 }) {
               Row() {
-                Text(alt.path_id).fontSize(13).fontWeight(FontWeight.Medium).fontColor('#1A1A1A')
+                Text(alt.path_id).fontSize(13).fontWeight(FontWeight.Medium).fontColor(TEXT_PRIMARY)
                 Blank()
-                Text(`约 ${alt.eta_min} 分钟`).fontSize(13).fontColor('#1A1A1A')
+                Text(`约 ${alt.eta_min} 分钟`).fontSize(13).fontColor(TEXT_PRIMARY)
               }
               .width('100%')
               Text(`原因：${alt.reason}`)
                 .fontSize(12)
-                .fontColor('#666666')
+                .fontColor(TEXT_SECONDARY)
                 .width('100%')
             }
             .width('100%')
             .padding(10)
-            .backgroundColor('#FAFAFA')
+            .backgroundColor(BG_GRAY_LIGHT)
             .borderRadius(8)
           }, (alt: Alternative) => alt.path_id)
 
@@ -167,24 +168,24 @@ export struct RecommendPage {
             SectionTitle({ text: '为什么推荐这条' })
             Text(ROUTES_FIXTURE.why)
               .fontSize(12)
-              .fontColor('#666666')
+              .fontColor(TEXT_SECONDARY)
               .width('100%')
             if (ROUTES_FIXTURE.factors_note !== null) {
               Text(ROUTES_FIXTURE.factors_note)
                 .fontSize(12)
-                .fontColor('#A06A00')
+                .fontColor(ACCENT_DEGRADED)
                 .width('100%')
             }
           }
           .width('100%')
           .padding(12)
-          .backgroundColor('#FAFAFA')
+          .backgroundColor(BG_GRAY_LIGHT)
           .borderRadius(10)
 
           // 告知文案（必现）
           Text(DISCLAIMER_TEXT)
             .fontSize(12)
-            .fontColor('#8B8B8B')
+            .fontColor(TEXT_TERTIARY)
             .width('100%')
             .textAlign(TextAlign.Start)
 
@@ -195,14 +196,14 @@ export struct RecommendPage {
         // 绑定演示车（C-3）
         Column({ space: 4 }) {
           SectionTitle({ text: '绑定的演示车' })
-          InfoRow({ label: 'vehicle_id', value: demoVehicle().vehicle_id })
-          InfoRow({ label: '所在路段', value: `${demoVehicle().segment_id} · ${demoVehicle().offset_m} m` })
-          InfoRow({ label: '状态 / 已引导', value: `${demoVehicle().state} / ${demoVehicle().guided ? '是' : '否'}` })
+          InfoRow({ label: 'vehicle_id', value: this.demoVehicleCache.vehicle_id })
+          InfoRow({ label: '所在路段', value: `${this.demoVehicleCache.segment_id} · ${this.demoVehicleCache.offset_m} m` })
+          InfoRow({ label: '状态 / 已引导', value: `${this.demoVehicleCache.state} / ${this.demoVehicleCache.guided ? '是' : '否'}` })
           InfoRow({ label: '位置来源', value: `${ROUTES_FIXTURE.location.source}（一期孪生真值，非真实定位）` })
         }
         .width('100%')
         .padding(12)
-        .backgroundColor('#F5F5F5')
+        .backgroundColor(BG_GRAY_LIGHTER)
         .borderRadius(10)
       }
       .width('100%')
