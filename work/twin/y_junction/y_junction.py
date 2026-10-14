@@ -71,9 +71,9 @@ class Arm:
         self.n = np.array([-self.u[1], self.u[0]])
 
 
-ARM_A = Arm("A", 135.0)   # 左臂
-ARM_B = Arm("B", 45.0)    # 右臂
-ARM_S = Arm("S", 270.0)   # 主线（向下）
+ARM_A = Arm("A", 150.0)   # 左分叉
+ARM_B = Arm("B", 30.0)    # 右分叉
+ARM_S = Arm("S", 90.0)    # 下方向上（单行道入口）
 ORDER = [ARM_S, ARM_B, ARM_A]                 # 按方位角逆时针
 PAIRS = list(zip(ORDER, ORDER[1:] + ORDER[:1]))  # (S,B) (B,A) (A,S)
 
@@ -192,58 +192,28 @@ for a in ORDER:
                arm_point(a, D_CW_B, c + STRIPE / 2), arm_point(a, D_CW_A, c + STRIPE / 2)]
         fill_poly(pts, C_WHITE, 5)
 
-# ============================================================ 5. 停止线（进口半幅）
-for a in ORDER:
-    pts = [arm_point(a, D_JUNC, 0.45), arm_point(a, D_JUNC + 0.55, 0.45),
-           arm_point(a, D_JUNC + 0.55, 6.75), arm_point(a, D_JUNC, 6.75)]
-    fill_poly(pts, C_WHITE, 5)
-
-# ============================================================ 6. 双黄中心线
-for a in ORDER:
-    for s in (+1, -1):
-        stroke([arm_point(a, D_MARK, s * YEL_OFF), arm_point(a, 400.0, s * YEL_OFF)],
-               YEL_W, C_YEL, 6)
-
-# ============================================================ 7. 车道分界线：近端实线 + 远端虚线
-for a in ORDER:
-    for s in (+1, -1):
-        stroke([arm_point(a, D_MARK, s * 3.5), arm_point(a, D_SOLID, s * 3.5)],
-               LANE_W, C_WHITE, 6)
-        stroke([arm_point(a, D_SOLID, s * 3.5), arm_point(a, 400.0, s * 3.5)],
-               LANE_W, C_WHITE, 6, dashes=(2.0, 2.0))
-
-# ============================================================ 8. 导向箭头（进口道：内侧左转 / 外侧右转）
-LANE_IN  = 1.75     # 内侧进口道中心（靠中心线一侧 → 左转）
-LANE_OUT = 5.25     # 外侧进口道中心（靠路缘一侧 → 右转）
+# 单行道导向箭头（从下往上：主线→两分叉）
+LANE_OFFSET = 2.5  # 箭头偏移中心线的距离
 
 
-def lane_arrow(a, off, turn, t0=D_ARROW, z=7, shaft=2.6, bend=1.00,
-               w=0.20, head_l=1.25, head_hw=0.62):
-    """turn=+1 向行驶方向左侧弯（左转）；turn=-1 向右弯（右转）。"""
-    P0 = arm_point(a, t0, off)                 # 箭尾（远离路口）
-    d = -a.u                                   # 行驶方向：驶向路口
-    lv = np.array([-d[1], d[0]])               # 行驶方向的左侧
-    P1 = P0 + d * shaft                        # 直杆末端
-    P2 = P1 + d * 0.95 + lv * turn * bend      # 弯折末端
-    ctrl = P1 + d * 0.15
-    ts = np.linspace(0.0, 1.0, 48)[:, None]
-    curve = (1 - ts) ** 2 * P1 + 2 * (1 - ts) * ts * ctrl + ts ** 2 * P2
-    pts = np.vstack([[P0], curve])
-    tg = P2 - ctrl
-    tg = tg / np.linalg.norm(tg)
-    nr = np.gradient(pts, axis=0)
-    nr = nr / np.linalg.norm(nr, axis=1, keepdims=True)
-    nr = np.column_stack([-nr[:, 1], nr[:, 0]])
-    fill_poly(np.vstack([pts + w * nr, (pts - w * nr)[::-1]]), C_WHITE, z)
-    tip = P2 + tg * head_l
-    pn = np.array([-tg[1], tg[0]])
-    fill_poly([tip, P2 + pn * head_hw - tg * 0.15, P2 - pn * head_hw - tg * 0.15],
+def straight_arrow(a, off, t0=D_ARROW, z=7, shaft=3.2, w=0.22, head_l=1.4, head_hw=0.65):
+    """单行道直行箭头（从路口中心向外，朝分叉方向）。"""
+    P0 = arm_point(a, t0, off)
+    d = a.u  # 行驶方向：从路口中心向外（从下往上）
+    P1 = P0 + d * shaft
+    tip = P1 + d * head_l
+    pn = np.array([-d[1], d[0]])
+    # 箭杆
+    fill_poly([P0, P0 + pn * w, P0 - pn * w], C_WHITE, z)
+    fill_poly([P1, P1 + pn * w, P1 - pn * w], C_WHITE, z)
+    # 箭头
+    fill_poly([tip, tip + pn * head_hw - d * 0.18, tip - pn * head_hw - d * 0.18],
               C_WHITE, z)
 
 
 for a in ORDER:
-    lane_arrow(a, LANE_IN, +1.0)    # 内侧进口道：左转（朝中心线一侧弯）
-    lane_arrow(a, LANE_OUT, -1.0)   # 外侧进口道：右转（朝路缘一侧弯）
+    straight_arrow(a, -LANE_OFFSET)  # 左侧车道箭头
+    straight_arrow(a, +LANE_OFFSET)  # 右侧车道箭头
 
 # ============================================================ 9. 夹角标注
 aa = np.radians(np.linspace(-90.0, -45.0, 60))

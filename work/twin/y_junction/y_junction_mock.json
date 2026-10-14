@@ -522,7 +522,7 @@
   "overview": {
     "station_id": "YJ-001",
     "station_name": "Y 型交叉口（V0 演示）",
-    "updated_at": "2026-10-14T18:48:18.003835",
+    "updated_at": "2026-10-14T19:15:06.656655",
     "vehicles_inbound": 42,
     "vehicles_outbound": 38,
     "vehicles_guided": 15,
@@ -579,7 +579,7 @@
   "meta": {
     "station_id": "YJ-001",
     "network_source": "y_junction_geometry.json",
-    "generated_at": "2026-10-14T18:48:23.003835",
+    "generated_at": "2026-10-14T19:15:11.656655",
     "note": "Y 型路网 V0 演示数据（右侧拥堵/左侧通畅/无小球）"
   }
 }

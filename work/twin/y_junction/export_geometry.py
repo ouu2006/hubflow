@@ -9,9 +9,13 @@ OUT = os.path.join(OUT_DIR, "y_junction_geometry.json")
 H_PAV  = 7.5
 H_EDGE = 7.0
 R_FIL  = 5.0
-ARM_A_DEG = 135.0
-ARM_B_DEG = 45.0
-ARM_S_DEG = 270.0
+# 单行道 Y 型：从下往上分流
+# S 腿 = 下方来车（向上）
+# A 腿 = 左上分叉
+# B 腿 = 右上分叉
+ARM_S_DEG = 90.0    # 下方来车，向上
+ARM_A_DEG = 150.0   # 左上分叉
+ARM_B_DEG = 30.0    # 右上分叉
 
 def unit(deg):
     a = math.radians(deg)
