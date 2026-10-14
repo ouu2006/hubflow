@@ -79,7 +79,7 @@
 
 | 事项 | 状态 |
 |---|---|
-| 上游 `host-fastapi` 集成（`app/api/traffic.py` 新建、`app/main.py` 注册） | **作废**——不再以 harness 后端为集成底座，上游仓保持零改动 |
+| 外部 `host-fastapi` 集成（`app/api/traffic.py` 新建、`app/main.py` 注册） | **作废**——不再以 harness 后端为集成底座，那套后端代码早已不在依赖里 |
 | 新后端 | **待规划**——按前端页面重新规划接口面后，在 `work/assembly/` 重建 |
 | `ui-vue/src/api/index.ts`（冻结 8 端点调用面） | **已移除** |
 | `ui-vue/src/mock/*` | 已裁剪为仅 traffic mock；新接口面定稿后按新面重建 |
@@ -96,7 +96,7 @@
 
 ## 七、ui-vue 工程落位与态势大屏 M1(Issue #52,2026-10-11)
 
-**工程落位**:上游 `harness-core/ui-vue` 已整体拷贝进本目录 `work/frontend/ui-vue/`(来源与改动清单见 [`ui-vue/SOURCE.md`](ui-vue/SOURCE.md))。**2026-10-11 业主裁定:web 端不复用 harness 架构,harness 四页(登录/问答/文档/溯源)已整体移除**,现存页面 = `/dashboard` 态势大屏(感知画面页见 PR #56)。**上游仓零改动**。
+**工程落位**:管理端骨架(来自一份外部 `ui-vue`)已整体拷贝进本目录 `work/frontend/ui-vue/`(来源与改动清单见 [`ui-vue/SOURCE.md`](ui-vue/SOURCE.md));**该外部仓库自 2026-10-14 起不再是本项目的依赖**。**2026-10-11 业主裁定:web 端不复用 harness 架构,harness 四页(登录/问答/文档/溯源)已整体移除**,现存页面 = `/dashboard` 态势大屏(感知画面页见 PR #56)。**不做外部仓库改动**。
 
 **态势大屏运行方式**:
 
@@ -486,7 +486,7 @@ npm run dev:station2     # 包 B(「一环五射」虚构示范站)→ http://lo
 cd work/frontend/ui-vue
 npm run dev     # http://localhost:5173/  → 三页:/#/perception · /#/decision · /#/dashboard(/#/heat 重定向到大屏)
 npm run build   # vue-tsc 类型检查 + vite 构建(本单交付前自检)
-python scripts/doc_gate.py   # 仓库根:文档与契约门禁(CI 检查名 ci)
+python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一门禁)
 ```
 
 **实测记录（2026-10-13，1440×900，Chromium）**：三页均无横向溢出、无 console 报错；`/#/heat` 落到监控大屏；大屏拥挤指数视图排行按 CI 降序、不可用路段排最后并标「不可用」；感知层环境条显示「大雨 · 平峰 · 生效因素 F01，通行能力折减 ×0.75」并标「站点包默认环境」；决策可视化点「大雨晚高峰」预设后，本路段对照 **判级 2 → 2、饱和度 0.43 → 0.66**，处理过程同步显示 `c = 1600 × 0.75 = 1200 辆/h`、`x = q / c = 803 / 1200 = 0.67`、恰好未跨 2 档上界 0.7（**需求倍率由 F03+F10 各出一半（平方根），乘积 = 所选时段的 1.15**——独立审查发现「两条同 target 因素会把需求平方」，已按平方根拆开修掉）；「复位环境」后恢复默认态。

@@ -1,6 +1,6 @@
 """感知监控演示数据导出(供 /perception 监控页与感知服务使用,Issue #54)。
 
-链路与上游 0-6 复跑一致(同一 MindSpore 检测 + ByteTrack 跟踪),区别只在输出:
+链路与 0-6 复跑的那条一致(同一 MindSpore 检测 + ByteTrack 跟踪),区别只在输出:
 不再合成标注 mp4,而是导出「原始帧 JPEG 序列 + 逐帧检测框 JSON」,
 由感知服务(work/perception/server.py)出接口、前端画框——
 检测框是数据而不是烤进画面的像素,这就是"YOLO 监控"页的真实数据源。
@@ -10,9 +10,13 @@
   <out>/<stream_id>/detections.json   逐帧检测框(归一化坐标/类别/置信度/轨迹 ID + 时间戳 t_s)
   <out>/<stream_id>/frames/000001.jpg 原始帧序列(浏览器不依赖 mp4 解码)
 
-用法(必须用上游 traffic-ms311 venv;上游仓零改动,这里只 import):
-  python dump_monitor_data.py --video <上游仓>/traffic-core-mindspore/video/track1.mp4 \
-    --out ../data/monitor
+用法(必须用 traffic-ms311 那套 venv;检测链路零改动,这里只 import):
+  python dump_monitor_data.py --detector-root <检测链路目录> \
+    --video <样本视频> --out ../data/monitor
+
+检测链路不在本仓库里:--detector-root 指向含 core/mindspore_detector.py 与
+core/tracker.py 的目录(即 traffic-core-mindspore/ 那一层)。不写死路径,由使用者按
+本机实际位置传入(协作约定:与本仓库同级)。
 
 口径:样本视频非肇庆东站现场;产物仅用于管理端演示(演示数据(模拟))。
 """
@@ -27,14 +31,23 @@ from pathlib import Path
 
 import cv2
 
-# 上游仓与本仓同级(协作约定:agentic-traffic-management 必须 clone 在 hubflow 旁边);
-# 这里只 import 不改动。MindSporeDetector 的权重/网络配置按其 REPO_ROOT 解析。
+# 检测链路不在本仓库里:由 --detector-root 传入(默认与本仓同级),这里只 import 不改动。
 HUBFLOW_ROOT = Path(__file__).resolve().parents[3]  # tools → perception → work → hubflow
-UPSTREAM_CORE = HUBFLOW_ROOT.parent / "agentic-traffic-management" / "traffic-core-mindspore"
-sys.path.insert(0, str(UPSTREAM_CORE))
+DEFAULT_DETECTOR_ROOT = HUBFLOW_ROOT.parent / "traffic-core-mindspore"
 
-from core.mindspore_detector import MindSporeDetector  # noqa: E402
-from core.tracker import ByteTracker  # noqa: E402
+
+def _load_detector(detector_root: Path):
+    """把检测链路的 core/ 挂到 sys.path 再 import;目录不对就明确报错(不猜路径)。"""
+    if not (detector_root / "core" / "mindspore_detector.py").exists():
+        raise SystemExit(
+            "--detector-root 下找不到 core/mindspore_detector.py: "
+            f"{detector_root}" + "\n"
+            "请指向含 core/ 的检测链路目录(与本仓库同级),或核对本机实际位置。"
+        )
+    sys.path.insert(0, str(detector_root))
+    from core.mindspore_detector import MindSporeDetector  # noqa: E402
+    from core.tracker import ByteTracker  # noqa: E402
+    return MindSporeDetector, ByteTracker
 
 # COCO 交通相关白名单(0 行人 1 自行车 2 小汽车 3 摩托车 5 公交车 7 货车)。
 # 不白名单会在路口段把手机/玩偶等误检类别也带进画面(0-6 实测出现过 67/74)。
@@ -42,7 +55,7 @@ CLASS_WHITELIST = (0, 1, 2, 3, 5, 7)
 CLASS_NAMES_ZH = {0: "行人", 1: "自行车", 2: "小汽车", 3: "摩托车", 5: "公交车", 7: "货车"}
 CONF_THRESHOLD = 0.35
 IOU_THRESHOLD = 0.5
-IMGSZ = 640  # 与上游 track 链路同尺寸
+IMGSZ = 640  # 与 track 链路同尺寸
 FRAME_MAX_WIDTH = 960  # 帧序列 JPEG 的最大宽度,超出则等比缩小
 JPEG_QUALITY = 82
 
@@ -58,7 +71,14 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--video", required=True, help="样本视频路径")
     ap.add_argument("--out", default="../data/monitor", help="输出根目录")
+    ap.add_argument(
+        "--detector-root",
+        default=str(DEFAULT_DETECTOR_ROOT),
+        help="检测链路目录(含 core/);默认取与本仓库同级的 traffic-core-mindspore/",
+    )
     args = ap.parse_args()
+
+    MindSporeDetector, ByteTracker = _load_detector(Path(args.detector_root))
 
     video_path = Path(args.video)
     stream_id = video_path.stem

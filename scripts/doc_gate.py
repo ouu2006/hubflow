@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""hubflow 文档与契约门禁（CI 检查名 `ci`）。
+"""hubflow 文档与契约门禁（**本地跑的唯一门禁**；本仓库不挂流水线）。
 
 用法：
     python scripts/doc_gate.py            # 在仓库根运行

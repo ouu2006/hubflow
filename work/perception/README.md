@@ -35,7 +35,7 @@
 
 | 环节 | 做法 | 关键口径 |
 |---|---|---|
-| **检测与跟踪** | 复用上游仓库已有链路（`agentic-traffic-management/traffic-core-mindspore/core/`） | 上游轨迹输出是 `{track_id: [{"x": px, "y": px, "c": cls}]}` —— **没时间戳、没米制尺度、没车道归属**，这三样要补 |
+| **检测与跟踪** | 复用已经实测通过的那条检测+跟踪链路（`--detector-root <目录>` 指过去，**参数传入、不写死路径**） | 它的轨迹输出是 `{track_id: [{"x": px, "y": px, "c": cls}]}` —— **没时间戳、没米制尺度、没车道归属**，这三样要补 |
 | **透视标定** | 像素 → 米，单应矩阵（OpenCV `findHomography`，DLT + RANSAC）；**控制点 ≥4 组，推荐 6–8 组**（由 **池·V 拾取**——系列 V 的控制点拾取任务：停止线两端、车道线交点、斑马线角点、导流线折点） | 精度留证：重投影误差 **≤ 3 px**【demo 目标值】、尺度误差 **≤ 3%**【demo 目标值】 |
 | **有效标定带** | 远处 1 像素对应的实际距离太大 | 远边界取"1 像素对应实际距离 ≤ 0.5 m"；**超出边界的目标只计车辆数（密度、流量），不计入速度统计** |
 | **误差预算** | 标定误差 + 跟踪误差 + 聚合误差逐项列出，给出指标总误差带 | 误差带要能解释"为什么某路段判级会跳" |
@@ -141,7 +141,7 @@
 
 | 步骤 | 命令 | 说明 |
 |---|---|---|
-| ① 导出检测数据 | `python tools/dump_monitor_data.py --video <上游>/traffic-core-mindspore/video/track1.mp4 --out data/monitor` | 必须用上游 `traffic-ms311` venv（MindSpore 推理）；逐段运行，产物入 `data/monitor/<stream_id>/`（**整树不入库**，`.gitignore` 已拦）；类别走交通白名单（行人/自行车/小汽车/摩托车/公交车/货车），路口段的非车辆误检类别（0-6 实测出现过 67/74）被过滤 |
+| ① 导出检测数据 | `python tools/dump_monitor_data.py --detector-root <检测链路目录> --video <样本视频> --out data/monitor` | 必须用 `traffic-ms311` 那套 venv（MindSpore 推理）；逐段运行，产物入 `data/monitor/<stream_id>/`（**整树不入库**，`.gitignore` 已拦）；类别走交通白名单（行人/自行车/小汽车/摩托车/公交车/货车），路口段的非车辆误检类别（0-6 实测出现过 67/74）被过滤 |
 | ② 起感知服务 | `python server.py --port 8101` | 任意带 fastapi+uvicorn 的 python；只做文件服务不做推理 |
 | ③ 起前端 | `cd work/frontend/ui-vue && npm run dev` | vite 把 `/perception-api` 代理并重写到 `http://127.0.0.1:8101` 的 `/api/perception`（独立前缀是为了不与 traffic mock 的 `/api` 拦截互相吞路径） |
 | ④ 打开页面 | `http://localhost:5173/#/perception` | 帧播放器（播放/倍速/拖动）+ 逐帧检测框 + 轨迹拖尾 + 通道切换；右侧「感知判读」面板给出一组**像素空间近似**的人眼判堵要素（画面占有率、停驻/缓行/通行三态、虚拟断面过车率、近3秒趋势），**米制四指标（q/v/k/L_q）待透视标定链路（M1-9）接入后替换**；下方为 video/twin 双链路指标快照 |
