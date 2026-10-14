@@ -1,0 +1,585 @@
+{
+  "segments": [
+    {
+      "segment_id": "BND-SB",
+      "name": "S-B 转角缘石",
+      "source": "demo",
+      "q_vph": 3200,
+      "v_kmh": 28,
+      "v_f_kmh": 60,
+      "k_vpk": 114,
+      "L_q_m": 180,
+      "L_seg_m": 2100,
+      "T_d_min": 4.2,
+      "x": 0.7,
+      "c_base_vph": 4200,
+      "c_vph": 3900,
+      "factors_applied": [],
+      "ci": 69.7,
+      "level": 2,
+      "level_name": "缓行",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 3520,
+          "level": 3
+        },
+        "h30": {
+          "q_vph": 3840,
+          "level": 3
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "BND-BA",
+      "name": "B-A 转角缘石",
+      "source": "demo",
+      "q_vph": 3600,
+      "v_kmh": 22,
+      "v_f_kmh": 60,
+      "k_vpk": 164,
+      "L_q_m": 280,
+      "L_seg_m": 2300,
+      "T_d_min": 5.8,
+      "x": 0.85,
+      "c_base_vph": 4200,
+      "c_vph": 3600,
+      "factors_applied": [],
+      "ci": 85.0,
+      "level": 4,
+      "level_name": "严重拥堵",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 3960,
+          "level": 4
+        },
+        "h30": {
+          "q_vph": 4320,
+          "level": 4
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "BND-AS",
+      "name": "A-S 转角缘石",
+      "source": "demo",
+      "q_vph": 2100,
+      "v_kmh": 45,
+      "v_f_kmh": 60,
+      "k_vpk": 47,
+      "L_q_m": 60,
+      "L_seg_m": 2000,
+      "T_d_min": 2.1,
+      "x": 0.42,
+      "c_base_vph": 4200,
+      "c_vph": 4000,
+      "factors_applied": [],
+      "ci": 42.1,
+      "level": 1,
+      "level_name": "畅通",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 2310,
+          "level": 2
+        },
+        "h30": {
+          "q_vph": 2520,
+          "level": 2
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "INT-S-CW",
+      "name": "S 腿内侧参考线(+n)",
+      "source": "demo",
+      "q_vph": 2400,
+      "v_kmh": 40,
+      "v_f_kmh": 60,
+      "k_vpk": 60,
+      "L_q_m": 70,
+      "L_seg_m": 1800,
+      "T_d_min": 2.4,
+      "x": 0.5,
+      "c_base_vph": 4200,
+      "c_vph": 3900,
+      "factors_applied": [],
+      "ci": 50.2,
+      "level": 2,
+      "level_name": "缓行",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 2640,
+          "level": 3
+        },
+        "h30": {
+          "q_vph": 2880,
+          "level": 3
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "INT-S-CCW",
+      "name": "S 腿外侧参考线(-n)",
+      "source": "demo",
+      "q_vph": 1800,
+      "v_kmh": 52,
+      "v_f_kmh": 60,
+      "k_vpk": 35,
+      "L_q_m": 40,
+      "L_seg_m": 1800,
+      "T_d_min": 1.5,
+      "x": 0.3,
+      "c_base_vph": 4200,
+      "c_vph": 4100,
+      "factors_applied": [],
+      "ci": 29.6,
+      "level": 1,
+      "level_name": "畅通",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 1980,
+          "level": 2
+        },
+        "h30": {
+          "q_vph": 2160,
+          "level": 2
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "INT-B-CW",
+      "name": "B 腿内侧参考线(+n)",
+      "source": "demo",
+      "q_vph": 3400,
+      "v_kmh": 18,
+      "v_f_kmh": 60,
+      "k_vpk": 189,
+      "L_q_m": 310,
+      "L_seg_m": 1700,
+      "T_d_min": 6.5,
+      "x": 0.89,
+      "c_base_vph": 3800,
+      "c_vph": 3000,
+      "factors_applied": [],
+      "ci": 89.3,
+      "level": 4,
+      "level_name": "严重拥堵",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 3740,
+          "level": 4
+        },
+        "h30": {
+          "q_vph": 4080,
+          "level": 4
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "INT-B-CCW",
+      "name": "B 腿外侧参考线(-n)",
+      "source": "demo",
+      "q_vph": 800,
+      "v_kmh": 55,
+      "v_f_kmh": 60,
+      "k_vpk": 15,
+      "L_q_m": 15,
+      "L_seg_m": 1700,
+      "T_d_min": 0.8,
+      "x": 0.16,
+      "c_base_vph": 3800,
+      "c_vph": 3700,
+      "factors_applied": [],
+      "ci": 15.6,
+      "level": 1,
+      "level_name": "畅通",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 880,
+          "level": 2
+        },
+        "h30": {
+          "q_vph": 960,
+          "level": 2
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "INT-A-CW",
+      "name": "A 腿内侧参考线(+n)",
+      "source": "demo",
+      "q_vph": 900,
+      "v_kmh": 54,
+      "v_f_kmh": 60,
+      "k_vpk": 17,
+      "L_q_m": 18,
+      "L_seg_m": 1600,
+      "T_d_min": 0.9,
+      "x": 0.16,
+      "c_base_vph": 3800,
+      "c_vph": 3700,
+      "factors_applied": [],
+      "ci": 16.3,
+      "level": 1,
+      "level_name": "畅通",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 990,
+          "level": 2
+        },
+        "h30": {
+          "q_vph": 1080,
+          "level": 2
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "INT-A-CCW",
+      "name": "A 腿外侧参考线(-n)",
+      "source": "demo",
+      "q_vph": 600,
+      "v_kmh": 58,
+      "v_f_kmh": 60,
+      "k_vpk": 10,
+      "L_q_m": 10,
+      "L_seg_m": 1600,
+      "T_d_min": 0.6,
+      "x": 0.12,
+      "c_base_vph": 3800,
+      "c_vph": 3750,
+      "factors_applied": [],
+      "ci": 11.7,
+      "level": 1,
+      "level_name": "畅通",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 660,
+          "level": 2
+        },
+        "h30": {
+          "q_vph": 720,
+          "level": 2
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "RD-S",
+      "name": "S 腿路面中心线",
+      "source": "demo",
+      "q_vph": 4500,
+      "v_kmh": 35,
+      "v_f_kmh": 60,
+      "k_vpk": 129,
+      "L_q_m": 120,
+      "L_seg_m": 5000,
+      "T_d_min": 3.5,
+      "x": 0.6,
+      "c_base_vph": 7500,
+      "c_vph": 6800,
+      "factors_applied": [],
+      "ci": 60.3,
+      "level": 2,
+      "level_name": "缓行",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 4950,
+          "level": 3
+        },
+        "h30": {
+          "q_vph": 5400,
+          "level": 3
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "RD-B",
+      "name": "B 腿路面中心线",
+      "source": "demo",
+      "q_vph": 3800,
+      "v_kmh": 20,
+      "v_f_kmh": 60,
+      "k_vpk": 190,
+      "L_q_m": 350,
+      "L_seg_m": 4500,
+      "T_d_min": 7.0,
+      "x": 0.89,
+      "c_base_vph": 5000,
+      "c_vph": 3800,
+      "factors_applied": [],
+      "ci": 89.4,
+      "level": 4,
+      "level_name": "严重拥堵",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 4180,
+          "level": 4
+        },
+        "h30": {
+          "q_vph": 4560,
+          "level": 4
+        },
+        "model": "L0"
+      }
+    },
+    {
+      "segment_id": "RD-A",
+      "name": "A 腿路面中心线",
+      "source": "demo",
+      "q_vph": 1500,
+      "v_kmh": 55,
+      "v_f_kmh": 60,
+      "k_vpk": 27,
+      "L_q_m": 30,
+      "L_seg_m": 4200,
+      "T_d_min": 1.4,
+      "x": 0.27,
+      "c_base_vph": 5000,
+      "c_vph": 4800,
+      "factors_applied": [],
+      "ci": 26.6,
+      "level": 1,
+      "level_name": "畅通",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 1650,
+          "level": 2
+        },
+        "h30": {
+          "q_vph": 1800,
+          "level": 2
+        },
+        "model": "L0"
+      }
+    }
+  ],
+  "vehicles": [
+    {
+      "vehicle_id": "VEH-001",
+      "segment_id": "BND-SB",
+      "state": "parked",
+      "driver_type": "D1",
+      "speed_kmh": 0.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-002",
+      "segment_id": "BND-SB",
+      "state": "moving",
+      "driver_type": "D1",
+      "speed_kmh": 25.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-003",
+      "segment_id": "BND-BA",
+      "state": "parked",
+      "driver_type": "D1",
+      "speed_kmh": 0.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-004",
+      "segment_id": "BND-BA",
+      "state": "moving",
+      "driver_type": "D1",
+      "speed_kmh": 25.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-005",
+      "segment_id": "BND-AS",
+      "state": "parked",
+      "driver_type": "D1",
+      "speed_kmh": 0.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-006",
+      "segment_id": "BND-AS",
+      "state": "moving",
+      "driver_type": "D1",
+      "speed_kmh": 25.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-007",
+      "segment_id": "INT-S-CW",
+      "state": "parked",
+      "driver_type": "D1",
+      "speed_kmh": 0.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-008",
+      "segment_id": "INT-S-CW",
+      "state": "moving",
+      "driver_type": "D1",
+      "speed_kmh": 25.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-009",
+      "segment_id": "INT-S-CCW",
+      "state": "parked",
+      "driver_type": "D1",
+      "speed_kmh": 0.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-010",
+      "segment_id": "INT-S-CCW",
+      "state": "moving",
+      "driver_type": "D1",
+      "speed_kmh": 25.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-011",
+      "segment_id": "INT-B-CW",
+      "state": "parked",
+      "driver_type": "D1",
+      "speed_kmh": 0.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    },
+    {
+      "vehicle_id": "VEH-012",
+      "segment_id": "INT-B-CW",
+      "state": "moving",
+      "driver_type": "D1",
+      "speed_kmh": 25.0,
+      "offset": 0.5,
+      "is_demo_bound": true
+    }
+  ],
+  "overview": {
+    "station_id": "YJ-001",
+    "station_name": "Y 型交叉口（V0 演示）",
+    "updated_at": "2026-10-14T18:48:18.003835",
+    "vehicles_inbound": 42,
+    "vehicles_outbound": 38,
+    "vehicles_guided": 15,
+    "guided_rate": 0.35,
+    "level_distribution": [
+      {
+        "level": 1,
+        "name": "缓行",
+        "count": 6,
+        "color": "#ffeb3b"
+      },
+      {
+        "level": 2,
+        "name": "拥堵",
+        "count": 3,
+        "color": "#ff9800"
+      }
+    ],
+    "worst_segment": {
+      "segment_id": "INT-B-CW",
+      "name": "B 腿内侧参考线(+n)",
+      "source": "demo",
+      "q_vph": 3400,
+      "v_kmh": 18,
+      "v_f_kmh": 60,
+      "k_vpk": 189,
+      "L_q_m": 310,
+      "L_seg_m": 1700,
+      "T_d_min": 6.5,
+      "x": 0.89,
+      "c_base_vph": 3800,
+      "c_vph": 3000,
+      "factors_applied": [],
+      "ci": 89.3,
+      "level": 4,
+      "level_name": "严重拥堵",
+      "triggered_by": [],
+      "confidence": 0.95,
+      "data_age_s": 5,
+      "stale": false,
+      "pred": {
+        "h15": {
+          "q_vph": 3740,
+          "level": 4
+        },
+        "h30": {
+          "q_vph": 4080,
+          "level": 4
+        },
+        "model": "L0"
+      }
+    }
+  },
+  "meta": {
+    "station_id": "YJ-001",
+    "network_source": "y_junction_geometry.json",
+    "generated_at": "2026-10-14T18:48:23.003835",
+    "note": "Y 型路网 V0 演示数据（右侧拥堵/左侧通畅/无小球）"
+  }
+}
