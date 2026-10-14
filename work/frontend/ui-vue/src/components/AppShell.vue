@@ -2,11 +2,12 @@
 // 四页共用的应用壳(TDesign Light):顶栏(品牌 + 页签 + 站点 + 数据源 + 快照时间 + 演示角标)+ 页头 + 主体 + 页脚。
 // 顶栏骨架在 4 张设计稿里完全一致,抽成一处以免四页各写一套(改一次四处生效)。
 // 语义纪律:页签「当前页」与数据源「已选」一律用品牌蓝;等级色不得出现在壳层。
-import { computed, useSlots } from 'vue'
+import { computed, ref, useSlots } from 'vue'
 import { RouterLink } from 'vue-router'
 import { APP_TABS, DEMO_BADGE, SOURCE_ITEMS, type AppTabKey, type SourceMode } from '../shared/nav'
 import { formatStamp } from '../shared/traffic'
-import { activePack } from '../station-packs/index'
+import { TD } from '../shared/theme'
+import { activePack, activePackKey, packItems, switchPack } from '../station-packs/index'
 
 const props = withDefaults(
   defineProps<{
@@ -39,6 +40,21 @@ const showHead = computed(() => props.title !== '' || !!slots.headRight)
  * (`main.ts` / vite 配置)注入包键,会恒定取到默认包 A。所以这里惰性取。
  */
 const stationName = computed(() => props.station ?? activePack().station.name)
+
+// ---- 线路图切换器(业主 2026-10-14):顶栏直接选包,选完即换整套路网/基线 ----
+const packList = packItems()
+const packKey = ref<string>(activePackKey())
+const packOpen = ref(false)
+
+function choosePack(key: string): void {
+  packOpen.value = false
+  if (key === packKey.value) return
+  switchPack(key)
+  packKey.value = key
+  // 站点包是惰性读的,但页面里不少值(NetMap 投影边界、mock 缓存)是模块级常量,
+  // 最稳妥的演示行为就是整页刷新一次 —— 路网、基线、告警全部从新包现取。
+  window.location.reload()
+}
 </script>
 
 <template>
@@ -61,6 +77,34 @@ const stationName = computed(() => props.station ?? activePack().station.name)
         </RouterLink>
       </nav>
       <div class="td-top-right">
+        <!-- 线路图切换器(业主 2026-10-14):选包即换路网,与站点 chip 同源 -->
+        <span class="net-switch" @mouseleave="packOpen = false">
+          <button
+            type="button"
+            class="net-switch-btn"
+            :aria-expanded="packOpen"
+            aria-haspopup="listbox"
+            @click="packOpen = !packOpen"
+          >
+            <span class="net-switch-label">{{ packList.find((p) => p.key === packKey)?.name ?? stationName }}</span>
+            <span class="net-switch-caret">▾</span>
+          </button>
+          <span v-if="packOpen" class="net-switch-menu" role="listbox" aria-label="切换线路图">
+            <button
+              v-for="p in packList"
+              :key="p.key"
+              type="button"
+              class="net-switch-item"
+              :class="{ on: p.key === packKey }"
+              role="option"
+              :aria-selected="p.key === packKey"
+              @click="choosePack(p.key)"
+            >
+              <span class="net-switch-name">{{ p.name }}</span>
+              <span class="net-switch-note">{{ p.note }}</span>
+            </button>
+          </span>
+        </span>
         <span class="td-chip">{{ stationName }}</span>
         <span v-if="sourceMode !== null && sourceMode !== undefined" class="td-seg" role="group" aria-label="数据源视图">
           <span
@@ -107,5 +151,86 @@ const stationName = computed(() => props.station ?? activePack().station.name)
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+
+/* ---- 线路图切换器(顶栏) ----
+   口径:品牌蓝只表示「当前/已选/可操作」(手册 §6.2),菜单项选中态用品牌蓝,
+   不引入第二套蓝;等色不出现。 */
+.net-switch {
+  position: relative;
+  display: inline-flex;
+}
+.net-switch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1px solid #d9dce1;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: #1a1a1a;
+}
+.net-switch-btn:hover {
+  border-color: #b9bec6;
+}
+.net-switch-label {
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.net-switch-caret {
+  font-size: 9px;
+  color: #999999;
+}
+.net-switch-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 260px;
+  background: #ffffff;
+  border: 1px solid #e3e5e8;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  z-index: 30;
+}
+.net-switch-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 7px 10px;
+  background: transparent;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.net-switch-item:hover {
+  background: #f2f6ff;
+}
+.net-switch-item.on {
+  background: #eef4ff;
+  box-shadow: inset 2px 0 0 v-bind('TD.brand');
+}
+.net-switch-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.net-switch-item.on .net-switch-name {
+  color: v-bind('TD.brand');
+}
+.net-switch-note {
+  font-size: 11px;
+  color: #999999;
+  line-height: 1.4;
 }
 </style>

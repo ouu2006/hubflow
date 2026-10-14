@@ -29,6 +29,16 @@ export function setActivePackKey(key: string): void {
 }
 
 /**
+ * 运行时切换站点包(顶部栏线路图切换器,业主 2026-10-14)。
+ * 只改浏览器侧的键:几何(demoNetwork 惰性读包)与 mock(每次请求读包)都从
+ * `activePack()` 现取,所以下一次拉快照起,页面路网/基线/告警整套跟着换;
+ * **不触发刷新** —— 各页监听快照推送自行重绘。
+ */
+export function switchPack(key: string): void {
+  if (PACKS[key]) injectedKey = key
+}
+
+/**
  * 当前生效的包键。
  * 键不存在时落默认包(不抛错):演示站多起来以后,"包里没有这个键"要表现得像"走默认站",
  * 而不是整页白屏;但键写错这件事要在页脚可见(见 `packNote()` 会同时打出键与包名)。
@@ -47,4 +57,13 @@ export function activePack(): StationPack {
 export function packNote(): string {
   const p = activePack()
   return `站点包 ${p.key} · ${p.note}`
+}
+
+/** 可选线路清单(顶部栏切换器用):键 + 站名 + 一句话口径 */
+export function packItems(): { key: string; name: string; note: string }[] {
+  return Object.values(PACKS).map((p) => ({
+    key: p.key,
+    name: p.station.name,
+    note: p.note,
+  }))
 }
