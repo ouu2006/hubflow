@@ -70,7 +70,7 @@
 
 - [ ] **没动契约字段**（`segments.json` / `routes.json` / `vehicles.json` / `render.json`）
 - [ ] **没改别人的目录**（`work/twin/` `work/perception/` `work/engine/` `work/frontend/` `work/assembly/` `stations/` 各归各家）
-- [ ] **没动公共文件**（根 `README.md`、`.gitignore`、`.github/`、`docs/数据契约.md`、`app/main.py` 路由注册）
+- [ ] **没动公共文件**（根 `README.md`、`.gitignore`、`.gitee/`、`docs/数据契约.md`、`app/main.py` 路由注册）
 - [ ] `git status` 里**没有** `.env` / 视频（`*.mp4`）/ 模型权重（`*.ckpt`）/ 图片数据集 / `node_modules/`
 
 **如果动了契约字段，必须在这里写明**（这一条没有例外）：

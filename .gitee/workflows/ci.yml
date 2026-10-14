@@ -1,0 +1,40 @@
+name: ci
+
+# Gitee Go 流水线（原 GitHub Actions 版见迁移记录）。
+#
+# 口径（docs/协作规范.md 第 4 节、docs/开发规范.md 第 11 节、docs/填表报告.md 第 4 节）：
+#   * 本地与流水线跑的是**同一条命令**：`python scripts/doc_gate.py` —— 避免"本地绿、CI 红"；
+#   * 检查名固定为 **`ci`**：`main` 的保护分支规则里要 require 的就是这个名字（见 docs/仓库设置清单.md）；
+#   * 现在仓库里只有文档与配置，所以只有一个 stage。等第一批代码（`work/**`）落地后，
+#     在下面按目录追加 stage，**不要改 `ci` 这个名字**，否则保护分支会失配。
+#
+# ⚠️ Gitee Go 是**增值服务（预付时长）**，需要在仓库「管理 → 流水线」或 gitee_go 页面**手动开通**，
+#    开通之前本文件不会被执行（见 docs/仓库设置清单.md 第 3 节）。
+
+displayName: ci
+triggers:
+  push:
+    branches:
+      include:
+        - main
+  pr:
+    branches:
+      include:
+        - main
+  # 手动触发的语义是"我不确定，全都跑一遍"。取不到改动清单时门禁只打 [注意]、不误判。
+
+stages:
+  - stage:
+      name: ci
+      displayName: 文档与契约门禁
+      steps:
+        - step: run@1
+          name: doc_gate
+          displayName: python scripts/doc_gate.py
+          inputs:
+            # 不装 python：Gitee Go 默认镜像自带 python3，少一个版本变量。
+            # fetch-depth: 0 的等价物——第 7 组（填表报告台账）要查"某产物最近一次改动的提交是哪天"，
+            # 浅克隆没有历史 → 那一项会静默失效。Gitee Go 检出默认取全历史，故无需额外配置。
+            script: |
+              set -e
+              python3 scripts/doc_gate.py
