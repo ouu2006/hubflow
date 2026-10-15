@@ -21,6 +21,8 @@ export const BG_GRAY_LIGHT: string = '#FAFAFA';
 export const BG_GRAY_LIGHTER: string = '#F5F5F5';
 export const BG_GRAY_OFF: string = '#F0F0F0';
 export const BG_HIGHLIGHT: string = '#F0F5FF';
+/** 顶部页签选中态底色（比 BG_HIGHLIGHT 更淡一档，压在标题栏上不抢视线） */
+export const BG_TAB_ACTIVE: string = '#EAF1FE';
 
 // ---- 应急/降级/不可用/去色 ----
 export const ACCENT_EMERGENCY: string = '#C62828';
