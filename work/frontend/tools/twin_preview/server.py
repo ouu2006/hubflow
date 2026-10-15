@@ -267,37 +267,46 @@ def _slice_shape(shape, d0: float, d1: float) -> list:
 def _split_chain(chain: dict, edge_by_id: dict) -> list:
     """把一条链按**里程对半**切成两段。
 
-    边按**中点**归段，保证同一条边不会同时落进两段（`edge2seg` 是"边 → 段"的单值映射，
+    边的归段方式：先算出「前半段拿到几条边」的分界下标 `k`，两段各取 `edge_ids[:k]` /
+    `edge_ids[k:]` —— 保证**同一条边不会同时落进两段**（`edge2seg` 是"边 → 段"的单值映射，
     重复归属会让车辆落到哪一段取决于写入顺序）。
+
+    ⚠️ **不能按"每条边的中点各自判 `< mid` / `>= mid`"逐条筛**：折线长度与边长之和**不相等**
+    —— 链在路口跳过 SUMO 内部边（`_walk_chain` 把那段空隙用直线连起来，实测每跳 +9~15 m），
+    13 条边的链折线比边长之和长 169 m。于是会出现「所有边的中点都落在 mid 同一侧」，
+    逐条筛就让一段**一条边都拿不到**（2026-10-15 实测：`--seg-count 12/14` 时两段共用
+    完全相同的 `edge_ids`，`edge2seg` 后写覆盖先写，一半路段永远收不到车）。
+
+    单边链（`len(edge_ids) < 2`）**不拆**：拆了必然两段共用同一条边 —— 返回空表让调用方换一条。
     """
+    edge_ids = list(chain["edge_ids"])
+    if len(edge_ids) < 2:
+        return []
     total = chain["length_m"]
     mid = total / 2
+
+    # 分界下标 k = 中点落在前半段的边数，夹在 [1, n-1]：两段都非空、且不重叠
+    centres, acc = [], 0.0
+    for eid in edge_ids:
+        edge = edge_by_id.get(eid)
+        elen = edge.getLength() if edge is not None else 0.0
+        centres.append(acc + elen / 2)
+        acc += elen
+    k = sum(1 for centre in centres if centre < mid)
+    k = max(1, min(len(edge_ids) - 1, k))
+
     parts = []
-    for lo, hi, first_half in ((0.0, mid, True), (mid, total, False)):
+    for lo, hi, half in ((0.0, mid, edge_ids[:k]), (mid, total, edge_ids[k:])):
         sub = _slice_shape(chain["shape"], lo, hi)
         if len(sub) < 2:
+            # 几何切不出来（退化链）→ 整条不拆，交给调用方换下一条；**不许**退化成"两段共用整链的边"
             return []
-        ids, acc = [], 0.0
-        for eid in chain["edge_ids"]:
-            edge = edge_by_id.get(eid)
-            elen = edge.getLength() if edge is not None else 0.0
-            centre = acc + elen / 2
-            acc += elen
-            # 归段判据以 mid 为界用 `<` / `>=` **二分**，保证每条边恰好落进一段。
-            # ⚠️ 不要写成 `lo <= centre < hi`：单边链的 centre 恰好 == mid，前半段一条边也拿不到
-            #    → `edge_ids` 为空 → 下游 `drop["edge_ids"][0]`（run_sim）会 IndexError。
-            if centre < mid if first_half else centre >= mid:
-                ids.append(eid)
-        if not ids:
-            # 兜底：边长读不到（全 0）时全部点会落进前半段，后半段会空 —— 宁可两段共享整链的边，
-            # 也不能留空（`edge2seg` 与落客段都依赖 edge_ids 非空）。
-            ids = list(chain["edge_ids"])
         parts.append(
             {
                 "name": chain["name"],
                 "kind": chain["kind"],
                 "shape": sub,
-                "edge_ids": ids,
+                "edge_ids": list(half),
                 "length_m": _shape_len(sub),
             }
         )
@@ -320,7 +329,7 @@ def select_segments(net, station_lonlat: tuple[float, float], seg_count: int) ->
         不合并的话「吉庆大道」会画两遍、白占两个名额）；③ 无名链按**截面键不相交**贪心去重
         （反向重复与同簇分支都会因此被剔除）；④ 剔掉 < `MIN_SEG_LEN_M` 的接头碎片与超出
         `STATION_RADIUS_M` 的链；⑤ **段数不够就把最长的段按里程对半拆**——宁可拆真实长路，
-        也不再拿接头碎片凑数。
+        也不再拿接头碎片凑数；拆出来的两段**不共享边**（单边链不拆，见 `_split_chain`）。
 
     拆段后同一路名会出现两次（如「吉庆大道」两段）：这是**同一路名的两个监测段**，靠
     `segment_id` 区分，与交通系统里"长路分段监测"是同一回事。
@@ -371,6 +380,9 @@ def select_segments(net, station_lonlat: tuple[float, float], seg_count: int) ->
         picked.append(c)
 
     # ⑤ 段数不够：拆最长的段（按里程对半），直到凑够 seg_count
+    # 拆不动的链（单边链 / 几何退化）记在这里，换下一条试 —— 不能 break，否则一条拆不动
+    # 就把后面还能拆的全放弃了；也不能反复挑同一条，否则死循环。
+    unsplittable: set[tuple] = set()
     while len(picked) < seg_count:
         if not picked:
             # 一条都没选出来（无名 / 无地理配准的网就会出现：没有街名可分组，无名链又全被
@@ -382,12 +394,16 @@ def select_segments(net, station_lonlat: tuple[float, float], seg_count: int) ->
                 f"{MIN_SEG_LEN_M:.0f} m 或超出 {STATION_RADIUS_M:.0f} m。"
                 "这类「无名 / 无地理配准」的网请改用 `--assignment <映射表>`（见 README）。"
             )
-        longest = max(picked, key=lambda c: c["length_m"])
+        cands = [c for c in picked if tuple(c["edge_ids"]) not in unsplittable]
+        if not cands:
+            break
+        longest = max(cands, key=lambda c: c["length_m"])
         if longest["length_m"] < 2 * MIN_SEG_LEN_M:
             break  # 连对半拆都不够长，不再硬凑（少几段好过塞接头碎片）
         parts = _split_chain(longest, edge_by_id)
         if not parts:
-            break
+            unsplittable.add(tuple(longest["edge_ids"]))
+            continue
         picked.remove(longest)
         picked.extend(parts)
 
