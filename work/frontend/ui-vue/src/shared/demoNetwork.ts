@@ -91,6 +91,15 @@ export function isOsmNetwork(): boolean {
   return NETWORK_SOURCE.twin || activePack().source.osm
 }
 
+/**
+ * 路网几何的出处一句话(大屏图下注脚用)。
+ * 真 OSM 路网说"几何为真值",示意路网说"示例样例(非实测)"——两者不能混说,
+ * 否则真几何会被读成编的、编的会被读成真的。
+ */
+export function networkGeometryNote(): string {
+  return isOsmNetwork() ? '路网几何为真值（OSM 切片）' : '路网为示例样例(非实测)'
+}
+
 /** 底图署名(有则给,如 OSM 的 ODbL);站点包没声明就不署名 */
 export function networkAttribution(): string | undefined {
   return NETWORK_SOURCE.twin ? OSM_ATTRIBUTION : activePack().source.attribution

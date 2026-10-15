@@ -34,7 +34,7 @@ import {
   getTrafficVehicles,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import { demoSegment, isOsmNetwork, networkSourceLabel } from '../../shared/demoNetwork'
+import { demoSegment, isOsmNetwork, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
 import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
@@ -188,6 +188,8 @@ function onBarMouseDown(e: MouseEvent): void {
 const sourceLabel = networkSourceLabel()
 /** 底图是否真 OSM 路网 —— 只有它为真时地图内才有署名,底图说明文案随之分支(否则不写"署名见地图内") */
 const osmActive = isOsmNetwork()
+/** 路网几何出处(真值 / 示例样例)—— 真几何与示意几何不能混说(见 demoNetwork.networkGeometryNote) */
+const geometryNote = networkGeometryNote()
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
 
@@ -804,7 +806,7 @@ function gotoDecision(): void {
                 />
               </div>
               <div class="map-caption">
-                底图来源:{{ sourceLabel }} · 路网为示例样例(非实测)<template v-if="osmActive"> · OSM 署名见地图内</template>
+                底图来源:{{ sourceLabel }} · {{ geometryNote }}<template v-if="osmActive"> · OSM 署名见地图内</template>
               </div>
             </section>
           </div>

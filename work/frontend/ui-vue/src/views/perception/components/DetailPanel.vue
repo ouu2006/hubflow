@@ -20,11 +20,19 @@ const props = defineProps<{
 
 const meta = computed(() => props.ch.meta)
 
+/** 未接入视频源的通道(Issue IKLX5Y):与"未导出"分开说 */
+const noSource = computed(() => !props.ch.def.hasVideo)
+
 const stateChip = computed(() =>
-  meta.value ? { text: '已导出', cls: 'ok' } : { text: '未导出', cls: 'out' },
+  noSource.value
+    ? { text: '未接入视频源', cls: 'out' }
+    : meta.value
+      ? { text: '已导出', cls: 'ok' }
+      : { text: '未导出', cls: 'out' },
 )
 
 const resLine = computed(() => {
+  if (noSource.value) return '未接入视频源 · 本期留空(路网上已布点,点击来自大屏)'
   const m = meta.value
   if (!m) return '样本视频未导出 · 无检测数据'
   return `${m.width}×${m.height} · ${m.fps} fps · 时长 ${fmtDur(m.duration_s)} · ${m.total_frames} 帧`
@@ -177,6 +185,9 @@ const gateState = computed(() => {
       </template>
       <p v-else-if="ch.detFailed" class="note err">
         该通道检测数据读取失败(detections 接口请求失败)· 无 first_seen 可统计。这是接口故障,不是"该路无检出"。
+      </p>
+      <p v-else-if="noSource" class="note">
+        该通道**未接入视频源**（路网上已布点，本期视频留空）· 无画面与检测数据。
       </p>
       <p v-else class="note">该通道检测数据不可用 · 样本视频未导出(无 first_seen 可统计)。</p>
       <div class="kv">

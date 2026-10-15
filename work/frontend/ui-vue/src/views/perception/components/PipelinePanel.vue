@@ -14,13 +14,24 @@ const props = defineProps<{
   summaryUnavailable: boolean
 }>()
 
-const exportsCount = computed(() => props.channels.filter((c) => c.meta !== null).length)
+/** 有视频源且服务端真返回了 meta 的通道数(未接入视频源的不算"已导出") */
+const exportsCount = computed(
+  () => props.channels.filter((c) => c.def.hasVideo && c.meta !== null).length,
+)
+/** 通道总数(不再写死 6 —— 换站后通道数跟着包走) */
+const chanTotal = computed(() => props.channels.length)
+/** 未接入视频源的通道数(Issue IKLX5Y) */
+const noSourceCount = computed(() => props.channels.filter((c) => !c.def.hasVideo).length)
 
 const stages = computed(() => {
   const m = props.meta
   const backend = m?.backend ?? ''
+  const srcLine =
+    noSourceCount.value > 0
+      ? `${chanTotal.value} 路通道(已导出 ${exportsCount.value} · 未接入视频源 ${noSourceCount.value})`
+      : `${chanTotal.value} 路 · 离线样本(已导出 ${exportsCount.value} 路)`
   return [
-    { name: '源视频', value: `6 段 · 离线样本(已导出 ${exportsCount.value} 路)`, on: false },
+    { name: '源视频', value: srcLine, on: false },
     { name: '目标检测', value: m ? `${m.model} · ${m.conf_threshold} conf` : '—', on: false },
     {
       name: '多目标跟踪',
