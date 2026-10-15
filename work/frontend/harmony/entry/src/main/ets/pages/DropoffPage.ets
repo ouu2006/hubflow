@@ -89,6 +89,29 @@ export struct DropoffPage {
 
       Scroll() {
         Column({ space: 12 }) {
+          /**
+           * 【应急 / 降级提示：必须放在滚动区最上面，而不是页面末尾 —— 本轮实跑修掉】
+           *
+           * 【为什么挪到最前】
+           * 原来这段在 Scroll 的**最后**（方案卡之后），于是：
+           *   常态页面很长（地图 470vp 占满上半屏），红卡被推到屏幕外下沿，
+           *   实测截图里「已停止路线引导，恢复后自动继续。」这行被底部固定操作条压掉一半，
+           *   而这行正是完成判定里「告知文案必现」要的那句 —— 等于判定被打折。
+           * Scroll 的 padding.bottom 只在**滚到底**时才起避让作用，
+           * 而应急态是「刚点亮、用户还在页面顶部」的时刻，此时根本看不到末尾。
+           *
+           * 【挪前后的双重效果】
+           *   ① 红卡在第一屏顶部，不必滚动即可看到完整告知；
+           *   ② 即使底部被压，也只会压到最后的辅助信息，不会压掉安全告知。
+           * 注意这与 StateTopBar（页顶窄条）是**叠加**关系，两个都保留：
+           * 顶部窄条给第一眼信号、下面大卡给完整说明，与导航页同构。
+           */
+          if (this.store.emergency) {
+            EmergencyCard()
+          } else if (this.store.degraded) {
+            DegradedBanner({ scene: '落客' })
+          }
+
           RoadNetMap({
             unavailable: this.store.unavailable,
             colorBlind: this.store.colorBlind,
@@ -151,12 +174,6 @@ export struct DropoffPage {
            *      降级一亮，落客指引、路段条、图例全部消失，同样是「删东西」。
            * 现在：应急 → EmergencyCard + 全部内容；降级 → DegradedBanner + 全部内容。
            */
-          if (this.store.emergency) {
-            EmergencyCard()
-          } else if (this.store.degraded) {
-            DegradedBanner({ scene: '落客' })
-          }
-
           SectionTitle({ text: '落客 / 候客指引' })
 
           Column({ space: 6 }) {

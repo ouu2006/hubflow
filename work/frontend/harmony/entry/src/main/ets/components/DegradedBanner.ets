@@ -1,4 +1,4 @@
-import { TEXT_WHITE } from '../common/Colors';
+import {TEXT_WHITE, BG_DEGRADED_BAR, TEXT_ON_DEGRADED} from '../common/Colors';
 
 /**
  * 降级提示条（拒绝授权后叠加显示）。
@@ -34,12 +34,12 @@ export struct DegradedBanner {
       .width('100%')
       Text('未授权自动定位，请手动确认当前所在道路后继续按图行驶（流程不中断）。')
         .fontSize(11)
-        .fontColor('#F0E2C8')
+        .fontColor('TEXT_ON_DEGRADED')
         .width('100%')
     }
     .padding({ top: 10, bottom: 10, left: 14, right: 14 })
     .width('100%')
-    .backgroundColor('#7A5A16')
+    .backgroundColor('BG_DEGRADED_BAR')
     .borderRadius(8)
   }
 }

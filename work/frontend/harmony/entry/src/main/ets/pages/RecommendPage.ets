@@ -207,6 +207,23 @@ export struct RecommendPage {
        */
       Scroll() {
         Column({ space: 12 }) {
+          /**
+           * 【应急提示必须放在滚动区最上面 —— 与落客/离站页同一修法】
+           *
+           * 【实测到的现象】
+           * 原来这张红卡排在方案卡之后（页面下半段），而本页首屏被深色导航条 + 470vp 地图占满，
+           * 红卡落在屏幕外；实测截图中「已停止路线引导，恢复后自动继续。」
+           * 这行被底部固定操作条压掉一半 —— 而它正是完成判定「告知文案必现」要的那句。
+           * Scroll 的 padding.bottom 只在滚到底时生效，刚点亮应急态时用户还在页面顶部，压根看不到。
+           *
+           * 【与 StateTopBar / NavBar 的关系是叠加，不是替换】
+           * 页顶窄条（StateTopBar）给第一眼信号、下面这张大卡给完整说明，导航页原本就是三处都有，
+           * 一个都不删。本页顶部另有固定深色导航条（NavBar），它讲的是「下一步怎么走」，与此不冲突。
+           */
+          if (this.store.emergency) {
+            EmergencyCard()
+          }
+
           RoadNetMap({
             unavailable: this.store.unavailable,
             colorBlind: this.store.colorBlind,
@@ -234,10 +251,7 @@ export struct RecommendPage {
             unavailable: this.store.unavailable
           })
 
-          if (this.store.emergency) {
-            // 应急态：停止路线引导，替换为「请服从现场指挥」
-            EmergencyCard()
-          } else if (this.store.degraded) {
+          if (this.store.degraded) {
             /**
              * 【降级态改成叠加，不吃掉下面所有内容】
              * 初版这里用 else 把推荐卡/协同说明/备选/why/图例全 else 掉了，

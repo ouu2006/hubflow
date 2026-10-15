@@ -5,7 +5,7 @@ import { SelfDrawRenderer } from '../common/SelfDrawRenderer';
 import { PlanMeta, arrivalPlans, buildPlanRoute, departurePlans, planOf, planAt, pointAtRatio } from '../common/RoutePlan';
 import { REAL_ROAD_NETWORK } from '../common/RealNet';
 import { LevelMeta, LEVEL_META_LIST } from '../common/LevelMeta';
-import { TEXT_WHITE } from '../common/Colors';
+import {TEXT_WHITE, BG_MAP_TAG, BG_MAP_TAG_EMERGENCY, BG_MAP_TAG_SUB, TEXT_MAP_FOOT, TEXT_MAP_LABEL, TEXT_MAP_LABEL_SUB} from '../common/Colors';
 import { MAP_BACKEND_DESC } from '../common/MapTypes';
 
 /**
@@ -358,7 +358,7 @@ export struct RoadNetMap {
             .fontColor(TEXT_WHITE)
         }
         .padding({ top: 4, bottom: 4, left: 7, right: 7 })
-        .backgroundColor('#B33939E6')
+        .backgroundColor('BG_MAP_TAG_EMERGENCY')
         .borderRadius(5)
         .margin({ top: 30, left: 8 })
 
@@ -369,7 +369,7 @@ export struct RoadNetMap {
           Text('路况图例')
             .fontSize(9)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#2A3B4D')
+            .fontColor('TEXT_MAP_LABEL')
           ForEach(LEVEL_META_LIST, (m: LevelMeta) => {
             Row({ space: 4 }) {
               Text(m.glyph)
@@ -377,12 +377,12 @@ export struct RoadNetMap {
                 .fontColor(this.colorBlind ? '#5F5E5A' : m.textColor)
               Text(this.colorBlind ? `${m.name}(灰)` : m.name)
                 .fontSize(9)
-                .fontColor('#3C4A52')
+                .fontColor('TEXT_MAP_LABEL_SUB')
             }
           }, (m: LevelMeta) => `${m.name}_${this.unavailable}_${this.colorBlind}`)
         }
         .padding(6)
-        .backgroundColor('#F2F5F0E6')
+        .backgroundColor('BG_MAP_TAG')
         .borderRadius(6)
         .position({ x: 246, y: 30 })
 
@@ -394,13 +394,13 @@ export struct RoadNetMap {
         Row({ space: 4 }) {
           Text('▨')
             .fontSize(8)
-            .fontColor('#5A6B72')
+            .fontColor('TEXT_MAP_FOOT')
           Text(MAP_BACKEND_DESC)
             .fontSize(8)
-            .fontColor('#5A6B72')
+            .fontColor('TEXT_MAP_FOOT')
         }
         .padding({ top: 2, bottom: 2, left: 5, right: 5 })
-        .backgroundColor('#F2F5F0CC')
+        .backgroundColor('BG_MAP_TAG_SUB')
         .borderRadius(4)
         .position({ x: 158, y: 30 })
         }

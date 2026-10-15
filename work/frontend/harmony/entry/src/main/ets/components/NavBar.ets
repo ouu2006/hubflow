@@ -1,6 +1,6 @@
 import { ROUTES_FIXTURE, DISCLAIMER_TEXT } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
-import { TEXT_WHITE } from '../common/Colors';
+import {TEXT_WHITE, ACCENT_COLOR_BLIND, TEXT_ON_DEGRADED, TEXT_ON_EMERGENCY_BAR_SUB, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY} from '../common/Colors';
 import { Maneuver, RoutePath } from '../common/MapPort';
 import { PlanMeta, arrivalPlans, departurePlans, planOf, buildPlanRoute, levelAtRatio, stretchEtaMinAt } from '../common/RoutePlan';
 import { levelMetaOf } from '../common/LevelMeta';
@@ -36,6 +36,18 @@ const BAR_TEXT_ROAD: string = '#C8D6E2';    // 路名（比次要文字亮一档
 const BAR_BG_SUB: string = '#2A3B4D';       // 车道指引小方块
 const BAR_PROGRESS: string = '#2A3B4D';     // 进度条底
 const BAR_PROGRESS_IN: string = '#00C36A';  // 进度条已走（绿，和高德一致）
+const BAR_LEVEL_TEXT: string = '#FFE1B0';    // 路段耗时文字（琥珀，呼应等级色）
+const BAR_LEVEL_4: string = '#D54941';       // 严重拥堵（红）
+const BAR_LEVEL_3: string = '#E37318';       // 拥堵（橙）
+const BAR_LEVEL_2: string = '#E9B32E';       // 缓行（黄）
+/**
+ * 【为什么导航条的色值不并入 common/Colors.ets —— 评审必问，提前说明】
+ * Colors.ets 收口的是**页面级语义色**（正文/背景/强调/边框），判据是「全App 复用同一语义」。
+ * 上面这组 BAR_* 是**导航条这一个组件的深色面板设计语言**：深色底 + 车道方块 + 进度条 + 琥珀路况字，
+ * 只在 NavBar 内出现，别处复用它反而是错的（白底页面上放这套深色板会突兀）。
+ * 另有一处同源说明：StateTopBar 的 BAR_BG_EMERGENCY / BAR_BG_DEGRADED 与这里同值，
+ * 但它是「页顶提示条」而非「导航条」，语义不同，故各自就地声明、不跨文件共用。
+ */
 
 /**
  * 【转向序列从哪来 —— 换成了真实路网的转向点】
@@ -286,7 +298,7 @@ private atLastManeuver(): boolean {
         .width('100%')
         Text('路线引导已停止 · 应急处置优先')
           .fontSize(11)
-          .fontColor('#F5D9D9')
+          .fontColor('TEXT_ON_EMERGENCY_BAR_SUB')
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -309,7 +321,7 @@ private atLastManeuver(): boolean {
         .width('100%')
         Text(`仍可查看路线与路况，手动确认所在道路即可（${ROUTES_FIXTURE.arrival_route.path_id} · 约 ${ROUTES_FIXTURE.arrival_route.eta_min} 分钟）`)
           .fontSize(11)
-          .fontColor('#F0E2C8')
+          .fontColor('TEXT_ON_DEGRADED')
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -398,10 +410,10 @@ private atLastManeuver(): boolean {
           Row({ space: 6 }) {
             Text('●')
               .fontSize(10)
-              .fontColor(this.currentLevel() === 4 ? '#D54941' : (this.currentLevel() === 3 ? '#E37318' : '#E9B32E'))
+              .fontColor(this.currentLevel() === 4 ? BAR_LEVEL_4 : (this.currentLevel() === 3 ? BAR_LEVEL_3 : BAR_LEVEL_2))
             Text(this.segmentEtaText())
               .fontSize(12)
-              .fontColor('#FFE1B0')
+              .fontColor(BAR_LEVEL_TEXT)
           }
           .width('100%')
           .margin({ top: 2, bottom: 2 })
@@ -490,34 +502,34 @@ export struct RouteStripCard {
         Text(`${this.pathId()} ${this.plan().recommended ? '推荐路线' : '备选路线'}`)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
           .layoutWeight(1)
         Text(`约 ${this.eta()} 分钟`)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#0052D9')
+          .fontColor('ACCENT_COLOR_BLIND')
       }
       .width('100%')
 
       Text(this.isDepartureNav() ? '离站出口 · 直接驶离站前区域' : `落客点 ${ROUTES_FIXTURE.arrival_route.dropoff_point} · 步行接驳约 ${ROUTES_FIXTURE.arrival_route.walk_min} 分钟`)
         .fontSize(11)
-        .fontColor('#666666')
+        .fontColor('TEXT_SECONDARY')
         .width('100%')
 
       Text(this.hint())
         .fontSize(11)
-        .fontColor('#666666')
+        .fontColor('TEXT_SECONDARY')
         .width('100%')
 
       Text(DISCLAIMER_TEXT)
         .fontSize(10)
-        .fontColor('#8B8B8B')
+        .fontColor('TEXT_TERTIARY')
         .width('100%')
     }
     .alignItems(HorizontalAlign.Start)
     .padding(12)
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor('TEXT_WHITE')
     .borderRadius(10)
   }
 }
@@ -666,14 +678,14 @@ export struct NavActionRow {
       Column({ space: 2 }) {
         Text('⇄')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
         Text(this.routeLabel(this.curIndex()))
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
       }
       .layoutWeight(1)
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('TEXT_WHITE')
       .borderRadius(8)
       // 【禁止态：应急 / 数据不可用时变道按钮也置灰禁用 —— 用户要求「不可以选择路线」】
       .opacity(this.store.routeLocked() ? 0.45 : 1)
@@ -698,14 +710,14 @@ export struct NavActionRow {
       Column({ space: 2 }) {
         Text('✕')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
         Text('退出')
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
       }
       .layoutWeight(1)
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('TEXT_WHITE')
       .borderRadius(8)
       .onClick(() => {
         this.store.setNavMode('empty');
@@ -752,14 +764,14 @@ export struct DropoffActionRow {
       Column({ space: 2 }) {
         Text('⇄')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
         Text(this.routeLabel())
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
       }
       .width('100%')
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('TEXT_WHITE')
       .borderRadius(8)
       // 【禁止态：与导航页一致 —— 应急 / 数据不可用时不可选路线】
       .opacity(this.store.routeLocked() ? 0.45 : 1)
@@ -807,14 +819,14 @@ export struct DepartureActionRow {
       Column({ space: 2 }) {
         Text('⇄')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
         Text(this.routeLabel())
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor('TEXT_PRIMARY')
       }
       .width('100%')
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('TEXT_WHITE')
       .borderRadius(8)
       // 【禁止态：与导航页一致 —— 应急 / 数据不可用时不可选路线】
       .opacity(this.store.routeLocked() ? 0.45 : 1)

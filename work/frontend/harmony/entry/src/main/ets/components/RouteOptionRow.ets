@@ -3,7 +3,7 @@ import { DemoStore } from '../common/DemoStore';
 import { PlanMeta, arrivalPlans, departurePlans } from '../common/RoutePlan';
 import { levelMetaOf } from '../common/LevelMeta';
 import {
-  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, TEXT_WHITE, BG_GRAY_LIGHTER, BORDER_ACCENT, ACCENT_COLOR_BLIND
+  TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, TEXT_WHITE, BG_GRAY_LIGHTER, BG_SELECTED, BORDER_ACCENT, ACCENT_COLOR_BLIND
 } from '../common/Colors';
 
 /**
@@ -69,6 +69,36 @@ export struct RouteOptionCard {
    */
   @Prop locked: boolean = false;
 
+  /**
+   * 【禁止态下的「有效选中态」= 永远 false —— 这一版修掉的真 bug（用户录屏指出）】
+   *
+   * 【为什么必须这样，而不能只靠 .opacity(0.45)】
+   * 初版禁止态只加了透明度，于是屏幕上仍然是：
+   *   「路线一」蓝底白字 + P-2 蓝字 + ✓ 蓝对勾 + 2px 蓝边框 + 淡蓝卡底 —— 一整套「已选中」信号。
+   * 但此时数据不可用 / 已停止引导，**根本不存在「选中的路线」这回事**，
+   * 继续亮蓝等于告诉司机「系统已经给你选好了」，是误导（实测录屏里应急态仍是一张亮蓝卡）。
+   * 而 .opacity() 是整体半透明，蓝色被淡化但**仍然是蓝的**，
+   * 直接违反手册 TC-11「数据不可用必须显示灰色，绝不显示成蓝色」。
+   *
+   * 【双重保险】
+   *   ① 这里让选中态一律失效 → 卡内所有蓝色像素消失，只剩灰阶；
+   *   ② .enabled(!locked) + onClick 里 routeLocked() return → 点不动。
+   * 视觉与交互两条通道同时封死，不依赖单一机制。
+   */
+  private get isPicked(): boolean {
+    return this.selected && !this.locked;
+  }
+
+  /** 选中态底色：禁止态一律灰（TC-11），不得出现任何蓝色 */
+  private get pickBg(): string {
+    return this.isPicked ? BG_SELECTED : BG_GRAY_LIGHTER;
+  }
+
+  /** 选中态边框色：禁止态一律灰 */
+  private get pickBorder(): string {
+    return this.isPicked ? ACCENT_COLOR_BLIND : BORDER_ACCENT;
+  }
+
   build() {
     Column({ space: 3 }) {
       // 顶部：方案名 + 选中标记
@@ -87,9 +117,9 @@ export struct RouteOptionCard {
         Text(this.title)
           .fontSize(12)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.selected ? TEXT_WHITE : '#33404A')
+          .fontColor(this.isPicked ? TEXT_WHITE : '#33404A')
           .padding({ top: 2, bottom: 2, left: 6, right: 6 })
-          .backgroundColor(this.selected ? ACCENT_COLOR_BLIND : '#D5DEE4')
+          .backgroundColor(this.isPicked ? ACCENT_COLOR_BLIND : '#D5DEE4')
           .borderRadius(4)
         // 「推荐」是**独立的小字标记**，跟颜色解耦。
         // 这样「推荐」和「当前选中」是两件事：默认选中路线一（它就是推荐），
@@ -104,7 +134,7 @@ export struct RouteOptionCard {
         Text('✓')
           .fontSize(12)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.selected ? ACCENT_COLOR_BLIND : '#C3CDD4')
+          .fontColor(this.isPicked ? ACCENT_COLOR_BLIND : '#C3CDD4')
       }
       .width('100%')
       // 【Row 必须限宽，否则卡内子元素会按内容撑开】
@@ -115,7 +145,7 @@ export struct RouteOptionCard {
       Text(this.pathId)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor(this.selected ? ACCENT_COLOR_BLIND : TEXT_PRIMARY)
+        .fontColor(this.isPicked ? ACCENT_COLOR_BLIND : TEXT_PRIMARY)
         .maxLines(1)
 
       Text(`约 ${this.etaMin} 分钟`)
@@ -187,11 +217,11 @@ export struct RouteOptionCard {
     // 【选中态的第二个视觉通道】背景也随 selected 变，
     // 这样即使司机色觉差异（去色校验），仍能靠「底色深浅 + 边框粗细 + ✓」三条通道分辨
     // —— 手册 §11.3 三重编码的落地。
-    .backgroundColor(this.selected ? '#E8F1FE' : BG_GRAY_LIGHTER)
+    .backgroundColor(this.pickBg)
     .borderRadius(10)
     .border({
-      width: this.selected ? 2 : 1,
-      color: this.selected ? ACCENT_COLOR_BLIND : BORDER_ACCENT
+      width: this.isPicked ? 2 : 1,
+      color: this.pickBorder
     })
     /**
      * 【数据不可用 / 应急态：卡片变灰且不可点 —— 用户明确要求】
