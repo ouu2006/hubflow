@@ -476,6 +476,22 @@ export interface AlertsSnapshot {
   alerts: TrafficAlert[]
 }
 
+// ---------- 告警判级(唯一口径:Issue #75 第④条 / Issue IKLLXG) ----------
+//
+// 告警自带的 `level` 是**派生时的记录值**(站点包预置剧本),它与当前路段快照**可能不同步**——
+// 同一页就会出现「左栏路段列表写严重拥堵、右栏同一条告警写拥堵」的自相矛盾。
+// 口径:**四处(决策队列 / 决策工作台 / 大屏底部告警条 / 大屏右栏关联告警)一律取当前路段快照**;
+// 快照里没有该路段时**退回告警记录值**,不编造(CongestionLevel 没有"未知"档)。
+//
+// 为什么收进 shared:这句重映射曾在 #77 页面迁移时被漏搬一处(只写在 HeatView 里、随页删除),
+// 收成一个函数 + `AlertList` 的**必需** `levelOf` 回调后,漏传会被 `vue-tsc` 当场拦下。
+export type SegmentLookup = (segmentId: string) => SegmentRecord | undefined
+
+/** 按当前路段快照重算告警等级(快照缺该路段退回告警记录值) */
+export function alertLevelOf(a: TrafficAlert, findSegment: SegmentLookup): CongestionLevel {
+  return findSegment(a.segment_id)?.level ?? a.level
+}
+
 // ---------- 下发 / 回写(决策工作台) ----------
 
 export interface DispatchInput {

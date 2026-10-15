@@ -40,6 +40,7 @@ import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
 import {
+  alertLevelOf,
   ciAvailable,
   CI_BAND_NOTE,
   CI_BANDS,
@@ -573,6 +574,11 @@ function metricText(key: string): string {
 }
 
 // ---------- 右栏 · 关联告警(原 /heat 右栏) ----------
+//
+// ⚠️ 等级**不在这里重映射**:本卡把 `segLevelOf` 作为 `levelOf` 回调交给 `AlertList`,
+//    由它逐行取当前路段快照(Issue IKLLXG)。以前这里是裸 filter,徽章读告警记录值,
+//    与左栏路段列表 / 底部告警条同页两个等级——#77 迁移时把 #75 第④条的重映射漏搬了一处。
+//    收成「一个 shared 函数 + 子组件必需回调」后,漏传会被 `vue-tsc` 拦下。
 const selectedAlerts = computed(() =>
   alerts.value.filter(
     (a) => a.segment_id === selectedId.value && a.status !== '已闭环' && a.status !== '误报',
@@ -611,17 +617,24 @@ const firstAlert = computed<TrafficAlert | null>(() => unclosed.value[0] ?? null
  * 告警等级取**当前路段快照**(与左栏 / 地图 / 右栏同一口径)。
  * 告警自带的 `level` 是派生时的记录值,预置剧本与快照基线不同步时会是旧值——
  * 直接用会与同一页的路段列表自相矛盾。
+ *
+ * ⚠️ 实现收敛到 `shared/traffic.ts` 的 `alertLevelOf`(Issue IKLLXG):
+ *    本页的右栏关联告警 / 底部告警条**共用这一个函数**,不再各写一份。
  */
 function segLevelOf(a: TrafficAlert): CongestionLevel {
-  return segments.value.find((s) => s.segment_id === a.segment_id)?.level ?? a.level
+  return alertLevelOf(a, findSegment)
+}
+
+/** 快照查路段的唯一口径(本页共用) */
+function findSegment(id: string): SegmentRecord | undefined {
+  return segments.value.find((s) => s.segment_id === id)
 }
 
 /** 告警摘要里的 x:从该路段快照取(不编造) */
 const firstAlertX = computed<string>(() => {
   const a = firstAlert.value
   if (!a) return '—'
-  const seg = segments.value.find((s) => s.segment_id === a.segment_id)
-  return fmt(seg?.x)
+  return fmt(findSegment(a.segment_id)?.x)
 })
 
 // ---------- 交互 ----------
@@ -912,7 +925,7 @@ function gotoDecision(): void {
               <div class="sec-head">
                 关联告警<span class="sub-tag">{{ selectedAlerts.length }} 条未闭环</span>
               </div>
-              <AlertList :alerts="selectedAlerts" />
+              <AlertList :alerts="selectedAlerts" :level-of="segLevelOf" />
 
               <button class="td-btn primary act-btn" type="button" @click="gotoDecision">
                 下发分流方案 ›
