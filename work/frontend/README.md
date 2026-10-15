@@ -450,7 +450,7 @@ npm run dev:station2     # 包 B(「一环五射」虚构示范站)→ http://lo
 | 原页面 / 区块 | 现在在哪 | 说明 |
 |---|---|---|
 | `/dashboard` 态势总览（KPI 条 / 等级分布 / 路段监测 / 路网 / 双源并排 / 因素 / 预测 / 底部告警条） | **监控大屏**，原样保留 | KPI 条不动；左栏升为「选择监控」（加视图切换与监控范围筛选）；中栏 = 全路段状态；右栏 = 路段信息 |
-| `/heat` 拥挤度热力（CI 色阶 / 指数排行 / 档位分布 / 热力矩阵 / CI 走势 / 成因拆解 / 关联告警） | **监控大屏底部热力带 + 左右栏** | `CiScale` / `BandDistribution` / `HeatMatrixTable` 进底部热力带；`SegmentRankTable` 进左栏（指数视图下替代路段列表）；`CiTrendBars` / `FactorBreakdown` / `AlertList` / `SegmentIndexPanel` 的 CI 段进右栏。**视图切换（四级 ↔ 拥挤指数）从 `/heat` 页头搬到大屏左栏「选择监控」**；`/#/heat` 重定向到大屏 |
+| `/heat` 拥挤度热力（CI 色阶 / 指数排行 / 档位分布 / 热力矩阵 / CI 走势 / 成因拆解 / 关联告警） | **监控大屏底部热力带 + 左右栏** | `CiScale` / `BandDistribution` / `HeatMatrixTable` 进底部热力带；`SegmentRankTable` 进左栏（指数视图下替代路段列表）；`CiTrendBars` / `FactorBreakdown` / `AlertList` 进右栏（**右栏内容按大屏版式在 `DashboardView.vue` 里内联**，不另立卡片组件）。**视图切换（四级 ↔ 拥挤指数）从 `/heat` 页头搬到大屏左栏「选择监控」**；`/#/heat` 重定向到大屏 |
 | `/decision` 决策工作台（四态队列 / 处置工作台 / 因素置位 / 预测 / 同化 / 效果对比） | **决策层「处置队列」视图**，原样保留 | 页头视图切换由两段扩为三段 |
 | （无） | **决策层「决策可视化」视图（新）** | 全部输入 + 处理过程（因素加权 → `x = q/c` → 四档阈值对比 → 判级；CI 构成）+ 可调控（场景注入 / 人工置位 / 分流比例）+ 输出（建议 / 预测） |
 | `/perception` 视频感知（通道台账 / 监控墙 / 流水线 / 框线语义 / 检测详情） | **感知层**，原样保留 | 上面加**环境上下文条**，下面加**数据供给↔需求对照带** |
@@ -524,6 +524,38 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 **配色（守 §6.2「品牌蓝只表示当前 / 已选 / 可操作」「等级色不得出现在壳层」）**：分隔条竖线默认取 `var(--td-component-border)` 中性灰，hover / 拖拽中取 `var(--td-brand-color)` #0052D9（= 正在被操作）。**刻意不覆盖 element-plus 默认主题蓝之外的状态色**——全仓库不新增任何 `--el-` 变量覆盖，`src/style.css` 的 `--td-*` 仍是唯一色源。
 
 **实测记录（2026-10-14，1440×900，Chromium CDP 真实鼠标事件 + `npm run build`）**：默认态三栏 289 / 700 / 387px（= 设计稿减掉两条各 10px 的分隔条），无横向溢出（`scrollWidth === clientWidth`）；第一根 bar 右拖 120px → 407 / 582 / 387，第二根左拖 100px → 407 / 485 / 485，中栏确实跟着伸缩；两条 bar 各猛拖 900px → 停在 215 / 887 / 274（受左 220 + bar 10 / 中 320 / 右 280 三道 min 夹紧）；最小宽下左栏 `.td-seg-item`（92.5×40）与右栏 `.act-btn`（237.64×34）均点击成功、宽度不受影响；刷新后仍是 215 / 887 / 274 且 `localStorage` 为 `{"left":220,"right":280}`（记忆生效）；双击分隔条 → 回到 289 / 700 / 387，落盘回到 `{"left":296,"right":396}`。分隔条配色实测：默认线 `rgb(221,221,221)`（= `--td-component-border`）、hover / 拖拽中 `rgb(0,82,217)`（= `--td-brand-color`），**无 element-plus 默认蓝 `rgb(64,158,255)`**。`vue-tsc --noEmit` exit 0，`vite build` exit 0（`dist/assets/index-*.css` 406.05 kB、`index-*.js` 1149.26 kB），`python scripts/doc_gate.py` 七组全过。
+
+### 13.6 告警判级取当前路段快照（Issue #75 第④条 / 回归修复 IKLLXG）
+
+**一句话口径**：告警自带的 `level` 是**派生时的记录值**（站点包预置剧本），与**当前路段快照**可能不同步——页面上**一律按快照判级**显示，快照缺该路段时**退回告警记录值**，不编造。
+
+**四处（原话是"四处"，现在收成一份实现）**：决策队列 / 决策工作台 / 大屏底部告警条 / 大屏右栏关联告警。
+
+| 项 | 落点 |
+|---|---|
+| **唯一实现** | `src/shared/traffic.ts` 的 `alertLevelOf(a, findSegment)` |
+| 大屏右栏关联告警 | `AlertList.vue` 的 `levelOf` 是**必需 prop**（`DashboardView.vue` 传 `segLevelOf`）——**漏传会被 `vue-tsc` 拦下**，这正是本单要防的"下次迁移再丢一次" |
+| 大屏底部告警条 | 同页 `segLevelOf()`（同一函数） |
+| 决策队列 / 决策工作台 | `DecisionView.vue` 的 `segLevel()`（同一函数，`findSegment` 换成 `segMap` 查表） |
+
+**为什么做成必需 prop 而不是各页各写一遍**：#75 第④条的第四处原本只写在 `views/heat/HeatView.vue` 里，`#77`（PR #78）删掉 `/heat` 页、把 widget 迁进大屏时**这句重映射没跟着搬**——回归在页面上挂了 3 天（同一页同一条告警两个等级）。收成"一个 shared 函数 + 子组件必需回调"后，这类漏搬在类型检查阶段就会失败。
+
+**同批清理**：`components/SegmentIndexPanel.vue` 自 `#77` 迁入后**全仓无引用**（死代码，其"数据不可用路段清单"未随迁移接上），本单**删除**；`§13.1` 落点对照表里"`SegmentIndexPanel` 的 CI 段进右栏"的说法同步改掉——右栏内容按大屏版式在 `DashboardView.vue` 里内联，不另立卡片组件。
+
+**实测记录（2026-10-15，包 A 默认态，`npm run dev`，Chromium）**——判据是"**同一路段的三处徽章 / 文字一致，且与路段快照同值、与告警记录值不同**"，故挑一条**两个值确实不同**的告警来验（`A-2412-018`：告警记录 `level: 3`（拥堵），SEG-004 快照 `level: 2`（缓行））：
+
+| | 值 |
+|---|---|
+| 告警记录值（`/api/traffic/alerts`） | **3**（拥堵） |
+| 路段快照值（`/api/traffic/segments` 的 SEG-004） | **2**（缓行） |
+| 大屏左栏「站区连接线A SEG-004」 | x 0.41 · **缓行** |
+| 大屏右栏「关联告警 A-2412-018」 | **缓行** · 待认领 |
+| 大屏底部告警条（同一条） | 待认领告警 · **缓行（二级）** |
+| 决策层「处置队列」A-2412-018 行 | **缓行** |
+
+四处全部落在**快照值 2**、没有一处读成记录值 3。**修复前对照**（同一条告警、同一次点击，`git stash` 掉本次改动后重测）：右栏显示 **拥堵**（记录值），而左栏与底部都是 **缓行**、快照也是 2——即 `IKLLXG` 描述的自相矛盾可稳定复现，修复后消失。
+
+`vue-tsc --noEmit -p tsconfig.app.json` exit 0；`vite build` exit 0；`python scripts/doc_gate.py` 七组全过。另做了一次**防回归的负向验证**：临时把 `DashboardView.vue` 里 `AlertList` 的 `:level-of` 去掉，`vue-tsc` 当场报 `Property 'levelOf' is missing ... but required`（TS2345）——"下次迁移再漏搬一处"会在类型检查阶段失败，而不是等页面上出现两个等级。
 
 ---
 

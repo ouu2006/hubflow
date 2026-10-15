@@ -55,6 +55,7 @@ import {
   type DiversionSuggestion,
 } from '../../shared/demoDecision'
 import {
+  alertLevelOf,
   isStale,
   type AlertStatus,
   type CongestionLevel,
@@ -148,13 +149,16 @@ function segStale(segmentId: string): boolean {
 }
 
 /**
- * 告警行 / 工作台显示的**判级**一律取**当前路段快照**(与态势总览、热力页同源),
+ * 告警行 / 工作台显示的**判级**一律取**当前路段快照**(与态势总览、大屏同源),
  * 告警自带的 `level` 只是派生时的记录值——预置剧本与快照基线不同步时它会是旧值,
  * 直接上屏就会出现「队列写缓行、路段快照已拥堵」的自相矛盾(mock 侧两处基线各自维护)。
  * 快照缺该路段时退回告警记录值,不编造。
+ *
+ * ⚠️ 实现收敛到 `shared/traffic.ts` 的 `alertLevelOf`(Issue IKLLXG):
+ *    与监控大屏的右栏关联告警 / 底部告警条**共用同一个函数**,四处只留一份口径。
  */
 function segLevel(a: TrafficAlert): CongestionLevel {
-  return segMap.value[a.segment_id]?.level ?? a.level
+  return alertLevelOf(a, (id) => segMap.value[id])
 }
 
 // ---------- 选中告警派生态 ----------
