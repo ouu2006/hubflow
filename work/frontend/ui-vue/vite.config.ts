@@ -20,6 +20,7 @@ export default defineConfig(({ mode }) => {
   // 前缀 '' 连同 shell 导出的 VITE_* 一起读入
   const env = loadEnv(mode, process.cwd(), '')
   setActivePackKey(env.VITE_STATION_PACK || process.env.VITE_STATION_PACK || 'A')
+
   const useMock = env.VITE_USE_MOCK !== '0'
   const apiTarget = env.VITE_API_BASE || 'http://127.0.0.1:8000'
   const perceptionTarget = env.VITE_PERCEPTION_API_BASE || 'http://127.0.0.1:8101'
@@ -46,6 +47,14 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue(), ...(useMock ? [mockApiPlugin()] : [])],
+    // ⚠️ 必须把 maplibre-gl 排除出依赖预打包,否则**矢量底图起不来**:
+    //   MapLibre 主包用 `new URL('./maplibre-gl-worker.mjs', import.meta.url)` 引一个
+    //   独立的 508 KB worker 文件(矢量瓦片解析全在 worker 里跑)。
+    //   Vite 的 esbuild 预打包只产出 `deps/maplibre-gl.js`,**不会把那个 worker 一起产出** ——
+    //   运行时 worker URL 落到不存在的 `deps/maplibre-gl-worker.mjs`,报
+    //   「Worker failed to load」+ 504,底图整块空白(实测踩过)。
+    //   排除后走原生 ESM,worker 与主包同在 dist/ 下,相对路径自然对得上。
+    optimizeDeps: { exclude: ['maplibre-gl'] },
     server,
     preview: { proxy, port: Number(env.VITE_DEV_PORT) || 4173 },
   }

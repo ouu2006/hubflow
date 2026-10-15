@@ -3,6 +3,7 @@
 // 铁律:不臆造端点——未匹配路径一律 404 并明示。
 
 import type { Connect, Plugin } from 'vite'
+import { setActivePackKey } from '../station-packs/index.ts'
 import { handleTraffic } from './traffic.ts'
 import { errShape, json, type MockReq, type MockRes } from './util.ts'
 
@@ -33,6 +34,12 @@ async function handle(req: MockReq, res: MockRes, _next: Connect.NextFunction): 
   const method = (req.method ?? 'GET').toUpperCase()
   const url = new URL(req.url ?? '/', 'http://mock.local')
   const path = url.pathname.replace(/\/+$/, '') || '/'
+
+  // 顶栏「线路图切换器」的包键由前端随每个请求带过来(见 `src/api/http.ts`)。
+  // 不读它的话:浏览器侧几何按新包画,mock 侧基线仍出启动时那个包 —— 同一页两套路网。
+  // 认不出 / 不带该头就保持启动时的包(向后兼容)。
+  const wish = String(req.headers['x-station-pack'] ?? '').trim()
+  if (wish) setActivePackKey(wish)
 
   if (path.startsWith('/traffic/')) {
     const handled = await handleTraffic(path, method, req, res)

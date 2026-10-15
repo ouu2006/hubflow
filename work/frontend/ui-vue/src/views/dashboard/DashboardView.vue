@@ -66,6 +66,7 @@ import {
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from './components/LevelBadge.vue'
 import NetMap from './components/NetMap.vue'
+import MapLibreViewer from './components/MapLibreViewer.vue'
 import AlertList from './components/AlertList.vue'
 import BandDistribution from './components/BandDistribution.vue'
 import CiScale from './components/CiScale.vue'
@@ -222,6 +223,22 @@ const viewMode = ref<CongestionViewMode>('level')
 /** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
 const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
+
+// ---------- 中栏底图切换(自绘路网 / 矢量底图) ----------
+// 'svg'    = 自绘 SVG 路网(零依赖,断网也能演示)
+// 'vector' = MapLibre + OpenFreeMap 矢量底图(真实 OSM 底图;WGS-84 直接对齐,无需坐标转换)
+type MapViewMode = 'svg' | 'vector'
+
+/**
+ * 默认底图**按"当前路网是什么"来定**(业主 2026-10-15:「想要的效果更接近矢量地图」):
+ *   · 路网是**真 OSM 几何**(站点包 Z,或孪生桥接覆盖)→ 默认**矢量底图**:
+ *     真实道路叠真实底图,位置天然对得上,这才是要看的效果;
+ *   · 路网是**占位 / 示意几何**(站点包 A/B/Y)→ 默认**自绘路网**:
+ *     占位坐标放到真地图上必然整体错位(站点包 A 就偏 28.6 km),自绘反而干净。
+ * 判据复用 `isOsmNetwork()` —— 它同时管 OSM 署名义务,是"这套几何是不是真 OSM"的现成口径。
+ * 两个标签都留着,用户随时可以手动切。
+ */
+const mapViewMode = ref<MapViewMode>(isOsmNetwork() ? 'vector' : 'svg')
 
 let unsubscribe: (() => void) | null = null
 
@@ -812,8 +829,35 @@ function gotoDecision(): void {
           <!-- 中栏 · 全路段状态 -->
           <div class="td-col col-mid">
             <section class="td-card map-card">
+              <div class="map-toolbar">
+                <div class="map-toolbar-left">
+                  <span class="map-title">全路段状态</span>
+                  <span class="map-tag">底图：{{ mapViewMode === 'vector' ? 'OpenFreeMap · OSM' : '自绘路网' }}</span>
+                </div>
+                <div class="map-toolbar-right">
+                  <span
+                    class="map-seg-item"
+                    :class="{ on: mapViewMode === 'svg' }"
+                    role="button"
+                    :aria-pressed="mapViewMode === 'svg'"
+                    @click="mapViewMode = 'svg'"
+                  >
+                    示例路网
+                  </span>
+                  <span
+                    class="map-seg-item"
+                    :class="{ on: mapViewMode === 'vector' }"
+                    role="button"
+                    :aria-pressed="mapViewMode === 'vector'"
+                    @click="mapViewMode = 'vector'"
+                  >
+                    矢量地图
+                  </span>
+                </div>
+              </div>
               <div class="td-card-body flush map-body">
                 <NetMap
+                  v-if="mapViewMode === 'svg'"
                   :segments="segments"
                   :vehicles="vehicles"
                   :selected-id="selectedId"
@@ -824,9 +868,22 @@ function gotoDecision(): void {
                   :legend="true"
                   @select="onSelect"
                 />
+                <MapLibreViewer
+                  v-else
+                  :segments="segments"
+                  :selected-id="selectedId"
+                  :mode="viewMode"
+                  :ts="snapshotTs"
+                  @select="onSelect"
+                />
               </div>
               <div class="map-caption">
-                底图来源:{{ sourceLabel }} · {{ geometryNote }}<template v-if="osmActive"> · OSM 署名见地图内</template>
+                <template v-if="mapViewMode === 'vector'">
+                  底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:{{ geometryNote }}
+                </template>
+                <template v-else>
+                  底图来源:{{ sourceLabel }} · {{ geometryNote }}<template v-if="osmActive"> · OSM 署名见地图内</template>
+                </template>
               </div>
             </section>
           </div>
@@ -1241,6 +1298,45 @@ function gotoDecision(): void {
 .map-card {
   flex: 1 1 auto;
   min-height: 0;
+}
+/* 底图切换条(业主 2026-10-15):左"全路段状态"+当前底图口径,右两个标签 */
+.map-toolbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--td-component-stroke);
+  gap: 10px;
+}
+.map-toolbar-left,
+.map-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.map-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.map-tag {
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-secondary);
+  padding: 2px 8px;
+  border-radius: 10px;
+}
+.map-seg-item {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+.map-seg-item.on {
+  color: var(--td-brand-color);
+  background: var(--td-brand-color-1);
 }
 .map-body {
   flex: 1;

@@ -4,15 +4,15 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { router } from './router'
 import { applyNetworkOverride, type DemoSegment } from './shared/demoNetwork'
-import { activePack, setActivePackKey } from './station-packs/index'
+import { activePack, restorePackKey, setActivePackKey } from './station-packs/index'
 import 'element-plus/dist/index.css'
 import './style.css'
 
 // 站点包注入(**必须早于任何用到包的模块求值**):`.env.station2` 里写 `VITE_STATION_PACK=B`,
 // `vite --mode station2` 起来就是第二个站。取不到则落默认包 A(肇庆东站示例路网)。
-// 这一步在 `import` 语句之后执行但早于下面任何函数调用 —— 包是惰性读的(见 demoNetwork.ts),
-// 所以"模块加载期就读包"的坑不会踩到。
-setActivePackKey(import.meta.env.VITE_STATION_PACK ?? 'A')
+// ⚠️ 先问 `restorePackKey`:顶栏线路图切换器选完会整页刷新,而包键是模块级变量、刷新即丢 ——
+//    不读回 localStorage 的话,切换器选完就退回默认包(等于坏的)。
+setActivePackKey(restorePackKey(import.meta.env.VITE_STATION_PACK ?? 'A'))
 
 // #61 twin_preview:挂载前拉 SUMO 真路网(原地替换站点包路网,NetMap/面板/mock 统一生效)。
 // 桥接服务(:8102,经 /twin-api 代理)不可用即保持站点包路网,1.2 s 超时不阻塞白屏。
