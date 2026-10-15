@@ -100,7 +100,15 @@ SPAWN_PROBABILITY = 0.45
 STEP_S = 1.0
 DROP_STOP_S = 12
 QUEUE_SPEED_MPS = 1.5
-CHAIN_MAX_HOPS = 8
+#: 折线拼链的最大跳数。2026-10-15 由 8 提到 64：原值会把长路截断
+#: （实测：1.9 km 的「吉庆大道」只链出 607 m、「鼎湖大道」只链出 35 m）
+CHAIN_MAX_HOPS = 64
+#: 无街名链的「别拐太狠」阈值（度）。无名边没有街名可依据，只能靠转角防止在路口乱拐串成假路
+CHAIN_TURN_MAX_DEG = 75.0
+#: 短于此长度的链视为**路口接头碎片**，不成段（实测原实现会把 3.6 m / 4.1 m 的接头当"站区连接线"）
+MIN_SEG_LEN_M = 30.0
+#: 只收站区范围内的链（米）。超出这个半径的链不属于"站前"演示范围
+STATION_RADIUS_M = 1200.0
 SEED = 42
 
 app = FastAPI(title="hubflow twin preview", docs_url=None, redoc_url=None)
@@ -133,96 +141,291 @@ def _section_key(edge_id: str) -> str:
     return edge_id.lstrip("-")
 
 
-def _chain_shape(edge) -> tuple[list, list[str]]:
-    """沿同名、同方向、可通行的截面链延伸,拼出整条路折线(限跳数防岔路失控)。"""
-    sign = edge.getID().startswith("-")
-    name = edge.getName()
-    shape = list(edge.getShape())
-    edge_ids = [edge.getID()]
-    cur = edge
+def _turn_deg(a, b, c) -> float:
+    """a→b→c 的转角（度）。0 = 直行。"""
+    v1 = (b[0] - a[0], b[1] - a[1])
+    v2 = (c[0] - b[0], c[1] - b[1])
+    n1 = math.hypot(*v1)
+    n2 = math.hypot(*v2)
+    if n1 < 1e-9 or n2 < 1e-9:
+        return 0.0
+    cos = max(-1.0, min(1.0, (v1[0] * v2[0] + v1[1] * v2[1]) / (n1 * n2)))
+    return math.degrees(math.acos(cos))
+
+
+def _shape_len(shape) -> float:
+    """折线长度（米）。"""
+    return sum(math.dist(shape[i - 1], shape[i]) for i in range(1, len(shape)))
+
+
+def _chain_starts(edges: list, *, same_name: bool) -> list:
+    """挑「链头」= 组内没有**同向前驱**的边。
+
+    从链中间起走会把一条路切成好几段（原实现每个街名只从"离站最近"那条边起走，
+    正是把 1.9 km 的吉庆大道截成 607 m 的原因之一）。
+    """
+    out = []
+    for e in edges:
+        sign = e.getID().startswith("-")
+        key = _section_key(e.getID())
+        has_pred = False
+        for p in e.getFromNode().getIncoming():
+            if p.getID() == e.getID() or not p.allows("passenger"):
+                continue
+            if p.getID().startswith("-") != sign:
+                continue
+            if same_name and p.getName() != e.getName():
+                continue
+            if not same_name and p.getName():
+                continue
+            if _section_key(p.getID()) == key:
+                continue
+            has_pred = True
+            break
+        if not has_pred:
+            out.append(e)
+    return out
+
+
+def _walk_chain(start, *, same_name: bool) -> tuple[list, list[str]]:
+    """从 `start` 往前走，拼一条**极大链**折线，返回 (shape, edge_ids)。
+
+    · `same_name=True`：只沿**同名、同向**边延伸（命名道路的口径）；
+    · `same_name=False`：无名边没有街名可依据，改用**转角 ≤ CHAIN_TURN_MAX_DEG** 防止在路口乱拐；
+    两种情况都在候选里取**转角最小**的那条（最直 = 最像同一条路的延续）。
+
+    与 2026-10-15 前的原实现的三点不同：跳数 8→`CHAIN_MAX_HOPS`；加 `visited` 防环
+    （环形路网下原实现会来回绕、把同一条边重复拼进折线）；候选从"第一条"改为"最直的一条"。
+    """
+    sign = start.getID().startswith("-")
+    name = start.getName()
+    shape = list(start.getShape())
+    edge_ids = [start.getID()]
+    visited = {start.getID()}
+    cur = start
     for _ in range(CHAIN_MAX_HOPS):
-        nxt = None
+        best = None  # (转角, edge)
         for cand in cur.getToNode().getOutgoing():
-            if cand.getID() == cur.getID() or not cand.allows("passenger"):
+            cid = cand.getID()
+            if cid == cur.getID() or cid in visited or not cand.allows("passenger"):
                 continue
-            if cand.getName() != name or cand.getID().startswith("-") != sign:
+            if cid.startswith("-") != sign:
                 continue
-            nxt = cand
+            pts = cand.getShape()
+            if same_name:
+                if cand.getName() != name:
+                    continue
+            else:
+                # 无名边：不许接上命名道路，也不许拐太狠
+                if cand.getName():
+                    continue
+            turn = (
+                _turn_deg(shape[-2], shape[-1], pts[1])
+                if len(shape) >= 2 and len(pts) >= 2
+                else 0.0
+            )
+            if not same_name and turn > CHAIN_TURN_MAX_DEG:
+                continue
+            if best is None or turn < best[0]:
+                best = (turn, cand)
+        if best is None:
             break
-        if nxt is None:
-            break
+        nxt = best[1]
         pts = nxt.getShape()
         shape.extend(pts[1:] if shape and shape[-1] == pts[0] else pts)
         edge_ids.append(nxt.getID())
+        visited.add(nxt.getID())
         cur = nxt
     return shape, edge_ids
 
 
+def _slice_shape(shape, d0: float, d1: float) -> list:
+    """取折线上累计里程 [d0, d1] 的一段（两端按线性插值），用于把长路段按里程切开。"""
+    out: list = []
+    acc = 0.0
+    for i in range(1, len(shape)):
+        p0, p1 = shape[i - 1], shape[i]
+        seg = math.dist(p0, p1)
+        a, b = acc, acc + seg
+        acc = b
+        if seg <= 1e-9 or b < d0 or a > d1:
+            continue
+        if not out:
+            if d0 <= a:
+                out.append(p0)
+            else:
+                t = (d0 - a) / seg
+                out.append((p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t))
+        if d1 < b:
+            t = (d1 - a) / seg
+            out.append((p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t))
+            break
+        out.append(p1)
+    return out
+
+
+def _split_chain(chain: dict, edge_by_id: dict) -> list:
+    """把一条链按**里程对半**切成两段。
+
+    边的归段方式：先算出「前半段拿到几条边」的分界下标 `k`，两段各取 `edge_ids[:k]` /
+    `edge_ids[k:]` —— 保证**同一条边不会同时落进两段**（`edge2seg` 是"边 → 段"的单值映射，
+    重复归属会让车辆落到哪一段取决于写入顺序）。
+
+    ⚠️ **不能按"每条边的中点各自判 `< mid` / `>= mid`"逐条筛**：折线长度与边长之和**不相等**
+    —— 链在路口跳过 SUMO 内部边（`_walk_chain` 把那段空隙用直线连起来，实测每跳 +9~15 m），
+    13 条边的链折线比边长之和长 169 m。于是会出现「所有边的中点都落在 mid 同一侧」，
+    逐条筛就让一段**一条边都拿不到**（2026-10-15 实测：`--seg-count 12/14` 时两段共用
+    完全相同的 `edge_ids`，`edge2seg` 后写覆盖先写，一半路段永远收不到车）。
+
+    单边链（`len(edge_ids) < 2`）**不拆**：拆了必然两段共用同一条边 —— 返回空表让调用方换一条。
+    """
+    edge_ids = list(chain["edge_ids"])
+    if len(edge_ids) < 2:
+        return []
+    total = chain["length_m"]
+    mid = total / 2
+
+    # 分界下标 k = 中点落在前半段的边数，夹在 [1, n-1]：两段都非空、且不重叠
+    centres, acc = [], 0.0
+    for eid in edge_ids:
+        edge = edge_by_id.get(eid)
+        elen = edge.getLength() if edge is not None else 0.0
+        centres.append(acc + elen / 2)
+        acc += elen
+    k = sum(1 for centre in centres if centre < mid)
+    k = max(1, min(len(edge_ids) - 1, k))
+
+    parts = []
+    for lo, hi, half in ((0.0, mid, edge_ids[:k]), (mid, total, edge_ids[k:])):
+        sub = _slice_shape(chain["shape"], lo, hi)
+        if len(sub) < 2:
+            # 几何切不出来（退化链）→ 整条不拆，交给调用方换下一条；**不许**退化成"两段共用整链的边"
+            return []
+        parts.append(
+            {
+                "name": chain["name"],
+                "kind": chain["kind"],
+                "shape": sub,
+                "edge_ids": list(half),
+                "length_m": _shape_len(sub),
+            }
+        )
+    return parts
+
+
 def select_segments(net, station_lonlat: tuple[float, float], seg_count: int) -> list:
-    """主干每条路取一条方向链(离站最近),站区未命名连接线按到站距离补足到 seg_count。
+    """按**真实道路链**选段：命名道路取整条链，无街名道路按连通性拼链，再按链长择优。
 
     ⚠️ **这条路依赖街名与站房位置** —— 换一张无名 / 无地理配准的网就会失效。
     这类网请用 `--assignment` 直接给映射表（见 `load_assignment`）。
+
+    口径（2026-10-15 修；**原实现会把路口接头碎片当成路段**）：
+      · 原实现：每个街名只取「离站最近的那一条链」，再用**离站最近的单条无街名边**补足到
+        `seg_count` —— 而离站最近的无街名边恰是路口接头。实测后果：10 条"路段"里 8 条是碎片
+        （3.6 m / 4.1 m / 24 m / 28 m…），1.9 km 的「吉庆大道」被截成 607 m、
+        757 m 的「鼎湖大道」被截成 35 m，全网只跨 340 m × 600 m。
+      · 现实现：① 把可通行边拼成**极大链**；② **每个街名只留最长的那条链**（一条路一条段 ——
+        双向车道在 SUMO 里是**两条边 ID 完全不同的独立边**，按截面键认不出，只能按街名合并；
+        不合并的话「吉庆大道」会画两遍、白占两个名额）；③ 无名链按**截面键不相交**贪心去重
+        （反向重复与同簇分支都会因此被剔除）；④ 剔掉 < `MIN_SEG_LEN_M` 的接头碎片与超出
+        `STATION_RADIUS_M` 的链；⑤ **段数不够就把最长的段按里程对半拆**——宁可拆真实长路，
+        也不再拿接头碎片凑数；拆出来的两段**不共享边**（单边链不拆，见 `_split_chain`）。
+
+    拆段后同一路名会出现两次（如「吉庆大道」两段）：这是**同一路名的两个监测段**，靠
+    `segment_id` 区分，与交通系统里"长路分段监测"是同一回事。
     """
     station_xy = net.convertLonLat2XY(*station_lonlat)
 
     def min_dist(shape) -> float:
         return min(math.dist(p, station_xy) for p in shape)
 
-    picked: list[dict] = []  # {name, kind, shape, edge_ids}
-    used_keys: set[str] = set()
+    passenger = [e for e in net.getEdges() if e.allows("passenger")]
+    edge_by_id = {e.getID(): e for e in passenger}
+    named_groups: dict[str, list] = {}
+    unnamed: list = []
+    for e in passenger:
+        if e.getName():
+            named_groups.setdefault(e.getName(), []).append(e)
+        else:
+            unnamed.append(e)
 
-    named: dict[str, list] = {}
-    for e in net.getEdges():
-        if e.allows("passenger") and e.getName():
-            named.setdefault(e.getName(), []).append(e)
-    for name, edges in named.items():
+    # ① + ② 命名道路：每条路取**最长**的极大链（合并双向车道，一条路只留一段）
+    picked: list[dict] = []
+    for name, edges in named_groups.items():
         best = None
-        for e in edges:
-            shape, ids = _chain_shape(e)
-            d = min_dist(shape)
-            if best is None or d < best[0]:
-                best = (d, {"name": name, "kind": "main", "shape": shape, "edge_ids": ids})
-        if best:
-            picked.append(best[1])
-            for eid in best[1]["edge_ids"]:
-                used_keys.add(_section_key(eid))
+        for start in _chain_starts(edges, same_name=True):
+            shape, ids = _walk_chain(start, same_name=True)
+            length = _shape_len(shape)
+            if best is None or length > best["length_m"]:
+                best = {"name": name, "kind": "main", "shape": shape, "edge_ids": ids, "length_m": length}
+        if best is not None:
+            picked.append(best)
 
-    ramps: list[tuple[float, object]] = []
-    for e in net.getEdges():
-        if e.allows("passenger") and not e.getName() and _section_key(e.getID()) not in used_keys:
-            ramps.append((min_dist(e.getShape()), e))
-    ramps.sort(key=lambda t: t[0])
-    letter = 0
-    for _, e in ramps:
-        if len(picked) >= seg_count:
-            break
-        key = _section_key(e.getID())
-        if key in used_keys:
-            continue
-        used_keys.add(key)
-        picked.append(
-            {
-                "name": f"站区连接线{chr(ord('A') + letter)}",
-                "kind": "ramp",
-                "shape": list(e.getShape()),
-                "edge_ids": [e.getID()],
-            }
+    # ③ + ④ 无名道路：极大链按长度降序贪心，截面键不相交（反向重复/同簇分支自然出局）
+    candidates: list[dict] = []
+    for start in _chain_starts(unnamed, same_name=False):
+        shape, ids = _walk_chain(start, same_name=False)
+        candidates.append(
+            {"name": "", "kind": "ramp", "shape": shape, "edge_ids": ids, "length_m": _shape_len(shape)}
         )
-        letter += 1
+    candidates.sort(key=lambda c: -c["length_m"])
+    used: set[str] = set(_section_key(eid) for c in picked for eid in c["edge_ids"])
+    for c in candidates:
+        if c["length_m"] < MIN_SEG_LEN_M or min_dist(c["shape"]) > STATION_RADIUS_M:
+            continue
+        keys = {_section_key(eid) for eid in c["edge_ids"]}
+        if keys & used:
+            continue
+        used |= keys
+        picked.append(c)
 
+    # ⑤ 段数不够：拆最长的段（按里程对半），直到凑够 seg_count
+    # 拆不动的链（单边链 / 几何退化）记在这里，换下一条试 —— 不能 break，否则一条拆不动
+    # 就把后面还能拆的全放弃了；也不能反复挑同一条，否则死循环。
+    unsplittable: set[tuple] = set()
+    while len(picked) < seg_count:
+        if not picked:
+            # 一条都没选出来（无名 / 无地理配准的网就会出现：没有街名可分组，无名链又全被
+            # 长度/半径过滤掉）。这里给**可执行的报错**，不要落到 `max()` 空序列的 ValueError
+            # ——那会让整条预览只报一句看不懂的错。返回空表也不行：下游
+            # `pick_drop_segment()` 会对空列表 `min()`。
+            raise RuntimeError(
+                "启发式选段一条都没选出来：这张网既没有可用的街名分组，无名链也全部短于 "
+                f"{MIN_SEG_LEN_M:.0f} m 或超出 {STATION_RADIUS_M:.0f} m。"
+                "这类「无名 / 无地理配准」的网请改用 `--assignment <映射表>`（见 README）。"
+            )
+        cands = [c for c in picked if tuple(c["edge_ids"]) not in unsplittable]
+        if not cands:
+            break
+        longest = max(cands, key=lambda c: c["length_m"])
+        if longest["length_m"] < 2 * MIN_SEG_LEN_M:
+            break  # 连对半拆都不够长，不再硬凑（少几段好过塞接头碎片）
+        parts = _split_chain(longest, edge_by_id)
+        if not parts:
+            unsplittable.add(tuple(longest["edge_ids"]))
+            continue
+        picked.remove(longest)
+        picked.extend(parts)
+
+    # 主干在前，其余按长度降序
+    picked.sort(key=lambda c: (0 if c["kind"] == "main" else 1, -c["length_m"]))
     picked = picked[:seg_count]
-    picked.sort(key=lambda s: 0 if s["kind"] == "main" else 1)
 
     segs = []
+    letter = 0
     for i, s in enumerate(picked, start=1):
+        name = s["name"]
+        if not name:
+            # 无名道路：沿用既有占位名。**确实拿不到真实街名，就不编一个**
+            name = f"站区连接线{chr(ord('A') + letter)}"
+            letter += 1
         coords = [
             [round(v, 6) for v in net.convertXY2LonLat(x, y)] for x, y in s["shape"]
         ]
         segs.append(
             {
                 "segment_id": f"SEG-{i:03d}",
-                "name": s["name"],
+                "name": name,
                 "kind": s["kind"],
                 "coords": coords,
                 "edge_ids": s["edge_ids"],
