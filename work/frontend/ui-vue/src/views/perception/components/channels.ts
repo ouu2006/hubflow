@@ -12,7 +12,7 @@ import type { Detection, PerceptionDetections, PerceptionStreamMeta } from '../.
 import { activePack } from '../../../station-packs/index.ts'
 import { CLASS_COLORS, type VehicleClassKey } from '../../../shared/theme'
 
-/** 通道目录(6 行,与设计稿 04 一致;`source` 与感知服务 stream_id 对齐) */
+/** 通道目录(与设计稿 04 一致;`source` 与感知服务 stream_id 对齐) */
 export interface ChannelDef {
   /** 展示编号 C-01 … C-06 */
   cid: string
@@ -22,6 +22,15 @@ export interface ChannelDef {
   name: string
   /** 映射路段(设计稿 04;回灌门控按它查 network.sections 与同化记录) */
   segmentId: string
+  /**
+   * 该通道当前是否**有视频源**(Issue IKLX5Y)。
+   * `false` = 摄像头已布点、**视频留空窗**(业主 2026-10-15:视频样本先不弄)。
+   * ⚠️ 与"`meta === null`(样本视频未导出)"是**两件事**:
+   *   · 未接入视频源 = 本路还没接视频,将来接上就有;
+   *   · 样本视频未导出 = 有这一段样本视频,只是服务端还没处理它。
+   * 页面上必须分开说,否则"还没接"会被读成"处理失败"。
+   */
+  hasVideo: boolean
 }
 
 /**
@@ -34,11 +43,43 @@ export function channels(): ChannelDef[] {
     source: c.source,
     name: c.name,
     segmentId: c.segment_id,
+    // 不写 `hasVideo` 的老包 = true(既有行为:有样本视频,能不能读看服务端)
+    hasVideo: c.hasVideo !== false,
   }))
 }
 
 /** 越线计数线位置(归一化画面高度;手册/设计稿口径 line_position = 0.62) */
 export const COUNT_LINE_POS = 0.62
+
+/**
+ * 通道"画面从哪来"的四分口径(Issue IKLX5Y 把原三分加了一档)。
+ *
+ * ⚠️ 这一档必须与"未导出"分开 —— 业主 2026-10-15 说视频样本先不弄,
+ * 摄像头布了点但**视频还没接**;若沿用"样本视频未导出",看的人会以为
+ * "有这段视频、只是没处理",那是两回事。
+ */
+export type ChannelFeed = 'no-source' | 'unexported' | 'failed' | 'ok'
+
+/** 四分的文字 + 样式类(全页同口径:台账 / 监控墙 / 详情 / 供给对照共用) */
+export const FEED_TEXT: Record<ChannelFeed, { text: string; cls: string }> = {
+  'no-source': { text: '未接入视频源', cls: 'out' },
+  unexported: { text: '未导出', cls: 'out' },
+  failed: { text: '检测读取失败', cls: 'err' },
+  ok: { text: '已导出', cls: 'ok' },
+}
+
+/** 判定顺序:包说没视频源 → 那一档;否则看服务端返回(未导出 / 读取失败 / 已导出) */
+export function feedOf(c: ChannelState): ChannelFeed {
+  if (!c.def.hasVideo) return 'no-source'
+  if (c.meta === null) return 'unexported'
+  if (c.detFailed) return 'failed'
+  return 'ok'
+}
+
+/** 四分的文字(便捷取用) */
+export function feedText(c: ChannelState): { text: string; cls: string } {
+  return FEED_TEXT[feedOf(c)]
+}
 
 /** 通道 + 服务端实际返回的联合视图;meta 为 null = 该路样本视频未导出(未处理) */
 export interface ChannelState {

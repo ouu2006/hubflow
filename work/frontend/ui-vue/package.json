@@ -13,7 +13,8 @@
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "preview:mock": "vite preview --mode mock",
-    "dev:station2": "vite --mode station2"
+    "dev:station2": "vite --mode station2",
+    "dev:z": "vite --mode z"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.2",

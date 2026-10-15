@@ -7,6 +7,13 @@
 // 语义纪律:品牌蓝只画"当前/已选/推荐路线";路段色只表示等级;数据不可用一律灰。
 // 极简口径(业主 2026-10-14):图上**只画路段线本身**——站点块/场区/断面/落客点/
 //   节点白点等标注一律不画;文字只出现在跟随鼠标的浮牌里。
+//
+// 2026-10-15(Issue IKLX5Y)新增三件,都只对声明了策略的包生效:
+//   ① **摄像头标记**:站点包 `channels` 里带 `lon`/`lat` 的通道画成可点的摄像头图钉;
+//   ② **只摄像头段上色**:`colorPolicy === 'camera-covered'` 时,没摄像头覆盖的段
+//      只画中性灰轮廓(细线),一眼看出"这段没监控";
+//   ③ **点摄像头跳感知层**:图钉点击 → 跳到 `/perception?source=<通道>`。
+//   老包(策略 `'all'`、通道无坐标)行为**一字不动**。
 import { computed, ref } from 'vue'
 import {
   DEMO_NETWORK,
@@ -16,6 +23,13 @@ import {
   OSM_COPYRIGHT_URL,
   type DemoSegment,
 } from '../../../shared/demoNetwork'
+import {
+  cameraPins,
+  isCameraCovered,
+  packColorPolicy,
+  perceptionHref,
+  type CameraPin,
+} from '../../../shared/cameras'
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   ciAvailable,
@@ -36,6 +50,9 @@ import LevelBadge from './LevelBadge.vue'
 
 const UNAVAILABLE_COLOR = UNAVAILABLE.color
 const BRAND = TD.brand
+/** 摄像头钉身:中性深灰(不是等级色,也不是品牌蓝——品牌蓝只表示"当前/已选/可操作") */
+const CAM_FILL = '#37474F'
+const CAM_STROKE = TD.brand
 
 /** 'level' = 四级视图(默认) · 'index' = 拥挤指数视图 */
 type MapMode = CongestionViewMode
@@ -110,8 +127,27 @@ function recOf(seg: DemoSegment): SegmentRecord | undefined {
   return segById.value.get(seg.segment_id)
 }
 
-/** 路段色:四级视图取判级色;拥挤指数视图取 ci 色阶;无记录/不可用一律灰(数据不可用) */
+// ---- 只摄像头段上色(Issue IKLX5Y;业主 2026-10-15 裁定) ----
+//
+// 策略来自站点包(`colorPolicy`):`'camera-covered'` 时,没摄像头覆盖的段**不上色**
+// —— 用同一个"数据不可用"灰,靠**线宽 + 透明度**与"有摄像头但没数据"区分开,
+// 不引入第二套灰(手册 §6.2:等级色只表示等级、灰只表示"没有"）。
+const colorPolicy = packColorPolicy()
+const cameraOnly = colorPolicy === 'camera-covered'
+
+/** 该段是否有摄像头覆盖(策略为 'all' 时恒 true,即老行为) */
+function covered(seg: DemoSegment): boolean {
+  return isCameraCovered(seg.segment_id)
+}
+
+/**
+ * 路段色。三档,别混:
+ *   ① 有监控且数据可用 → 等级色 / ci 色阶;
+ *   ② 有监控但数据不可用 → 灰(粗,`UNAVAILABLE`);
+ *   ③ **没监控** → 灰(细、淡)——"这段没摄像头"本身是个信息,不能与 ② 长得一样。
+ */
 function colorOf(seg: DemoSegment): string {
+  if (!covered(seg)) return UNAVAILABLE_COLOR
   const rec = recOf(seg)
   if (!rec) return UNAVAILABLE_COLOR
   return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
@@ -119,6 +155,7 @@ function colorOf(seg: DemoSegment): string {
 
 /** 热力晕染:仅指数视图且 ci 可用时渲染,强度随 ci 单调增(不改任何判级着色) */
 function heatOpacity(seg: DemoSegment): number {
+  if (!covered(seg)) return 0
   const rec = recOf(seg)
   if (!rec || !ciAvailable(rec)) return 0
   const v = Math.min(CI_MAX, Math.max(0, rec.ci as number))
@@ -135,6 +172,37 @@ function baseWidth(seg: DemoSegment): number {
 
 function casingWidth(seg: DemoSegment): number {
   return baseWidth(seg) + 6
+}
+
+/** 轮廓宽:没监控的段细(8),有监控的段按 kind(与热力晕染同宽,保证色块大小一致) */
+function outlineWidth(seg: DemoSegment): number {
+  return covered(seg) ? baseWidth(seg) : 8
+}
+
+/** 轮廓透明度:没监控的段更淡,与"有监控但数据不可用"再拉开一档 */
+function outlineOpacity(seg: DemoSegment): number {
+  return covered(seg) ? 1 : 0.45
+}
+
+// ---- 摄像头标记(Issue IKLX5Y) ----
+//
+// 位置来自站点包 `channels[].lon/lat`(落在该段折线上的示意点,非路测点位)。
+// 语义纪律:图钉用**中性深灰 + 品牌蓝描边**(「可操作」语义),不用等级四级色;
+//   没有视频源的图钉多一个空心圈(视觉上区分"还没接视频"),文字说明在浮牌与感知层。
+const pins = cameraPins()
+const pinPts = computed(() =>
+  pins.map((p) => {
+    const [x, y] = px(p.lon, p.lat)
+    return { ...p, x, y }
+  }),
+)
+
+/** 摄像头浮牌(悬停时显示;点段浮牌是另一套,不混) */
+const pin = ref<CameraPin | null>(null)
+
+/** 点摄像头 → 当前窗口开感知层对应通道(深链见 shared/cameras.ts) */
+function openCamera(p: CameraPin): void {
+  window.location.href = perceptionHref(p.source)
 }
 
 const osmActive = computed(() => isOsmNetwork())
@@ -215,6 +283,19 @@ const chipStyle = computed(() => {
   }
 })
 
+/** 摄像头浮牌落点 = 图钉正上方(与路段浮牌不同:那个跟着鼠标沿线走,这个钉在图钉上) */
+const camChipStyle = computed(() => {
+  const p = pin.value
+  if (!p) return {}
+  const svg = document.querySelector('.netmap svg')
+  if (!svg) return {}
+  const rect = svg.getBoundingClientRect()
+  const [ux, uy] = px(p.lon, p.lat)
+  const cx = ux * (rect.width / W)
+  const cy = uy * (rect.height / H)
+  return { left: `${Math.max(6, cx - 96)}px`, top: `${Math.max(6, cy - 62)}px` }
+})
+
 // ---- 车辆动点 ----
 
 const VEH_LABEL: Record<DriverType, string> = {
@@ -281,7 +362,8 @@ const vehPts = computed(() =>
           :points="pointsFor(s)"
           fill="none"
           :stroke="colorOf(s)"
-          :stroke-width="baseWidth(s)"
+          :stroke-width="outlineWidth(s)"
+          :style="{ opacity: outlineOpacity(s) }"
           stroke-linecap="round"
           stroke-linejoin="round"
         />
@@ -327,7 +409,36 @@ const vehPts = computed(() =>
         <circle r="5.5" :fill="DRIVER_COLORS[v.driver_type]" fill-opacity="1" stroke="#FFFFFF" stroke-width="1.6" />
         <title>{{ v.vehicle_id }} · {{ v.state }} · {{ v.segment_id }}{{ v.is_demo_bound ? ' · 演示绑定车' : '' }}</title>
       </g>
+
+      <!-- 摄像头布点(Issue IKLX5Y):点一下跳感知层该通道;有/无视频源用实心/空心圈区分 -->
+      <g
+        v-for="p in pinPts"
+        :key="`cam-${p.cid}`"
+        class="cam"
+        :style="{ transform: `translate(${p.x}px, ${p.y}px)` }"
+        @mouseenter="pin = p"
+        @mouseleave="pin = null"
+        @click.stop="openCamera(p)"
+      >
+        <title>{{ p.cid }} · {{ p.name }} · {{ p.segment_id }} · {{ p.hasVideo ? '有视频源' : '未接入视频源(本期留空)' }}</title>
+        <!-- 外圈:白底衬,让图钉在彩线上也看得清 -->
+        <circle r="9.5" fill="#FFFFFF" fill-opacity="0.92" />
+        <!-- 钉身:实心 = 有视频源;空心(白心) = 未接入视频源 -->
+        <circle
+          r="6"
+          :fill="p.hasVideo ? CAM_FILL : '#FFFFFF'"
+          :stroke="CAM_STROKE"
+          stroke-width="2"
+        />
+        <text class="cam-cid" y="3.2" text-anchor="middle" :fill="p.hasVideo ? '#FFFFFF' : CAM_FILL">{{ p.cid.replace('C-', '') }}</text>
+      </g>
     </svg>
+
+    <!-- 摄像头浮牌(悬停图钉时;与路段浮牌是两套,不混) -->
+    <div v-if="pin" class="cam-chip" :style="camChipStyle">
+      <b>{{ pin.cid }}</b> {{ pin.name }}
+      <span class="cam-chip-sub">{{ pin.segment_id }} · {{ pin.hasVideo ? '有视频源' : '未接入视频源 · 本期留空' }} · 点击进感知层</span>
+    </div>
 
     <!-- 跟随鼠标的信息浮牌:吸附在当前选中路段上,沿线走,不消失(业主 2026-10-14) -->
     <div v-if="mouse && overRoad && hoverChip" class="hover-chip" :style="chipStyle">
@@ -371,6 +482,13 @@ const vehPts = computed(() =>
           <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
         </div>
         <div class="lg-row"><span class="dot flow" />推荐路线(当前)</div>
+        <!-- 「只摄像头段上色」的图例(Issue IKLX5Y):说清灰轮廓 = 这段没监控 -->
+        <template v-if="cameraOnly">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="dot cam-dot" />摄像头布点（点击进感知层）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
+          <div class="lg-note">未挂摄像头的路段只画灰轮廓、不上色</div>
+        </template>
       </template>
     </div>
   </div>
@@ -477,5 +595,41 @@ svg {
 }
 .dot.flow {
   background: linear-gradient(90deg, transparent 40%, #0052d9 40%);
+}
+/* 摄像头图钉(Issue IKLX5Y):钉身中性深灰 + 品牌蓝描边(「可操作」语义) */
+.cam {
+  cursor: pointer;
+}
+.cam-cid {
+  font-size: 9px;
+  font-weight: 600;
+  pointer-events: none;
+}
+/* 图例里的摄像头小圆点:与外圈同款(实心 = 有视频源、空心 = 未接入) */
+.dot.cam-dot {
+  background: #37474f;
+  border: 1.6px solid v-bind('BRAND');
+}
+.dot.cam-dot.empty {
+  background: #ffffff;
+}
+/* 摄像头浮牌:钉在图钉上方,不跟鼠标(与路段浮牌区分) */
+.cam-chip {
+  position: absolute;
+  width: 192px;
+  padding: 5px 9px;
+  background: #ffffff;
+  border: 1.2px solid v-bind('BRAND');
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: #1a1a1a;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 4;
+}
+.cam-chip-sub {
+  display: block;
+  color: #666666;
 }
 </style>

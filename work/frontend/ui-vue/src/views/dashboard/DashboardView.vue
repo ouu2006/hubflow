@@ -34,7 +34,8 @@ import {
   getTrafficVehicles,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import { demoSegment, isOsmNetwork, networkSourceLabel } from '../../shared/demoNetwork'
+import { demoSegment, isOsmNetwork, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
+import { cameraCountOf } from '../../shared/cameras'
 import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
@@ -188,6 +189,8 @@ function onBarMouseDown(e: MouseEvent): void {
 const sourceLabel = networkSourceLabel()
 /** 底图是否真 OSM 路网 —— 只有它为真时地图内才有署名,底图说明文案随之分支(否则不写"署名见地图内") */
 const osmActive = isOsmNetwork()
+/** 路网几何出处(真值 / 示例样例)—— 真几何与示意几何不能混说(见 demoNetwork.networkGeometryNote) */
+const geometryNote = networkGeometryNote()
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
 
@@ -486,15 +489,21 @@ const rankRows = computed(() =>
 // 极简口径(业主 2026-10-14):图上只画路段线,断面/落客点/场区/站点不再下发地图;
 // 文字只出现在跟随鼠标的浮牌(hover-chip)里。
 
-/** 选中 chip:SEG-003 拥堵 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
+/** 选中 chip:SEG-003 拥堵 · 摄像头 2 路 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
 const mapChip = computed<string>(() => {
+  // 摄像头数按**段号**现算(Issue IKLX5Y),不看有没有快照记录:
+  // 没有摄像头的那 16 段**本来就没有记录**,若等记录才拼浮牌,这些段悬停时什么都没有
+  // —— 那就答不上"每段可查摄像头数、没有的如实显示 0"。
+  const id = selectedId.value
+  if (!id) return ''
+  const cam = `摄像头 ${cameraCountOf(id)} 路`
   const s = selected.value
-  if (!s) return ''
+  if (!s) return `${id} 无路况记录 · ${cam}`
   const v = pair.value?.slots.find((x) => x.source === 'video')
   const t = pair.value?.slots.find((x) => x.source === 'twin')
   const vx = v?.record?.x
   const tx = t?.record?.x
-  const head = `${s.segment_id} ${levelName(s)}`
+  const head = `${s.segment_id} ${levelName(s)} · ${cam}`
   if (v?.available === true && typeof vx === 'number' && typeof tx === 'number') {
     return `${head} · x ${vx} / ${tx}`
   }
@@ -804,7 +813,7 @@ function gotoDecision(): void {
                 />
               </div>
               <div class="map-caption">
-                底图来源:{{ sourceLabel }} · 路网为示例样例(非实测)<template v-if="osmActive"> · OSM 署名见地图内</template>
+                底图来源:{{ sourceLabel }} · {{ geometryNote }}<template v-if="osmActive"> · OSM 署名见地图内</template>
               </div>
             </section>
           </div>

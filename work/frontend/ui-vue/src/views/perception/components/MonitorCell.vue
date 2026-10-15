@@ -23,12 +23,22 @@ const meta = computed(() => props.ch.meta)
 const classNames = computed(() => meta.value?.class_names ?? {})
 const dets = computed(() => frameAt(props.ch.det, props.index))
 
-const status = computed(() =>
-  meta.value ? (props.ch.detFailed ? '检测读取失败' : props.selected ? '检测中' : '就绪') : '未导出',
-)
+/**
+ * 格内状态。⚠️「未接入视频源」必须与「未导出」分开(Issue IKLX5Y):
+ * 前者是"这条路还没接视频",后者是"有样本视频、服务端没处理"。合成一句会误导。
+ */
+const status = computed(() => {
+  if (!props.ch.def.hasVideo) return '未接入视频源'
+  if (!meta.value) return '未导出'
+  if (props.ch.detFailed) return '检测读取失败'
+  return props.selected ? '检测中' : '就绪'
+})
+
+/** 没有视频源的通道:格内显示留空窗占位(不报错、不白屏) */
+const noSource = computed(() => !props.ch.def.hasVideo)
 
 const url = computed(() =>
-  meta.value ? perceptionFrameUrl(props.ch.def.source, props.index + 1) : null,
+  meta.value && !noSource.value ? perceptionFrameUrl(props.ch.def.source, props.index + 1) : null,
 )
 
 // 画面区尺寸取源分辨率(缺 meta 时给占位尺寸);模板只引用这两个 computed,避免在模板里对 meta 做空值收窄
@@ -80,13 +90,26 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
       <span class="ct-name">{{ ch.def.cid }} · {{ ch.def.source }}</span>
       <span
         class="ct-state"
-        :class="{ live: selected && meta !== null && !ch.detFailed, err: ch.detFailed, off: meta === null }"
+        :class="{ live: selected && !noSource && meta !== null && !ch.detFailed, err: ch.detFailed, off: meta === null || noSource }"
       >
         {{ status }}
       </span>
     </div>
 
-    <template v-if="meta">
+    <!-- 空窗占位(业主 2026-10-15:视频样本先不弄) -->
+    <template v-if="noSource">
+      <div class="cell-media cell-nosource" :style="mediaStyle">
+        <span class="ns-l1">未接入视频源</span>
+        <span class="ns-l2">本期留空 · 路网上已布点</span>
+      </div>
+      <div class="cell-foot">
+        <span class="cf-classes">—</span>
+        <span class="cf-cnt">越线计数:未提供</span>
+      </div>
+      <div class="cell-sub">{{ ch.def.cid }} · {{ ch.def.source }} · 缩放 — · 帧 — · 轨迹 —</div>
+    </template>
+
+    <template v-else-if="meta">
       <div class="cell-media" :style="mediaStyle">
         <img v-if="url" class="cm-img" :src="url" :alt="`${ch.def.cid} 抽帧画面`" />
         <svg class="cm-svg" :viewBox="viewBox" preserveAspectRatio="xMidYMid meet">
@@ -226,6 +249,24 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
   justify-content: center;
   color: var(--v-dim);
   font-size: 11px;
+}
+/* 空窗占位:比"未导出"更中性(不是故障,是本期没接视频) */
+.cell-nosource {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  background: #14181c;
+  color: var(--v-dim);
+}
+.ns-l1 {
+  font-size: 12px;
+  color: var(--v-textdim);
+}
+.ns-l2 {
+  font-size: 10px;
+  color: var(--v-dim);
 }
 .cell-foot {
   display: flex;
