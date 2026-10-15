@@ -191,8 +191,9 @@ export const STATION_Z: StationPack = {
   dropoffs: [],
   zones: [],
   stations: [
-    // 站点块 = 站房位置（OSM node 9195330007 的坐标由生成脚本外的口径给出，属示意）
-    { id: 'STA-ZQNZ', name: '肇庆东站', lon: 112.6581162, lat: 23.2173959, sub: '站房（OSM node 示意）' },
+    // 站点块 = 站房位置（坐标取自 OSM node 9195330007 的公开坐标；该节点**不在本切片内**，
+    // 故它只当锚点用，图上站点块是示意，不代表站房轮廓）
+    { id: 'STA-ZQNZ', name: '肇庆东站', lon: 112.6581162, lat: 23.2173959, sub: '站房（示意锚点，非站房轮廓）' },
   ],
 
   segmentBases: SEGMENT_BASES,

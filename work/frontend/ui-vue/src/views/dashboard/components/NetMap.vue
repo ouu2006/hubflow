@@ -186,7 +186,7 @@ function outlineOpacity(seg: DemoSegment): number {
 
 // ---- 摄像头标记(Issue IKLX5Y) ----
 //
-// 位置来自站点包 `channels[].lon/lat`(生成脚本投影到路段线上的示意点)。
+// 位置来自站点包 `channels[].lon/lat`(落在该段折线上的示意点,非路测点位)。
 // 语义纪律:图钉用**中性深灰 + 品牌蓝描边**(「可操作」语义),不用等级四级色;
 //   没有视频源的图钉多一个空心圈(视觉上区分"还没接视频"),文字说明在浮牌与感知层。
 const pins = cameraPins()

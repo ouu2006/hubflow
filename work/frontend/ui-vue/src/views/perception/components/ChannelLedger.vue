@@ -101,7 +101,10 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
       <span class="td-head-tag">D1′</span>
     </div>
     <div class="td-card-body">
-      <p class="line">一期 · 6 段样本视频(离线批处理)</p>
+      <p class="line">
+        <template v-if="allNoSource">本包 · {{ channels.length }} 路通道全部未接入视频源(本期留空)</template>
+        <template v-else>一期 · 6 段样本视频(离线批处理)</template>
+      </p>
       <p class="line">二期 · 现场摄像头流(本期不接入)</p>
       <p class="line strong">点位与字段不变 · 只换视频源</p>
       <p class="note">

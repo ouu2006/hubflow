@@ -93,6 +93,12 @@ const subLine = computed(() =>
 const sourceBadge = computed(() =>
   packHasVideo.value ? '离线样本视频 · 非实时流 · 非本站现场' : '本批摄像头未接入视频源 · 页面不显示任何画面',
 )
+/** 页脚出处(同一条纪律:没有视频源就不说"样本视频",但站名与"非实时流"照旧要说) */
+const footSourceLine = computed(() =>
+  packHasVideo.value
+    ? `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流`
+    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流`,
+)
 
 const summary = ref<PerceptionSummary | null>(null)
 const summaryUnavailable = ref(true)
@@ -297,7 +303,7 @@ onMounted(() => {
     <DataSupplyPanel :channels="channels" :current="current.def" :source-pair="sourcePair" />
 
     <template #foot>
-      <span>视频为公开样本视频 · 非{{ stationName }}现场 · 非实时流</span>
+      <span>{{ footSourceLine }}</span>
       <span class="right">
         检测只输出路段聚合数 · 不出车牌与身份(D3) · 全局数值 is_simulated = true · 演示数据(模拟)
       </span>
