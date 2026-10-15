@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>hubflow · 司机端 App 页面试作（站点 Z 真路网）</title>
+<!--
+  司机端 App 的**页面试作**（Issue IKLX9B）——先把"长什么样、点哪里、数据从哪来"定死，
+  将来搬到鸿蒙 ArkTS（IKLLX9）时返工最小。**不是最终交付。**
+
+  三条业主口径：
+    ① 按常规导航 App 设计：手机壳 + 底部标签栏 + 地图当首页；
+    ② 路线段按 IKLX5Y 的站点包 Z 画，**有颜色代表拥堵**（只有摄像头覆盖的段才上色）；
+    ③ 「全览」保留；**不做「生成路线」**——路线由后台按路段拥堵推算，App 只发起点终点、只画路线。
+
+  脱网设计：地图库（vendor/maplibre-gl.js）与底图数据（data/*.js）都在本目录内，
+  双击本文件即可打开，**不请求任何外部网络**。
+-->
+<link rel="stylesheet" href="vendor/maplibre-gl.css">
+<style>
+  /* ---- 设计令牌（取自 ui-vue 的 TDesign Light 口径，见 work/frontend/README.md §10.2） ---- */
+  :root{
+    --brand:#0052D9;            /* 品牌蓝：只表示「当前 / 已选 / 可操作」 */
+    --lv1:#2BA471; --lv2:#E9B32E; --lv3:#E37318; --lv4:#D54941; --lvU:#8B8B8B;
+    --text:#1a1a1a; --text2:#666; --text3:#999;
+    --line:#e8e8e8; --bg:#eeeeee; --card:#ffffff;
+    --radius:10px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%;overflow-x:hidden}
+  body{
+    font-family:-apple-system,'Segoe UI','Microsoft YaHei',sans-serif;
+    background:#dfe3e8;color:var(--text);
+    display:flex;align-items:center;justify-content:center;
+  }
+  /* ---- 手机壳：固定视口，居中；1440×900 下不出横向滚动条 ---- */
+  .phone{
+    position:relative;width:390px;height:844px;max-height:100vh;
+    background:var(--bg);border-radius:26px;overflow:hidden;
+    box-shadow:0 10px 40px rgba(0,0,0,.28);
+    display:flex;flex-direction:column;
+  }
+  /* ---- M1-7 角标：画面上恒在 ---- */
+  .badge{
+    position:absolute;left:50%;transform:translateX(-50%);top:6px;z-index:60;
+    background:rgba(26,26,26,.82);color:#fff;font-size:10px;line-height:1;
+    padding:4px 10px;border-radius:9px;white-space:nowrap;pointer-events:none;
+  }
+  .screen{flex:1 1 auto;position:relative;overflow:hidden}
+  .page{position:absolute;inset:0;display:none;flex-direction:column;background:var(--bg)}
+  .page.active{display:flex}
+
+  /* ---- 地图页 ---- */
+  #map{position:absolute;inset:0}
+  .navcard{
+    position:absolute;left:10px;right:10px;top:26px;z-index:20;
+    background:rgba(30,41,59,.94);color:#fff;border-radius:14px;
+    padding:9px 14px;display:flex;align-items:center;gap:12px;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);
+  }
+  .navcard .turn{width:34px;height:34px;flex:0 0 auto}
+  .navcard .turn svg{width:34px;height:34px;display:block}
+  .navcard .dist{font-size:24px;font-weight:700;line-height:1}
+  .navcard .unit{font-size:12px;opacity:.85;margin-left:3px}
+  .navcard .road{font-size:12px;opacity:.92;margin-top:3px}
+  .navcard .lv{margin-left:auto;text-align:right;font-size:11px;opacity:.95;line-height:1.5}
+
+  .legend{
+    position:absolute;left:10px;bottom:150px;z-index:20;
+    background:rgba(255,255,255,.95);border-radius:var(--radius);
+    padding:6px 8px;box-shadow:0 2px 8px rgba(0,0,0,.14);font-size:10px;color:var(--text2);
+  }
+  .legend .row{display:flex;align-items:center;gap:5px;margin:2px 0}
+  .legend .dot{width:14px;height:4px;border-radius:2px;flex:0 0 auto}
+  .legend .foot{margin-top:4px;max-width:186px;font-size:9px;color:var(--text3);line-height:1.3}
+
+  .fabs{position:absolute;right:10px;bottom:150px;z-index:20;display:flex;flex-direction:column;gap:8px}
+  .fab{
+    border:none;background:rgba(255,255,255,.96);color:var(--text);
+    border-radius:var(--radius);padding:8px 11px;font-size:12px;cursor:pointer;
+    box-shadow:0 2px 8px rgba(0,0,0,.16);
+  }
+  .fab.on{color:var(--brand);font-weight:700;border:1px solid var(--brand)}
+
+  .endpoints{
+    position:absolute;left:10px;right:10px;bottom:10px;z-index:20;
+    background:var(--card);border-radius:var(--radius);padding:9px 11px;
+    box-shadow:0 2px 10px rgba(0,0,0,.16);font-size:11px;color:var(--text2);
+  }
+  .endpoints .row{display:flex;align-items:center;gap:6px;margin-bottom:5px}
+  .endpoints label{flex:0 0 30px;color:var(--text3)}
+  .endpoints select{
+    flex:1 1 auto;border:1px solid var(--line);border-radius:6px;padding:4px 6px;
+    font-size:11px;color:var(--text);background:#fff;max-width:100%;
+  }
+  .endpoints .go{
+    border:none;background:var(--brand);color:#fff;border-radius:6px;
+    padding:6px 12px;font-size:11px;font-weight:700;cursor:pointer;
+  }
+  .endpoints .go:active{background:#003cab}
+  .endpoints .note{color:var(--text3);font-size:10px;line-height:1.35;margin-top:5px}
+
+  .segcard{
+    position:absolute;left:10px;right:10px;bottom:150px;z-index:25;
+    background:var(--card);border-radius:var(--radius);padding:9px 11px;
+    box-shadow:0 2px 10px rgba(0,0,0,.18);font-size:11px;
+  }
+  .segcard h4{margin:0 0 5px;font-size:13px;display:flex;align-items:center;gap:6px}
+  .segcard .kv{display:flex;justify-content:space-between;color:var(--text2);line-height:1.7}
+  .segcard .close{position:absolute;right:8px;top:6px;border:none;background:none;color:var(--text3);cursor:pointer;font-size:14px}
+
+  .banner{
+    position:absolute;left:10px;right:10px;top:26px;z-index:30;display:none;
+    background:#D54941;color:#fff;border-radius:14px;padding:12px 14px;text-align:center;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);
+  }
+  .banner b{font-size:17px;display:block;margin-bottom:3px}
+  .banner span{font-size:11px;opacity:.92}
+
+  /* ---- 内容页（当前建议 / 落客候客 / 离站路线 / 我的行程） ---- */
+  .sheet{flex:1 1 auto;overflow-y:auto;padding:34px 12px 12px}
+  .sheet h3{margin:0 0 2px;font-size:15px}
+  .sheet .sub{color:var(--text3);font-size:11px;margin-bottom:10px}
+  .card{background:var(--card);border-radius:var(--radius);padding:11px 12px;margin-bottom:9px;box-shadow:0 1px 4px rgba(0,0,0,.07)}
+  .card .title{font-size:13px;font-weight:700;display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .card .kv{display:flex;justify-content:space-between;font-size:11px;color:var(--text2);line-height:1.8}
+  .card .body{font-size:11px;color:var(--text2);line-height:1.6}
+  .tag{
+    display:inline-block;font-size:10px;padding:1px 6px;border-radius:8px;
+    background:#f2f3ff;color:var(--brand);border:1px solid #dbe2ff;
+  }
+  .tag.pick{background:var(--brand);color:#fff;border-color:var(--brand)}
+  .tag.plain{background:#f3f3f3;color:#666;border-color:var(--line)}
+  .rowline{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin:4px 0}
+  .segchips{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px}
+  .chip{font-size:10px;padding:2px 6px;border-radius:6px;background:#f7f8fa;border:1px solid var(--line);color:#555}
+  .foot-note{font-size:10px;color:var(--text3);line-height:1.45;margin-top:6px}
+  .toggle{display:flex;gap:6px;margin:6px 0}
+  .toggle button{
+    flex:1 1 0;border:1px solid var(--line);background:#fff;border-radius:6px;
+    padding:6px 0;font-size:11px;color:var(--text2);cursor:pointer;
+  }
+  .toggle button.sel{border-color:var(--brand);color:var(--brand);font-weight:700}
+
+  /* ---- 底部标签栏 ---- */
+  .tabbar{
+    flex:0 0 auto;height:56px;background:#fff;border-top:1px solid var(--line);
+    display:flex;z-index:40;
+  }
+  .tabbar button{
+    flex:1 1 0;border:none;background:none;font-size:10px;color:var(--text3);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;
+  }
+  .tabbar button.on{color:var(--brand);font-weight:700}
+  .tabbar svg{width:18px;height:18px;display:block}
+
+  .toast{
+    position:absolute;left:50%;transform:translateX(-50%);bottom:132px;z-index:70;
+    background:rgba(26,26,26,.88);color:#fff;font-size:11px;padding:7px 12px;
+    border-radius:10px;max-width:310px;text-align:center;line-height:1.45;display:none;
+  }
+  .maplibregl-ctrl-attrib{font-size:10px}
+</style>
+</head>
+<body>
+<div class="phone">
+  <!-- M1-7 角标：页面上恒在（截图抽查 100% 命中） -->
+  <div class="badge">演示数据（模拟）· 双数据源（视频链路 + 孪生链路）</div>
+
+  <div class="screen">
+    <!-- ================= 地图（首页） ================= -->
+    <section class="page active" id="page-map">
+      <div id="map"></div>
+
+      <!-- 应急态横幅：停下路线引导，优先级高于一切推荐（TC-05） -->
+      <div class="banner" id="banner">
+        <b>请服从现场指挥</b>
+        <span>应急状态已生效 · 路线引导暂停</span>
+      </div>
+
+      <div class="navcard" id="navcard">
+        <div class="turn" id="turn-icon"></div>
+        <div>
+          <span class="dist" id="turn-dist">--</span><span class="unit" id="turn-unit">m</span>
+          <div class="road" id="turn-road">正在读取路线…</div>
+        </div>
+        <div class="lv" id="nav-lv"></div>
+      </div>
+
+      <div class="legend" id="legend"></div>
+
+      <div class="fabs">
+        <button class="fab" id="btn-overview">全览</button>
+        <button class="fab on" id="btn-follow">跟随</button>
+        <button class="fab" id="btn-play">暂停</button>
+        <button class="fab" id="btn-speed">倍速 x20</button>
+      </div>
+
+      <div class="segcard" id="segcard" style="display:none">
+        <button class="close" id="segcard-close">×</button>
+        <h4 id="segcard-title"></h4>
+        <div id="segcard-body"></div>
+      </div>
+
+      <div class="endpoints">
+        <div class="row">
+          <label>起点</label>
+          <select id="sel-origin"></select>
+          <button class="go" id="btn-route">请求路线</button>
+        </div>
+        <div class="row">
+          <label>终点</label>
+          <select id="sel-dest"></select>
+        </div>
+        <div class="note" id="route-note">
+          路线由后台按路段拥堵推算 · 本单只留接口位（不发真请求）
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 当前建议 ================= -->
+    <section class="page" id="page-advice">
+      <div class="sheet">
+        <h3>当前建议</h3>
+        <div class="sub" id="advice-sub">站点包 Z · 肇庆东站 · 车辆位置为演示值（不做定位）</div>
+
+        <div class="card">
+          <div class="title">演示态开关<span class="tag plain">不是真实应急</span></div>
+          <div class="toggle">
+            <button id="tg-normal" class="sel">常态</button>
+            <button id="tg-emg">应急态</button>
+          </div>
+          <div class="body" id="advice-emg-note">应急态生效时：停下路线引导，替换为「请服从现场指挥」（优先级高于一切推荐）。</div>
+        </div>
+
+        <div class="card" id="advice-route"></div>
+        <div class="card" id="advice-alts"></div>
+
+        <div class="card">
+          <div class="title">为什么这么走（来自后台）</div>
+          <div class="body" id="advice-why"></div>
+        </div>
+
+        <div class="card">
+          <div class="title">前后车协同</div>
+          <div class="body">口径说明：采纳建议不会让已在你前面的车变慢。<br>
+            <span class="foot-note">本包（站点包 Z）未带协同数据 · 本单不编造；带数据的那条线在 IKLLX9（鸿蒙 App）。</span>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="title">数据来源</div>
+          <div class="kv"><span>is_simulated</span><span>true</span></div>
+          <div class="kv"><span>几何</span><span>OSM（真值）</span></div>
+          <div class="kv"><span>等级 / 指数</span><span>演示数据（模拟）</span></div>
+          <div class="kv"><span>车辆位置</span><span>站点包给定（不做定位）</span></div>
+          <div class="foot-note">该建议基于当前路况，可能随流量变化。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 落客 / 候客 ================= -->
+    <section class="page" id="page-dropoff">
+      <div class="sheet">
+        <h3>落客 / 候客指引</h3>
+        <div class="sub">站点包 Z · 本包未带点位表</div>
+
+        <div class="card">
+          <div class="title">落客点</div>
+          <div class="kv"><span>位置</span><span>站前落客区（进场尽头）</span></div>
+          <div class="kv"><span>到达后步行接驳</span><span id="walk-min">—</span></div>
+          <div class="kv"><span>所属路段</span><span id="drop-seg">—</span></div>
+          <div class="foot-note">
+            站点包 Z 的 `arrival_dropoff_point` 为空 —— 本单不编造具体点位 id；
+            点位表由站点包那条线补（IKLX5Y 已记：断面 / 点位另开单）。
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="title">候客预计等待</div>
+          <div class="body">本包未带候客等待数据（`L_q_m` 属路段指标，不是候客时长）——本单不编造。</div>
+        </div>
+
+        <div class="card">
+          <div class="title">停靠纪律（口径，非数据）</div>
+          <div class="body">按标志与泊位停放；服从现场指挥（应急态优先级最高）。</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 离站路线 ================= -->
+    <section class="page" id="page-depart">
+      <div class="sheet">
+        <h3>离站路线</h3>
+        <div class="sub">送完人之后怎么走（`departure_route` · 本项目独有）</div>
+        <div class="card" id="depart-card"></div>
+        <div class="card">
+          <div class="title">数据来源</div>
+          <div class="body">
+            离站路线来自站点包 Z 的 `recommend.departure_segments` —— 必现，不随进场路线变化。<br>
+            <span class="foot-note">该建议基于当前路况，可能随流量变化。</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= 我的行程 ================= -->
+    <section class="page" id="page-trips">
+      <div class="sheet">
+        <h3>我的行程</h3>
+        <div class="sub">本次会话（演示）· 如实标注「未采纳推荐」</div>
+        <div id="trip-list"></div>
+        <div class="card">
+          <div class="title">数据来源与口径</div>
+          <div class="kv"><span>is_simulated</span><span>true</span></div>
+          <div class="kv"><span>车辆位置</span><span>站点包 Z 给定（不做定位）</span></div>
+          <div class="kv"><span>定位能力</span><span>本期不做（二期才接真实定位）</span></div>
+          <div class="foot-note" id="trip-src"></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="toast" id="toast"></div>
+  </div>
+
+  <!-- ================= 底部标签栏 ================= -->
+  <nav class="tabbar" id="tabbar">
+    <button data-page="page-map" class="on">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z"/><path d="M9 4v14M15 6v14"/></svg>
+      地图
+    </button>
+    <button data-page="page-advice">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v3M12 18v3M4.2 7.5l2.6 1.5M17.2 15l2.6 1.5M4.2 16.5l2.6-1.5M17.2 9l2.6-1.5"/><circle cx="12" cy="12" r="3.2"/></svg>
+      当前建议
+    </button>
+    <button data-page="page-dropoff">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z"/><circle cx="12" cy="10" r="2.6"/></svg>
+      落客候客
+    </button>
+    <button data-page="page-depart">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 12h12M12 6l6 6-6 6"/><path d="M20 5v14"/></svg>
+      离站路线
+    </button>
+    <button data-page="page-trips">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></svg>
+      我的行程
+    </button>
+  </nav>
+</div>
+
+<script src="data/app-data.js"></script>
+<script src="vendor/maplibre-gl.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  // ================================================================ 数据
+  //
+  // 全部来自 `data/app-data.js`（脚本产物，由 build_data.py 从站点包 Z 抽出）。
+  // **App 自己不造段划分、不造指标** —— 段 id / 折线 / 等级 / 摄像头照抄站点包 Z。
+  var DATA = window.HUBFLOW_APP_DATA;
+  if (!DATA || !DATA.network) {
+    document.body.innerHTML = '<p style="padding:24px;font:14px/1.6 sans-serif">' +
+      '数据未加载：`data/app-data.js` 不在旁边。请先在仓库根跑 ' +
+      '`python work/frontend/app-html/build_data.py`。</p>';
+    return;
+  }
+  var NET = DATA.network, MAPS = DATA.maps, REC = NET.recommend, STATION = NET.station;
+  var SEG = {}, SEG_ORDER = [];
+  NET.segments.forEach(function (s) { SEG[s.segment_id] = s; SEG_ORDER.push(s.segment_id); });
+
+  //: 四级 + 不可用：颜色 / 图标 / 文字**三重编码**（手册 §11.3、§6.2）
+  var LEVELS = {
+    1: { name: '畅通', glyph: '○', color: '#2BA471' },
+    2: { name: '缓行', glyph: '◇', color: '#E9B32E' },
+    3: { name: '拥堵', glyph: '▲', color: '#E37318' },
+    4: { name: '严重拥堵', glyph: '■', color: '#D54941' }
+  };
+  var UNAVAIL = { name: '数据不可用', glyph: '×', color: '#8B8B8B' };
+  //: 无摄像头的段只画中性灰**轮廓**（细线 / 低不透明度）—— 与"不可用灰"同一个灰，靠线宽与透明度区分
+  var GRAY = '#8B8B8B';
+
+  function levelOf(id) {
+    var s = SEG[id];
+    return (s && s.level) ? LEVELS[s.level] : null;
+  }
+
+  // ================================================================ 几何小工具
+  var RAD = Math.PI / 180, R = 6371000;
+  function distM(a, b) {
+    var dx = (b[0] - a[0]) * RAD * Math.cos((a[1] + b[1]) / 2 * RAD), dy = (b[1] - a[1]) * RAD;
+    return Math.sqrt(dx * dx + dy * dy) * R;
+  }
+  function nearestIdx(coords, pt) {
+    var bi = 0, bd = Infinity;
+    for (var i = 0; i < coords.length; i++) { var d = distM(coords[i], pt); if (d < bd) { bd = d; bi = i; } }
+    return bi;
+  }
+  function nearestIdxToCoords(coords, other) {
+    var bi = 0, bd = Infinity;
+    for (var i = 0; i < coords.length; i++) {
+      for (var j = 0; j < other.length; j++) {
+        var d = distM(coords[i], other[j]); if (d < bd) { bd = d; bi = i; }
+      }
+    }
+    return bi;
+  }
+  function subPath(coords, a, b) {
+    return a <= b ? coords.slice(a, b + 1) : coords.slice(b, a + 1).reverse();
+  }
+  function pathLength(pts) {
+    var cum = [0];
+    for (var i = 1; i < pts.length; i++) cum.push(cum[i - 1] + distM(pts[i - 1], pts[i]));
+    return cum;
+  }
+  function posAt(pts, cum, d) {
+    d = Math.max(0, Math.min(cum[cum.length - 1], d));
+    var i = 1;
+    while (i < cum.length - 1 && cum[i] < d) i++;
+    var a = pts[i - 1], b = pts[i], seg = (cum[i] - cum[i - 1]) || 1e-9, t = (d - cum[i - 1]) / seg;
+    var lng = a[0] + (b[0] - a[0]) * t, lat = a[1] + (b[1] - a[1]) * t;
+    var dx = (b[0] - a[0]) * Math.cos((a[1] + b[1]) / 2 * RAD), dy = (b[1] - a[1]);
+    return { lng: lng, lat: lat, heading: (Math.atan2(dx, dy) / RAD + 360) % 360 };
+  }
+
+  /**
+   * 把后台给的**段序列**串成一条可走的折线（演示用走法，全部落在真几何上）：
+   *   · 第 1 段：从演示位置（`location_offset_m`）出发，走向与第 2 段的接点；
+   *   · 中间段：从上一段的出口进入，走向与下一段的接点；
+   *   · 最后一段：从入口走到该折线的另一端（路的另一头）。
+   * 只做「取子折线 + 定方向」，**不新增任何坐标、不做寻路**。段序列本身来自后台。
+   */
+  function buildTraversal(segIds, startSegId, startOffset) {
+    var marks = [], pts = [], prev = null;
+
+    for (var i = 0; i < segIds.length; i++) {
+      var cs = SEG[segIds[i]].coords;
+      var entry, sub;
+
+      if (i === 0) {
+        // 起点段：从演示位置所在的那一点切进去（不是整段从头走）
+        var idx = 0;
+        if (segIds[i] === startSegId && startOffset > 0) {
+          var cum0 = pathLength(cs);
+          while (idx < cum0.length - 1 && cum0[idx] < startOffset) idx++;
+          var sp = posAt(cs, cum0, startOffset);
+          pts.push([sp.lng, sp.lat]);
+        }
+        entry = idx;
+        var out0 = segIds[i + 1] ? nearestIdxToCoords(cs, SEG[segIds[i + 1]].coords) : cs.length - 1;
+        sub = subPath(cs, entry, out0);
+        marks.push({ segId: segIds[i], idx: 0 });
+        pts = pts.concat(sub);
+        prev = pts[pts.length - 1];
+        continue;
+      }
+
+      entry = prev ? nearestIdx(cs, prev) : 0;
+      var outN = segIds[i + 1] ? nearestIdxToCoords(cs, SEG[segIds[i + 1]].coords) : cs.length - 1;
+      sub = subPath(cs, entry, outN);
+      marks.push({ segId: segIds[i], idx: pts.length - 1 });
+      // 段间接点会重复一次，去重
+      if (pts.length && sub.length && pts[pts.length - 1][0] === sub[0][0] && pts[pts.length - 1][1] === sub[0][1]) {
+        sub = sub.slice(1);
+      }
+      pts = pts.concat(sub);
+      prev = pts[pts.length - 1];
+    }
+    return { pts: pts, marks: marks, cum: pathLength(pts) };
+  }
+
+  // ================================================================ 地图
+  // 底图**不出网**：style 里只有背景色，水系 / 绿地 / 背景路 / 路口全部来自 data/app-data.js。
+  var map = new maplibregl.Map({
+    container: 'map',
+    style: { version: 8, sources: {}, layers: [{ id: 'bg', type: 'background', paint: { 'background-color': '#eef1f4' } }] },
+    center: NET.segments[0].coords[0],
+    zoom: 14.2,
+    pitch: 0,
+    attributionControl: false,
+    dragRotate: false,
+    // 演示/举证用：保留帧缓冲，页面像素才能被截屏与 `canvas.toDataURL()` 抓到
+    // （默认 false 时 WebGL 内容可能截不到，只剩底色）。
+    preserveDrawingBuffer: true
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  // OSM 署名：位置在**图角**，带超链接（条款核实 E-11 / E-13）
+  map.addControl(new maplibregl.AttributionControl({
+    compact: false,
+    customAttribution: '<a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> · 演示数据（模拟）'
+  }), 'bottom-right');
+
+  function fcLine(rows) {
+    return {
+      type: 'FeatureCollection',
+      features: rows.map(function (c) { return { type: 'Feature', properties: {}, geometry: { type: 'LineString', coordinates: c } }; })
+    };
+  }
+  function fcPoint(rows) {
+    return {
+      type: 'FeatureCollection',
+      features: rows.map(function (c) { return { type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: c } }; })
+    };
+  }
+
+  var segFeatures = NET.segments.map(function (s) {
+    var lv = s.level ? LEVELS[s.level] : null;
+    return {
+      type: 'Feature',
+      properties: {
+        segment_id: s.segment_id,
+        color: lv ? lv.color : GRAY,
+        // 摄像头覆盖且有数据 → 粗线按等级上色；其余 → 中性灰轮廓（细线 / 低不透明度）
+        width: lv ? 5.5 : 1.8,
+        opacity: lv ? 0.96 : 0.34
+      },
+      geometry: { type: 'LineString', coordinates: s.coords }
+    };
+  });
+
+  var CAR_POS = { type: 'FeatureCollection', features: [] };
+  var ORI_POS = { type: 'FeatureCollection', features: [] };
+  var DST_POS = { type: 'FeatureCollection', features: [] };
+
+  map.on('load', function () {
+    var sh = MAPS.shapes;
+    if (sh.green && sh.green.length) {
+      map.addSource('green', { type: 'geojson', data: fcLine(sh.green) });
+      map.addLayer({ id: 'green', type: 'line', source: 'green',
+        paint: { 'line-color': MAPS.style.green.color, 'line-width': 12, 'line-opacity': 0.75 } });
+    }
+    if (sh.water && sh.water.length) {
+      map.addSource('water', { type: 'geojson', data: fcLine(sh.water) });
+      map.addLayer({ id: 'water', type: 'line', source: 'water',
+        paint: { 'line-color': MAPS.style.water.color, 'line-width': MAPS.style.water.width } });
+    }
+    if (sh.roads && sh.roads.length) {
+      map.addSource('roads', { type: 'geojson', data: fcLine(sh.roads) });
+      map.addLayer({ id: 'roads', type: 'line', source: 'roads',
+        paint: { 'line-color': MAPS.style.roads.color, 'line-width': MAPS.style.roads.width } });
+    }
+
+    // 本次路线：白色描边（只加描边 / 加粗，**不改等级色**）
+    map.addSource('route-casing', { type: 'geojson', data: fcLine([]) });
+    map.addLayer({ id: 'route-casing', type: 'line', source: 'route-casing',
+      paint: { 'line-color': '#ffffff', 'line-width': 11, 'line-opacity': 0.9 } });
+
+    // 站点包 Z 的 21 段路网（等级色 / 灰轮廓）
+    map.addSource('net', { type: 'geojson', data: { type: 'FeatureCollection', features: segFeatures } });
+    map.addLayer({ id: 'net', type: 'line', source: 'net',
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ['get', 'color'], 'line-width': ['get', 'width'], 'line-opacity': ['get', 'opacity'] } });
+
+    if (sh.junctions && sh.junctions.length) {
+      map.addSource('junction', { type: 'geojson', data: fcPoint(sh.junctions) });
+      map.addLayer({ id: 'junction', type: 'circle', source: 'junction',
+        paint: { 'circle-radius': MAPS.style.junctions.radius, 'circle-color': MAPS.style.junctions.color, 'circle-opacity': 0.7 } });
+    }
+
+    // 摄像头：6 路（坐标与所属路段来自站点包 Z 的通道表；本批**全部没有视频源**）
+    map.addSource('cams', {
+      type: 'geojson',
+      data: {
+        type: 'FeatureCollection',
+        features: (NET.cameras || []).map(function (c) {
+          return {
+            type: 'Feature',
+            properties: { cid: c.cid, source: c.source, name: c.name, segment_id: c.segment_id, hasVideo: c.hasVideo },
+            geometry: { type: 'Point', coordinates: [c.lon, c.lat] }
+          };
+        })
+      }
+    });
+    map.addLayer({ id: 'cams', type: 'circle', source: 'cams',
+      paint: {
+        'circle-radius': 7, 'circle-color': '#0052D9',
+        'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2
+      } });
+
+    // 演示车 / 起终点
+    map.addSource('car', { type: 'geojson', data: CAR_POS });
+    map.addLayer({ id: 'car', type: 'circle', source: 'car',
+      paint: { 'circle-radius': 7, 'circle-color': '#1a1a1a', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2.5 } });
+    map.addSource('ori', { type: 'geojson', data: ORI_POS });
+    map.addSource('dst', { type: 'geojson', data: DST_POS });
+    map.addLayer({ id: 'ori', type: 'circle', source: 'ori',
+      paint: { 'circle-radius': 6, 'circle-color': '#0052D9', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+    map.addLayer({ id: 'dst', type: 'circle', source: 'dst',
+      paint: { 'circle-radius': 6, 'circle-color': '#0052D9', 'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 } });
+
+    // 点路段 → 路段信息（含**摄像头数**，没有的如实显示 0）
+    ['net'].forEach(function (layer) {
+      map.on('click', layer, function (e) {
+        if (!e.features || !e.features.length) return;
+        showSegCard(e.features[0].properties.segment_id);
+      });
+      map.on('mouseenter', layer, function () { map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', layer, function () { map.getCanvas().style.cursor = ''; });
+    });
+    // 点摄像头 → 通道信息（本批全部无视频源）
+    map.on('click', 'cams', function (e) {
+      if (!e.features || !e.features.length) return;
+      showCamCard(e.features[0].properties);
+    });
+    map.on('mouseenter', 'cams', function () { map.getCanvas().style.cursor = 'pointer'; });
+    map.on('mouseleave', 'cams', function () { map.getCanvas().style.cursor = ''; });
+
+    map.on('dragstart', function () { setFollow(false); });
+
+    renderEndpoints();
+    applyRoute('arrival', true);
+    requestAnimationFrame(function (t) { last = t; frame(t); });
+  });
+
+  // ================================================================ 路线 / 车辆
+  var ROUTES = {
+    arrival: { label: '进场（推荐）', segments: REC.arrival_segments, eta_min: REC.arrival_eta_min, kind: '推荐路线' },
+    departure: { label: '离站', segments: REC.departure_segments, eta_min: REC.departure_eta_min, kind: '离站路线' },
+    alt: { label: '备选', segments: (REC.alternatives[0] || {}).segments || REC.arrival_segments, eta_min: (REC.alternatives[0] || {}).eta_min || 0, kind: '备选路线', note: (REC.alternatives[0] || {}).note || '' }
+  };
+
+  var state = {
+    routeKey: 'arrival', trav: null, dCur: 0, playing: true, speed: 20,
+    follow: true, arrived: false, emergency: false, speeds: [10, 20, 40], speedIdx: 1
+  };
+  var last = performance.now();
+
+  function setRouteData(key) {
+    state.routeKey = key;
+    var r = ROUTES[key];
+    state.trav = buildTraversal(r.segments, REC.location_segment_id, REC.location_offset_m);
+    state.dCur = 0; state.arrived = false;
+    var lines = r.segments.map(function (id) { return SEG[id].coords; });
+    map.getSource('route-casing').setData(fcLine(state.emergency ? [] : lines));
+    var first = SEG[REC.location_segment_id];
+    map.getSource('ori').setData(fcPoint([state.trav.pts[0]]));
+    map.getSource('dst').setData(fcPoint([state.trav.pts[state.trav.pts.length - 1]]));
+    updateCar(0);
+  }
+  function applyRoute(key, initial) {
+    setRouteData(key);
+    var r = ROUTES[key];
+    document.getElementById('route-note').textContent =
+      '路线由后台按路段拥堵推算 · 本单只留接口位（不发真请求）；当前为替身：' + r.kind +
+      (r.note ? '（' + r.note + '）' : '') + ' · 段序列 ' + r.segments.join('→');
+    if (!initial) {
+      fitRoute();
+      toast('替身响应：' + r.kind + ' · ' + r.segments.join(' → ') + '（本单不发真请求）');
+    } else {
+      fitOverview();
+    }
+    renderAdvice();
+  }
+  function fitRoute() {
+    var r = ROUTES[state.routeKey];
+    var xs = [], ys = [];
+    r.segments.forEach(function (id) { SEG[id].coords.forEach(function (c) { xs.push(c[0]); ys.push(c[1]); }); });
+    map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]],
+      { padding: { top: 120, bottom: 210, left: 40, right: 40 }, pitch: 0, bearing: 0, duration: 700 });
+  }
+  /** 全览：把**整张站点包 Z 路网（21 段）**框进屏幕，俯仰归零、跟随关闭（业主明说保留） */
+  function fitOverview() {
+    var xs = [], ys = [];
+    NET.segments.forEach(function (s) { s.coords.forEach(function (c) { xs.push(c[0]); ys.push(c[1]); }); });
+    setFollow(false);
+    map.fitBounds([[Math.min.apply(null, xs), Math.min.apply(null, ys)], [Math.max.apply(null, xs), Math.max.apply(null, ys)]],
+      { padding: { top: 120, bottom: 210, left: 40, right: 40 }, pitch: 0, bearing: 0, duration: 800 });
+  }
+
+  function updateCar(d) {
+    // 应急态停下引导：车离开画面（否则每帧又会把车写回来）
+    if (state.emergency) return;
+    var p = posAt(state.trav.pts, state.trav.cum, d);
+    CAR_POS.features = [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } }];
+    if (map.getSource('car')) map.getSource('car').setData(CAR_POS);
+    if (state.follow) map.jumpTo({ center: [p.lng, p.lat], bearing: 0, pitch: 0 });
+    updateNavCard(d, p.heading);
+  }
+
+  function currentSegIdx(d) {
+    var idx = 0;
+    for (var i = 0; i < state.trav.marks.length; i++) {
+      if (state.trav.cum[state.trav.marks[i].idx] <= d + 0.5) idx = i;
+    }
+    return idx;
+  }
+  function esc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+
+  function updateNavCard(d, heading) {
+    var trav = state.trav, marks = trav.marks;
+    var i = currentSegIdx(d);
+    var curId = marks[i].segId, cur = SEG[curId], lv = levelOf(curId);
+    var total = trav.cum[trav.cum.length - 1];
+    var $d = document.getElementById('turn-dist'), $u = document.getElementById('turn-unit');
+    var $r = document.getElementById('turn-road'), $i = document.getElementById('turn-icon');
+    var $lv = document.getElementById('nav-lv');
+
+    if (state.emergency) {
+      $i.innerHTML = iconFor('stop');
+      $d.textContent = '—'; $u.textContent = '';
+      $r.textContent = '应急状态 · 路线引导已暂停';
+      $lv.textContent = '';
+      return;
+    }
+    if (d >= total - 0.5) {
+      state.arrived = true; state.playing = false;
+      document.getElementById('btn-play').textContent = '重播';
+      $i.innerHTML = iconFor('arrive');
+      $d.textContent = '到达'; $u.textContent = '';
+      $r.textContent = ROUTES[state.routeKey].label + ' 终点';
+      $lv.innerHTML = lvText(curId);
+      return;
+    }
+    var nxt = marks[i + 1];
+    var nextId = nxt ? nxt.segId : null;
+    var ahead = nxt ? trav.cum[nxt.idx] - d : total - d;
+    $i.innerHTML = iconFor(nxt ? 'turn' : 'straight');
+    $d.textContent = ahead >= 950 ? (ahead / 1000).toFixed(1) : String(Math.round(ahead / 10) * 10);
+    $u.textContent = ahead >= 950 ? 'km' : 'm';
+    $r.textContent = nextId ? ('进入 ' + SEG[nextId].name) : ('前往 ' + ROUTES[state.routeKey].label);
+    $lv.innerHTML = '当前：' + esc(cur.name) + '<br>' + lvText(curId);
+  }
+  function lvText(id) {
+    var lv = levelOf(id);
+    if (lv) return '<span style="color:' + lv.color + '">' + lv.glyph + ' ' + lv.name + '</span>';
+    if (SEG[id].camera_count) return '<span style="color:' + UNAVAIL.color + '">' + UNAVAIL.glyph + ' ' + UNAVAIL.name + '</span>';
+    return '<span style="color:' + GRAY + '">— 未监控（灰轮廓）</span>';
+  }
+  function iconFor(kind) {
+    var S = 'fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"';
+    var p;
+    if (kind === 'arrive') p = '<path d="M12 30 V8 M12 8 H27 L22 13 L27 18 H12" ' + S + '/>';
+    else if (kind === 'stop') p = '<circle cx="20" cy="20" r="9" ' + S + '/><path d="M11 11 L29 29" ' + S + '/>';
+    else if (kind === 'straight') p = '<path d="M20 33 V9 M13 16 L20 9 L27 16" ' + S + '/>';
+    else p = '<path d="M14 33 V21 Q14 15 20 15 H28 M23 9 L29 15 L23 21" ' + S + '/>';
+    return '<svg viewBox="0 0 40 40">' + p + '</svg>';
+  }
+
+  function frame(now) {
+    var dt = Math.min((now - last) / 1000, 0.1); last = now;
+    if (state.playing && !state.emergency) {
+      var total = state.trav.cum[state.trav.cum.length - 1];
+      state.dCur = Math.min(state.dCur + state.speed * dt, total);
+    }
+    updateCar(state.dCur);
+    requestAnimationFrame(frame);
+  }
+
+  function setFollow(on) {
+    state.follow = on;
+    document.getElementById('btn-follow').classList.toggle('on', on);
+  }
+
+  // ================================================================ 卡片 / 图例 / 页签
+  function showSegCard(id) {
+    var s = SEG[id], lv = levelOf(id);
+    document.getElementById('segcard-title').innerHTML =
+      '<span style="color:' + (lv ? lv.color : GRAY) + '">' + (lv ? lv.glyph : '▭') + '</span>' + esc(s.name) +
+      ' <span class="tag plain">' + esc(s.segment_id) + '</span>';
+    var rows = [
+      ['等级', lv ? ('<span style="color:' + lv.color + ';font-weight:700">' + lv.glyph + ' ' + lv.name + '</span>')
+        : (s.camera_count ? UNAVAIL.glyph + ' ' + UNAVAIL.name : '未监控（灰轮廓）')],
+      ['拥挤指数 ci', s.ci == null ? '—' : String(s.ci)],
+      ['链路 source', s.source ? esc(s.source) : '—'],
+      ['摄像头', s.camera_count ? (s.camera_count + ' 路（' + s.camera_sources.join('、') + '）') : '0 路'],
+      ['指标出处', esc(s.derive || '（本段无指标 · 只画轮廓）')]
+    ];
+    document.getElementById('segcard-body').innerHTML = rows.map(function (r) {
+      return '<div class="kv"><span>' + r[0] + '</span><span style="text-align:right;max-width:210px">' + r[1] + '</span></div>';
+    }).join('') + '<div class="foot-note">几何取自 OSM（真值）；等级 / 指数为演示数据（模拟）。</div>';
+    document.getElementById('segcard').style.display = 'block';
+  }
+  function showCamCard(p) {
+    document.getElementById('segcard-title').innerHTML =
+      '📷 ' + esc(p.name || p.source) + ' <span class="tag plain">' + esc(p.cid || '') + '</span>';
+    document.getElementById('segcard-body').innerHTML =
+      '<div class="kv"><span>通道 source</span><span>' + esc(p.source) + '</span></div>' +
+      '<div class="kv"><span>所属路段</span><span>' + esc(p.segment_id) + ' ' + esc((SEG[p.segment_id] || {}).name || '') + '</span></div>' +
+      '<div class="kv"><span>视频源</span><span>' + (p.hasVideo ? '有' : '未接入视频源 · 本期留空') + '</span></div>' +
+      '<div class="foot-note">本批 6 路摄像头为示意布点（落在路段线上的位置，不是踏勘点位）；' +
+      '视频样本本期不做 —— 留空窗，不是"摄像头掉线"。</div>';
+    document.getElementById('segcard').style.display = 'block';
+  }
+  document.getElementById('segcard-close').onclick = function () {
+    document.getElementById('segcard').style.display = 'none';
+  };
+
+  function renderLegend() {
+    var rows = [1, 2, 3, 4].map(function (k) {
+      return '<div class="row"><span class="dot" style="background:' + LEVELS[k].color + '"></span>' +
+        LEVELS[k].glyph + ' ' + LEVELS[k].name + '</div>';
+    }).join('') +
+      '<div class="row"><span class="dot" style="background:' + GRAY + ';opacity:.34"></span>无摄像头 · 灰轮廓</div>' +
+      '<div class="row"><span class="dot" style="background:' + GRAY + '"></span>' + UNAVAIL.glyph + ' 数据不可用</div>';
+    document.getElementById('legend').innerHTML = rows +
+      '<div class="foot">上色规则：只有摄像头覆盖的段才显示等级色；两种灰靠线宽 / 透明度区分。' +
+      '本包 6 路摄像头覆盖的 5 段均有演示数据，"有摄像头但无数据→灰"本站未出现。</div>';
+  }
+
+  function renderEndpoints() {
+    var opts = NET.segments.map(function (s) {
+      return '<option value="' + s.segment_id + '">' + esc(s.segment_id) + ' ' + esc(s.name) + '</option>';
+    }).join('');
+    var o = document.getElementById('sel-origin'), d = document.getElementById('sel-dest');
+    o.innerHTML = opts; d.innerHTML = opts;
+    o.value = REC.location_segment_id;                 // 起点＝演示位置所在段
+    d.value = REC.arrival_segments[REC.arrival_segments.length - 1];
+  }
+  document.getElementById('btn-route').onclick = function () {
+    var o = document.getElementById('sel-origin').value, d = document.getElementById('sel-dest').value;
+    // 「请求路线」把起点终点发出去 → 后台按路段拥堵推算 → App 只负责把回来的路线画出来。
+    // 本单不发真请求：用站点包 Z 的 recommend 当替身（见 data/app-data.js）。
+    var key = 'arrival', note = '';
+    if (o === REC.departure_segments[0]) key = 'departure';
+    else if (o === 'SZ-03') key = 'alt';
+    else if (o !== REC.location_segment_id) note = '替身只带 3 条路线（进场 / 离站 / 1 条备选），本次回退到进场路线。';
+    if (key === 'arrival' && d !== REC.arrival_segments[REC.arrival_segments.length - 1]) {
+      note = (note ? note + ' ' : '') + '替身未覆盖该终点组合，仍显示进场路线。';
+    }
+    applyRoute(key);
+    if (note) document.getElementById('route-note').textContent += ' ⚠ ' + note;
+  };
+  document.getElementById('btn-overview').onclick = fitOverview;
+  document.getElementById('btn-follow').onclick = function () { setFollow(true); };
+  document.getElementById('btn-play').onclick = function () {
+    if (state.arrived) { state.arrived = false; state.dCur = 0; state.playing = true; this.textContent = '暂停'; return; }
+    state.playing = !state.playing; this.textContent = state.playing ? '暂停' : '继续';
+  };
+  document.getElementById('btn-speed').onclick = function () {
+    state.speedIdx = (state.speedIdx + 1) % state.speeds.length;
+    state.speed = state.speeds[state.speedIdx];
+    this.textContent = '倍速 x' + state.speed;
+  };
+
+  // ---- 页签 ----
+  Array.prototype.forEach.call(document.querySelectorAll('#tabbar button'), function (b) {
+    b.onclick = function () {
+      Array.prototype.forEach.call(document.querySelectorAll('#tabbar button'), function (x) { x.classList.remove('on'); });
+      Array.prototype.forEach.call(document.querySelectorAll('.page'), function (p) { p.classList.remove('active'); });
+      b.classList.add('on');
+      document.getElementById(b.dataset.page).classList.add('active');
+      if (b.dataset.page === 'page-map') setTimeout(function () { map.resize(); }, 0);
+    };
+  });
+
+  // ---- 应急态（演示开关；TC-05：停下路线引导，替换为「请服从现场指挥」）----
+  function setEmergency(on) {
+    state.emergency = on;
+    document.getElementById('banner').style.display = on ? 'block' : 'none';
+    document.getElementById('tg-normal').classList.toggle('sel', !on);
+    document.getElementById('tg-emg').classList.toggle('sel', on);
+    // 应急态 → 路线与车离开画面（停下引导）；解除应急时把车按当前位置放回来
+    map.getSource('route-casing').setData(fcLine(on ? [] : ROUTES[state.routeKey].segments.map(function (id) { return SEG[id].coords; })));
+    if (on) {
+      CAR_POS.features = [];
+      if (map.getSource('car')) map.getSource('car').setData(CAR_POS);
+    } else {
+      updateCar(state.dCur);
+    }
+    renderAdvice();
+  }
+  document.getElementById('tg-normal').onclick = function () { setEmergency(false); };
+  document.getElementById('tg-emg').onclick = function () { setEmergency(true); };
+
+  // ---- 文字页（当前建议 / 落客候客 / 离站路线 / 我的行程）----
+  function segChips(ids) {
+    return ids.map(function (id) {
+      var lv = levelOf(id);
+      return '<span class="chip" style="border-color:' + (lv ? lv.color : GRAY) + '">' +
+        (lv ? lv.glyph : '▭') + ' ' + esc(id) + ' ' + esc(SEG[id].name) + '</span>';
+    }).join('');
+  }
+  function renderAdvice() {
+    var r = ROUTES[state.routeKey];
+    var el = document.getElementById('advice-route');
+    if (state.emergency) {
+      el.innerHTML = '<div class="title">路线引导已暂停</div>' +
+        '<div class="body"><b style="color:#D54941;font-size:14px">请服从现场指挥</b><br>' +
+        '应急状态优先级高于一切推荐 —— 此时不显示推荐与备选。</div>';
+    } else {
+      el.innerHTML = '<div class="title">' + esc(r.kind) + '<span class="tag pick">当前建议</span></div>' +
+        '<div class="kv"><span>预计耗时</span><span>' + r.eta_min + ' min</span></div>' +
+        '<div class="kv"><span>段序列</span><span>' + esc(r.segments.join(' → ')) + '</span></div>' +
+        '<div class="segchips">' + segChips(r.segments) + '</div>' +
+        '<div class="foot-note">该建议基于当前路况，可能随流量变化。</div>';
+    }
+    var alts = REC.alternatives || [];
+    document.getElementById('advice-alts').innerHTML =
+      '<div class="title">备选路线<span class="tag plain">' + alts.length + ' 条 · 站点包 Z 现状</span></div>' +
+      (alts.length ? alts.map(function (a) {
+        return '<div style="margin-bottom:6px"><div class="kv"><span>' + esc(a.path_id) + ' · ' + esc(a.note || '') + '</span><span>' + a.eta_min + ' min</span></div>' +
+          '<div class="segchips">' + segChips(a.segments) + '</div></div>';
+      }).join('') : '') +
+      '<div class="foot-note">C-3 要求备选 ≥2 条；本包只给 1 条 —— 缺口如实登记，本单不编造第二条（补齐在站点包 / IKLLX9 那条线）。</div>';
+    document.getElementById('advice-why').textContent = REC.why;
+    document.getElementById('advice-sub').textContent =
+      STATION.name + ' · ' + STATION.subtitle + ' · 车辆位置为演示值（不做定位）';
+  }
+  function renderStaticPages() {
+    document.getElementById('walk-min').textContent = REC.arrival_walk_min + ' min（站点包给定）';
+    document.getElementById('drop-seg').textContent = REC.arrival_segments[REC.arrival_segments.length - 1] +
+      ' ' + SEG[REC.arrival_segments[REC.arrival_segments.length - 1]].name;
+
+    document.getElementById('depart-card').innerHTML =
+      '<div class="title">离站路线<span class="tag pick">departure_route</span></div>' +
+      '<div class="kv"><span>预计耗时</span><span>' + REC.departure_eta_min + ' min</span></div>' +
+      '<div class="kv"><span>段序列</span><span>' + esc(REC.departure_segments.join(' → ')) + '</span></div>' +
+      '<div class="segchips">' + segChips(REC.departure_segments) + '</div>' +
+      '<div class="foot-note">离开停车场 → 场区出入道 → 上干道。本页内容必现，与进场建议相互独立。</div>';
+
+    var trips = [
+      { t: '进场', segs: REC.arrival_segments, eta: REC.arrival_eta_min, adopted: true },
+      { t: '离站', segs: REC.departure_segments, eta: REC.departure_eta_min, adopted: true }
+    ];
+    document.getElementById('trip-list').innerHTML = trips.map(function (x) {
+      return '<div class="card"><div class="title">' + x.t +
+        '<span class="tag ' + (x.adopted ? 'pick' : 'plain') + '">' +
+        (x.adopted ? '采纳推荐' : '未采纳推荐') + '</span></div>' +
+        '<div class="kv"><span>段序列</span><span>' + esc(x.segs.join(' → ')) + '</span></div>' +
+        '<div class="kv"><span>预计耗时</span><span>' + x.eta + ' min</span></div>' +
+        '<div class="segchips">' + segChips(x.segs) + '</div></div>';
+    }).join('') +
+      '<div class="foot-note">本次会话为演示，行程记录只含上面两条（进场 / 离站）——本单不编造更多历史。</div>';
+    document.getElementById('trip-src').textContent =
+      STATION.attribution + ' · 站点包 Z 的 note：' + STATION.note;
+  }
+
+  function toast(text) {
+    var t = document.getElementById('toast');
+    t.textContent = text; t.style.display = 'block';
+    clearTimeout(t._h); t._h = setTimeout(function () { t.style.display = 'none'; }, 2600);
+  }
+
+  // ================================================================ 启动
+  renderLegend();
+  renderStaticPages();
+  renderAdvice();
+
+  // 自检口：把地图与几个动作挂到 window 上（给「举证 / 回归」用，页面本身不依赖它）。
+  // 例：HUBFLOW_APP.overview() → 全览；HUBFLOW_APP.segmentsInView() → 全览后有几段在画面里。
+  window.HUBFLOW_APP = {
+    map: map,
+    net: NET,
+    recommend: REC,
+    levels: LEVELS,
+    /** 当前视口里可见的段（全览后应等于全部段数） */
+    segmentsInView: function () {
+      var b = map.getBounds();
+      return NET.segments.filter(function (s) {
+        return s.coords.some(function (c) { return b.contains(c); });
+      }).map(function (s) { return s.segment_id; });
+    },
+    /** 各段当前画出来的颜色与线宽（对站点包 Z 的上色规则） */
+    paintOf: function () {
+      return NET.segments.map(function (s) {
+        var lv = s.level ? LEVELS[s.level] : null;
+        return { segment_id: s.segment_id, level: s.level, camera_count: s.camera_count,
+                 color: lv ? lv.color : GRAY, width: lv ? 5.5 : 1.8 };
+      });
+    },
+    overview: fitOverview,
+    route: applyRoute,
+    cameraMarkers: function () { return (NET.cameras || []).length; }
+  };
+})();
+</script>
+</body>
+</html>
