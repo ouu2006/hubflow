@@ -57,3 +57,29 @@ export function levelTextColorOf(level: number, unavailable: boolean, colorBlind
 
 export const LEVEL_META_LIST: LevelMeta[] = LEVELS;
 export const LEVEL_UNAVAILABLE: LevelMeta = UNAVAILABLE_META;
+
+/**
+ * 等级 → 慢速系数（畅通最快，越堵越慢）。
+ *
+ * 【为什么必须提取成唯一一份 —— 这是评审最容易挑的「重复定义」】
+ * 初版这套系数被逐字抄了两遍：`DemoStore.levelSpeedFactor()`（巡航每 40ms
+ * 用它算车标推进量）与 `stretchEtaMinAt()` 里的闭包（按它分配各段 ETA）。
+ * 两处只要有一处漏改，就会出现「地图上车在畅通段跑得飞快，
+ * 而导航条说这段要 3 分钟」的自相矛盾，而且很难排查。
+ * 现统一由本函数提供，改一处即全工程生效。
+ *
+ * 取值：畅通 1.0 / 缓行 0.6 / 拥堵 0.35 / 严重拥堵 0.2。
+ * 数据不可用（-1）按最快处理 —— 那是「拿不到等级」而非「堵」。
+ */
+export function levelSpeedFactorOf(level: number): number {
+  if (level === 2) {
+    return 0.6;
+  }
+  if (level === 3) {
+    return 0.35;
+  }
+  if (level === 4) {
+    return 0.2;
+  }
+  return 1.0;
+}
