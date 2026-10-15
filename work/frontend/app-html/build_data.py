@@ -74,6 +74,12 @@ DATA_RE = re.compile(r"const DATA = (\{.*?\});\nconst L = ", re.S)
 
 
 def _read(path: Path) -> str:
+    if not path.exists():
+        raise SystemExit(
+            f"读不到 {path}\n"
+            "  本脚本的输入是**站点包 Z**（IKLX5Y 的产物），它不在 main 上 —— 请先切到含 "
+            "stationZ.* 的分支 / 等 IKLX5Y 合入，或用 --network-ts / --pack-ts 指到实际路径。"
+        )
     return path.read_text(encoding="utf-8")
 
 

@@ -35,6 +35,12 @@ python work/frontend/app-html/build_data.py --check    # 只比对，不写（�
 
 `build_data.py` 只做「抽取 + 打包」：**段 id / 折线 / 等级 / 摄像头全部照抄站点包 Z**，它自己不造段划分、不造指标。
 
+> ⚠️ **前置依赖**：它的默认输入是 `work/frontend/ui-vue/src/station-packs/stationZ.network.ts` + `stationZ.ts`
+> —— 这两个文件是 **IKLX5Y 的产物**。`stationZ.*` 还没合进 main 时，在本分支直接跑会提示读不到；
+> 两种办法：① 切到含 `stationZ.*` 的分支再跑；② 用 `--network-ts` / `--pack-ts` 指到实际路径。
+>
+> **本目录 `data/` 下三份产物已经生成好并入库**，所以**双击 `index.html` 不需要跑这个脚本**。
+
 ## 三、版式：按常规导航 App
 
 - **手机壳**：390 × 844 固定视口，页面居中，**不出横向滚动条**。
@@ -75,7 +81,12 @@ python work/frontend/app-html/build_data.py --check    # 只比对，不写（�
 
 - 按钮**本单不发真请求**；用**站点包 Z 的 `recommend`**（`arrival_segments` / `departure_segments` / `alternatives` / `why`）当**后台返回的替身**；
 - 按钮下方**如实标注**：「路线由后台按路段拥堵推算 · 本单只留接口位（不发真请求）」；
-- **请求 / 响应的形状照 [`docs/数据契约.md`](../../../docs/数据契约.md) §二（`routes`）**，**不改契约、不加字段**；后台就绪只需把 base 换掉。
+- **响应字段名的目标形状是 [`docs/数据契约.md`](../../../docs/数据契约.md) §二（`routes`）**；**不改契约、不加字段**。
+  > ⚠️ **注意替身与契约的形状差异**（下一棒接手时先看这一条）：页面现在直接读的是**站点包 recommend 的扁平字段**
+  > （`arrival_segments` / `departure_segments` / `alternatives[].segments`），而契约 §二 是**嵌套的**
+  > （`arrival_route.segments` / `alternatives[].path` / `session_id`）。**换真后台不是只换 base，
+  > 还要加一层字段适配**——这一步留给接后台的那一棒，**本单不做**（本单的产物是版式与交互口径）。
+  > 另外 C-3 要求备选 ≥2 条，而站点包 Z 只给 1 条：**缺口如实登记在页面上，本单不编造**。
 
 ## 五、口径（缺一不通过）
 
@@ -102,7 +113,7 @@ HUBFLOW_APP.overview()         // 等价于点「全览」
 HUBFLOW_APP.map                // MapLibre 实例（调试用）
 ```
 
-**已实测（2026-10-15，Chrome / 1440×900）**：21 段全部渲染、5 段上色 / 16 段灰、6 个摄像头标记、全览后 21 段全在画面内、页面无任何外部网络请求（`document.scripts` 与 `link` 全部指向 `vendor/` 与 `data/`）。
+**已实测（2026-10-15，Chrome / 1440×900）**：21 段全部渲染、5 段上色 / 16 段灰、6 个摄像头标记、全览后 21 段全在画面内、应急态下车与路线离开画面且不会被下一帧写回、页面无字面 Markdown 星号、页面无任何外部网络请求（`document.scripts` 与 `link` 全部指向 `vendor/` 与 `data/`）。
 
 ## 七、与其它目录的关系
 

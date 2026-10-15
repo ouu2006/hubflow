@@ -243,8 +243,7 @@
 
         <div class="card">
           <div class="title">前后车协同</div>
-          <div class="body">
-            口径说明：采纳建议**不会让已在你前面的车变慢**。<br>
+          <div class="body">口径说明：采纳建议不会让已在你前面的车变慢。<br>
             <span class="foot-note">本包（站点包 Z）未带协同数据 · 本单不编造；带数据的那条线在 IKLLX9（鸿蒙 App）。</span>
           </div>
         </div>
@@ -272,7 +271,7 @@
           <div class="kv"><span>到达后步行接驳</span><span id="walk-min">—</span></div>
           <div class="kv"><span>所属路段</span><span id="drop-seg">—</span></div>
           <div class="foot-note">
-            站点包 Z 的 `arrival_dropoff_point` 为空 —— 本单**不编造**具体点位 id；
+            站点包 Z 的 `arrival_dropoff_point` 为空 —— 本单不编造具体点位 id；
             点位表由站点包那条线补（IKLX5Y 已记：断面 / 点位另开单）。
           </div>
         </div>
@@ -298,7 +297,7 @@
         <div class="card">
           <div class="title">数据来源</div>
           <div class="body">
-            离站路线来自站点包 Z 的 `recommend.departure_segments` —— **必现**，不随进场路线变化。<br>
+            离站路线来自站点包 Z 的 `recommend.departure_segments` —— 必现，不随进场路线变化。<br>
             <span class="foot-note">该建议基于当前路况，可能随流量变化。</span>
           </div>
         </div>
@@ -669,10 +668,12 @@
   }
 
   function updateCar(d) {
+    // 应急态停下引导：车离开画面（否则每帧又会把车写回来）
+    if (state.emergency) return;
     var p = posAt(state.trav.pts, state.trav.cum, d);
     CAR_POS.features = [{ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: [p.lng, p.lat] } }];
     if (map.getSource('car')) map.getSource('car').setData(CAR_POS);
-    if (state.follow && !state.emergency) map.jumpTo({ center: [p.lng, p.lat], bearing: 0, pitch: 0 });
+    if (state.follow) map.jumpTo({ center: [p.lng, p.lat], bearing: 0, pitch: 0 });
     updateNavCard(d, p.heading);
   }
 
@@ -776,7 +777,7 @@
       '<div class="kv"><span>通道 source</span><span>' + esc(p.source) + '</span></div>' +
       '<div class="kv"><span>所属路段</span><span>' + esc(p.segment_id) + ' ' + esc((SEG[p.segment_id] || {}).name || '') + '</span></div>' +
       '<div class="kv"><span>视频源</span><span>' + (p.hasVideo ? '有' : '未接入视频源 · 本期留空') + '</span></div>' +
-      '<div class="foot-note">本批 6 路摄像头为**示意布点**（落在路段线上的位置，不是踏勘点位）；' +
+      '<div class="foot-note">本批 6 路摄像头为示意布点（落在路段线上的位置，不是踏勘点位）；' +
       '视频样本本期不做 —— 留空窗，不是"摄像头掉线"。</div>';
     document.getElementById('segcard').style.display = 'block';
   }
@@ -848,10 +849,14 @@
     document.getElementById('banner').style.display = on ? 'block' : 'none';
     document.getElementById('tg-normal').classList.toggle('sel', !on);
     document.getElementById('tg-emg').classList.toggle('sel', on);
-    // 应急态 → 路线与车离开画面（停下引导）
+    // 应急态 → 路线与车离开画面（停下引导）；解除应急时把车按当前位置放回来
     map.getSource('route-casing').setData(fcLine(on ? [] : ROUTES[state.routeKey].segments.map(function (id) { return SEG[id].coords; })));
-    CAR_POS.features = on ? [] : CAR_POS.features;
-    if (map.getSource('car')) map.getSource('car').setData(CAR_POS);
+    if (on) {
+      CAR_POS.features = [];
+      if (map.getSource('car')) map.getSource('car').setData(CAR_POS);
+    } else {
+      updateCar(state.dCur);
+    }
     renderAdvice();
   }
   document.getElementById('tg-normal').onclick = function () { setEmergency(false); };
@@ -886,7 +891,7 @@
         return '<div style="margin-bottom:6px"><div class="kv"><span>' + esc(a.path_id) + ' · ' + esc(a.note || '') + '</span><span>' + a.eta_min + ' min</span></div>' +
           '<div class="segchips">' + segChips(a.segments) + '</div></div>';
       }).join('') : '') +
-      '<div class="foot-note">C-3 要求备选 ≥2 条；本包只给 1 条 —— **缺口如实登记，本单不编造第二条**（补齐在站点包 / IKLLX9 那条线）。</div>';
+      '<div class="foot-note">C-3 要求备选 ≥2 条；本包只给 1 条 —— 缺口如实登记，本单不编造第二条（补齐在站点包 / IKLLX9 那条线）。</div>';
     document.getElementById('advice-why').textContent = REC.why;
     document.getElementById('advice-sub').textContent =
       STATION.name + ' · ' + STATION.subtitle + ' · 车辆位置为演示值（不做定位）';
@@ -901,7 +906,7 @@
       '<div class="kv"><span>预计耗时</span><span>' + REC.departure_eta_min + ' min</span></div>' +
       '<div class="kv"><span>段序列</span><span>' + esc(REC.departure_segments.join(' → ')) + '</span></div>' +
       '<div class="segchips">' + segChips(REC.departure_segments) + '</div>' +
-      '<div class="foot-note">离开停车场 → 场区出入道 → 上干道。本页内容**必现**，与进场建议相互独立。</div>';
+      '<div class="foot-note">离开停车场 → 场区出入道 → 上干道。本页内容必现，与进场建议相互独立。</div>';
 
     var trips = [
       { t: '进场', segs: REC.arrival_segments, eta: REC.arrival_eta_min, adopted: true },
