@@ -25,19 +25,46 @@ export const DEFAULT_PACK_KEY = 'A'
 
 let injectedKey: string | null = null
 
+/** 记忆用户选过的线路图(顶部栏切换器)。键名带项目前缀,不与别的页串味 */
+const PACK_MEM_KEY = 'hubflow.stationPack'
+
 /** 由入口注入当前包键(浏览器在挂载前、mock 在插件装配时各调一次) */
 export function setActivePackKey(key: string): void {
   injectedKey = key
 }
 
 /**
+ * 启动时读回用户上次选过的包(`switchPack` 写的那份)。
+ *
+ * 为什么需要:顶部栏切换器选完会 `window.location.reload()`(见 `AppShell.choosePack`),
+ * 而 `injectedKey` 是模块级变量、刷新即丢 —— 没有这一步,切换器**选完就退回默认包**,
+ * 等于坏的。读不到 / 读坏了就落回注入值(构建期的 `VITE_STATION_PACK`)。
+ * Node 侧(mock 中间件)没有 `localStorage`,靠 try/catch 静默落回注入值。
+ */
+export function restorePackKey(fallback: string): string {
+  try {
+    const k = localStorage.getItem(PACK_MEM_KEY)
+    if (k && PACKS[k]) return k
+  } catch {
+    /* localStorage 不可用(隐私模式 / Node 侧):用注入值 */
+  }
+  return fallback
+}
+
+/**
  * 运行时切换站点包(顶部栏线路图切换器,业主 2026-10-14)。
  * 只改浏览器侧的键:几何(demoNetwork 惰性读包)与 mock(每次请求读包)都从
  * `activePack()` 现取,所以下一次拉快照起,页面路网/基线/告警整套跟着换;
- * **不触发刷新** —— 各页监听快照推送自行重绘。
+ * 同时落一份 localStorage,好让 `choosePack()` 的整页刷新之后仍然生效。
  */
 export function switchPack(key: string): void {
-  if (PACKS[key]) injectedKey = key
+  if (!PACKS[key]) return
+  injectedKey = key
+  try {
+    localStorage.setItem(PACK_MEM_KEY, key)
+  } catch {
+    /* 隐私模式等写不进去:不影响本次会话内切换,只是刷新后不记忆 */
+  }
 }
 
 /**
