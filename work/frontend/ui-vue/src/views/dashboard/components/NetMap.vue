@@ -487,7 +487,7 @@ const vehPts = computed(() =>
           <div class="lg-sep" />
           <div class="lg-row"><span class="dot cam-dot" />摄像头布点（点击进感知层）</div>
           <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
-          <div class="lg-note">未挂摄像头的路段**只画灰轮廓**、不上色</div>
+          <div class="lg-note">未挂摄像头的路段只画灰轮廓、不上色</div>
         </template>
       </template>
     </div>

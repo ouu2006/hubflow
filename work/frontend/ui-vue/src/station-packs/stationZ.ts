@@ -24,8 +24,8 @@ import type { PackChannel, PackSegmentBase, StationPack } from './types.ts'
 //   cam-05 停车场·北支（停车场内部北侧通道）
 //   cam-06 鼎湖大道·进场（另一条进场干道）
 //
-// ⚠️ **坐标不是路测点，是"落在这条路段线上"的示意位置**（经纬度取自该段折线上的点，
-//    由生成脚本投影得到）——本批摄像头是**示意布点**，不是踏勘定的点位。
+// ⚠️ **坐标不是路测点，也不是踏勘点位**：6 个坐标都取自**该段自己的折线**（其中 5 个取在
+//    折线顶点上，C-06 落在折线段中间）——只保证"图钉画在这条线上"，不表示实地位置。
 // ⚠️ **`hasVideo: false`**：本批摄像头**全部没有视频源**（业主：视频样本先不弄）。
 //    感知层对它们显示「未接入视频源 · 本期留空」，**不得**说成"样本视频未导出"。
 const CHANNELS: PackChannel[] = [
@@ -43,6 +43,12 @@ const CHANNELS: PackChannel[] = [
 // 只有这些段会显示颜色，其余 16 段画灰轮廓（"这段没监控"）。
 // 数值是**编造的演示值**（一眼能看出是整数 / 整档），不是任何模型的输出。
 //
+// ⚠️ **`source` 一律取 `'twin'`（孪生链路 / 虚拟检测器）**，不是 `'video'`：
+//    本站**没有任何视频链路**——6 路摄像头全是空窗（`hasVideo: false`），
+//    一份视频指标都产不出来。若在这里写 `'video'`，双数据源并排（TC-19）与
+//    数据供给对照带（DataSupplyPanel）就会把编造的演示值列成"视频链路槽位"，
+//    与感知层的空窗**自相矛盾**（口径红线：不得把模拟值说成实测值）。
+//
 // 等级分布刻意做成"进场堵、场区通"的演示剧情：
 //   SZ-01 吉庆大道（进场主路）  3 级 拥堵
 //   SZ-03 鼎湖大道·进场          2 级 缓行
@@ -52,7 +58,7 @@ const CHANNELS: PackChannel[] = [
 const SEGMENT_BASES: PackSegmentBase[] = [
   {
     segment_id: 'SZ-01',
-    source: 'video',
+    source: 'twin',
     q_vph: 3200,
     v_kmh: 18,
     v_f_kmh: 50,
@@ -74,7 +80,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
   },
   {
     segment_id: 'SZ-03',
-    source: 'video',
+    source: 'twin',
     q_vph: 1600,
     v_kmh: 34,
     v_f_kmh: 50,
@@ -96,7 +102,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
   },
   {
     segment_id: 'SZ-05',
-    source: 'video',
+    source: 'twin',
     q_vph: 900,
     v_kmh: 22,
     v_f_kmh: 30,
@@ -118,7 +124,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
   },
   {
     segment_id: 'SZ-07',
-    source: 'video',
+    source: 'twin',
     q_vph: 260,
     v_kmh: 14,
     v_f_kmh: 14,
@@ -140,7 +146,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
   },
   {
     segment_id: 'SZ-12',
-    source: 'video',
+    source: 'twin',
     q_vph: 700,
     v_kmh: 9,
     v_f_kmh: 20,
@@ -212,8 +218,14 @@ export const STATION_Z: StationPack = {
 
   // 感知通道 = 6 路摄像头（本批无视频源：`hasVideo: false`）
   channels: CHANNELS,
-  /** 有摄像头覆盖的路段（其余段只画灰轮廓，不上色） */
-  videoCovered: CHANNELS.map((c) => c.segment_id),
+  /**
+   * **视频链路覆盖 = 空**：本批摄像头全部没有视频源（业主：视频样本先不弄），
+   * 一份视频指标都产不出来。写空数组 → 双源并排（TC-19）的 video 槽位如实显示"不可用"，
+   * 而不是拿编造的演示值冒充视频链路 —— 与感知层的空窗同口径。
+   * ⚠️ 这与 `colorPolicy: 'camera-covered'` **不是一回事**：那条说的是"哪几条段**有摄像头**，
+   *    可以上色"（摄像头 = 布点，与有没有视频源无关）；本条说的是"哪几条段有**视频链路数据**"。
+   */
+  videoCovered: [],
 
   /**
    * 上色策略：**只有摄像头监控下的路段才显示颜色**（业主 2026-10-15 裁定）。

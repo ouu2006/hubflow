@@ -159,7 +159,7 @@ const gaps = computed<string[]>(() => {
   const out: string[] = []
   const c = ch.value
   if (c && !c.def.hasVideo) {
-    out.push('该通道**未接入视频源**(路网上已布点、本期视频留空):检测框 / 轨迹 / 标定 / 四项指标全部不可用')
+    out.push('该通道未接入视频源(路网上已布点、本期视频留空):检测框 / 轨迹 / 标定 / 四项指标全部不可用')
   } else if (!c?.meta) {
     out.push('该通道样本视频未导出:检测框 / 轨迹 / 标定 / 四项指标全部不可用')
   } else if (c.detFailed) {

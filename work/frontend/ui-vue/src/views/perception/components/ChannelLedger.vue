@@ -14,6 +14,10 @@ const exportedCount = computed(() =>
 )
 /** 未接入视频源的通道数(Issue IKLX5Y:布了点、视频留空窗) */
 const noSourceCount = computed(() => props.channels.filter((c) => !c.def.hasVideo).length)
+/** 全包都没有视频源(站点包 Z):这时不能自称"离线样本"——样本视频压根没有 */
+const allNoSource = computed(
+  () => props.channels.length > 0 && noSourceCount.value === props.channels.length,
+)
 
 const current = computed(() => props.channels.find((c) => c.def.source === props.currentId) ?? null)
 const currentMeta = computed(() => current.value?.meta ?? null)
@@ -46,8 +50,8 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
     <div class="td-card-head">
       视频源
       <span class="td-head-tag">
-        6 路 · 离线样本(已导出 {{ exportedCount }})<template v-if="noSourceCount > 0">
-          · 未接入视频源 {{ noSourceCount }} 路</template>
+        {{ channels.length }} 路<template v-if="allNoSource"> · 全部未接入视频源(本期留空)</template><template v-else> · 离线样本(已导出 {{ exportedCount }})<template v-if="noSourceCount > 0">
+          · 未接入视频源 {{ noSourceCount }} 路</template></template>
       </span>
     </div>
     <div class="td-card-body flush">
@@ -101,7 +105,7 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
       <p class="line">二期 · 现场摄像头流(本期不接入)</p>
       <p class="line strong">点位与字段不变 · 只换视频源</p>
       <p class="note">
-        另有「未接入视频源」的通道:路网上已布点(大屏可点),但本期**不给视频** ——
+        另有「未接入视频源」的通道:路网上已布点(大屏可点),但本期不给视频 ——
         它与「未导出」(有样本视频、服务端还没处理)不是一回事,故分两档显示。
       </p>
     </div>

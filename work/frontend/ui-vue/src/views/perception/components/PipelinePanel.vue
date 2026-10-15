@@ -22,12 +22,17 @@ const exportsCount = computed(
 const chanTotal = computed(() => props.channels.length)
 /** 未接入视频源的通道数(Issue IKLX5Y) */
 const noSourceCount = computed(() => props.channels.filter((c) => !c.def.hasVideo).length)
+/** 全包都没有视频源(站点包 Z):这时"源视频"这一环整环是空的,不能自称"离线样本" */
+const allNoSource = computed(
+  () => props.channels.length > 0 && noSourceCount.value === props.channels.length,
+)
 
 const stages = computed(() => {
   const m = props.meta
   const backend = m?.backend ?? ''
-  const srcLine =
-    noSourceCount.value > 0
+  const srcLine = allNoSource.value
+    ? `${chanTotal.value} 路通道 · 全部未接入视频源(本期留空)`
+    : noSourceCount.value > 0
       ? `${chanTotal.value} 路通道(已导出 ${exportsCount.value} · 未接入视频源 ${noSourceCount.value})`
       : `${chanTotal.value} 路 · 离线样本(已导出 ${exportsCount.value} 路)`
   return [
@@ -85,11 +90,14 @@ const summaryRows = computed(() => {
           </div>
         </template>
       </div>
-      <p class="flow-note">单 CPU · 离线批处理 · 6 段样本({{ exportsCount }} 路已导出)</p>
+      <p class="flow-note">
+        <template v-if="allNoSource">本包 {{ chanTotal }} 路通道全部未接入视频源(本期留空)—— 整条流水线无输入,下方汇总无数据</template>
+        <template v-else>单 CPU · 离线批处理 · {{ chanTotal }} 路通道({{ exportsCount }} 路已导出)</template>
+      </p>
 
       <div class="sep">
-        六路汇总 · 本次批处理
-        <span class="td-head-tag">{{ exportsCount }} / 6 完成</span>
+        {{ chanTotal }} 路汇总 · 本次批处理
+        <span class="td-head-tag">{{ exportsCount }} / {{ chanTotal }} 完成</span>
       </div>
       <div class="kv" v-for="row in summaryRows" :key="row.k">
         <span class="k">{{ row.k }}</span>

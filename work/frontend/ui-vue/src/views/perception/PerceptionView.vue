@@ -69,8 +69,30 @@ function deepLinkSource(): string | null {
 const linkedSource = deepLinkSource()
 if (linkedSource) currentSource.value = linkedSource
 
+// 组件已挂载时地址栏再变(浏览器前进/后退、或从别处再点一次摄像头):跟着走,
+// 否则 setup 期读过一次就再也不认新参数,会出现"链接换了、选中的还是那一路"。
+watch(() => route.query.source, () => {
+  const next = deepLinkSource()
+  if (next) currentSource.value = next
+})
+
 /** 本包是否至少声明了一路有视频源的通道 —— 没有就不该报"服务未连接" */
 const packHasVideo = computed(() => packChannels().some((c) => c.hasVideo))
+
+/**
+ * 页头口径(两句话都随包走,不写死):
+ *   有视频源 → 既有的"6 段离线样本视频"口径;
+ *   本包全部没有视频源(站点包 Z,业主:视频样本先不弄) → 如实说"未接入视频源",
+ *   否则页头会声称有一批根本不存在的样本视频。
+ */
+const subLine = computed(() =>
+  packHasVideo.value
+    ? '样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子'
+    : `${packChannels().length} 路通道 · 全部未接入视频源(本期留空) · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`,
+)
+const sourceBadge = computed(() =>
+  packHasVideo.value ? '离线样本视频 · 非实时流 · 非本站现场' : '本批摄像头未接入视频源 · 页面不显示任何画面',
+)
 
 const summary = ref<PerceptionSummary | null>(null)
 const summaryUnavailable = ref(true)
@@ -221,10 +243,10 @@ onMounted(() => {
     :station="stationName"
     :ts="snapshotTs"
     title="感知层 · YOLO 视频链路 + 环境上下文"
-    subtitle="6 段样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子"
+    :subtitle="subLine"
   >
     <template #headRight>
-      <span class="td-badge-warn">离线样本视频 · 非实时流 · 非本站现场</span>
+      <span class="td-badge-warn">{{ sourceBadge }}</span>
       <span class="td-mono head-ts">处理时间戳 {{ processedAt }}</span>
     </template>
 

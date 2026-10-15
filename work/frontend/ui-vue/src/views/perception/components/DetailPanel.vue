@@ -187,7 +187,7 @@ const gateState = computed(() => {
         该通道检测数据读取失败(detections 接口请求失败)· 无 first_seen 可统计。这是接口故障,不是"该路无检出"。
       </p>
       <p v-else-if="noSource" class="note">
-        该通道**未接入视频源**（路网上已布点，本期视频留空）· 无画面与检测数据。
+        该通道未接入视频源（路网上已布点，本期视频留空）· 无画面与检测数据。
       </p>
       <p v-else class="note">该通道检测数据不可用 · 样本视频未导出(无 first_seen 可统计)。</p>
       <div class="kv">
