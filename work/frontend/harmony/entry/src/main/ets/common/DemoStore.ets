@@ -15,7 +15,7 @@ const CRUISE_BASE_STEP: number = 0.006;
  * ArkUI 的 @Observed 只在「组件的被装饰成员变量」上读写属性时才建立订阅，
  * 依赖收集发生在 build 期间、被观察对象必须挂在 this 上。
  * 通过方法返回的临时对象读属性 → 订阅挂不上 → 点击后状态变了但界面不重绘
- * （实测：点四个开关全部无反应，就是这个原因）。
+ * （实跑验证：点四个开关全部无反应，就是这个原因）。
  *
  * 【正确姿势】
  * - Index 用 @State 持有单例（@State + @Observed 组合 = 深度观察，属性变化触发重绘）
@@ -129,8 +129,8 @@ export class DemoStore {
    * （到站后的状态与原「已到达」完全一致）。这是本轮需求：把「一点一动」改成「一点自动到终点」。
    *
    * 速度按当前路段等级变化：流畅(1) 最快 → 缓行(2) → 拥堵(3) → 严重拥堵(4) 最慢，
-   * 不再「一下子跳到终点」。每帧推进 driveRatio 并 bumpEpoch() 触发地图重画
-   * （双 Canvas 翻转重建节点），于是车标、引导红线、已走灰线都跟着动。
+   * 不再「一下子跳到终点」。每帧只推进 driveRatio（@Prop @Watch 直达地图重画，
+   * 不 bumpEpoch、不重建 Canvas 节点），于是车标、引导红线、已走灰线都跟着动。
    *
    * 【用户投诉：「我只是选了地图，它就自己开始导航了」—— 这里加显式门闸】
    * 唯一的启动入口是底部「开始导航」按钮 → startCruise()，它把 navStarted 置 true。
@@ -178,12 +178,18 @@ export class DemoStore {
       this.driveRatio = 1;
       this.maneuverIndex = route.maneuvers.length - 1;
       this.stopCruise();
-      this.bumpEpoch();
       return;
     }
     // 同步「附近已过的转向序号」，顶部转向条文案随车推进
     this.maneuverIndex = this.maneuverIndexAtRatioIn(route);
-    this.bumpEpoch();
+    /**
+     * 【铁律：巡航每帧绝不 bumpEpoch()（2026-10-16 视频举证的叠加/卡顿根因）】
+     * 旧版每帧 bumpEpoch() → repaintEpoch 翻转 → 双 Canvas 每帧销毁重建节点：
+     * 旧节点销毁不及时 → 两幅地图叠加；新节点 onReady 布局未落定 → 左上角缩小版残影；
+     * 每帧重建 → 卡顿闪屏。现在高频重画只走一条路：
+     * driveRatio 是 @Prop @Watch，赋值即触发 RoadNetMap.repaintNow()
+     * （缓存 dc + invalidate，节点不重建）；转向条文案由 maneuverIndex 赋值经 @ObjectLink 通知。
+     */
   }
 
   /** 停止巡航并清定时器（切演示态 / 变道 / 退出 / 重走 都会调用，避免定时器泄漏） */
@@ -283,7 +289,7 @@ export class DemoStore {
    *
    * 我第一版把条件写成 `pickedPathId !== ''` —— 初值就是 'P-2'，恒为 true，
    * 于是两个分支永远走同一支，节点从不重建。
-   * 实测症状：卡片高亮、导航条、路段条全切到 P-1 了，**地图还画着 P-2**
+   * 实跑验证症状：卡片高亮、导航条、路段条全切到 P-1 了，**地图还画着 P-2**
    *（截图确认：按钮写「路线二」但地图蓝线没动）。
    *
    * 现在改为：每次状态变化 epoch 自增，条件用 `epoch % 2` 的奇偶。

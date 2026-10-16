@@ -6,8 +6,7 @@ import { DepartureActionRow } from '../components/NavBar';
 import { DegradedBanner } from '../components/DegradedBanner';
 import {
   TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, TEXT_WHITE, BG_GRAY_LIGHT, BG_GRAY_LIGHTER,
-  BORDER_ACCENT, ACCENT_COLOR_BLIND
-} from '../common/Colors';
+  BORDER_ACCENT, ACCENT_COLOR_BLIND, BG_SELECTED } from '../common/Colors';
 import { RoadNetMap } from '../components/RoadNetMap';
 import { PlanMeta, departurePlans, planOf } from '../common/RoutePlan';
 import { levelMetaOf } from '../common/LevelMeta';
@@ -31,6 +30,13 @@ export struct DeparturePage {
    * 【注意】ArkTS V1 不允许 @Prop 装饰函数类型，故用普通成员（回调不需要响应式）。
    */
   switchTab: (idx: number) => void = () => {};
+
+  /**
+   * 本页当前是否可见（由 Index 的 Tabs.onChange 注入）。
+   * 切到本页时由 true 触发 RoadNetMap 立即重画当前演示态，修「慢一拍」。
+   * 仅作重画触发信号，不改变任何业务内容。
+   */
+  @Prop active: boolean = true;
 
   /**
    * 当前选中的离站方案。
@@ -90,6 +96,36 @@ export struct DeparturePage {
     return s;
   }
 
+  /**
+   * 【禁止态下的「有效选中态」= 永远 false —— 与到站页 RouteOptionCard 同一口径】
+   *
+   * 【为什么离站卡也要单独做一遍，而不是抽公共组件】
+   * 离站方案是另一套（主选 P-5 + 备选 P-1，见下方注释），数据源不同没法直接复用
+   * RouteOptionRow；但「禁止态不许亮蓝」是同一条铁律（手册 TC-11），
+   * 两处必须同时改，只改一处就会出现「落客页变灰了、离站页还是蓝的」。
+   *
+   * 录屏实跑验证：应急态下离站页同样是「离站一」蓝底 + P-5 蓝字 + 蓝对勾 + 蓝框，
+   * 而此时已停止引导，不该再告诉司机「你选的是这条」。.opacity(0.45) 只是淡化，蓝色还在。
+   */
+  /**
+   * 【为什么是普通方法而不是 get 访问器 —— 本轮编译踩过】
+   * ArkTS 不允许 get 访问器带参数，编译报「A 'get' accessor cannot have parameters」；
+   * 而这里必须按 pathId 逐卡判断（离站两张卡各算各的），所以只能写成方法。
+   */
+  private isPickedOf(pathId: string): boolean {
+    return this.store.departurePathId === pathId && !this.store.routeLocked();
+  }
+
+  /** 选中态底色：禁止态一律灰 */
+  private pickBgOf(pathId: string): string {
+    return this.isPickedOf(pathId) ? BG_SELECTED : BG_GRAY_LIGHTER;
+  }
+
+  /** 选中态边框色：禁止态一律灰 */
+  private pickBorderOf(pathId: string): string {
+    return this.isPickedOf(pathId) ? ACCENT_COLOR_BLIND : BORDER_ACCENT;
+  }
+
   build() {
     Column() {
       /** 页顶应急/降级条（与导航页、落客页同一个组件，常态 0 高度不占位） */
@@ -97,6 +133,32 @@ export struct DeparturePage {
 
       Scroll() {
         Column({ space: 12 }) {
+          /**
+           * 【应急 / 降级提示：必须放在滚动区最上面，而不是页面末尾 —— 本轮实跑修掉】
+           *
+           * 【为什么挪到最前】
+           * 原来这段在 Scroll 的**最后**（方案卡之后），于是：
+           *   常态页面很长（地图 470vp 占满上半屏），红卡被推到屏幕外下沿，
+           *   实跑验证截图里「已停止路线引导，恢复后自动继续。」这行被底部固定操作条压掉一半，
+           *   而这行正是完成判定里「告知文案必现」要的那句 —— 等于判定被打折。
+           * Scroll 的 padding.bottom 只在**滚到底**时才起避让作用，
+           * 而应急态是「刚点亮、用户还在页面顶部」的时刻，此时根本看不到末尾。
+           *
+           * 【挪前后的双重效果】
+           *   ① 红卡在第一屏顶部，不必滚动即可看到完整告知；
+           *   ② 即使底部被压，也只会压到最后的辅助信息，不会压掉安全告知。
+           * 注意这与 StateTopBar（页顶窄条）是**叠加**关系，两个都保留：
+           * 顶部窄条给第一眼信号、下面大卡给完整说明，与导航页同构。
+           */
+          /**
+           * 【2026-10-16 用户指令：应急红大卡挪到地图下方、路线选择框上方】
+           * 顶部窄条（StateTopBar）仍在页顶负责第一眼安全信号，不在此列。
+           * 降级琥珀条位置不变（用户只提了红卡）。
+           */
+          if (this.store.degraded) {
+            DegradedBanner({ scene: '离站' })
+          }
+
           RoadNetMap({
             unavailable: this.store.unavailable,
             colorBlind: this.store.colorBlind,
@@ -109,8 +171,16 @@ export struct DeparturePage {
             // 选路页红线强调：让「连接司机标识与终点的红线」在选路地图也清晰可见
             selection: true,
             // 应急态停止路线引导、地图不再画推荐路线（与导航页同口径）
-            stopGuidance: this.store.emergency
+            stopGuidance: this.store.emergency,
+            // 切到本页（Tabs.onChange）时 active 由 false→true，触发 repaintNow() 就地重画最新演示态，
+            // 解决「演示态切换慢一拍」：单 Canvas 不重建、不 bumpEpoch、杜绝多地图叠加
+            active: this.active
           })
+
+          // 应急红大卡：地图正下方、路线选择框正上方（用户指定位置）
+          if (this.store.emergency) {
+            EmergencyCard()
+          }
 
           /**
            * 【应急 = 顶部加一条红条，**下面一个字都不能少** —— 用户明确纠正过】
@@ -130,12 +200,6 @@ export struct DeparturePage {
            * → 所以应急态下：顶部红条（StateTopBar）+ 下面红色大框（EmergencyCard）**两个都要**。
            *   顶部那个负责「第一眼可见」，下面那个是导航页同款的内容卡。
            */
-          if (this.store.emergency) {
-            EmergencyCard()
-          } else if (this.store.degraded) {
-            DegradedBanner({ scene: '离站' })
-          }
-
           SectionTitle({ text: '送完人之后怎么走（离站路线）' })
 
           /**
@@ -158,9 +222,9 @@ export struct DeparturePage {
                   Text(p.index === 0 ? '离站一' : '离站二')
                     .fontSize(12)
                     .fontWeight(FontWeight.Bold)
-                    .fontColor(this.store.departurePathId === p.pathId ? TEXT_WHITE : '#33404A')
+                    .fontColor(this.isPickedOf(p.pathId) ? TEXT_WHITE : '#33404A')
                     .padding({ top: 2, bottom: 2, left: 6, right: 6 })
-                    .backgroundColor(this.store.departurePathId === p.pathId ? ACCENT_COLOR_BLIND : '#D5DEE4')
+                    .backgroundColor(this.isPickedOf(p.pathId) ? ACCENT_COLOR_BLIND : '#D5DEE4')
                     .borderRadius(4)
                   Text(p.recommended ? '推荐' : '')
                     .fontSize(9)
@@ -169,14 +233,14 @@ export struct DeparturePage {
                   Text('✓')
                     .fontSize(12)
                     .fontWeight(FontWeight.Bold)
-                    .fontColor(this.store.departurePathId === p.pathId ? ACCENT_COLOR_BLIND : '#C3CDD4')
+                    .fontColor(this.isPickedOf(p.pathId) ? ACCENT_COLOR_BLIND : '#C3CDD4')
                 }
                 .width('100%')
 
                 Text(p.pathId)
                   .fontSize(20)
                   .fontWeight(FontWeight.Bold)
-                  .fontColor(this.store.departurePathId === p.pathId ? ACCENT_COLOR_BLIND : TEXT_PRIMARY)
+                  .fontColor(this.isPickedOf(p.pathId) ? ACCENT_COLOR_BLIND : TEXT_PRIMARY)
                   .maxLines(1)
 
                 Text(`约 ${p.etaMin} 分钟`)
@@ -194,7 +258,7 @@ export struct DeparturePage {
                       .fontSize(8)
                       .fontColor(this.store.colorBlind || this.store.unavailable || lv < 1
                         ? '#8B8B8B' : levelMetaOf(lv, false).color)
-                  }, (lv: number) => `dlv_${lv}`)
+                  }, (lv: number, idx: number) => `dlv_${p.pathId}_${idx}_${lv}`)
                   Text(this.planLevelsText(p))
                     .fontSize(9)
                     .fontColor(TEXT_SECONDARY)
@@ -217,11 +281,11 @@ export struct DeparturePage {
               .constraintSize({ maxWidth: '47%' })
               // 与到站页的方案卡同高（140），两页视觉一致
               .height(140)
-              .backgroundColor(this.store.departurePathId === p.pathId ? '#E8F1FE' : BG_GRAY_LIGHTER)
+              .backgroundColor(this.pickBgOf(p.pathId))
               .borderRadius(10)
               .border({
-                width: this.store.departurePathId === p.pathId ? 2 : 1,
-                color: this.store.departurePathId === p.pathId ? ACCENT_COLOR_BLIND : BORDER_ACCENT
+                width: this.isPickedOf(p.pathId) ? 2 : 1,
+                color: this.pickBorderOf(p.pathId)
               })
               /**
                * 【禁止态：卡片变灰且不可点 —— 用户明确要求】

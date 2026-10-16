@@ -49,6 +49,13 @@ export struct RecommendPage {
    */
   switchTab: (idx: number) => void = () => {};
 
+  /**
+   * 本页当前是否可见（由 Index 的 Tabs.onChange 注入）。
+   * 切到本页时由 true 触发 RoadNetMap 立即重画当前演示态，修「慢一拍」。
+   * 仅作重画触发信号，不改变任何业务内容。
+   */
+  @Prop active: boolean = true;
+
   @State pickedRoad: string = 'SEG-002';
 
   /**
@@ -107,7 +114,8 @@ export struct RecommendPage {
               pickedPathId: '',
               repaintEpoch: this.store.routeEpoch,
               blank: true,
-              selection: false
+              selection: false,
+              active: this.active
             })
 
             Column({ space: 10 }) {
@@ -195,18 +203,35 @@ export struct RecommendPage {
        *     → 告知文案逐段露出，一直能拉到最下面。
        *
        * 【470 是怎么定的】
-       * 实测（Pura 90，1320×2856，3.5 px/vp）：
+       * 实跑验证（Pura 90，1320×2856，3.5 px/vp）：
        *   顶栏 250（压扁后）+ tabBar 196 + 角标 137 = 583，
        *   Tabs 内容区 ≈ 2733 - 583 = 2150；
        *   里面 导航条 373 + Scroll + 操作条 197 → Scroll 视口 ≈ 1580px ≈ 451vp。
        * 地图 470vp(1645px) > 视口 451vp → 首屏只能看见地图，符合要求。
        *
        * 【为什么 mapHeight 写死而不用 layoutWeight】
-       * 实测给 RoadNetMap 加 layoutWeight 后，它内部 Stack 的高度算不出来，
+       * 实跑验证给 RoadNetMap 加 layoutWeight 后，它内部 Stack 的高度算不出来，
        * Scroll 会盖到地图上（卡片浮在地图上）。写死高度最稳。
        */
       Scroll() {
         Column({ space: 12 }) {
+          /**
+           * 【应急提示必须放在滚动区最上面 —— 与落客/离站页同一修法】
+           *
+           * 【实跑验证到的现象】
+           * 原来这张红卡排在方案卡之后（页面下半段），而本页首屏被深色导航条 + 470vp 地图占满，
+           * 红卡落在屏幕外；实跑验证截图中「已停止路线引导，恢复后自动继续。」
+           * 这行被底部固定操作条压掉一半 —— 而它正是完成判定「告知文案必现」要的那句。
+           * Scroll 的 padding.bottom 只在滚到底时生效，刚点亮应急态时用户还在页面顶部，压根看不到。
+           *
+           * 【与 StateTopBar / NavBar 的关系是叠加，不是替换】
+           * 页顶窄条（StateTopBar）给第一眼信号、下面这张大卡给完整说明，导航页原本就是三处都有，
+           * 一个都不删。本页顶部另有固定深色导航条（NavBar），它讲的是「下一步怎么走」，与此不冲突。
+           */
+          if (this.store.emergency) {
+            EmergencyCard()
+          }
+
           RoadNetMap({
             unavailable: this.store.unavailable,
             colorBlind: this.store.colorBlind,
@@ -219,7 +244,8 @@ export struct RecommendPage {
             // 离站导航的终点是离站点，不能沿用落客点标签（否则地图角标显示 DROP-03）
             dropLabel: this.isDepNav() ? '离站出口' : ROUTES_FIXTURE.arrival_route.dropoff_point,
             // 应急态停止路线引导、地图不再画推荐路线（降级态不锁，流程须不中断）
-            stopGuidance: this.store.emergency
+            stopGuidance: this.store.emergency,
+            active: this.active
           })
 
           // ---- 路线信息横卡（当前方案的路径号 / 耗时 / 落客点） ----
@@ -234,10 +260,7 @@ export struct RecommendPage {
             unavailable: this.store.unavailable
           })
 
-          if (this.store.emergency) {
-            // 应急态：停止路线引导，替换为「请服从现场指挥」
-            EmergencyCard()
-          } else if (this.store.degraded) {
+          if (this.store.degraded) {
             /**
              * 【降级态改成叠加，不吃掉下面所有内容】
              * 初版这里用 else 把推荐卡/协同说明/备选/why/图例全 else 掉了，
@@ -359,8 +382,8 @@ export struct RecommendPage {
         .width('100%')
 /**
          * 【底部留 88 —— 不是 32】
-         * 操作条固定在 Scroll 之外（实测 y≈2229 起、高 197px ≈ 56vp），
-         * 原来的 32vp 不够避让：实测方案卡新增「路况构成」那一行正好落在
+         * 操作条固定在 Scroll 之外（实跑验证 y≈2229 起、高 197px ≈ 56vp），
+         * 原来的 32vp 不够避让：实跑验证方案卡新增「路况构成」那一行正好落在
          * 操作条覆盖区里，被压得只露出上半截（用户能看到卡片但看不到路况）。
          * 留 88vp 能完整露出卡片的最后一行。
          */

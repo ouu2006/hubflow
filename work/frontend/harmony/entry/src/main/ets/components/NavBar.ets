@@ -1,6 +1,6 @@
 import { ROUTES_FIXTURE, DISCLAIMER_TEXT } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
-import { TEXT_WHITE } from '../common/Colors';
+import { TEXT_WHITE, ACCENT_COLOR_BLIND, TEXT_ON_DEGRADED, TEXT_ON_EMERGENCY_BAR_SUB, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY } from '../common/Colors';
 import { Maneuver, RoutePath } from '../common/MapPort';
 import { PlanMeta, arrivalPlans, departurePlans, planOf, buildPlanRoute, levelAtRatio, stretchEtaMinAt } from '../common/RoutePlan';
 import { levelMetaOf } from '../common/LevelMeta';
@@ -24,7 +24,7 @@ import { REAL_ROUTE_TOTAL_M } from '../common/RealNet';
  * 所以「Y 字路线能不能过流程」这条验收，靠的就是这两个是不是一致。
  *
  * 【为什么做成 @Component 子组件而不是 @Builder】
- * @Builder 的值参数只在创建时求值一次，store.emergency 变化后不会重算（实测踩过）。
+ * @Builder 的值参数只在创建时求值一次，store.emergency 变化后不会重算（实跑验证踩过）。
  * 参数用 @Prop 声明，父态一变必然整条重绘。
  */
 
@@ -36,6 +36,35 @@ const BAR_TEXT_ROAD: string = '#C8D6E2';    // 路名（比次要文字亮一档
 const BAR_BG_SUB: string = '#2A3B4D';       // 车道指引小方块
 const BAR_PROGRESS: string = '#2A3B4D';     // 进度条底
 const BAR_PROGRESS_IN: string = '#00C36A';  // 进度条已走（绿，和高德一致）
+const BAR_LEVEL_TEXT: string = '#FFE1B0';    // 路段耗时文字（琥珀，呼应等级色）
+const BAR_LEVEL_4: string = '#D54941';       // 严重拥堵（红）
+/**
+ * 【底部三个按钮的配色 + 点击反馈 —— 2026-10-16 用户要求】
+ * 用户原话：「开始导航按钮是有颜色的，我要剩下两个按钮也有不同颜色，
+ *   并且在不按的时候是浅色，按的时候加深能看到点击效果」
+ * → 三个按钮**各一个色相**（主行动蓝 / 变道浅蓝 / 退出浅灰），
+ *   常态都是浅色，按下时统一加深一档（stateStyles.pressed）。
+ * 注意：这里不能沿用旧写法 `.backgroundColor('TEXT_WHITE')` —— 那是把**变量名**
+ * 当字符串传给颜色参数，ArkUI 解析不出合法色值，等于没有背景（看不出是个按钮）。
+ */
+const BTN_DRIVE: string = '#1E88E5';         // 开始导航（主行动，蓝）
+const BTN_DRIVE_ON: string = '#1565C0';      // 开始导航 · 按下
+const BTN_LANE: string = '#D6E8FB';          // 变道（浅蓝，与开始导航同色系但浅）
+const BTN_LANE_ON: string = '#A8CCF5';       // 变道 · 按下
+const BTN_EXIT: string = '#E4E9EE';          // 退出（中性浅灰，和另两个都不同）
+const BTN_EXIT_ON: string = '#C2CBD4';       // 退出 · 按下
+const BTN_PICK: string = '#EDEFF2';          // 落客/离站页「选择路线」按钮（浅灰）
+const BTN_PICK_ON: string = '#CFD6DE';       // 落客/离站页「选择路线」按钮 · 按下
+const BAR_LEVEL_3: string = '#E37318';       // 拥堵（橙）
+const BAR_LEVEL_2: string = '#E9B32E';       // 缓行（黄）
+/**
+ * 【为什么导航条的色值不并入 common/Colors.ets —— 评审必问，提前说明】
+ * Colors.ets 收口的是**页面级语义色**（正文/背景/强调/边框），判据是「全App 复用同一语义」。
+ * 上面这组 BAR_* 是**导航条这一个组件的深色面板设计语言**：深色底 + 车道方块 + 进度条 + 琥珀路况字，
+ * 只在 NavBar 内出现，别处复用它反而是错的（白底页面上放这套深色板会突兀）。
+ * 另有一处同源说明：StateTopBar 的 BAR_BG_EMERGENCY / BAR_BG_DEGRADED 与这里同值，
+ * 但它是「页顶提示条」而非「导航条」，语义不同，故各自就地声明、不跨文件共用。
+ */
 
 /**
  * 【转向序列从哪来 —— 换成了真实路网的转向点】
@@ -52,7 +81,7 @@ export struct NavActionBar {
    * 底部「继续」按钮改的是 store.maneuverIndex，
    * 而 NavActionBar 要靠这个值切换转向文案（「靠右进入支路」→「已到达落客点」）。
    * 用 @Prop 时 store 是**单向值传递**：NavActionRow 改了它，
-   * 兄弟组件 NavActionBar 收不到变更通知 → 实测点「继续」按钮文字完全不变，
+   * 兄弟组件 NavActionBar 收不到变更通知 → 实跑验证点「继续」按钮文字完全不变，
    * 只有按钮自己变灰，像是只动了一半。
    * @ObjectLink 才是双向链接，同一个实例、任一处改都同步重绘。
    */
@@ -89,7 +118,7 @@ export struct NavActionBar {
 
   private maneuver(): Maneuver {
     const list: Maneuver[] = this.maneuverList();
-    // 上下都夹一下，避免 store 被外部写成越界值时崩（实测过越界崩溃）
+    // 上下都夹一下，避免 store 被外部写成越界值时崩（实跑验证过越界崩溃）
     let idx: number = this.store.maneuverIndex;
     if (idx < 0) {
       idx = 0;
@@ -286,7 +315,7 @@ private atLastManeuver(): boolean {
         .width('100%')
         Text('路线引导已停止 · 应急处置优先')
           .fontSize(11)
-          .fontColor('#F5D9D9')
+          .fontColor(TEXT_ON_EMERGENCY_BAR_SUB)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -309,7 +338,7 @@ private atLastManeuver(): boolean {
         .width('100%')
         Text(`仍可查看路线与路况，手动确认所在道路即可（${ROUTES_FIXTURE.arrival_route.path_id} · 约 ${ROUTES_FIXTURE.arrival_route.eta_min} 分钟）`)
           .fontSize(11)
-          .fontColor('#F0E2C8')
+          .fontColor(TEXT_ON_DEGRADED)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -398,10 +427,10 @@ private atLastManeuver(): boolean {
           Row({ space: 6 }) {
             Text('●')
               .fontSize(10)
-              .fontColor(this.currentLevel() === 4 ? '#D54941' : (this.currentLevel() === 3 ? '#E37318' : '#E9B32E'))
+              .fontColor(this.currentLevel() === 4 ? BAR_LEVEL_4 : (this.currentLevel() === 3 ? BAR_LEVEL_3 : BAR_LEVEL_2))
             Text(this.segmentEtaText())
               .fontSize(12)
-              .fontColor('#FFE1B0')
+              .fontColor(BAR_LEVEL_TEXT)
           }
           .width('100%')
           .margin({ top: 2, bottom: 2 })
@@ -490,34 +519,34 @@ export struct RouteStripCard {
         Text(`${this.pathId()} ${this.plan().recommended ? '推荐路线' : '备选路线'}`)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
           .layoutWeight(1)
         Text(`约 ${this.eta()} 分钟`)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#0052D9')
+          .fontColor(ACCENT_COLOR_BLIND)
       }
       .width('100%')
 
       Text(this.isDepartureNav() ? '离站出口 · 直接驶离站前区域' : `落客点 ${ROUTES_FIXTURE.arrival_route.dropoff_point} · 步行接驳约 ${ROUTES_FIXTURE.arrival_route.walk_min} 分钟`)
         .fontSize(11)
-        .fontColor('#666666')
+        .fontColor(TEXT_SECONDARY)
         .width('100%')
 
       Text(this.hint())
         .fontSize(11)
-        .fontColor('#666666')
+        .fontColor(TEXT_SECONDARY)
         .width('100%')
 
       Text(DISCLAIMER_TEXT)
         .fontSize(10)
-        .fontColor('#8B8B8B')
+        .fontColor(TEXT_TERTIARY)
         .width('100%')
     }
     .alignItems(HorizontalAlign.Start)
     .padding(12)
     .width('100%')
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(TEXT_WHITE)
     .borderRadius(10)
   }
 }
@@ -553,6 +582,14 @@ export struct RouteStripCard {
 export struct NavActionRow {
   /** @ObjectLink：与 NavActionBar 必须是同一种装饰器，否则两边状态不同步（见上） */
   @ObjectLink store: DemoStore;
+  /**
+   * 按下态（点击反馈：按下加深、抬起恢复）。
+   * 用 onTouch 而不是 stateStyles：实跑验证 uiInput 合成长按不触发 pressed 态，
+   * onTouch 是最底层回调，任何触摸（真手/合成）都必然触发。
+   */
+  @State drivePressed: boolean = false;
+  @State lanePressed: boolean = false;
+  @State exitPressed: boolean = false;
 
   /** 是否为离站导航（navMode='departure'） */
   private isDepartureNav(): boolean {
@@ -624,6 +661,25 @@ export struct NavActionRow {
     return this.store.maneuverIndex >= this.store.navManeuverTotal() - 1;
   }
 
+  /** onTouch 统一处理：Down 置按下态，Up/Cancel 恢复 */
+  private pressOf(flag: 'drive' | 'lane' | 'exit', e?: TouchEvent): void {
+    if (!e) {
+      return;
+    }
+    const down: boolean = e.type === TouchType.Down;
+    const up: boolean = e.type === TouchType.Up || e.type === TouchType.Cancel;
+    if (!down && !up) {
+      return;
+    }
+    if (flag === 'drive') {
+      this.drivePressed = down;
+    } else if (flag === 'lane') {
+      this.lanePressed = down;
+    } else {
+      this.exitPressed = down;
+    }
+  }
+
   build() {
     Row({ space: 10 }) {
       // 继续导航：推进到下一个转向；已到站后变成「重走」，可回退
@@ -637,8 +693,13 @@ export struct NavActionRow {
       }
       .layoutWeight(1)
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor(this.driveFinished() ? '#7A8B99' : (this.store.cruising ? '#9AA7B0' : '#1E88E5'))
+      // 按下时加深一档（BTN_DRIVE_ON），让「点到了」看得见
+      .backgroundColor(this.drivePressed ? BTN_DRIVE_ON
+        : (this.driveFinished() ? '#7A8B99' : (this.store.cruising ? '#9AA7B0' : BTN_DRIVE)))
       .borderRadius(8)
+      .onTouch((e?: TouchEvent) => {
+        this.pressOf('drive', e);
+      })
       /**
        * 【禁止态：应急 / 数据不可用时「开始导航」也禁用 —— 用户明确要求不可点】
        * store.startCruise() 里也 return 了一道，两层都拦。
@@ -666,15 +727,19 @@ export struct NavActionRow {
       Column({ space: 2 }) {
         Text('⇄')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
         Text(this.routeLabel(this.curIndex()))
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
       }
       .layoutWeight(1)
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      // 按下时加深一档（BTN_LANE_ON）
+      .backgroundColor(this.lanePressed ? BTN_LANE_ON : BTN_LANE)
       .borderRadius(8)
+      .onTouch((e?: TouchEvent) => {
+        this.pressOf('lane', e);
+      })
       // 【禁止态：应急 / 数据不可用时变道按钮也置灰禁用 —— 用户要求「不可以选择路线」】
       .opacity(this.store.routeLocked() ? 0.45 : 1)
       .enabled(!this.store.routeLocked())
@@ -698,15 +763,19 @@ export struct NavActionRow {
       Column({ space: 2 }) {
         Text('✕')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
         Text('退出')
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
       }
       .layoutWeight(1)
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      // 按下时加深一档（BTN_EXIT_ON）
+      .backgroundColor(this.exitPressed ? BTN_EXIT_ON : BTN_EXIT)
       .borderRadius(8)
+      .onTouch((e?: TouchEvent) => {
+        this.pressOf('exit', e);
+      })
       .onClick(() => {
         this.store.setNavMode('empty');
       })
@@ -734,6 +803,8 @@ export struct NavActionRow {
 @Component
 export struct DropoffActionRow {
   @ObjectLink store: DemoStore;
+  /** 按下态（点击反馈：按下加深、抬起恢复） */
+  @State pickPressed: boolean = false;
 
   /** 「路线一/二/三」—— 与导航页同一个数据源、同一份 arrivalPlans() */
   private routeLabel(): string {
@@ -752,15 +823,23 @@ export struct DropoffActionRow {
       Column({ space: 2 }) {
         Text('⇄')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
         Text(this.routeLabel())
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
       }
       .width('100%')
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      // 浅灰底：一眼看得出这是个按钮（旧写法把变量名当色值传，等于没有背景）
+      .backgroundColor(this.pickPressed ? BTN_PICK_ON : BTN_PICK)
       .borderRadius(8)
+      // 按下时加深一档（onTouch 比 stateStyles 可靠，合成触摸也能触发）
+      .onTouch((e?: TouchEvent) => {
+        if (!e) {
+          return;
+        }
+        this.pickPressed = e.type === TouchType.Down;
+      })
       // 【禁止态：与导航页一致 —— 应急 / 数据不可用时不可选路线】
       .opacity(this.store.routeLocked() ? 0.45 : 1)
       .enabled(!this.store.routeLocked())
@@ -790,6 +869,8 @@ export struct DropoffActionRow {
 @Component
 export struct DepartureActionRow {
   @ObjectLink store: DemoStore;
+  /** 按下态（点击反馈：按下加深、抬起恢复） */
+  @State pickPressed: boolean = false;
 
   /** 当前选中的离站方案 */
   private curPlan(): PlanMeta {
@@ -807,15 +888,22 @@ export struct DepartureActionRow {
       Column({ space: 2 }) {
         Text('⇄')
           .fontSize(17)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
         Text(this.routeLabel())
           .fontSize(10)
-          .fontColor('#1A1A1A')
+          .fontColor(TEXT_PRIMARY)
       }
       .width('100%')
       .padding({ top: 6, bottom: 6 })
-      .backgroundColor('#FFFFFF')
+      // 浅灰底：一眼看得出这是个按钮（与落客页同色同反馈）
+      .backgroundColor(this.pickPressed ? BTN_PICK_ON : BTN_PICK)
       .borderRadius(8)
+      .onTouch((e?: TouchEvent) => {
+        if (!e) {
+          return;
+        }
+        this.pickPressed = e.type === TouchType.Down;
+      })
       // 【禁止态：与导航页一致 —— 应急 / 数据不可用时不可选路线】
       .opacity(this.store.routeLocked() ? 0.45 : 1)
       .enabled(!this.store.routeLocked())

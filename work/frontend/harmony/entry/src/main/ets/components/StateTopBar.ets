@@ -1,4 +1,5 @@
 import { DemoStore } from '../common/DemoStore';
+import { TEXT_ON_DEGRADED, TEXT_ON_EMERGENCY_BAR_SUB, TEXT_ON_UNAVAILABLE_BAR_SUB, TEXT_WHITE } from '../common/Colors';
 
 /**
  * 应急 / 降级 / 数据不可用 顶部提示条 —— 四个页面共用，
@@ -43,16 +44,16 @@ export struct StateTopBar {
         Row({ space: 8 }) {
           Text('⚠')
             .fontSize(20)
-            .fontColor('#FFFFFF')
+            .fontColor(TEXT_WHITE)
           Text('请服从现场指挥')
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF')
+            .fontColor(TEXT_WHITE)
         }
         .width('100%')
         Text(this.scene.length > 0 ? `${this.scene}路线引导已停止 · 应急处置优先` : '路线引导已停止 · 应急处置优先')
           .fontSize(11)
-          .fontColor('#F5D9D9')
+          .fontColor(TEXT_ON_EMERGENCY_BAR_SUB)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -70,16 +71,16 @@ export struct StateTopBar {
         Row({ space: 8 }) {
           Text('⚠')
             .fontSize(18)
-            .fontColor('#FFFFFF')
+            .fontColor(TEXT_WHITE)
           Text(this.scene.length > 0 ? `${this.scene}已降级 · 未授权定位` : '已降级 · 未授权定位')
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF')
+            .fontColor(TEXT_WHITE)
         }
         .width('100%')
         Text('仍可查看路线与路况，手动确认所在道路即可')
           .fontSize(11)
-          .fontColor('#F0E2C8')
+          .fontColor(TEXT_ON_DEGRADED)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -102,16 +103,16 @@ export struct StateTopBar {
         Row({ space: 8 }) {
           Text('⚠')
             .fontSize(18)
-            .fontColor('#FFFFFF')
+            .fontColor(TEXT_WHITE)
           Text(this.scene.length > 0 ? `${this.scene}数据不可用` : '数据不可用')
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
-            .fontColor('#FFFFFF')
+            .fontColor(TEXT_WHITE)
         }
         .width('100%')
         Text('暂不可选择路线，数据恢复后自动继续')
           .fontSize(11)
-          .fontColor('#E4E4E4')
+          .fontColor(TEXT_ON_UNAVAILABLE_BAR_SUB)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)

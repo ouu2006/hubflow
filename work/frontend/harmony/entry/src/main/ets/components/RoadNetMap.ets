@@ -5,7 +5,7 @@ import { SelfDrawRenderer } from '../common/SelfDrawRenderer';
 import { PlanMeta, arrivalPlans, buildPlanRoute, departurePlans, planOf, planAt, pointAtRatio } from '../common/RoutePlan';
 import { REAL_ROAD_NETWORK } from '../common/RealNet';
 import { LevelMeta, LEVEL_META_LIST } from '../common/LevelMeta';
-import { TEXT_WHITE } from '../common/Colors';
+import { TEXT_WHITE, BG_MAP_TAG, BG_MAP_TAG_EMERGENCY, BG_MAP_TAG_SUB, TEXT_MAP_FOOT, TEXT_MAP_LABEL, TEXT_MAP_LABEL_SUB } from '../common/Colors';
 import { MAP_BACKEND_DESC } from '../common/MapTypes';
 
 /**
@@ -109,36 +109,43 @@ function buildRequest(
 @Component
 export struct RoadNetMap {
   /** 当前演示态的两个抽色开关 */
-  @Prop unavailable: boolean = false;
-  @Prop colorBlind: boolean = false;
+  @Prop @Watch('onRepaintChange') unavailable: boolean = false;
+  @Prop @Watch('onRepaintChange') colorBlind: boolean = false;
   /** 要画亮的路线（导航页传 arrival_route，离站页传 departure_route） */
-  @Prop routeMode: string = 'arrival';
+  /** 要画亮的路线（导航页传 arrival_route，离站页传 departure_route）
+   * 【评审修复】routeMode 也要挂 @Watch：导航页 arrival↔departure 切换时不能只等
+   * repaintEpoch 兜底，否则又回到「切了但地图慢一拍」 */
+  @Prop @Watch('onRepaintChange') routeMode: string = 'arrival';
   /** 图幅高度（vp）；三页统一 470vp —— 大于首屏可视高度，所以一进来整屏是地图 */
-  @Prop mapHeight: number = 470;
+  /** 图幅高度（vp）；三页统一 470vp
+   * 【评审修复】同 routeMode：高度变化时同步重画，保证画布尺寸落定后再画 */
+  @Prop @Watch('onRepaintChange') mapHeight: number = 470;
   /** 落客点标识（取自 fixture，不硬编码） */
-  @Prop dropLabel: string = 'DROP-03';
+  /** 落客点标识（取自 fixture，不硬编码）
+   * 【评审修复】同 routeMode：离站导航「离站出口」↔「DROP-03」切换时即时重画 */
+  @Prop @Watch('onRepaintChange') dropLabel: string = 'DROP-03';
   /** 当前方案序号（0 = 路线一推荐, 1 = 路线二, 2 = 路线三），决定画哪条路线臂 */
-  @Prop pickedIndex: number = 0;
+  @Prop @Watch('onRepaintChange') pickedIndex: number = 0;
   /**
    * 当前选中的 path_id（'P-2' / 'P-1' / 'P-3'）。
    * 【为什么加这个入参】卡片点选写进 store 的是 path_id，不是序号。
    * 地图只按序号对齐就会出现「卡片亮路线二、地图画的是路线三」这种错位，
    * 所以地图也按 path_id 对齐，序号仅作兜底。
    */
-  @Prop pickedPathId: string = '';
+  @Prop @Watch('onRepaintChange') pickedPathId: string = '';
   /**
    * 重绘代号（来自 store.routeEpoch，每次状态变化自增）。
    *
-   * 【为什么必须是「代号」而不是「具体选了哪条」—— 本轮踩过的最深的一个坑】
-   * 双 Canvas 切换的条件必须**每次都翻转**，否则 ArkUI 认为是同一个节点、
-   * onReady 不重跑，地图停在旧画面。
-   * 我第一版写的是 `pickedPathId !== ''` —— 初值就是 'P-2'，恒为 true，
-   * 两个分支永远走同一支。结果实测：卡片、导航条、路段条全切到 P-1，
-   * **地图还画着 P-2**（截图证据：按钮写「路线二」但蓝色主线没动）。
-   * 改成 `epoch % 2` 后，每次变化奇偶必翻转，节点必重建，问题消失。
-   * epoch 只回答「变没变」，不回答「变成了什么」，所以涵盖所有状态。
+   * 【铁律：Canvas 必须单节点】本组件**曾经**用 `epoch % 2` 双 Canvas if/else 翻转
+   * 强制节点重建来触发重画，实跑代价（2026-10-15/16 两轮用户截图 + 视频举证）：
+   *   ① 旧 Canvas 节点销毁不及时 → 两幅地图叠在同一位置（用户：「不要这么多地图叠加」）；
+   *   ② 新节点 onReady 时布局未落定，dc.size 只有约半个宽 → 左上角叠出一张缩小版路线图；
+   *   ③ 巡航每帧 bumpEpoch → 每帧销毁重建节点 → 卡顿、闪屏。
+   * 现在改为：**单 Canvas + 所有影响绘制的 prop 挂 @Watch → repaintNow()**
+   * （缓存 dc + invalidate，节点不重建）。epoch 只回答「变没变」，不回答「变成了什么」，
+   * 所以仍保留作兜底触发器。
    */
-  @Prop repaintEpoch: number = 0;
+  @Prop @Watch('onRepaintChange') repaintEpoch: number = 0;
 
   /**
    * 【为什么没有 maneuverIndex 这个 prop —— 留着会误导接手人】
@@ -187,10 +194,12 @@ export struct RoadNetMap {
   }
 
   /** 空白原生地图：true 时只画底图，不画路线/车标/标记（导航页未选路线初态） */
-  @Prop blank: boolean = false;
+  @Prop @Watch('onRepaintChange') blank: boolean = false;
 
   /** 选路页红线强调：true 时红线描边加宽（落客/离站选路地图） */
-  @Prop selection: boolean = false;
+  /** 选路页红线强调：true 时红线描边加宽（落客/离站选路地图）
+   * 【评审修复】一并收口：所有影响绘制的 prop 全部挂 @Watch，不留隐式兜底依赖 */
+  @Prop @Watch('onRepaintChange') selection: boolean = false;
 
   /**
    * 【停止引导闸门 —— 应急态 / 数据不可用时必须为 true】
@@ -205,7 +214,29 @@ export struct RoadNetMap {
    * 一处生效、三个页面都覆盖，且将来新增调用方不会漏。
    * 注意**不含 degraded** —— 降级是「无定位但流程不中断」，路线必须继续显示。
    */
-  @Prop stopGuidance: boolean = false;
+  @Prop @Watch('onRepaintChange') stopGuidance: boolean = false;
+
+  /**
+   * 【切到本页时强制重画 —— 修「演示态切换慢一拍」】
+   * Tabs 会缓存非激活页签；隐藏页的 @Watch(repaintEpoch) 重画可能被 ArkUI 推迟，
+   * 于是切到该页时画布先显示上一帧（旧演示态），要等下一次状态变化才刷新 → 「慢一拍」。
+   * 这里把「本页是否当前可见」作为 prop 传进来：切到本页时 active 由 false→true，
+   * 立刻用缓存 dc + invalidate 就地重画一次（单 Canvas、不重建节点、不 bumpEpoch），
+   * 直接画当前最新状态，切换即丝滑。绝不动双 Canvas / 重建节点（否则会回到多地图叠加）。
+   */
+  @Prop @Watch('onActiveChange') active: boolean = true;
+
+  /** 低频状态变化（开关 / 变道 / epoch）→ 就地重画，与 driveRatio 同一条路（不重建节点） */
+  private onRepaintChange(): void {
+    this.repaintNow();
+  }
+
+  /** 本页变为可见时（切 Tab 切回来）→ 立刻重画当前最新演示态，消除「慢一拍」 */
+  private onActiveChange(): void {
+    if (this.active) {
+      this.repaintNow();
+    }
+  }
 
   private render(): MapRenderer {
     return createRenderer();
@@ -306,46 +337,29 @@ export struct RoadNetMap {
     Column() {
       Stack({ alignContent: Alignment.TopStart }) {
         /**
-       * 【为什么画两个 Canvas 用 if/else 切换（踩过的坑，别简化回去）】
-       * Canvas 的 onReady **只在组件首次挂载时触发一次**，改 @Prop 不会重画。
-       * 实测症状一：去色校验开启后图例文字变「畅通(灰)」，但**地图里的路线仍是彩色**，
-       * 违反手册 §11.3 三重编码。
-       * 实测症状二：点「变道」切换方案后，转向条变了但**地图上的路线还是原来那条**。
-       * `.id()` 改值 → 不触发；onAreaChange → 纯状态变化时尺寸不变也不触发。
-       * 唯一可靠解法：凡是需要重画的状态各挂一个独立 Canvas 节点，
-       * 状态切换时 ArkUI 销毁旧节点、挂载新节点，onReady 必然重跑。
-       * 条件里必须带上 pickedPathId —— 这是「变道真的有效果」的前提。
-       *
-       * 【为什么改用 pickedPathId 而不是 pickedIndex —— 用户投诉「错位」的根因】
-       * 卡片点选写的是 store.pickedPathId（如 'P-1'），
-       * 而地图读的是 pickedIndex。两者只要有一处不同步（比如排序后 index 与
-       * path_id 的对应变了），就会出现「卡片亮路线二、地图画的是路线三」。
-       * 现在两边**都用 path_id**，pickedIndex 只作为找不到时的兜底，
-       * 从根上消除「按序号对齐」这类错位。
-       *
-       * 【高度必须写死，不能用 '100%'】实测 height('100%') 时画布拿不到高度、
-       * 整幅地图不渲染（页面只剩文字）。父级 layoutWeight 只作用于本组件外层的 Column，
-       * Canvas 仍按 mapHeight 这个显式值画。
+       * 【铁律：Canvas 必须单节点，绝不允许 if/else 翻转 / 双分支（2026-10-15/16 两轮实跑教训）】
+       * 曾经用 `repaintEpoch % 2` 双 Canvas 翻转「强制节点重建」来触发重画，实跑三大代价：
+       *   ① 旧节点销毁不及时 → 两幅地图叠在同一位置（用户：「不要这么多地图叠加」）；
+       *   ② 新节点 onReady 时布局未落定，dc.size 只有约半个宽 → 左上角叠出缩小版路线图；
+       *   ③ 巡航每帧翻转 → 每帧销毁重建 → 卡顿、闪屏。
+       * 现在：单 Canvas。首画靠 onReady；之后所有重画走 @Watch → repaintNow()
+       * （缓存 dc + invalidate），节点从不重建。
        */
-        if (this.repaintEpoch % 2 === 1) {
-          Canvas({})
-            .width('100%')
-            .height(this.mapHeight)
-            .onReady((dc?: DrawingRenderingContext) => {
-              this.repaint(dc);
-            })
-        } else {
-          Canvas({})
-            .width('100%')
-            .height(this.mapHeight)
-            .onReady((dc?: DrawingRenderingContext) => {
-              this.repaint(dc);
-            })
-        }
+        Canvas({})
+          .width('100%')
+          .height(this.mapHeight)
+          .onReady((dc?: DrawingRenderingContext) => {
+            this.repaint(dc);
+          })
+          .onAreaChange((_o: Area, _n: Area) => {
+            // 布局落定（首次挂载 onReady 可能早于布局完成）：就地重画一次，保证尺寸正确
+            this.repaintNow();
+          })
 
         // 左上角：落客点徽标
         // 【y 从 8 挪到 30】顶部中间加了「地图档位说明」，同一行会重叠，
-        // 三个角标统一排在 y=30 这一行：徽标（左）/ 档位说明（中）/ 图例（右）。
+        // 徽标（左）/ 档位说明（中）统一排在 y=30 这一行；图例（右）下移到 y=50，
+        // 放进「档位说明」与路线图之间的空档，避免压住路线（2026-10-16 13:14 用户指令）。
         // 空白原生地图（blank）不画任何标注，只留底图。
         if (!this.blank) {
         Row({ space: 4 }) {
@@ -358,18 +372,18 @@ export struct RoadNetMap {
             .fontColor(TEXT_WHITE)
         }
         .padding({ top: 4, bottom: 4, left: 7, right: 7 })
-        .backgroundColor('#B33939E6')
+        .backgroundColor(BG_MAP_TAG_EMERGENCY)
         .borderRadius(5)
         .margin({ top: 30, left: 8 })
 
         // 右上角：四级图例（三重编码 §11.3）
         // 【为什么用 .position 而不是 .align】Stack 的 alignContent 会覆盖子组件的 .align()，
-        // 实测两个角标会叠在左上；.position 是绝对定位，不受 Stack 对齐影响。
+        // 实跑验证两个角标会叠在左上；.position 是绝对定位，不受 Stack 对齐影响。
         Column({ space: 2 }) {
           Text('路况图例')
             .fontSize(9)
             .fontWeight(FontWeight.Medium)
-            .fontColor('#2A3B4D')
+            .fontColor(TEXT_MAP_LABEL)
           ForEach(LEVEL_META_LIST, (m: LevelMeta) => {
             Row({ space: 4 }) {
               Text(m.glyph)
@@ -377,30 +391,32 @@ export struct RoadNetMap {
                 .fontColor(this.colorBlind ? '#5F5E5A' : m.textColor)
               Text(this.colorBlind ? `${m.name}(灰)` : m.name)
                 .fontSize(9)
-                .fontColor('#3C4A52')
+                .fontColor(TEXT_MAP_LABEL_SUB)
             }
           }, (m: LevelMeta) => `${m.name}_${this.unavailable}_${this.colorBlind}`)
         }
         .padding(6)
-        .backgroundColor('#F2F5F0E6')
+        .backgroundColor(BG_MAP_TAG)
         .borderRadius(6)
-        .position({ x: 246, y: 30 })
+        // 用户 13:14 指令：图例紧贴「自绘OSM 路网图」这行字下方一点点，
+        // 放进它和路线图之间的空档，不要压到路线（y:150 实测压到路线，故回收到 y:50）
+        .position({ x: 246, y: 50 })
 
         // 地图档位说明（评审会问「这地图哪来的」，写清在图上）
         // 【为什么放顶部居中而不是底部】
         // 地图现在是 470vp（大于首屏视口，见 RecommendPage 的说明），
-        // 贴底的位置落在**首屏看不到的地方**、还被底部操作条压住 —— 实测被遮了一截。
+        // 贴底的位置落在**首屏看不到的地方**、还被底部操作条压住 —— 实跑验证被遮了一截。
         // 改放顶部居中：首屏一定看得见，且不与路线重叠。
         Row({ space: 4 }) {
           Text('▨')
             .fontSize(8)
-            .fontColor('#5A6B72')
+            .fontColor(TEXT_MAP_FOOT)
           Text(MAP_BACKEND_DESC)
             .fontSize(8)
-            .fontColor('#5A6B72')
+            .fontColor(TEXT_MAP_FOOT)
         }
         .padding({ top: 2, bottom: 2, left: 5, right: 5 })
-        .backgroundColor('#F2F5F0CC')
+        .backgroundColor(BG_MAP_TAG_SUB)
         .borderRadius(4)
         .position({ x: 158, y: 30 })
         }

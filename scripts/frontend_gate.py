@@ -7,7 +7,10 @@ import os
 import re
 import sys
 
-#: 相对仓库定位，不写死本机绝对路径（换机器 / 换盘符都能跑）
+# 相对仓库定位，不写死本机绝对路径（换机器 / 换盘符都能跑）
+# 【冲突解决】main 与本分支各自修了同一个「ROOT 硬编码 C:\dev\hubflow」问题，
+# 功能等价，保留 main 侧写法；本分支的配套修复（0 文件判失败 + 12/12 颜色参数门禁）
+# 在下方 GATES / main() 中，均已保留。
 ROOT = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
     "work", "frontend", "harmony",
@@ -54,6 +57,10 @@ def strip_comments(src):
         elif c == "/" and i + 1 < n and src[i + 1] == "*":
             i += 2
             while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                # 【评审修复】块注释内的换行要保留：否则注释后面的代码行号整体前移，
+                # 门禁报出来的行号与真实文件对不上（原来报 23，实际在 47 行）。
+                if src[i] == "\n":
+                    out.append("\n")
                 i += 1
             i += 2
         else:
@@ -123,16 +130,33 @@ def gate_realkey(files):
 
 
 def gate_forcetype(files):
-    """带状态的 Canvas 必须走双节点切换，且切换条件必须每次都翻转"""
+    """带状态的 Canvas 必须单节点 + @Watch 直达 dc.invalidate() 重画"""
     bad = []
     p = os.path.join(ETS, "components", "RoadNetMap.ets")
     src = strip_comments(read(p))
-    # 【踩过的坑，务必保留这条检查】
-    # 第一版条件写成 `pickedPathId !== ''` —— 初值就是 'P-2'，恒为 true，
-    # 两个分支永远走同一支，节点从不重建 → 地图永远停在旧画面。
-    # 正确写法是靠「代号奇偶」翻转：每次状态变化自增，奇偶必变。
-    if "this.repaintEpoch % 2 === 1" not in src:
-        bad.append("RoadNetMap 的双 Canvas 条件没有用 repaintEpoch 奇偶 —— 地图不会重画")
+    # 【2026-10-16 起改为单 Canvas 机制 —— 历史坑记录】
+    # 第一版条件写成 `pickedPathId !== ''` 恒为 true → 节点从不重建；
+    # 随后改用「repaintEpoch 奇偶」双 Canvas 翻转 —— 但实测证明：
+    # 旧节点销毁不及时 → 两幅地图叠加（用户视频举证「左上角多地图叠加」），
+    # 新节点 onReady 时 dc.size 未落定 → 半幅残影。双 Canvas 方案已废弃。
+    # 现行正确写法：单 Canvas 节点 + 所有影响绘制的 @Prop 挂 @Watch('onRepaintChange')
+    # → repaintNow() 里 this.dc.invalidate()，节点永不重建。
+    if "this.repaintEpoch % 2" in src:
+        bad.append("RoadNetMap 仍在用 repaintEpoch 奇偶做双 Canvas 翻转 —— 会叠加残影，必须单节点")
+    if src.count("Canvas({") != 1:
+        bad.append("RoadNetMap 的 Canvas 不是单节点 —— 双分支/翻转会造成地图叠加")
+    if "@Watch('onRepaintChange') pickedPathId" not in src:
+        bad.append("RoadNetMap 的 pickedPathId 没挂 @Watch('onRepaintChange') —— 状态变了地图不重画")
+    # repaintNow 必须真的触发 invalidate，否则状态变化后画面停在旧帧
+    if "invalidate()" not in src:
+        bad.append("RoadNetMap 没有调用 dc.invalidate() —— 重画不会落到屏幕上")
+    # 【2026-10-16 真凶】Canvas 上下文状态跨次重画保留：draw() 尾部 translate+scale
+    # 不复位 → 第 N 次重画叠加前 N-1 次变换（clearRect 被扭曲清不掉旧像素 + 缩放复利）。
+    # 铁律：clearRect 之前必须 setTransform 单位阵。
+    rd = strip_comments(read(os.path.join(ETS, "common", "SelfDrawRenderer.ets")))
+    if "setTransform(1, 0, 0, 1, 0, 0)" not in rd or \
+       rd.find("setTransform") > rd.find("clearRect"):
+        bad.append("SelfDrawRenderer.draw() 清屏前没有复位变换 —— 上下文状态累积会造成地图叠加残影")
     if "repaintEpoch" not in read(p):
         bad.append("RoadNetMap 没有 repaintEpoch 入参 —— 无法感知状态变化")
     store = strip_comments(read(os.path.join(ETS, "common", "DemoStore.ets")))
@@ -356,18 +380,43 @@ def gate_car_moves(files):
     return bad, ["车标随「继续」沿路线移动"]
 
 
+def gate_color_param(files):
+    """颜色参数必须传合法色值（#hex）或常量引用，绝不能把常量名当字符串
+
+    【2026-10-16 PR #29 真事】Colors 收口时写出 `.fontColor('TEXT_WHITE')` 这种
+    「常量名当字符串」的调用，ArkUI 解析不出合法色值 → 27 处颜色静默失效
+    （应急/降级/不可用提示条、路线卡文字、地图角标全部中招）。
+    注意必须 strip_comments 后再查：我们自己在注释里写了反例警示文案，
+    按原文查会误报（strip_comments 保留换行，行号不错位）。
+    """
+    bad = []
+    pat = re.compile(r"\.(fontColor|backgroundColor|borderColor|color)\(\s*'([A-Za-z_][A-Za-z0-9_]*)'\s*\)")
+    for p in files:
+        if not p.endswith(".ets"):
+            continue
+        for i, line in enumerate(strip_comments(read(p)).splitlines(), 1):
+            m = pat.search(line)
+            if m:
+                bad.append(
+                    f"{rel(p)}:{i} .{m.group(1)}('{m.group(2)}') —— "
+                    f"传的是常量名字符串，ArkUI 解析不出合法色值；应去掉引号写 {m.group(2)}"
+                )
+    return bad, ["颜色参数不得传常量名字符串"]
+
+
 GATES = [
-    ("1/11 CRLF 行尾", gate_crlf),
-    ("2/11 未使用 import", gate_unused_import),
-    ("3/11 违禁词", gate_forbidden),
-    ("4/11 地图可插拔架构", gate_scheme),
-    ("5/11 真实路网数据", gate_realkey),
-    ("6/11 Canvas 重画条件", gate_forcetype),
-    ("7/11 转向推进上限", gate_maneuver_limit),
-    ("8/11 开关必须触发重画", gate_epoch_bump),
-    ("9/11 应急态不得吃掉正文", gate_emergency_keep),
-    ("10/11 距离文案不得写死", gate_dist_not_hardcoded),
-    ("11/11 车标随继续移动", gate_car_moves),
+    ("1/12 CRLF 行尾", gate_crlf),
+    ("2/12 未使用 import", gate_unused_import),
+    ("3/12 违禁词", gate_forbidden),
+    ("4/12 地图可插拔架构", gate_scheme),
+    ("5/12 真实路网数据", gate_realkey),
+    ("6/12 Canvas 重画条件", gate_forcetype),
+    ("7/12 转向推进上限", gate_maneuver_limit),
+    ("8/12 开关必须触发重画", gate_epoch_bump),
+    ("9/12 应急态不得吃掉正文", gate_emergency_keep),
+    ("10/12 距离文案不得写死", gate_dist_not_hardcoded),
+    ("11/12 车标随继续移动", gate_car_moves),
+    ("12/12 颜色参数合法", gate_color_param),
 ]
 
 
@@ -375,6 +424,10 @@ def main():
     files = walk_ets()
     total = 0
     print(f"扫描 {len(files)} 个源文件\n")
+    # 【评审修复】扫不到文件说明 ROOT 路径不对，此时任何 PASS 都是假的，直接判失败
+    if not files:
+        print("扫描到 0 个源文件 —— ROOT 路径配置错误，门禁未生效（假绿）")
+        return 1
     for name, fn in GATES:
         bad, desc = fn(files)
         mark = "PASS" if not bad else "FAIL"
