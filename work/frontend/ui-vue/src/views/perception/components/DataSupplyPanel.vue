@@ -32,10 +32,11 @@ const videoSlot = computed(
   () => props.sourcePair?.slots.find((s) => s.source === 'video')?.record ?? null,
 )
 
-/** 状态三分的文字(未导出 / 读取失败 / 已导出),与通道台账同口径 */
+/** 状态四分的文字(未接入视频源 / 未导出 / 读取失败 / 已导出),与通道台账同口径 */
 const exportState = computed(() => {
   const c = ch.value
   if (!c) return { text: '—', cls: 'out' }
+  if (!c.def.hasVideo) return { text: '未接入视频源', cls: 'out' }
   if (c.meta === null) return { text: '未导出', cls: 'out' }
   if (c.detFailed) return { text: '读取失败', cls: 'err' }
   return { text: '已导出', cls: 'ok' }
@@ -54,6 +55,15 @@ const supplyRows = computed<SupplyRow[]>(() => {
   const c = ch.value
   const m = c?.meta ?? null
   const det = c?.det ?? null
+  if (c && !c.def.hasVideo) {
+    // 未接入视频源(Issue IKLX5Y):不是"未导出"——本路压根还没接视频,四行全空且缺口写清
+    return [
+      { name: '样本视频帧', value: '—', ok: false, gap: '该通道未接入视频源（路网上已布点，本期留空）' },
+      { name: '逐帧检测框 / 轨迹', value: '—', ok: false, gap: '无源可处理' },
+      { name: '透视标定(RANGE / RMSE)', value: '—', ok: false, gap: '无源可标定' },
+      { name: '四项指标 q / v / k / L_q', value: '—', ok: false, gap: '依赖上三项，当前不可用' },
+    ]
+  }
   if (!m) {
     return [
       { name: '样本视频帧', value: '—', ok: false, gap: '该通道未导出(服务端无此路)' },
@@ -148,8 +158,13 @@ const demandRows = computed<DemandRow[]>(() => {
 const gaps = computed<string[]>(() => {
   const out: string[] = []
   const c = ch.value
-  if (!c?.meta) out.push('该通道样本视频未导出:检测框 / 轨迹 / 标定 / 四项指标全部不可用')
-  else if (c.detFailed) out.push('detections 接口报错:该路检测框不可用(接口故障,非"无检出")')
+  if (c && !c.def.hasVideo) {
+    out.push('该通道未接入视频源(路网上已布点、本期视频留空):检测框 / 轨迹 / 标定 / 四项指标全部不可用')
+  } else if (!c?.meta) {
+    out.push('该通道样本视频未导出:检测框 / 轨迹 / 标定 / 四项指标全部不可用')
+  } else if (c.detFailed) {
+    out.push('detections 接口报错:该路检测框不可用(接口故障,非"无检出")')
+  }
   if (c?.meta) out.push('透视标定与轨迹质量(SVR / Q / RANGE-RMSE)由感知服务 /summary 提供,当前未实现')
   out.push('路段级四项指标当前取自**站点包演示基线**(预置值 + 抖动),不是感知链路的实测产出')
   return out

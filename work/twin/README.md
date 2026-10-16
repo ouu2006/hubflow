@@ -61,8 +61,13 @@ work/twin/
 ├─ factors.py             # 因素注入接口（读 stations/factors.json）
 ├─ demand.py              # 读 stations/demand.json 生成车流（列车到达 → 放量）
 ├─ samples/               # 样例输入（无 SUMO 也能跑通判级/引擎链路）
+├─ demo_y/                # Y 型**示意**路网 + 场景（SUMO 全链路可一键重建；与 OSM 真路网管线并列，见该目录 README）
 └─ out/                   # 运行输出（已 gitignore；**脚本必须先建目录**）
 ```
+
+> **`demo_y/` 与 `netbuild.py` 的区别**：`netbuild.py` 是「**OSM 真路网**」管线（转真实切片）；
+> `demo_y/` 是「**凭空造的示意路网**」（一个 Y，占位锚点、不做地理配准）。
+> 两者**并列、互不覆盖**，口径完全不同 —— 详见 [`demo_y/README.md`](demo_y/README.md)。
 
 > **`samples/` 是给别人用的**：开发B、开发C 不该等你把 SUMO 装好才能开工——把一份**最小可用样例**（几段路 + 几条车辆记录 + 一个快照）放在这里，他们就能单独跑通自己的模块。**目录名统一用 `samples/`、文件名用 `<名字>_sample.json`**（[`docs/开发规范.md`](../../docs/开发规范.md) 第 6 节），不要写成 `sample/`。
 

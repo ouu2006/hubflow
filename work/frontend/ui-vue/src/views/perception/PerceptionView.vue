@@ -11,6 +11,7 @@
 //  · 车型框色(CLASS_COLORS)与等级四级色解耦,画面区不出现等级色;
 //  · 拿不到的字段(越线计数 / SVR / 标定 / 平均 Q)一律「—」并注明出处,绝不用推算值或设计稿示例值冒充。
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import AppShell from '../../components/AppShell.vue'
 import {
   getPerceptionDetections,
@@ -48,6 +49,56 @@ const pError = ref('')
 
 /** 当前检测通道(默认 C-05 track1,与设计稿一致) */
 const currentSource = ref('track1')
+
+// ---- 深链:大屏点摄像头进来 = `#/perception?source=cam-03`(Issue IKLX5Y) ----
+//
+// 两条纪律:
+//   ① **在挂载前就落定**,不等 `/perception-api/streams` 回来 —— 本批摄像头**没有视频源**,
+//      感知服务多半根本没起;若把深链放在"服务拉成功"的分支里,点摄像头进来会静默落回默认通道
+//      (那就是"点了没反应")。
+//   ② 只在**通道目录里真有这个 source** 时才采纳:参数是外部给的,写错了不能让页面
+//      落到不存在的通道上。写错就忽略、保持默认通道 —— 深链是便利,不是入口条件。
+const route = useRoute()
+function deepLinkSource(): string | null {
+  const raw = route.query.source
+  const src = typeof raw === 'string' ? raw : Array.isArray(raw) ? raw[0] : null
+  if (!src) return null
+  return packChannels().some((c) => c.source === src) ? src : null
+}
+
+const linkedSource = deepLinkSource()
+if (linkedSource) currentSource.value = linkedSource
+
+// 组件已挂载时地址栏再变(浏览器前进/后退、或从别处再点一次摄像头):跟着走,
+// 否则 setup 期读过一次就再也不认新参数,会出现"链接换了、选中的还是那一路"。
+watch(() => route.query.source, () => {
+  const next = deepLinkSource()
+  if (next) currentSource.value = next
+})
+
+/** 本包是否至少声明了一路有视频源的通道 —— 没有就不该报"服务未连接" */
+const packHasVideo = computed(() => packChannels().some((c) => c.hasVideo))
+
+/**
+ * 页头口径(两句话都随包走,不写死):
+ *   有视频源 → 既有的"6 段离线样本视频"口径;
+ *   本包全部没有视频源(站点包 Z,业主:视频样本先不弄) → 如实说"未接入视频源",
+ *   否则页头会声称有一批根本不存在的样本视频。
+ */
+const subLine = computed(() =>
+  packHasVideo.value
+    ? '样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子'
+    : `${packChannels().length} 路通道 · 全部未接入视频源(本期留空) · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`,
+)
+const sourceBadge = computed(() =>
+  packHasVideo.value ? '离线样本视频 · 非实时流 · 非本站现场' : '本批摄像头未接入视频源 · 页面不显示任何画面',
+)
+/** 页脚出处(同一条纪律:没有视频源就不说"样本视频",但站名与"非实时流"照旧要说) */
+const footSourceLine = computed(() =>
+  packHasVideo.value
+    ? `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流`
+    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流`,
+)
 
 const summary = ref<PerceptionSummary | null>(null)
 const summaryUnavailable = ref(true)
@@ -113,13 +164,25 @@ async function loadStreams(): Promise<void> {
     detMap.value = dets
     detFailedSet.value = failed
     pStatus.value = 'ready'
-    const first = list[0]
-    if (first && !list.some((m) => m.stream_id === currentSource.value)) {
-      currentSource.value = first.stream_id
+    // 当前通道:深链点名过就**不动**;否则若这一路不在服务端返回里,落第一路(既有行为)
+    if (!linkedSource) {
+      const first = list[0]
+      if (first && !list.some((m) => m.stream_id === currentSource.value)) {
+        currentSource.value = first.stream_id
+      }
     }
   } catch {
-    pStatus.value = 'error'
-    pError.value = '感知演示服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)'
+    // 感知服务没起:本批摄像头本来就没视频源(业主:视频样本先不弄),
+    // 所以只在"包里确实声明了有视频源的通道"时才报服务未连接 —— 否则那是误报。
+    if (packHasVideo.value) {
+      pStatus.value = 'error'
+      pError.value = '感知演示服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)'
+    } else {
+      pStatus.value = 'ready'
+      streams.value = []
+      detMap.value = {}
+      detFailedSet.value = {}
+    }
   }
 }
 
@@ -186,10 +249,10 @@ onMounted(() => {
     :station="stationName"
     :ts="snapshotTs"
     title="感知层 · YOLO 视频链路 + 环境上下文"
-    subtitle="6 段样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子"
+    :subtitle="subLine"
   >
     <template #headRight>
-      <span class="td-badge-warn">离线样本视频 · 非实时流 · 非本站现场</span>
+      <span class="td-badge-warn">{{ sourceBadge }}</span>
       <span class="td-mono head-ts">处理时间戳 {{ processedAt }}</span>
     </template>
 
@@ -240,7 +303,7 @@ onMounted(() => {
     <DataSupplyPanel :channels="channels" :current="current.def" :source-pair="sourcePair" />
 
     <template #foot>
-      <span>视频为公开样本视频 · 非{{ stationName }}现场 · 非实时流</span>
+      <span>{{ footSourceLine }}</span>
       <span class="right">
         检测只输出路段聚合数 · 不出车牌与身份(D3) · 全局数值 is_simulated = true · 演示数据(模拟)
       </span>

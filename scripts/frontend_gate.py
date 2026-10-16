@@ -7,11 +7,14 @@ import os
 import re
 import sys
 
-# 【评审修复】原来硬编码 ROOT = r"C:\dev\hubflow\..."，在作者本机以外的任何环境
-# （CI / 队友机器 / Linux）都会「扫描 0 个源文件」且各项全 PASS —— 假绿，比不设门禁更危险。
-# 现在按本脚本位置反推仓库根目录：<repo>/scripts/frontend_gate.py → <repo>
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ROOT = os.path.join(REPO_ROOT, "work", "frontend", "harmony")
+# 相对仓库定位，不写死本机绝对路径（换机器 / 换盘符都能跑）
+# 【冲突解决】main 与本分支各自修了同一个「ROOT 硬编码 C:\dev\hubflow」问题，
+# 功能等价，保留 main 侧写法；本分支的配套修复（0 文件判失败 + 12/12 颜色参数门禁）
+# 在下方 GATES / main() 中，均已保留。
+ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "work", "frontend", "harmony",
+)
 ETS = os.path.join(ROOT, "entry", "src", "main", "ets")
 
 # 口径红线：页面用户可见文案不得出现这三个词（「请服从现场指挥」是手册固定措辞，例外）

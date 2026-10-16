@@ -2,13 +2,22 @@
 // 左栏:视频源台账(6 路,可用性以 /perception-api/streams 实际返回判定)+ 跟踪环节清单。
 // 数字一律取 meta;服务未提供的环节(透视标定 / 越线计数 / 判级)显示「—」并注明出处。
 import { computed } from 'vue'
-import { metaLine } from './channels'
+import { feedOf, feedText, metaLine } from './channels'
 import type { ChannelState } from './channels'
 
 const props = defineProps<{ channels: ChannelState[]; currentId: string }>()
 const emit = defineEmits<{ (e: 'select', source: string): void }>()
 
-const exportedCount = computed(() => props.channels.filter((c) => c.meta !== null).length)
+/** 有视频源且服务端真返回了 meta 的通道数(未接入视频源的不算"已导出") */
+const exportedCount = computed(() =>
+  props.channels.filter((c) => c.def.hasVideo && c.meta !== null).length,
+)
+/** 未接入视频源的通道数(Issue IKLX5Y:布了点、视频留空窗) */
+const noSourceCount = computed(() => props.channels.filter((c) => !c.def.hasVideo).length)
+/** 全包都没有视频源(站点包 Z):这时不能自称"离线样本"——样本视频压根没有 */
+const allNoSource = computed(
+  () => props.channels.length > 0 && noSourceCount.value === props.channels.length,
+)
 
 const current = computed(() => props.channels.find((c) => c.def.source === props.currentId) ?? null)
 const currentMeta = computed(() => current.value?.meta ?? null)
@@ -29,11 +38,10 @@ const linkRows = computed(() => {
 })
 
 function stateOf(c: ChannelState): { text: string; cls: string } {
-  if (!c.meta) return { text: '未导出', cls: 'out' }
-  // 检测请求失败与"未导出"是两回事:失败要显式报错,不冒充"就绪"
-  if (c.detFailed) return { text: '检测读取失败', cls: 'err' }
-  if (c.def.source === props.currentId) return { text: '检测中', cls: 'on' }
-  return { text: '就绪', cls: 'ok' }
+  const f = feedOf(c)
+  // 「当前」态只在真有画面可看时才亮(未接入视频源的通道谈不上"检测中")
+  if (f === 'ok' && c.def.source === props.currentId) return { text: '检测中', cls: 'on' }
+  return feedText(c)
 }
 </script>
 
@@ -41,7 +49,10 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
   <section class="td-card">
     <div class="td-card-head">
       视频源
-      <span class="td-head-tag">6 路 · 离线样本(已导出 {{ exportedCount }})</span>
+      <span class="td-head-tag">
+        {{ channels.length }} 路<template v-if="allNoSource"> · 全部未接入视频源(本期留空)</template><template v-else> · 离线样本(已导出 {{ exportedCount }})<template v-if="noSourceCount > 0">
+          · 未接入视频源 {{ noSourceCount }} 路</template></template>
+      </span>
     </div>
     <div class="td-card-body flush">
       <div
@@ -60,7 +71,9 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
             <span class="td-chip" :class="stateOf(c).cls">{{ stateOf(c).text }}</span>
           </div>
           <div class="chan-l2">{{ c.def.segmentId }} {{ c.def.name }}</div>
-          <div class="chan-l3 td-mono">{{ metaLine(c.meta, c.detTotal) }}</div>
+          <div class="chan-l3 td-mono">
+            {{ !c.def.hasVideo ? '未接入视频源 · 本期留空(路网上已布点)' : metaLine(c.meta, c.detTotal) }}
+          </div>
         </div>
       </div>
     </div>
@@ -88,9 +101,16 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
       <span class="td-head-tag">D1′</span>
     </div>
     <div class="td-card-body">
-      <p class="line">一期 · 6 段样本视频(离线批处理)</p>
+      <p class="line">
+        <template v-if="allNoSource">本包 · {{ channels.length }} 路通道全部未接入视频源(本期留空)</template>
+        <template v-else>一期 · 6 段样本视频(离线批处理)</template>
+      </p>
       <p class="line">二期 · 现场摄像头流(本期不接入)</p>
       <p class="line strong">点位与字段不变 · 只换视频源</p>
+      <p class="note">
+        另有「未接入视频源」的通道:路网上已布点(大屏可点),但本期不给视频 ——
+        它与「未导出」(有样本视频、服务端还没处理)不是一回事,故分两档显示。
+      </p>
     </div>
   </section>
 </template>

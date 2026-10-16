@@ -6,8 +6,8 @@
     python scripts/doc_gate.py            # 在仓库根运行
     python scripts/doc_gate.py --root .   # 指定仓库根
 
-它检查的是"机器能判、人却常漏"的七组事（口径见 docs/开发规范.md 第 2、5、11、13 节
-与 docs/填表报告.md 第四节）：
+它检查的是"机器能判、人却常漏"的八组事（口径见 docs/开发规范.md 第 2、5、11、13 节、
+docs/填表报告.md 第四节与 docs/任务记录.md 第四节）：
 
   1. 编码与换行  受管文本文件是 UTF-8 且**不带 BOM**；一律 LF（`.bat` / `.cmd` 除外）
   2. 大文件与禁入类型  视频 / 权重 / 数据集 / 交付物 / `.env` 一律不进仓库；单文件 > 2 MiB 报错
@@ -21,6 +21,9 @@
                 **本次提交改动的每个 `stations/*.json` 都要有一行覆盖它**，且覆盖行不能写着
                 "还没转"（`未重跑` / `待转`）—— 业务数据只从表格进，产物动一次就要留一次出处。
                 「占位」= 产物在场但还没走到表格那一棒（结构骨架 / 运行产物 / 基线），算自洽但打 [注意]
+  8. 任务记录   `docs/任务记录.md` 的台账行格式合法（七列 / `结果` 枚举 / 日期格式 / 不许空表）；
+                口径是"**每完成一单留一行**"。⚠️ 本组**只判格式与枚举**：git 看得见文件变了、
+                看不见"这单完成了"——"有没有真的留行"靠关单人自觉 + 兜底审在 PR 里看一眼
 
 **受管文本**指上表用到的这些扩展名与文件名（含 `.sh` / `.ps1` / `.bat` / `.ts` / `.vue` / `.ets` 等代码类，
 以及 `.gitignore` / `.gitattributes` / `.env.example` / `CODEOWNERS`）；其余二进制或未列出的类型不看。
@@ -139,6 +142,15 @@ FILL_RESULTS_OK = ("已转", "已核对")
 FILL_COLUMNS = 7
 #: 表格转换脚本产物（改了这些就必须在台账里留一行）
 PRODUCT_GLOB = "stations/*.json"
+
+#: 任务记录台账（第 8 组检查）。口径见 docs/任务记录.md 第四节。
+TASK_LOG = "docs/任务记录.md"
+#: 台账章节的标题（解析起点：只认这一节里的表格，前面的"一行示例"不算台账）
+TASK_LEDGER_HEADING = "任务记录台账"
+#: `结果` 只许这四种取值——说的是"**这单做完了没**"，不是"判定过没过"（后者归池·Q 的 T7）
+TASK_RESULTS = ("完成", "部分", "阻塞", "作废")
+#: 台账列数（日期 / 单号 / 区域 / 做了什么 / 对着哪条判定 / 结果 / 证据）
+TASK_COLUMNS = 7
 #: CI 传进来的"本次改动清单"：文件路径（换行分隔的相对路径）优先，其次是内联内容。
 #: 两者都没给时回退到本地 git。详见 Repo.changed_files。
 CHANGED_FILE_ENV = "DOC_GATE_CHANGED_FILE"
@@ -628,16 +640,121 @@ def check_fill_report(repo: Repo) -> Check:
     return Check(failures, scanned, notes)
 
 
+def parse_task_ledger(text: str) -> tuple[list[dict], list[Failure]]:
+    """解析 `docs/任务记录.md` 的台账表格。
+
+    返回 (行列表, 格式失败项)。只解析 `## …任务记录台账` 之后第一个表格 —— 本文件前面的
+    "行模板"与字段说明不在台账里，不能混进来。
+    """
+    lines = text.splitlines()
+    start = None
+    for index, line in enumerate(lines):
+        if line.startswith("## ") and TASK_LEDGER_HEADING in line:
+            start = index + 1
+            break
+    if start is None:
+        return [], [Failure(TASK_LOG, f"找不到台账章节（`## …{TASK_LEDGER_HEADING}`）—— 第 8 组检查无法判")]
+
+    rows: list[dict] = []
+    failures: list[Failure] = []
+    header_seen = False
+    for offset, line in enumerate(lines[start:], start + 1):
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            if header_seen and rows:
+                break          # 表格结束
+            continue           # 还没到表格 / 表头与表体之间的说明行
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        if all(set(c) <= set("-: ") and c for c in cells):
+            header_seen = True
+            continue           # `|---|---|` 分隔行
+        if not header_seen:
+            header_seen = True
+            continue           # 表头行
+        if len(cells) != TASK_COLUMNS:
+            failures.append(
+                Failure(
+                    TASK_LOG,
+                    f"台账行应为 {TASK_COLUMNS} 列（日期 / 单号 / 区域 / 做了什么 / 对着哪条判定 / 结果 / 证据），实为 {len(cells)} 列",
+                    offset,
+                )
+            )
+            continue
+        rows.append({
+            "line": offset,
+            "date": cells[0],
+            "ticket": cells[1],
+            "area": cells[2],
+            "what": cells[3],
+            "basis": cells[4],
+            "result": cells[5],
+            "evidence": cells[6],
+        })
+
+    if not rows:
+        failures.append(Failure(TASK_LOG, "台账里一行都没有 —— 至少要有基线行，否则第 8 组检查无法判"))
+        return [], failures
+
+    for row in rows:
+        lineno = row["line"]
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", row["date"]):
+            failures.append(Failure(TASK_LOG, f"`日期` 必须是 YYYY-MM-DD，实为「{row['date']}」", lineno))
+        if row["result"] not in TASK_RESULTS:
+            failures.append(
+                Failure(TASK_LOG, f"`结果` 只能是 {' / '.join(TASK_RESULTS)} 之一，实为「{row['result']}」", lineno)
+            )
+        for key, label in (("ticket", "单号"), ("area", "区域"), ("what", "做了什么"),
+                           ("basis", "对着哪条判定"), ("evidence", "证据")):
+            if not row[key]:
+                failures.append(Failure(TASK_LOG, f"`{label}` 不能为空", lineno))
+    return rows, failures
+
+
+def check_task_log(repo: Repo) -> Check:
+    """8/8 任务记录台账：`docs/任务记录.md` 的台账行格式（七列 / 结果枚举 / 日期）+ 不许空表。
+
+    ⚠️ 本组**不判"这一单到底有没有真的留行"** —— git 只看得见文件变了，看不见"这单完成了"。
+    那件事靠两道人工关：**关单人自己加行**（docs/协作规范.md §5.4）+ **兜底审在 PR 里看一眼**。
+    所以这里**没有**"覆盖率"检查，也不假装有（口径见 docs/任务记录.md 第四节末尾）。
+    """
+    data = repo.read(repo.root / TASK_LOG)
+    if data is None:
+        return Check(
+            [Failure(TASK_LOG, "文件不存在 —— 每完成一单要在这里留一行（见 docs/任务记录.md 第二节）")],
+            0,
+        )
+    text = data.decode("utf-8", "replace")
+    rows, format_failures = parse_task_ledger(text)
+    # 未闭合的 HTML 注释会把整张表从渲染里藏掉 —— 而行级检查全绿（本 PR 就真踩过一次）。
+    # 这一条专门拦它：`<!--` 与 `-->` 必须成对。
+    # ⚠️ 先剥掉围栏代码块与行内代码再数：那些地方的标记是**字面文字**，Markdown 不会当注释
+    #    （本文件的第四节表格里就写着 `<!--` / `-->` 当说明，不剥掉会自己把自己数成一条）。
+    prose = re.sub(r"(?ms)^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[ \t]*$", "", text)
+    prose = re.sub(r"`[^`\n]*`", "", prose)
+    opens, closes = prose.count("<!--"), prose.count("-->")
+    if opens != closes:
+        format_failures.append(
+            Failure(
+                TASK_LOG,
+                f"HTML 注释没闭合（`<!--` {opens} 个 / `-->` {closes} 个）—— 未闭合会把整张表从渲染里藏掉，"
+                "按行查的检查却全绿；把注释补齐或删掉",
+            )
+        )
+    return Check(format_failures, len(rows))
+
+
 #: (标题, 检查函数, 是否必检——目标数为 0 时是否算失败)
 CHECKS = [
-    ("1/7 编码与换行（UTF-8 无 BOM / LF）", check_encoding_and_eol, True),
-    ("2/7 大文件与禁入类型", check_forbidden, True),
-    ("3/7 Markdown 相对链接", check_markdown_links, True),
-    ("4/7 JSON 可解析（含数据契约示例）", check_json, True),
-    ("5/7 密钥扫描", check_secrets, True),
-    ("6/7 契约字段命名（snake_case）", check_contract_keys, False),
+    ("1/8 编码与换行（UTF-8 无 BOM / LF）", check_encoding_and_eol, True),
+    ("2/8 大文件与禁入类型", check_forbidden, True),
+    ("3/8 Markdown 相对链接", check_markdown_links, True),
+    ("4/8 JSON 可解析（含数据契约示例）", check_json, True),
+    ("5/8 密钥扫描", check_secrets, True),
+    ("6/8 契约字段命名（snake_case）", check_contract_keys, False),
     # 第 7 组不是"没有目标就不判"的检查：本文件不存在、或台账为空，都在函数里直接判失败。
-    ("7/7 填表报告台账（格式 / 产物覆盖 / 结果语义）", check_fill_report, True),
+    ("7/8 填表报告台账（格式 / 产物覆盖 / 结果语义）", check_fill_report, True),
+    # 第 8 组同理：文件不存在 / 台账为空都直接判失败；它只判格式与枚举，不判"有没有真的留行"。
+    ("8/8 任务记录台账（格式 / 结果枚举 / 日期）", check_task_log, True),
 ]
 
 
@@ -654,7 +771,7 @@ def main() -> int:
     total: list[Failure] = []
     if not repo.files:
         total.append(Failure(str(root), "一个受管文件都没找到 —— 门禁拒绝在空集合上判通过（检查 --root 是否指对了仓库根）"))
-        print("[失败] 0/7 文件清单为空")
+        print("[失败] 0/8 文件清单为空")
     else:
         for title, check, mandatory in CHECKS:
             result = check(repo)
