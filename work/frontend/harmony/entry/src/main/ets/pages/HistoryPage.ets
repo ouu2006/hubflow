@@ -2,7 +2,7 @@ import { TRIPS_FIXTURE } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, SectionTitle } from '../components/Common';
 import { TripRecord } from '../common/Contract';
-import {TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, STATE_ADOPTED, STATE_REJECTED} from '../common/Colors';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, STATE_ADOPTED, STATE_REJECTED } from '../common/Colors';
 
 /** 页四：我的行程（本地会话记录，如实标注「未采纳推荐」） */
 @Component

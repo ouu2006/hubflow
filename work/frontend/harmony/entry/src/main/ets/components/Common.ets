@@ -1,6 +1,6 @@
 import { LevelMeta, levelMetaOf, levelGlyphColorOf, levelTextColorOf, LEVEL_META_LIST, LEVEL_UNAVAILABLE } from '../common/LevelMeta';
 import { SIM_BADGE_TEXT, segmentLevelOf } from '../common/Fixture';
-import {TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, ACCENT_EMERGENCY_BG, TEXT_ON_EMERGENCY, TEXT_ON_EMERGENCY_SUB} from '../common/Colors';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, ACCENT_EMERGENCY_BG, TEXT_ON_EMERGENCY, TEXT_ON_EMERGENCY_SUB } from '../common/Colors';
 
 /** 数据来源角标（M1-7）：每页必现 */
 @Component

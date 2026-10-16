@@ -1,6 +1,6 @@
 import { ROUTES_FIXTURE, DISCLAIMER_TEXT } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
-import {TEXT_WHITE, ACCENT_COLOR_BLIND, TEXT_ON_DEGRADED, TEXT_ON_EMERGENCY_BAR_SUB, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY} from '../common/Colors';
+import { TEXT_WHITE, ACCENT_COLOR_BLIND, TEXT_ON_DEGRADED, TEXT_ON_EMERGENCY_BAR_SUB, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY } from '../common/Colors';
 import { Maneuver, RoutePath } from '../common/MapPort';
 import { PlanMeta, arrivalPlans, departurePlans, planOf, buildPlanRoute, levelAtRatio, stretchEtaMinAt } from '../common/RoutePlan';
 import { levelMetaOf } from '../common/LevelMeta';
@@ -315,7 +315,7 @@ private atLastManeuver(): boolean {
         .width('100%')
         Text('路线引导已停止 · 应急处置优先')
           .fontSize(11)
-          .fontColor('TEXT_ON_EMERGENCY_BAR_SUB')
+          .fontColor(TEXT_ON_EMERGENCY_BAR_SUB)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -338,7 +338,7 @@ private atLastManeuver(): boolean {
         .width('100%')
         Text(`仍可查看路线与路况，手动确认所在道路即可（${ROUTES_FIXTURE.arrival_route.path_id} · 约 ${ROUTES_FIXTURE.arrival_route.eta_min} 分钟）`)
           .fontSize(11)
-          .fontColor('TEXT_ON_DEGRADED')
+          .fontColor(TEXT_ON_DEGRADED)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -519,34 +519,34 @@ export struct RouteStripCard {
         Text(`${this.pathId()} ${this.plan().recommended ? '推荐路线' : '备选路线'}`)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('TEXT_PRIMARY')
+          .fontColor(TEXT_PRIMARY)
           .layoutWeight(1)
         Text(`约 ${this.eta()} 分钟`)
           .fontSize(14)
           .fontWeight(FontWeight.Bold)
-          .fontColor('ACCENT_COLOR_BLIND')
+          .fontColor(ACCENT_COLOR_BLIND)
       }
       .width('100%')
 
       Text(this.isDepartureNav() ? '离站出口 · 直接驶离站前区域' : `落客点 ${ROUTES_FIXTURE.arrival_route.dropoff_point} · 步行接驳约 ${ROUTES_FIXTURE.arrival_route.walk_min} 分钟`)
         .fontSize(11)
-        .fontColor('TEXT_SECONDARY')
+        .fontColor(TEXT_SECONDARY)
         .width('100%')
 
       Text(this.hint())
         .fontSize(11)
-        .fontColor('TEXT_SECONDARY')
+        .fontColor(TEXT_SECONDARY)
         .width('100%')
 
       Text(DISCLAIMER_TEXT)
         .fontSize(10)
-        .fontColor('TEXT_TERTIARY')
+        .fontColor(TEXT_TERTIARY)
         .width('100%')
     }
     .alignItems(HorizontalAlign.Start)
     .padding(12)
     .width('100%')
-    .backgroundColor('TEXT_WHITE')
+    .backgroundColor(TEXT_WHITE)
     .borderRadius(10)
   }
 }

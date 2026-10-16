@@ -44,16 +44,16 @@ export struct StateTopBar {
         Row({ space: 8 }) {
           Text('⚠')
             .fontSize(20)
-            .fontColor('TEXT_WHITE')
+            .fontColor(TEXT_WHITE)
           Text('请服从现场指挥')
             .fontSize(18)
             .fontWeight(FontWeight.Bold)
-            .fontColor('TEXT_WHITE')
+            .fontColor(TEXT_WHITE)
         }
         .width('100%')
         Text(this.scene.length > 0 ? `${this.scene}路线引导已停止 · 应急处置优先` : '路线引导已停止 · 应急处置优先')
           .fontSize(11)
-          .fontColor('TEXT_ON_EMERGENCY_BAR_SUB')
+          .fontColor(TEXT_ON_EMERGENCY_BAR_SUB)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -71,16 +71,16 @@ export struct StateTopBar {
         Row({ space: 8 }) {
           Text('⚠')
             .fontSize(18)
-            .fontColor('TEXT_WHITE')
+            .fontColor(TEXT_WHITE)
           Text(this.scene.length > 0 ? `${this.scene}已降级 · 未授权定位` : '已降级 · 未授权定位')
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
-            .fontColor('TEXT_WHITE')
+            .fontColor(TEXT_WHITE)
         }
         .width('100%')
         Text('仍可查看路线与路况，手动确认所在道路即可')
           .fontSize(11)
-          .fontColor('TEXT_ON_DEGRADED')
+          .fontColor(TEXT_ON_DEGRADED)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)
@@ -103,16 +103,16 @@ export struct StateTopBar {
         Row({ space: 8 }) {
           Text('⚠')
             .fontSize(18)
-            .fontColor('TEXT_WHITE')
+            .fontColor(TEXT_WHITE)
           Text(this.scene.length > 0 ? `${this.scene}数据不可用` : '数据不可用')
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
-            .fontColor('TEXT_WHITE')
+            .fontColor(TEXT_WHITE)
         }
         .width('100%')
         Text('暂不可选择路线，数据恢复后自动继续')
           .fontSize(11)
-          .fontColor('TEXT_ON_UNAVAILABLE_BAR_SUB')
+          .fontColor(TEXT_ON_UNAVAILABLE_BAR_SUB)
           .width('100%')
       }
       .alignItems(HorizontalAlign.Start)

@@ -258,7 +258,7 @@ export struct DeparturePage {
                       .fontSize(8)
                       .fontColor(this.store.colorBlind || this.store.unavailable || lv < 1
                         ? '#8B8B8B' : levelMetaOf(lv, false).color)
-                  }, (lv: number, idx: number) => `dlv_${idx}_${lv}`)
+                  }, (lv: number, idx: number) => `dlv_${p.pathId}_${idx}_${lv}`)
                   Text(this.planLevelsText(p))
                     .fontSize(9)
                     .fontColor(TEXT_SECONDARY)
