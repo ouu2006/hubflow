@@ -177,6 +177,11 @@ let retryStep = 0
 let retryTimer = 0
 /** 当前挂载的是不是"底图已合入"的那份样式（关开关时据此决定要不要换回兜底样式） */
 let remoteApplied = false
+/**
+ * 在途的底图请求。关开关时**连在途的那一次也 abort 掉** ——
+ * 否则"关＝一个请求都不发"只在冷启动成立（页面已加载再关，在途那一次仍会走完）。
+ */
+let inflightCtrl: AbortController | null = null
 
 /**
  * 路网几何与来源口径。
@@ -494,6 +499,9 @@ function retryBasemap(): void {
 async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): Promise<void> {
   window.clearTimeout(retryTimer)
   if (!basemapEnabled.value) {
+    // 关开关：在途的那一次也掐掉，别让"不发任何底图请求"只在冷启动成立
+    inflightCtrl?.abort()
+    inflightCtrl = null
     basemap.value = 'off'
     basemapRetrying.value = false
     dropBasemap(map)
@@ -502,6 +510,7 @@ async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): P
   if (opts.retry) basemapRetrying.value = true
   else basemap.value = 'loading'
   const ctrl = new AbortController()
+  inflightCtrl = ctrl
   const timer = window.setTimeout(() => ctrl.abort(), BASEMAP_TIMEOUT_MS)
   try {
     const res = await fetch(STYLE_URL, { signal: ctrl.signal })
@@ -531,6 +540,7 @@ async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): P
     scheduleRetry(map)
   } finally {
     window.clearTimeout(timer)
+    if (inflightCtrl === ctrl) inflightCtrl = null
   }
 }
 
@@ -711,6 +721,7 @@ onMounted(async () => {
 onUnmounted(() => {
   disposed = true
   window.clearTimeout(retryTimer)
+  inflightCtrl?.abort()
   camMarkers.forEach((m) => m.remove())
   camMarkers = []
   vehMarkers.forEach((v) => v.marker.remove())
