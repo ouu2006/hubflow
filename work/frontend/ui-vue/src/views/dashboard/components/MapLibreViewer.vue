@@ -596,16 +596,19 @@ watch(
   },
 )
 
-watch(
-  () => props.routeSegments,
-  () => {
-    const map = mapRef.value
-    if (!map || !ready.value) return
-    for (const id of [LAYER_ROUTE, LAYER_ROUTE_HALO]) {
-      if (map.getLayer(id)) map.setFilter(id, routeFilter())
-    }
-  },
-)
+/**
+ * 路线高亮按**内容**监听，不按数组引用：父组件传的是内联 `[]`（每次渲染都是新引用），
+ * 按引用监听的写法会在每次快照刷新时白跑一遍 `setFilter`。
+ */
+const routeKey = computed(() => (props.routeSegments ?? []).join('\u0000'))
+
+watch(routeKey, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  for (const id of [LAYER_ROUTE, LAYER_ROUTE_HALO]) {
+    if (map.getLayer(id)) map.setFilter(id, routeFilter())
+  }
+})
 
 watch(
   () => props.vehicles,
@@ -746,11 +749,13 @@ onUnmounted(() => {
   z-index: 2;
 }
 
-/* 路网 OSM 署名：贴在右下角署名控件上方，**不得遮挡地图控件** */
+/* 路网 OSM 署名：**左上角**（图角）——右下角已经有三样东西（MapLibre 自带署名控件、
+   比例尺、右下角缩放控件），实测会与自带署名控件重叠 10 px（审查发现，已实测 bounding box）。
+   这里改为左上角、且在底图状态角标下方一行，两者不叠。 */
 .attribution {
   position: absolute;
-  right: 6px;
-  bottom: 24px;
+  top: 34px;
+  left: 12px;
   font-size: 10px;
   color: #666666;
   background: rgba(255, 255, 255, 0.85);
