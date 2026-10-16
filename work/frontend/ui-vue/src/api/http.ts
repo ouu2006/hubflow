@@ -2,6 +2,8 @@
 // dev 走 vite 代理/mock 中间件,集成方式待新后端规划定稿)。
 // 鉴权方案未定(随接口面重新规划),当前所有端点公开访问。
 
+import { activePackKey } from '../station-packs/index'
+
 export class ApiError extends Error {
   status: number
   code: string
@@ -22,6 +24,10 @@ export interface RequestOptions {
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {}
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
+  // 顶栏「线路图切换器」选的是**浏览器侧**的包键,而 mock 中间件跑在 vite 的 Node 进程里,
+  // 天生拿不到浏览器状态 —— 所以每个请求把当前包键带上,mock 按它现取包。
+  // (不这么做的话:切包只换几何(浏览器读包)、基线仍出默认包(mock 读包),两处对不上。)
+  headers['X-Station-Pack'] = activePackKey()
   let res: Response
   try {
     res = await fetch(path, {

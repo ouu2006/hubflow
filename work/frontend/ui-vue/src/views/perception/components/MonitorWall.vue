@@ -35,7 +35,10 @@ const videoVars = {
   '--v-brand': TD_VIDEO.brand,
 }
 
-const exported = () => props.channels.filter((c) => c.meta !== null).length
+/** 有视频源且服务端真返回了 meta 的通道数(未接入视频源的不算"已导出") */
+const exported = () => props.channels.filter((c) => c.def.hasVideo && c.meta !== null).length
+/** 未接入视频源的通道数(Issue IKLX5Y) */
+const noSource = () => props.channels.filter((c) => !c.def.hasVideo).length
 
 function tick(): void {
   if (!playing.value) return
@@ -83,7 +86,7 @@ onUnmounted(() => {
 <template>
   <section class="td-card" :style="videoVars">
     <div class="td-card-head">
-      监控墙 · 6 路样本视频
+      监控墙 · {{ props.channels.length }} 路
       <span class="td-head-tag">抽帧 1 帧 / 2 s · 框 = 检测输出(抽帧) · 虚线 = 越线计数线</span>
     </div>
     <div class="wall-tools">
@@ -103,7 +106,10 @@ onUnmounted(() => {
           {{ s }}×
         </span>
       </span>
-      <span class="wall-hint">已导出 {{ exported() }} / 6 路 · 未导出通道显示深色占位</span>
+      <span class="wall-hint">
+        已导出 {{ exported() }} / {{ props.channels.length }} 路<template v-if="noSource() > 0">
+          · 未接入视频源 {{ noSource() }} 路(本期留空)</template>
+      </span>
     </div>
     <div ref="gridRef" class="wall-grid">
       <MonitorCell

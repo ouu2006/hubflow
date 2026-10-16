@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<edges>
+    <edge id="e_stem_in" from="n_stem" to="n_junction" numLanes="2" speed="16.67" />
+    <edge id="e_stem_out" from="n_junction" to="n_stem" numLanes="2" speed="16.67" />
+    <edge id="e_arm_a_in" from="n_junction" to="n_arm_a" numLanes="2" speed="13.89" />
+    <edge id="e_arm_a_out" from="n_arm_a" to="n_junction" numLanes="2" speed="13.89" />
+    <edge id="e_arm_b_in" from="n_junction" to="n_arm_b" numLanes="2" speed="13.89" />
+    <edge id="e_arm_b_out" from="n_arm_b" to="n_junction" numLanes="2" speed="13.89" />
+</edges>

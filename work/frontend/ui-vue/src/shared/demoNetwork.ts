@@ -4,8 +4,9 @@
 // 本文件此前把站名、几何、路段 id 全部写死,是"一份包";现在它退化成一个**只读门面**:
 // 页面与 mock 继续按原来的函数名调用,换站时改的是包,不是这里。
 //
-// 坐标口径:包里的坐标是 `[lon, lat]` 度(契约形状);自建示意路网是**占位锚点**,
-// 不做地理配准,图上任何一点都不是真实地点(见 `station-packs/stationB.ts` 头部说明)。
+// 坐标口径:包里的坐标是 `[lon, lat]` 度(契约形状)。唯一站点包 Z 是 **OSM 真值几何**,
+// `source.osm = true` 触发 OSM 署名义务;那种"示意路网 = 占位锚点、不做地理配准"的包
+// (A / B / Y)已随 IKM4KP / IKM4XX 删除 —— 将来若再加,仍按"示意几何不得当真值说"办。
 //
 // ⚠️ 这里**故意不在模块初始化时读包**:模块在 `import` 阶段就被求值,而包键是入口
 // (`main.ts` / vite 配置)在挂载前才注入的。所以几何统一走 `ensureInit()` 惰性构建 ——
@@ -67,7 +68,7 @@ export function demoSegment(id: string): DemoSegment | undefined {
 }
 
 // ---- 真路网覆盖(#61 twin_preview):入口在挂载前拉 /twin-api/network 原地替换,
-// NetMap / 两个面板 / mock 的静态读取统一生效;桥接服务不可用则保持站点包路网不变。
+// 地图 / 两个面板 / mock 的静态读取统一生效;桥接服务不可用则保持站点包路网不变。
 // 二站(自建示意路网)关掉桥接(`pack.bridge.enabled === false`),入口不拉,也就不会覆盖。
 const NETWORK_SOURCE = { twin: false }
 
@@ -89,6 +90,15 @@ export function networkSourceLabel(): string {
 /** 当前底图是否为真 OSM 路网(桥接覆盖或包自己声明)——OSM 署名义务随之触发 */
 export function isOsmNetwork(): boolean {
   return NETWORK_SOURCE.twin || activePack().source.osm
+}
+
+/**
+ * 路网几何的出处一句话(大屏图下注脚用)。
+ * 真 OSM 路网说"几何为真值",示意路网说"示例样例(非实测)"——两者不能混说,
+ * 否则真几何会被读成编的、编的会被读成真的。
+ */
+export function networkGeometryNote(): string {
+  return isOsmNetwork() ? '路网几何为真值（OSM 切片）' : '路网为示例样例(非实测)'
 }
 
 /** 底图署名(有则给,如 OSM 的 ODbL);站点包没声明就不署名 */

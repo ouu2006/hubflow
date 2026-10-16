@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<connections>
+    <connection from="e_stem_in" to="e_arm_a_in" />
+    <connection from="e_stem_in" to="e_arm_b_in" />
+    <connection from="e_arm_a_out" to="e_stem_out" />
+    <connection from="e_arm_b_out" to="e_stem_out" />
+</connections>

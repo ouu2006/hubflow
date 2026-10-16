@@ -7,7 +7,11 @@ import os
 import re
 import sys
 
-ROOT = r"C:\dev\hubflow\work\frontend\harmony"
+#: 相对仓库定位，不写死本机绝对路径（换机器 / 换盘符都能跑）
+ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "work", "frontend", "harmony",
+)
 ETS = os.path.join(ROOT, "entry", "src", "main", "ets")
 
 # 口径红线：页面用户可见文案不得出现这三个词（「请服从现场指挥」是手册固定措辞，例外）

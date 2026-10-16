@@ -117,13 +117,34 @@ export interface PackDiversion {
   why: string
 }
 
-/** 感知通道 ↔ 路段映射(6 路样本视频;`source` 与感知服务 stream_id 对齐) */
+/** 感知通道 ↔ 路段映射(`source` 与感知服务 stream_id 对齐) */
 export interface PackChannel {
   cid: string
   source: string
   name: string
   segment_id: string
+  /**
+   * 摄像头在地图上的位置(Issue IKLX5Y)。
+   * 有它 → 大屏在该点画摄像头标记、可点;没有 → 该通道不上图(老包不带这个字段)。
+   */
+  lon?: number
+  lat?: number
+  /**
+   * 该通道当前**是否有视频源**(Issue IKLX5Y)。
+   * `false` = 摄像头已布点、视频留空窗;感知层要显示「未接入视频源」占位,
+   * **不得**套用「样本视频未导出」(那是另一回事,会让人以为有样本视频)。
+   * 不写 = 老行为(按感知服务实际返回判定)。
+   */
+  hasVideo?: boolean
 }
+
+/**
+ * 路网上色策略(Issue IKLX5Y)。
+ * 默认(不写)= 老行为:所有路段按等级上色。
+ * `'camera-covered'` = **只有摄像头监控下的路段才显示颜色**,其余只画中性灰轮廓
+ * —— 业主 2026-10-15 裁定,一眼看出"这段没监控"。
+ */
+export type PackColorPolicy = 'all' | 'camera-covered'
 
 /** 推荐快照骨架(引擎 routes.json 就绪前,由站点包给出演示路线) */
 export interface PackRecommend {
@@ -215,6 +236,11 @@ export interface StationPack {
   channels: PackChannel[]
   /** 一期有视频链路覆盖的路段(双源并排的 video 槽位可用性) */
   videoCovered: string[]
+  /**
+   * 路网上色策略(Issue IKLX5Y)。不写 = `'all'`(老行为:所有段按等级上色)。
+   * `'camera-covered'` = 只有摄像头覆盖的段上色,其余画灰轮廓。
+   */
+  colorPolicy?: PackColorPolicy
   assimilation: PackAssimilation[]
   assimilationGate: { confidence_min: number; data_age_max_s: number }
   recommend: PackRecommend

@@ -1,10 +1,19 @@
 <script setup lang="ts">
 // 关联告警:已过滤为「本路段 + 未闭环(待认领 / 处置中)」。
 // 行 = 告警号 + 等级徽章(三重编码) + 路段名 + 首次观测时间(取快照 ts,不另取浏览器时间)。
-import type { AlertStatus, TrafficAlert } from '../../../shared/traffic'
+//
+// ⚠️ 等级**不由本组件决定**:`levelOf` 是**必需** prop(Issue IKLLXG)——
+//   告警自带的 `level` 是派生时的记录值,与当前路段快照可能不同步;
+//   直接渲染 `a.level` 会让本卡与同页的路段列表 / 底部告警条自相矛盾。
+//   做成**必需**是为了下次页面迁移时漏传会被 `vue-tsc` 当场拦下(这句口径曾在 #77 迁移时被漏搬)。
+import type { AlertStatus, CongestionLevel, TrafficAlert } from '../../../shared/traffic'
 import LevelBadge from './LevelBadge.vue'
 
-defineProps<{ alerts: TrafficAlert[] }>()
+defineProps<{
+  alerts: TrafficAlert[]
+  /** 该告警在当前路段快照下的等级(口径见 `shared/traffic.ts` 的 `alertLevelOf`) */
+  levelOf: (a: TrafficAlert) => CongestionLevel
+}>()
 
 // 未闭环 = 待认领 / 处置中(已闭环 / 误报为终态)
 const OPEN_STATUS: AlertStatus[] = ['待认领', '处置中']
@@ -19,7 +28,7 @@ function statusClass(s: AlertStatus): string {
     <div v-for="a in alerts" :key="a.alert_id" class="al-row">
       <div class="al-line1">
         <span class="al-id td-mono">{{ a.alert_id }}</span>
-        <LevelBadge :level="a.level" />
+        <LevelBadge :level="levelOf(a)" />
         <span class="al-status" :class="statusClass(a.status)">{{ a.status }}</span>
       </div>
       <div class="al-line2">
