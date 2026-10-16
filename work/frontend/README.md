@@ -339,7 +339,7 @@ PR #69 合入 `main` 后,又跑了 **4 路全新上下文独立审查**(手册�
 ```bash
 cd work/frontend/ui-vue
 npm install
-npm run dev                                    # http://localhost:5173/#/dashboard(根路径重定向)
+npm run dev                                    # 站点包 Z(主包)→ http://localhost:5173/#/dashboard(根路径重定向)
 # 四页:/#/dashboard · /#/heat · /#/decision · /#/perception
 npm run build                                  # vue-tsc 类型检查 + vite 构建(本单交付前自检)
 # 视频感知页的真数据需要感知演示服务(另开一个终端):
@@ -359,14 +359,18 @@ python work/perception/server.py               # 默认 127.0.0.1:8101;未启动
 `shared/demoDecision.ts` / `perception/components/channels.ts`)——它只有一份站点的数据,物理上换不了站。
 把二站直接喂进去会得到自相矛盾的画面:画二站的路、报一站的名与基线。
 
+> **2026-10-16 现状(IKM4KP)**:站点包**以 Z 为主** —— 包 **B / Y 已删除**,现只剩 **A / Z**,
+> **默认包 = Z**(肇庆东站 OSM 真路网)。下面 §11.1 的文件表已按现状更新,§11.2 ~ §11.4 已改写为
+> "以 Z 为主"的切站方式、A / Z 对照与包 Z 的口径红线;本节其余文字保留为 2026-10-12 那次的实测记录。
+
 本次因此做了一件**一次性的重构**,把"哪一站"这件事抽成站点包层:
 
 | 文件 | 作用 |
 |---|---|
 | `src/station-packs/types.ts` | 站点包类型(`StationPack`):站名 + 路网几何 + 断面 + 点位 + 路段基线 + 告警剧本 + 分流建议 + 感知通道 + 同化记录 + 桥接开关 |
-| `src/station-packs/index.ts` | 包选择器(`activePack()` / `setActivePackKey()`);浏览器与 vite mock 中间件**共用同一个键**,避免"页面画二站、mock 报一站" |
-| `src/station-packs/stationA.ts` | 包 A = 肇庆东站示例路网(原写死在代码里的那份,原样搬进来) |
-| `src/station-packs/stationB.ts` + `stationB.network.ts` | 包 B = 第二个站(「一环五射」虚构示范站);`.network.ts` 是 SUMO 产物生成的几何/基线,勿手改 |
+| `src/station-packs/index.ts` | 包选择器(`activePack()` / `setActivePackKey()`);浏览器与 vite mock 中间件**共用同一个键**,避免"页面画一个站、mock 报另一个站" |
+| `src/station-packs/stationA.ts` | 包 A = 肇庆东站示例路网(原写死在代码里的那份,原样搬进来);现为**可切换次包** |
+| `src/station-packs/stationZ.ts` + `stationZ.network.ts` | **包 Z = 主包**:肇庆东站 OSM 真路网(几何为真值);`.network.ts` 是 `work/twin/netpack/build_station_pack.py` 的脚本产物,勿手改 |
 | `src/shared/demoNetwork.ts`(改) | 从"自带数据"退化为**只读门面**:页面与 mock 的调用名不变,数据从当前包取(**惰性**读——包键在挂载前才注入) |
 | `src/mock/traffic.ts`(改) | 路段基线 / 合成车 / 断面 / 告警 / 双源覆盖 / 站点元信息全部改从包读,文件里不再有"某个站才有的"常量 |
 | `src/shared/demoDecision.ts`、`perception/components/channels.ts`(改) | 分流建议、通道↔路段映射改从包读(与站点无关的阈值 / 渠道枚举 / 通道目录仍留在原处) |
@@ -375,46 +379,50 @@ python work/perception/server.py               # 默认 127.0.0.1:8101;未启动
 **重构之后**,再加第三个站才是"新增一个包 + 一行环境变量"。也就是说:判定标准成立的前提是
 **先把与站点无关的部分与站点包分开**;这条实测结论比"能换站"本身更值得记。
 
-### 11.2 怎么切站(两站并存,方便对照)
+### 11.2 怎么切站(2026-10-16 起:以 Z 为主)
 
 ```bash
 cd work/frontend/ui-vue
-npm run dev              # 包 A(肇庆东站示例路网)→ http://localhost:5173
-npm run dev:station2     # 包 B(「一环五射」虚构示范站)→ http://localhost:6880
+npm run dev              # 包 Z(肇庆东站 OSM 真路网,主包)→ http://localhost:5173
+npm run dev:z            # 同一个包 Z,起在 http://localhost:6895(同包不同端口,便于并排对照)
 ```
 
-`dev:station2` = `vite --mode station2`,由 `.env.station2` 的 `VITE_STATION_PACK=B` 选包;
-端口由 `VITE_DEV_PORT` 给,两站可同时开。包键写错或包里没有该键时**落回默认包 A**(不白屏),
-`packNote()` 会把键与包名一起打出来,免得"以为在看二站、其实是一站"。
+默认包是 **Z**(`DEFAULT_PACK_KEY = 'Z'`),顶栏「线路图切换器」可在 **A / Z** 之间切换(选择记在
+`localStorage['hubflow.stationPack']`,整页刷新后仍生效)。包键写错、或包里没有该键(包括老浏览器里
+残留的 `B` / `Y`)一律**落回默认包 Z**,不白屏;`packNote()` 会把键与包名一起打出来,免得
+"以为在看另一个站、其实是本站"。
 
-### 11.3 两站对照(同一套代码渲染)
+> ⚠️ 默认值有**两处**:浏览器侧 `src/main.ts` 与 vite / mock 注入侧 `vite.config.ts`。
+> 两处必须**同为 Z** —— 只改一处会出现「页面画 Z 的路网、mock 发 A 的基线」的错位画面。
 
+### 11.3 A / Z 对照(同一套代码渲染)
 
-| 项 | 包 A | 包 B(二站) |
+| 项 | 包 A(示例路网) | 包 Z(主包 · OSM 真路网) |
 |---|---|---|
-| 站名 | 肇庆东站(+英文副标) | 虚构示范站(副标:一环五射示意路网 · 非任何真实车站) |
-| 路段 / 断面 | 10 条 / 4 条(边界 3 + 内部 1) | **14 条 / 7 条**(边界 5 + 内部 2) |
-| 等级分布 | 畅通 3 / 缓行 4 / 拥堵 2 / 严重拥堵 1 | 畅通 6 / 缓行 1 / 拥堵 4 / 严重拥堵 3 |
-| 灰档"数据不可用" | `SEG-010` | `SEG-006`(东南放射路,检测器离线 186 s) |
-| 基线来源 | 预置演示值 | **FCD 折算**(SUMO 峰值工况) |
-| 孪生桥接(:8102) | 接(OSM 真路网) | **不接**——桥接跑的是别站的 OSM 切片,接上会把别站车辆画到本站图上 |
+| 站名 | 肇庆东站(+英文副标) | 肇庆东站(副标:真路网 · 吉庆大道 / 鼎湖大道 / 场区通道) |
+| 路段 | 10 条 | **21 条**(`SZ-01` … `SZ-21`) |
+| 断面 / 点位 | 4 条断面(边界 3 + 内部 1)+ 落客点 / 候客区齐 | **断面 / 落客点 / 候客区均为空**(本包只做到"路网 + 摄像头") |
+| 上色口径 | 全部路段按等级上色 | **只有摄像头覆盖的 5 段上色**,其余 16 段灰轮廓 + 数据不可用档 |
+| 基线来源 | 预置演示值 | 预置演示值(只给 5 条摄像头覆盖段) |
+| 告警 / 车辆 / 场景 | 齐(演示值) | **空**(如实显示"本站无此数据") |
+| 几何来源 | 手写占位锚点(非实测、未配准) | **OSM 真值**(`work/twin/netpack/build_station_pack.py` 产物)+ OSM 署名 |
+| 孪生桥接(:8102) | 接(桥接会把路网覆盖成它自己选的那 10 段) | **不接**——本站几何已是 OSM 真值,接上反而会把另一份选段口径画进来 |
 
-**顺带修掉的一处跨站污染**:站点块的英文副标原先**硬编码在 `NetMap.vue`** 里
-(`Zhaoqing East Railway Station`),二站的图上会画出别站的英文名。现改为由站点包声明
-(`PackLandmark.sub`),包没给就不画,站名自动居中。
+> **历史记录(2026-10-12)**:站点块的英文副标原先**硬编码在 `NetMap.vue`** 里
+> (`Zhaoqing East Railway Station`),接入第二个站时图上会画出别站的英文名。现改为由站点包声明
+> (`PackLandmark.sub`),包没给就不画,站名自动居中。
 
-### 11.4 口径红线(包 B,接进页面后仍然成立)
+### 11.4 口径红线(包 Z,接进页面后仍然成立)
 
-- **图不指任何真实地点**:坐标是占位锚点,未做地理配准(`source.osm = false`,页面不挂 OSM 署名);
-- 站名取「虚构示范站」是**故意**的,不得改成任何像真站的名字;
-- 基线是**仿真折算**(FCD,峰值工况),不是实测;页面沿用全局 `is_simulated = true` 口径;
-- **一个内部断面都不许挂校准器**(`internal` 段:站前路 / 地下落客通道),边界断面是数据同化唯一入口(TC-20 第②项);
-- 包 B 与包 A **互不影响**:二站不接桥接、不改包 A 的任何数值;`npm run dev` 的行为与接包之前完全一致。
+- **几何是 OSM 真值,指标一律是演示数据(模拟)**:`source.osm = true` 触发 OSM 署名义务(图内署名不得遮挡);
+- **只有摄像头覆盖的路段上色**,没有摄像头的段只画中性灰轮廓,一眼看出"这段没监控"(TC-11);
+- **6 路摄像头全部没有视频源**(`hasVideo: false`):感知层显示空窗占位,**不得**说成"样本视频未导出",也**不得**说成"实时 / 现场";
+- **不接孪生桥接**(`bridge.enabled = false`):桥接服务跑的是另一份选段口径,接上会与本站几何对不上;
+- **薄包如实空**:断面 / 落客点 / 候客区 / 告警 / 车辆 / 场景为空是本站现状,**不许**拿包 A 的演示值去填(数据补齐另开单)。
 
-> 二站的生成侧(SUMO 建网 / 车流 / FCD 折算 / 包生成脚本)在**与仓库同级的本地暂存目录**里,**未入库**:
-> 那套脚本要装 SUMO 才跑得动,产物(路网 / FCD / 动画)都是几十 MB 的大件,属仓库禁入类型。
-> 该目录的 `README.md` 写了几何纪律与一键复现步骤,`stationB.network.ts` 头部也留了一份(命令按目录内相对路径写,
-> 与本机放在哪儿无关)。换机器复现时:先按该 README 把目录建起来,再照 `stationB.network.ts` 头部的五条命令跑。
+> 包 Z 的几何生成侧**在仓库内**:`work/twin/netpack/build_station_pack.py` + OSM 切片
+> `work/frontend/tools/twin_preview/station.osm`(一键复现命令见 `work/twin/netpack/README.md`)。
+> 换范围 / 换路段数量见 Issue IKM4B4(站点范围与路段数量按站配置)。
 
 ## 十二、演示前浏览器实测与四页修复(Issue #75,2026-10-13)
 
@@ -502,14 +510,14 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 | 最小宽度 | 左 **220px** / 中 **320px** / 右 **280px**（拖到最窄内容不叠压、不溢出，按钮仍点得到） |
 | 复位方式 | **双击任意分隔条** → 三栏回到默认 296 / 弹性 / 396 |
 | 记忆方式 | 拖完自动写 `localStorage` 键 `hubflow.dashboard.colWidth`（只记左、右两栏，中栏弹性不记）；清缓存或双击即回默认 |
-| 换站点包 | 无影响。`npm run dev`（包 A）与 `npm run dev:station2`（包 B）行为一致 |
+| 换站点包 | 无影响。`npm run dev`（包 Z，主包）与顶栏切到包 A 行为一致 |
 
 **已知限制（如实记，不得写成「无障碍已达标」）**：
 
 1. **分隔条只有鼠标 / 触摸拖拽，没有键盘操作**——`ElSplitter` 的 dragger 没有 `tabindex` / `role` / `keydown`（element-plus 2.14.5 源码实测），键盘用户无法调整三栏宽度。宽度本身不影响信息读取（内容都在 DOM 里、可滚动浏览），但**「可调整」这一项对键盘用户不成立**。
 2. **双击复位只能用 `mousedown` 自计次实现**，不能挂 `@dblclick`：`ElSplitter` 在 `moveStart` 时会盖一层 `z-index:999` 的 `.el-splitter__mask`（用于吞掉 iframe 的 touch 事件），mouseup 落在遮罩上，mousedown 与 mouseup 的 target 不一致，浏览器不派发 `click`，更没有 `dblclick`。实测事件序列：
    `mousedown:.el-splitter-bar__dragger → mouseup:.el-splitter__mask`。故改为在 `mousedown` 上按 400ms 窗口 + 8px 位移自计次。
-3. **记忆宽度不随站点包区分**——同一个浏览器切包 A / 包 B 共用同一份左、右栏宽度。
+3. **记忆宽度不随站点包区分**——同一个浏览器切包 A / 包 Z 共用同一份左、右栏宽度。
 
 **其余易踩点（改这块前先看）**：
 
