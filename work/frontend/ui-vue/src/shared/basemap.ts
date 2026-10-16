@@ -26,7 +26,8 @@ export const BASEMAP_PROXY_PREFIX = '/basemap'
 /** 代理的存活探测端点（返回 `{"ok":true}`；没挂这条路时拿到的不是 JSON，见下） */
 export const BASEMAP_PROXY_PROBE = `${BASEMAP_PROXY_PREFIX}/health`
 
-// 探测结果放模块级而不是组件状态：一次会话里只探一次，`MapLibreViewer` 重挂也照样有效。
+// 探测结果放模块级而不是组件状态：`MapLibreViewer` **每次挂载都会重探一次**（`onMounted` 里先探再建图），
+// 但探到之前若组件已重挂，这个模块级的旧值能让新那次建图直接就走上同源前缀，不必等探测回来。
 let proxyDetected = false
 
 export function setBasemapProxyDetected(on: boolean): void {
