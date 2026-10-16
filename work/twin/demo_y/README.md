@@ -89,8 +89,22 @@ n_stem ──────────── n_junction ──┬── n_arm_a
 
 ## 已知限制
 
-1. **`capture_screen.py`（sumo-gui 截图）在本机跑不通** —— `sumo-gui` 在 macOS 上链接
-   `libX11`，是 **X11 程序**，而本机**没装 XQuartz**，报 `FXApp::openDisplay: unable to open display :0.0`。
-   装 XQuartz 后（可能需重新登录）才谈得上**画面**通道。
+1. **`capture_screen.py` 依赖 XQuartz（macOS）** —— `sumo-gui` 在 macOS 上链的是 `libFOX` + `libX11`，
+   是 **X11 程序**。不装 XQuartz 会报 `FXApp::openDisplay: unable to open display :0.0`。
+   **装好后的用法**（实测**不用注销重登**）：
+
+   ```bash
+   brew install --cask xquartz      # 要管理员密码
+   open -a XQuartz                   # 起 X 服务
+   export DISPLAY=:0
+   python3 capture_screen.py
+   ```
+
+   **另有三条实测坑**（都写进 `capture_screen.py` 的文档串了）：**必须给 `sumo-gui` 加 `--start`**
+   （否则 GUI 等你在界面上点"播放"，TraCI 端口在听却不回话）；`FONTCONFIG_PATH` 要指到
+   `/opt/X11/etc/X11/fontconfig`；**`traci.close()` 会永远卡住**（GUI 进程不退），得用 `os._exit`。
 2. **`draw_network.py` 是「画」不是「截」** —— 它读 `.net.xml` 自己画示意图，
-   **不能替代** sumo-gui 的真实画面（那是另一件事）。
+   **不能替代** sumo-gui 的真实画面（那是另一件事）。两张图别混。
+3. **非空白判据用「几何」不用「数颜色」** —— `work/assembly/技术栈.md` 那条「458 种颜色」是在一张
+   **OSM 大网**上量的；**本 Y 网只有 4 节点 / 6 边，实测只有 5 种颜色**，拿"颜色种数 ≥ 30"当门槛会
+   **误判成空白**。`capture_screen.py` 改用**非白像素占比 + 包围盒跨度**（实测真画面：1.8% / 82%×91%）。
