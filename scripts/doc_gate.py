@@ -727,7 +727,11 @@ def check_task_log(repo: Repo) -> Check:
     rows, format_failures = parse_task_ledger(text)
     # 未闭合的 HTML 注释会把整张表从渲染里藏掉 —— 而行级检查全绿（本 PR 就真踩过一次）。
     # 这一条专门拦它：`<!--` 与 `-->` 必须成对。
-    opens, closes = text.count("<!--"), text.count("-->")
+    # ⚠️ 先剥掉围栏代码块与行内代码再数：那些地方的标记是**字面文字**，Markdown 不会当注释
+    #    （本文件的第四节表格里就写着 `<!--` / `-->` 当说明，不剥掉会自己把自己数成一条）。
+    prose = re.sub(r"(?ms)^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[ \t]*$", "", text)
+    prose = re.sub(r"`[^`\n]*`", "", prose)
+    opens, closes = prose.count("<!--"), prose.count("-->")
     if opens != closes:
         format_failures.append(
             Failure(
