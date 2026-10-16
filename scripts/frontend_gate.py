@@ -119,16 +119,33 @@ def gate_realkey(files):
 
 
 def gate_forcetype(files):
-    """带状态的 Canvas 必须走双节点切换，且切换条件必须每次都翻转"""
+    """带状态的 Canvas 必须单节点 + @Watch 直达 dc.invalidate() 重画"""
     bad = []
     p = os.path.join(ETS, "components", "RoadNetMap.ets")
     src = strip_comments(read(p))
-    # 【踩过的坑，务必保留这条检查】
-    # 第一版条件写成 `pickedPathId !== ''` —— 初值就是 'P-2'，恒为 true，
-    # 两个分支永远走同一支，节点从不重建 → 地图永远停在旧画面。
-    # 正确写法是靠「代号奇偶」翻转：每次状态变化自增，奇偶必变。
-    if "this.repaintEpoch % 2 === 1" not in src:
-        bad.append("RoadNetMap 的双 Canvas 条件没有用 repaintEpoch 奇偶 —— 地图不会重画")
+    # 【2026-10-16 起改为单 Canvas 机制 —— 历史坑记录】
+    # 第一版条件写成 `pickedPathId !== ''` 恒为 true → 节点从不重建；
+    # 随后改用「repaintEpoch 奇偶」双 Canvas 翻转 —— 但实测证明：
+    # 旧节点销毁不及时 → 两幅地图叠加（用户视频举证「左上角多地图叠加」），
+    # 新节点 onReady 时 dc.size 未落定 → 半幅残影。双 Canvas 方案已废弃。
+    # 现行正确写法：单 Canvas 节点 + 所有影响绘制的 @Prop 挂 @Watch('onRepaintChange')
+    # → repaintNow() 里 this.dc.invalidate()，节点永不重建。
+    if "this.repaintEpoch % 2" in src:
+        bad.append("RoadNetMap 仍在用 repaintEpoch 奇偶做双 Canvas 翻转 —— 会叠加残影，必须单节点")
+    if src.count("Canvas({") != 1:
+        bad.append("RoadNetMap 的 Canvas 不是单节点 —— 双分支/翻转会造成地图叠加")
+    if "@Watch('onRepaintChange') pickedPathId" not in src:
+        bad.append("RoadNetMap 的 pickedPathId 没挂 @Watch('onRepaintChange') —— 状态变了地图不重画")
+    # repaintNow 必须真的触发 invalidate，否则状态变化后画面停在旧帧
+    if "invalidate()" not in src:
+        bad.append("RoadNetMap 没有调用 dc.invalidate() —— 重画不会落到屏幕上")
+    # 【2026-10-16 真凶】Canvas 上下文状态跨次重画保留：draw() 尾部 translate+scale
+    # 不复位 → 第 N 次重画叠加前 N-1 次变换（clearRect 被扭曲清不掉旧像素 + 缩放复利）。
+    # 铁律：clearRect 之前必须 setTransform 单位阵。
+    rd = strip_comments(read(os.path.join(ETS, "common", "SelfDrawRenderer.ets")))
+    if "setTransform(1, 0, 0, 1, 0, 0)" not in rd or \
+       rd.find("setTransform") > rd.find("clearRect"):
+        bad.append("SelfDrawRenderer.draw() 清屏前没有复位变换 —— 上下文状态累积会造成地图叠加残影")
     if "repaintEpoch" not in read(p):
         bad.append("RoadNetMap 没有 repaintEpoch 入参 —— 无法感知状态变化")
     store = strip_comments(read(os.path.join(ETS, "common", "DemoStore.ets")))

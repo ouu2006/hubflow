@@ -1,13 +1,13 @@
 import { ROUTES_FIXTURE } from '../common/Fixture';
 import { DemoStore } from '../common/DemoStore';
 import { EmergencyCard, InfoRow, SectionTitle, LevelLegend, SegmentBar } from '../components/Common';
-import { TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER } from '../common/Colors';
+import { TEXT_PRIMARY, TEXT_SECONDARY, TEXT_TERTIARY, BG_GRAY_LIGHT, BG_GRAY_LIGHTER, BORDER_ACCENT } from '../common/Colors';
 import { RoadNetMap } from '../components/RoadNetMap';
 import { RouteStripCard, DropoffActionRow } from '../components/NavBar';
 import { RouteOptionRow } from '../components/RouteOptionRow';
 import { StateTopBar } from '../components/StateTopBar';
 import { DegradedBanner } from '../components/DegradedBanner';
-import { arrivalPlans, planOf } from '../common/RoutePlan';
+import { PlanMeta, arrivalPlans, planOf } from '../common/RoutePlan';
 
 /**
  * 页二：落客 / 候客指引（停靠点类型、位置、步行接驳时长）
@@ -66,17 +66,18 @@ export struct DropoffPage {
   switchTab: (idx: number) => void = () => {};
 
   /**
-   * 当前选中方案的路段构成。
-   * 与导航页同一个写法：走 arrivalPlans()，不直接用 arrival_route.segments，
-   * 否则切到备选后地图/卡片是备选、只有这段还是推荐方案的路段。
+   * 本页当前是否可见（由 Index 的 Tabs.onChange 注入）。
+   * 切到本页时由 true 触发 RoadNetMap 立即重画当前演示态，修「慢一拍」。
+   * 仅作重画触发信号，不改变任何业务内容。
    */
-  private pickedSegments(): string[] {
-    return planOf(arrivalPlans(), this.store.pickedPathId).segments;
-  }
+  @Prop active: boolean = true;
 
-  /** 当前选中方案的展示序号（0/1/2） */
-  private pickedIndex(): number {
-    return planOf(arrivalPlans(), this.store.pickedPathId).index;
+  /**
+   * 当前选中方案（与地图 / 方案卡同源：arrivalPlans() + pickedPathId）。
+   * 落客路线卡（与离站页「离站路线」框同构）的头部 / 路段条 / 底部小字都读它。
+   */
+  private plan(): PlanMeta {
+    return planOf(arrivalPlans(), this.store.pickedPathId);
   }
 
   build() {
@@ -95,7 +96,7 @@ export struct DropoffPage {
            * 【为什么挪到最前】
            * 原来这段在 Scroll 的**最后**（方案卡之后），于是：
            *   常态页面很长（地图 470vp 占满上半屏），红卡被推到屏幕外下沿，
-           *   实测截图里「已停止路线引导，恢复后自动继续。」这行被底部固定操作条压掉一半，
+           *   实跑验证截图里「已停止路线引导，恢复后自动继续。」这行被底部固定操作条压掉一半，
            *   而这行正是完成判定里「告知文案必现」要的那句 —— 等于判定被打折。
            * Scroll 的 padding.bottom 只在**滚到底**时才起避让作用，
            * 而应急态是「刚点亮、用户还在页面顶部」的时刻，此时根本看不到末尾。
@@ -106,9 +107,12 @@ export struct DropoffPage {
            * 注意这与 StateTopBar（页顶窄条）是**叠加**关系，两个都保留：
            * 顶部窄条给第一眼信号、下面大卡给完整说明，与导航页同构。
            */
-          if (this.store.emergency) {
-            EmergencyCard()
-          } else if (this.store.degraded) {
+          /**
+           * 【2026-10-16 用户指令：应急红大卡挪到地图下方、路线选择框上方】
+           * 顶部窄条（StateTopBar）仍在页顶负责第一眼安全信号，不在此列。
+           * 降级琥珀条位置不变（用户只提了红卡）。
+           */
+          if (this.store.degraded) {
             DegradedBanner({ scene: '落客' })
           }
 
@@ -124,8 +128,14 @@ export struct DropoffPage {
             // 选路页红线强调：让「连接司机标识与终点的红线」在选路地图也清晰可见
             selection: true,
             // 应急态停止路线引导、地图不再画推荐路线（与导航页同口径）
-            stopGuidance: this.store.emergency
+            stopGuidance: this.store.emergency,
+            active: this.active
           })
+
+          // 应急红大卡：地图正下方、路线选择框正上方（用户指定位置）
+          if (this.store.emergency) {
+            EmergencyCard()
+          }
 
           /**
            * ---- 方案选择区：地图上几条路，这里就给几张卡 ----
@@ -160,6 +170,44 @@ export struct DropoffPage {
           })
 
           /**
+           * 【落客路线卡 —— 与离站页「离站路线」框同构，位置同样在方案卡正下方】
+           * 用户要求：把落客页原来的「当前方案路段」块改成离站页那种带边框的卡片，
+           * 位置也从「落客/候客指引之后」挪到「方案卡之后」。
+           * 头部 = 落客路线 P-x（推荐标记）+ 耗时；中间 = 路段条（读当前选中方案）；
+           * 底部 = 方案 hint（契约 reason / factors 摘要）。数据与地图同源（arrivalPlans()）。
+           */
+          Column({ space: 6 }) {
+            Row() {
+              Text(`落客路线 ${this.plan().pathId}${this.plan().recommended ? '（推荐）' : ''}`)
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(TEXT_PRIMARY)
+              Blank()
+              Text(`约 ${this.plan().etaMin} 分钟`)
+                .fontSize(14)
+                .fontColor(TEXT_PRIMARY)
+            }
+            .width('100%')
+
+            Row({ space: 6 }) {
+              ForEach(this.plan().segments, (seg: string) => {
+                SegmentBar({ segmentId: seg, unavailable: this.store.unavailable, colorBlind: this.store.colorBlind })
+              }, (seg: string) => `${seg}_${this.store.unavailable}_${this.store.colorBlind}_${this.store.pickedPathId}`)
+            }
+            .width('100%')
+
+            Text(this.plan().hint)
+              .fontSize(11)
+              .fontColor(TEXT_SECONDARY)
+              .width('100%')
+          }
+          .width('100%')
+          .padding(12)
+          .backgroundColor(BG_GRAY_LIGHT)
+          .borderRadius(10)
+          .border({ width: 1, color: BORDER_ACCENT })
+
+          /**
            * 【应急 / 降级：顶部红条 + 下面红色大框，**两个都要，不是二选一**】
            *
            * 用户原话：「洛克这里原本下面它是有个红色大框的，跟导航页面下面那个一样，
@@ -186,25 +234,6 @@ export struct DropoffPage {
           .padding(12)
           .backgroundColor(BG_GRAY_LIGHT)
           .borderRadius(10)
-
-          /**
-           * 当前方案的路段等级条。
-           * 标题随选中方案变化（推荐 vs 备选），路段跟着当前选中方案走 ——
-           * 地图上那段橙的对应哪一个 SEG，这里能逐段核对。
-           */
-          SectionTitle({
-            text: this.pickedIndex() === 0 ? '推荐路线路段' : `当前方案（${this.store.pickedPathId}）路段`
-          })
-          Row({ space: 6 }) {
-            ForEach(this.pickedSegments(), (seg: string) => {
-              SegmentBar({
-                segmentId: seg,
-                unavailable: this.store.unavailable,
-                colorBlind: this.store.colorBlind
-              })
-            }, (seg: string) => `${seg}_${this.store.unavailable}_${this.store.colorBlind}`)
-          }
-          .width('100%')
 
           // 四级图例（三重编码 §11.3）—— 让司机能自己核对地图上的颜色
           LevelLegend({ colorBlind: this.store.colorBlind, unavailable: this.store.unavailable })

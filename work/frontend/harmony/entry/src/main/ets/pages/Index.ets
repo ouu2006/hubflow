@@ -20,6 +20,13 @@ struct Index {
   @State store: DemoStore = DemoStore.instance();
 
   /**
+   * 当前可见页签序号（changeIndex 语义：0=导航 / 1=落客 / 2=离站 / 3=行程）。
+   * 仅用于把「本页是否可见」传给各页的 RoadNetMap，切页时立刻重画当前演示态，
+   * 修「演示态切换时落客/离站地图慢一拍」；不参与任何业务逻辑，也不改变选中态。
+   */
+  @State activeTab: number = 0;
+
+  /**
    * 页签控制器：落客/离站页「再次点击已选路线框」要跳回导航页，
    * 导航页空态的指引按钮要跳到落客/离站页 —— 都靠它切 Tab。
    * changeIndex(0)=导航 / 1=落客 / 2=离站 / 3=行程。
@@ -120,17 +127,17 @@ struct Index {
       // 页签名按导航 App 语义命名（队长要求「app 最少做 4 到 5 个」）
       Tabs({ barPosition: BarPosition.End, controller: this.tabsController }) {
         TabContent() {
-          RecommendPage({ store: this.store, switchTab: (idx: number): void => { this.switchTab(idx); } })
+          RecommendPage({ store: this.store, active: this.activeTab === 0, switchTab: (idx: number): void => { this.switchTab(idx); } })
         }
         .tabBar('导航')
 
         TabContent() {
-          DropoffPage({ store: this.store, switchTab: (idx: number): void => { this.switchTab(idx); } })
+          DropoffPage({ store: this.store, active: this.activeTab === 1, switchTab: (idx: number): void => { this.switchTab(idx); } })
         }
         .tabBar('落客')
 
         TabContent() {
-          DeparturePage({ store: this.store, switchTab: (idx: number): void => { this.switchTab(idx); } })
+          DeparturePage({ store: this.store, active: this.activeTab === 2, switchTab: (idx: number): void => { this.switchTab(idx); } })
         }
         .tabBar('离站')
 
@@ -139,6 +146,9 @@ struct Index {
         }
         .tabBar('行程')
       }
+      .onChange((idx: number) => {
+        this.activeTab = idx;
+      })
       .layoutWeight(1)
       .width('100%')
 

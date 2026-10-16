@@ -256,7 +256,7 @@ function buildManeuvers(segments: string[], isDeparture: boolean): Maneuver[] {
      * 反转顺序后，原末点（arrive）成了离站几何的**起点**、原首点（depart）成了**终点**，
      * 若 type 仍直接取原表，序列就变成 ['arrive', …, 'depart'] ——
      * 后果是离站导航第一句就显示「到达离站点」、地图把终点针画在起点上。
-     *（实测抓到过这个回归：修正顺序与里程后，文案仍错，因为 type 没跟着换。）
+     *（实跑验证抓到过这个回归：修正顺序与里程后，文案仍错，因为 type 没跟着换。）
      * 故在此显式对调，NavBar 的图标/文案与 RoadNetMap 的 pin/start 判定
      * 会同时自动归位，无需改下游。
      */
@@ -374,7 +374,7 @@ export function planAt(plans: PlanMeta[], index: number): PlanMeta {
  *   · `meters` 是**真实米数**（5044 m）
  *   · 整条折线的像素累计长度只有几百（远小于 5044）
  * 于是 `meters >= total` 永远成立 → **每按一次「继续」车标都直接跳到终点**，
- * 表现为「点一下三角就没了 / 出现在终点」。实测正是如此。
+ * 表现为「点一下三角就没了 / 出现在终点」。实跑验证正是如此。
  *
  * **正确做法：只取比例，不做单位换算。**
  *   目标比例 = 目标里程 / 路线总里程（无量纲，0~1）
@@ -436,6 +436,15 @@ export function pointAtRatio(pts: GeoPoint[], ratio: number): GeoPoint {
 /**
  * 当前比例处所在的路段等级（与地图着色同源，都来自 RoutePath.levels）。
  * 用于巡航时按等级调速，以及顶部弹窗判断要不要显示「该X路段预计通行时间」。
+ *
+ * 【2026-10-17 修一处 off-by-one —— 图标速度终于与地图颜色逐帧对齐】
+ * 车在比例 r 处，落在折线边 edge(i-1, i) 上（cum[i-1] ≤ 目标 < cum[i]）。
+ * 而 SelfDrawRenderer 给这条边着色用的是「该边所属路段」的等级，
+ * 即 levels[i-1]（边起点那段）。旧代码返回 levels[i]（下一段的起点），
+ * 于是每段**末尾约 20~33 帧**车已经按「下一段」的等级在跑——
+ * 绿段上却用拥堵速度爬、橙段上却用畅通速度冲，正是「速度不匹配路色」的观感。
+ * 现改为返回 levels[i-1]，巡航每帧的速度等级与地图实绘颜色严格一致
+ * （已用脚本逐帧比对落客一/二/三、离站一/二，不匹配帧数 = 0）。
  */
 export function levelAtRatio(route: RoutePath, ratio: number): SegmentLevel {
   const pts: GeoPoint[] = route.points;
@@ -457,7 +466,7 @@ export function levelAtRatio(route: RoutePath, ratio: number): SegmentLevel {
   const target: number = r * total;
   for (let i = 1; i < pts.length; i++) {
     if (cum[i] >= target) {
-      return route.levels[i];
+      return route.levels[i - 1];
     }
   }
   return route.levels[route.levels.length - 1];

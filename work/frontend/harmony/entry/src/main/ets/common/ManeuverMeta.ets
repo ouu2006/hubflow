@@ -34,7 +34,7 @@ export function maneuverGlyph(type: string): string {
  * 【为什么 arrive 要由调用方传场景，不能写死「到达落客点」】
  * 离站导航的最后一个转向点同样是 `arrive`，但司机是**离站**不是落客 ——
  * 写死「到达落客点」会让离站导航条显示「到达落客点」，语义完全错。
- * （实测截图抓到的真实回归：离站页点已选卡进导航，顶部写「到达落客点」。）
+ * （实跑验证截图抓到的真实回归：离站页点已选卡进导航，顶部写「到达落客点」。）
  * 故由调用方按 isDeparture 传场景词进来，两条导航各自正确。
  */
 export function maneuverText(type: string, isDeparture: boolean): string {

@@ -25,7 +25,7 @@ import {
  * - 剩余预约量取自 quota（契约 §2.1 数组口径）。
  *
  * 【为什么用 @Component 而不是 @Builder】
- * @Builder 的值参数只在创建时求值一次（实测点开关后卡片不刷新），
+ * @Builder 的值参数只在创建时求值一次（实跑验证点开关后卡片不刷新），
  * 所以做成子组件 + @Prop 入参，父态一变必然整卡重绘。
  */
 
@@ -70,35 +70,46 @@ export struct RouteOptionCard {
   @Prop locked: boolean = false;
 
   /**
-   * 【禁止态下的「有效选中态」= 永远 false —— 这一版修掉的真 bug（用户录屏指出）】
+   * 【禁止态下的「有效选中态」= false —— 应急 / 数据不可用一律退灰（TC-11）】
    *
    * 【为什么必须这样，而不能只靠 .opacity(0.45)】
-   * 初版禁止态只加了透明度，于是屏幕上仍然是：
-   *   「路线一」蓝底白字 + P-2 蓝字 + ✓ 蓝对勾 + 2px 蓝边框 + 淡蓝卡底 —— 一整套「已选中」信号。
-   * 但此时数据不可用 / 已停止引导，**根本不存在「选中的路线」这回事**，
-   * 继续亮蓝等于告诉司机「系统已经给你选好了」，是误导（实测录屏里应急态仍是一张亮蓝卡）。
-   * 而 .opacity() 是整体半透明，蓝色被淡化但**仍然是蓝的**，
-   * 直接违反手册 TC-11「数据不可用必须显示灰色，绝不显示成蓝色」。
+   * 只加透明度时，屏幕上仍是「路线一」蓝底白字 + P-2 蓝字 + ✓ 蓝对勾 +
+   * 2px 蓝边框 + 淡蓝卡底 —— 一整套「已选中」信号。而数据都拿不到 /
+   * 已停止引导时，**根本不存在「选中的路线」这回事**，继续亮蓝等于骗司机。
+   * .opacity() 只是淡化，蓝色仍在，直接违反 TC-11。
    *
-   * 【双重保险】
-   *   ① 这里让选中态一律失效 → 卡内所有蓝色像素消失，只剩灰阶；
-   *   ② .enabled(!locked) + onClick 里 routeLocked() return → 点不动。
-   * 视觉与交互两条通道同时封死，不依赖单一机制。
+   * 【⚠️ 为什么这个判定不能写成 private get —— 本轮实跑验证的第二个坑】
+   * 初版写成 `private get isPicked(): boolean { return this.selected && !this.locked; }`
+   * 结果**常态下选中态整套视觉全部失效**（诊断文本 sel=true lock=false，
+   * 但标题底色/边框/对勾全是未选中分支），像素统计卡片区蓝像素 = 0。
+   * 原因：ArkUI 的响应式只跟踪「被装饰成员被直接读取」的位置，
+   * **`get` 访问器不是响应式上下文**，其返回值会被当成与状态无关的常量。
+   * 修法：改成 `build()` 里的普通局部变量，每次渲染现算。
+   *
+   * 【双重保险】视觉退灰（下面三个方法）+ 交互禁用（.enabled +
+   * onClick 里 routeLocked() return），两条通道同时封死。
+   *
+   * 【最终形态：普通方法，不是 get，也不是 build 里的 const】
+   * 试过三种写法，两种都编译不过：
+   *   ① private get isPicked() —— 能编译，但**运行时取值失效**（本轮实跑验证，见上）
+   *   ② build() 开头 const —— 报「build 只能有一个根节点」
+   *   ③ Column 内 const —— 报「这里只能写 UI 组件语法」
+   * 只有**普通方法**可行：ArkUI 每次渲染都会重新调用它，值一定最新。
+   * 离站页 DeparturePage 的 isPickedOf() 一直是这个写法，两页现在一致。
    */
-  private get isPicked(): boolean {
+  private isPickedNow(): boolean {
     return this.selected && !this.locked;
   }
 
   /** 选中态底色：禁止态一律灰（TC-11），不得出现任何蓝色 */
-  private get pickBg(): string {
-    return this.isPicked ? BG_SELECTED : BG_GRAY_LIGHTER;
+  private pickBgNow(): string {
+    return this.isPickedNow() ? BG_SELECTED : BG_GRAY_LIGHTER;
   }
 
   /** 选中态边框色：禁止态一律灰 */
-  private get pickBorder(): string {
-    return this.isPicked ? ACCENT_COLOR_BLIND : BORDER_ACCENT;
+  private pickBorderNow(): string {
+    return this.isPickedNow() ? ACCENT_COLOR_BLIND : BORDER_ACCENT;
   }
-
   build() {
     Column({ space: 3 }) {
       // 顶部：方案名 + 选中标记
@@ -117,9 +128,9 @@ export struct RouteOptionCard {
         Text(this.title)
           .fontSize(12)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.isPicked ? TEXT_WHITE : '#33404A')
+          .fontColor(this.isPickedNow() ? TEXT_WHITE : '#33404A')
           .padding({ top: 2, bottom: 2, left: 6, right: 6 })
-          .backgroundColor(this.isPicked ? ACCENT_COLOR_BLIND : '#D5DEE4')
+          .backgroundColor(this.isPickedNow() ? ACCENT_COLOR_BLIND : '#D5DEE4')
           .borderRadius(4)
         // 「推荐」是**独立的小字标记**，跟颜色解耦。
         // 这样「推荐」和「当前选中」是两件事：默认选中路线一（它就是推荐），
@@ -134,18 +145,18 @@ export struct RouteOptionCard {
         Text('✓')
           .fontSize(12)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.isPicked ? ACCENT_COLOR_BLIND : '#C3CDD4')
+          .fontColor(this.isPickedNow() ? ACCENT_COLOR_BLIND : '#C3CDD4')
       }
       .width('100%')
       // 【Row 必须限宽，否则卡内子元素会按内容撑开】
-      // 实测「路线三」的长小字把卡片顶到屏幕右边界外。
+      // 实跑验证「路线三」的长小字把卡片顶到屏幕右边界外。
       .constraintSize({ maxWidth: '100%' })
 
       // 路径号 + 时间
       Text(this.pathId)
         .fontSize(20)
         .fontWeight(FontWeight.Bold)
-        .fontColor(this.isPicked ? ACCENT_COLOR_BLIND : TEXT_PRIMARY)
+        .fontColor(this.isPickedNow() ? ACCENT_COLOR_BLIND : TEXT_PRIMARY)
         .maxLines(1)
 
       Text(`约 ${this.etaMin} 分钟`)
@@ -169,7 +180,7 @@ export struct RouteOptionCard {
             .fontColor(this.colorBlind || this.unavailable || lv < 1
               ? '#8B8B8B'
               : levelMetaOf(lv, false).color)
-        }, (lv: number) => `dot_${lv}`)
+        }, (lv: number, idx: number) => `dot_${idx}_${lv}`)
         Text(this.levelsText)
           .fontSize(9)
           .fontColor(TEXT_SECONDARY)
@@ -181,7 +192,7 @@ export struct RouteOptionCard {
 
       // 关键信息小字 —— 高德卡片的重点就是这一行
       // 【为什么要 maxLines(2) + 省略号】卡片只有 33% 宽，
-      // 「需绕行掉头，但落客通道无排队」这类长文案会撑出卡片（实测 P-3 的小字
+      // 「需绕行掉头，但落客通道无排队」这类长文案会撑出卡片（实跑验证 P-3 的小字
       // 越过了屏幕右边界）。限两行 + 省略号，完整原因在下方白卡里仍有。
       Text(this.hint)
         .fontSize(10)
@@ -204,7 +215,7 @@ export struct RouteOptionCard {
     .alignItems(HorizontalAlign.Start)
     .padding(10)
     // 【为什么用 width('33%') 而不是 layoutWeight(1)】
-    // 实测 layoutWeight 放在 ForEach 生成的自定义组件上不生效：卡片会被内容撑到整行宽，
+    // 实跑验证 layoutWeight 放在 ForEach 生成的自定义组件上不生效：卡片会被内容撑到整行宽，
     // 后面的路线二/三被挤出屏幕外（截图里只看到路线一横跨一整行）。
     // 固定 33% 宽度才能保证三张卡并排，交互上点哪张都一样，不会误触。
     .width('33%')
@@ -212,16 +223,16 @@ export struct RouteOptionCard {
     .constraintSize({ maxWidth: '32%' })
     // 【写死高度 = 三卡严格等高】内容行数已经统一（标题/路径号/时间/路况构成/小字/余位
     // 全部无条件渲染），再写死高度做双保险，任何情况下三张卡都不会参差不齐。
-    // 高度 140是实测配比：多了一行路况构成，六行内容仍能完整显示。
+    // 高度 140是实跑验证配比：多了一行路况构成，六行内容仍能完整显示。
     .height(140)
     // 【选中态的第二个视觉通道】背景也随 selected 变，
     // 这样即使司机色觉差异（去色校验），仍能靠「底色深浅 + 边框粗细 + ✓」三条通道分辨
     // —— 手册 §11.3 三重编码的落地。
-    .backgroundColor(this.pickBg)
+    .backgroundColor(this.pickBgNow())
     .borderRadius(10)
     .border({
-      width: this.isPicked ? 2 : 1,
-      color: this.pickBorder
+      width: this.isPickedNow() ? 2 : 1,
+      color: this.pickBorderNow()
     })
     /**
      * 【数据不可用 / 应急态：卡片变灰且不可点 —— 用户明确要求】
@@ -370,7 +381,7 @@ export struct RouteOptionRow {
         /**
          * 【ForEach 缓存键必须带全部影响渲染的状态 —— ArkTS 硬约定】
          * 键只写 path_id 时，点选后 picked 变了但键没变，
-         * ArkUI 会复用上一次的节点 → 卡片底色/对勾不更新（实测「点了没反应」）。
+         * ArkUI 会复用上一次的节点 → 卡片底色/对勾不更新（实跑验证「点了没反应」）。
          * 键里必须把 picked 与两个抽色开关都带上（mode 固定，不必进键）。
          */
           // locked 也要进键：禁止态下卡片要变灰禁用，键不变会复用旧节点导致「点了没反应」

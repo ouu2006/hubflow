@@ -54,7 +54,7 @@ export struct InfoRow {
  * 【为什么这三个参数必须加 @Prop】
  * 早期版本它们是普通成员变量，父组件用 ForEach 渲染 SegmentBar 时，
  * ForEach 的缓存键（segmentId）不变 → ArkUI 复用缓存节点、不重新执行 itemBuilder，
- * 于是「数据不可用 / 去色校验」开启后路段颜色不变（实测 bug）。
+ * 于是「数据不可用 / 去色校验」开启后路段颜色不变（实跑验证 bug）。
  * 加 @Prop 后这三个值是响应式的：父层一变，子组件必然重绘。
  */
 @Component

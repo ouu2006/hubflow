@@ -32,6 +32,13 @@ export struct DeparturePage {
   switchTab: (idx: number) => void = () => {};
 
   /**
+   * 本页当前是否可见（由 Index 的 Tabs.onChange 注入）。
+   * 切到本页时由 true 触发 RoadNetMap 立即重画当前演示态，修「慢一拍」。
+   * 仅作重画触发信号，不改变任何业务内容。
+   */
+  @Prop active: boolean = true;
+
+  /**
    * 当前选中的离站方案。
    *
    * 【为什么离站页也要能选方案 —— 用户原话】
@@ -97,7 +104,7 @@ export struct DeparturePage {
    * RouteOptionRow；但「禁止态不许亮蓝」是同一条铁律（手册 TC-11），
    * 两处必须同时改，只改一处就会出现「落客页变灰了、离站页还是蓝的」。
    *
-   * 录屏实测：应急态下离站页同样是「离站一」蓝底 + P-5 蓝字 + 蓝对勾 + 蓝框，
+   * 录屏实跑验证：应急态下离站页同样是「离站一」蓝底 + P-5 蓝字 + 蓝对勾 + 蓝框，
    * 而此时已停止引导，不该再告诉司机「你选的是这条」。.opacity(0.45) 只是淡化，蓝色还在。
    */
   /**
@@ -132,7 +139,7 @@ export struct DeparturePage {
            * 【为什么挪到最前】
            * 原来这段在 Scroll 的**最后**（方案卡之后），于是：
            *   常态页面很长（地图 470vp 占满上半屏），红卡被推到屏幕外下沿，
-           *   实测截图里「已停止路线引导，恢复后自动继续。」这行被底部固定操作条压掉一半，
+           *   实跑验证截图里「已停止路线引导，恢复后自动继续。」这行被底部固定操作条压掉一半，
            *   而这行正是完成判定里「告知文案必现」要的那句 —— 等于判定被打折。
            * Scroll 的 padding.bottom 只在**滚到底**时才起避让作用，
            * 而应急态是「刚点亮、用户还在页面顶部」的时刻，此时根本看不到末尾。
@@ -143,9 +150,12 @@ export struct DeparturePage {
            * 注意这与 StateTopBar（页顶窄条）是**叠加**关系，两个都保留：
            * 顶部窄条给第一眼信号、下面大卡给完整说明，与导航页同构。
            */
-          if (this.store.emergency) {
-            EmergencyCard()
-          } else if (this.store.degraded) {
+          /**
+           * 【2026-10-16 用户指令：应急红大卡挪到地图下方、路线选择框上方】
+           * 顶部窄条（StateTopBar）仍在页顶负责第一眼安全信号，不在此列。
+           * 降级琥珀条位置不变（用户只提了红卡）。
+           */
+          if (this.store.degraded) {
             DegradedBanner({ scene: '离站' })
           }
 
@@ -161,8 +171,16 @@ export struct DeparturePage {
             // 选路页红线强调：让「连接司机标识与终点的红线」在选路地图也清晰可见
             selection: true,
             // 应急态停止路线引导、地图不再画推荐路线（与导航页同口径）
-            stopGuidance: this.store.emergency
+            stopGuidance: this.store.emergency,
+            // 切到本页（Tabs.onChange）时 active 由 false→true，触发 repaintNow() 就地重画最新演示态，
+            // 解决「演示态切换慢一拍」：单 Canvas 不重建、不 bumpEpoch、杜绝多地图叠加
+            active: this.active
           })
+
+          // 应急红大卡：地图正下方、路线选择框正上方（用户指定位置）
+          if (this.store.emergency) {
+            EmergencyCard()
+          }
 
           /**
            * 【应急 = 顶部加一条红条，**下面一个字都不能少** —— 用户明确纠正过】
@@ -240,7 +258,7 @@ export struct DeparturePage {
                       .fontSize(8)
                       .fontColor(this.store.colorBlind || this.store.unavailable || lv < 1
                         ? '#8B8B8B' : levelMetaOf(lv, false).color)
-                  }, (lv: number) => `dlv_${lv}`)
+                  }, (lv: number, idx: number) => `dlv_${idx}_${lv}`)
                   Text(this.planLevelsText(p))
                     .fontSize(9)
                     .fontColor(TEXT_SECONDARY)
