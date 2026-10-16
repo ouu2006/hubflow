@@ -37,11 +37,13 @@ const showHead = computed(() => props.title !== '' || !!slots.headRight)
 /**
  * 顶栏站点 chip。缺省从**当前站点包**取 —— 注意不能把 `activePack().station.name`
  * 写进 `withDefaults` 的默认值:那个表达式在**模块求值期**就跑了,早于入口
- * (`main.ts` / vite 配置)注入包键,会恒定取到默认包 A。所以这里惰性取。
+ * (`main.ts` / vite 配置)注入包键,会恒定取到默认包(而不是入口注入的那个)。所以这里惰性取。
  */
 const stationName = computed(() => props.station ?? activePack().station.name)
 
 // ---- 线路图切换器(业主 2026-10-14):顶栏直接选包,选完即换整套路网/基线 ----
+// ⚠️ 2026-10-16(IKM4XX):本站点包只剩 Z —— **只有一个包时整个控件不渲染**
+//    (留一个只有单项的下拉就是死控件)。将来加站(包多起来)它自动回来。
 const packList = packItems()
 const packKey = ref<string>(activePackKey())
 const packOpen = ref(false)
@@ -77,8 +79,9 @@ function choosePack(key: string): void {
         </RouterLink>
       </nav>
       <div class="td-top-right">
-        <!-- 线路图切换器(业主 2026-10-14):选包即换路网,与站点 chip 同源 -->
-        <span class="net-switch" @mouseleave="packOpen = false">
+        <!-- 线路图切换器(业主 2026-10-14):选包即换路网,与站点 chip 同源。
+             只有一个包时不渲染(IKM4XX)—— 别留只有单项的死控件 -->
+        <span v-if="packList.length > 1" class="net-switch" @mouseleave="packOpen = false">
           <button
             type="button"
             class="net-switch-btn"

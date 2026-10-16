@@ -12,8 +12,8 @@ import { setActivePackKey } from './src/station-packs/index.ts'
 // - 孪生预览服务(work/frontend/tools/twin_preview/server.py,默认 127.0.0.1:8102)走独立前缀 /twin-api,
 //   代理时重写为服务端的 /api/twin/*——不复用 /api 前缀,避免被 traffic mock 中间件吞路径
 //   (mock 对未匹配 /api 路径一律 404,是刻意设计,不改)(Issue #61)。
-// - **站点包**(2026-10-12;2026-10-16 IKM4KP 起**以 Z 为主**):`VITE_STATION_PACK` 选哪个包
-//   (`src/station-packs/`,现只有 A / Z),`vite --mode z` 即在 `.env.z` 里把它设成 Z。
+// - **站点包**(2026-10-12;2026-10-16 IKM4KP 起以 Z 为主、IKM4XX 起**只剩 Z**):`VITE_STATION_PACK`
+//   选哪个包(`src/station-packs/`,现只有 Z),`vite --mode z` 即在 `.env.z` 里把它设成 Z。
 //   两侧取值必须一致,所以这里读到的键**显式注入** mock 中间件 —— 浏览器侧由 main.ts 注入同一个键,
 //   页面与 mock 才不会一站一路网。⚠️ 兜底默认值必须与 `main.ts` 的同为 Z(只改一处会错位)。
 // (VITE_MOCK_ERROR error 注入随 harness mock 一并移除,待新接口面定稿后重订。)
