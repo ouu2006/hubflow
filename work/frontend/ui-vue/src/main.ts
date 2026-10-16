@@ -4,6 +4,7 @@ import { createApp } from 'vue'
 import App from './App.vue'
 import { router } from './router'
 import { applyNetworkOverride, type DemoSegment } from './shared/demoNetwork'
+import { restoreSettings } from './shared/settings'
 import { activePack, restorePackKey, setActivePackKey } from './station-packs/index'
 import 'element-plus/dist/index.css'
 import './style.css'
@@ -16,6 +17,10 @@ import './style.css'
 // ⚠️ 这个兜底必须与 `vite.config.ts` 注入 mock 的默认值**同为 Z**:只改一处就会出现
 //    「页面画 Z 的路网、mock 发另一个包的基线」的错位画面。
 setActivePackKey(restorePackKey(import.meta.env.VITE_STATION_PACK ?? 'Z'))
+
+// 全局设置（顶栏「设置」）：矢量底图开关。**必须早于地图组件挂载**读回，
+// 否则会先按默认值拉一次底图、再被设置改回来（白拉一次）。
+restoreSettings()
 
 // #61 twin_preview:挂载前拉 SUMO 真路网(原地替换站点包路网,地图/面板/mock 统一生效)。
 // 桥接服务(:8102,经 /twin-api 代理)不可用即保持站点包路网,1.2 s 超时不阻塞白屏。

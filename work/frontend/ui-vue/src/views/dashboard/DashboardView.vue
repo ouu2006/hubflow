@@ -35,6 +35,7 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
+import { basemapEnabled } from '../../shared/settings'
 import { cameraCountOf } from '../../shared/cameras'
 import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
@@ -190,6 +191,20 @@ function onBarMouseDown(e: MouseEvent): void {
 const sourceLabel = networkSourceLabel()
 /** 路网几何出处(真值 / 示例样例)—— 真几何与示意几何不能混说(见 demoNetwork.networkGeometryNote) */
 const geometryNote = networkGeometryNote()
+
+/** 中栏工具条上的底图口径:顶栏「设置」里的**底图开关**状态直接反映出来(业主 2026-10-16) */
+const basemapTag = computed(() =>
+  basemapEnabled.value
+    ? '底图：OpenFreeMap · OSM（拉不到时只画路网）'
+    : '底图：已关闭 · 只画路网（顶栏「设置」里可开）',
+)
+
+/** 图下注脚:底图关掉时**不许**再写"底图来源:OpenFreeMap" —— 页面不撒谎 */
+const mapCaption = computed(() =>
+  basemapEnabled.value
+    ? `底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:${geometryNote}`
+    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote} · OSM 署名见地图内`,
+)
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
 
@@ -820,7 +835,7 @@ function gotoDecision(): void {
               <div class="map-toolbar">
                 <div class="map-toolbar-left">
                   <span class="map-title">全路段状态</span>
-                  <span class="map-tag">底图：OpenFreeMap · OSM（拉不到时只画路网）</span>
+                  <span class="map-tag">{{ basemapTag }}</span>
                 </div>
               </div>
               <div class="td-card-body flush map-body">
@@ -837,7 +852,7 @@ function gotoDecision(): void {
                 />
               </div>
               <div class="map-caption">
-                底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:{{ geometryNote }}
+                {{ mapCaption }}
               </div>
             </section>
           </div>

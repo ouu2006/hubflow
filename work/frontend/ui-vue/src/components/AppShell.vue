@@ -5,6 +5,7 @@
 import { computed, ref, useSlots } from 'vue'
 import { RouterLink } from 'vue-router'
 import { APP_TABS, DEMO_BADGE, SOURCE_ITEMS, type AppTabKey, type SourceMode } from '../shared/nav'
+import { basemapEnabled, setBasemapEnabled } from '../shared/settings'
 import { formatStamp } from '../shared/traffic'
 import { TD } from '../shared/theme'
 import { activePack, activePackKey, packItems, switchPack } from '../station-packs/index'
@@ -57,6 +58,12 @@ function choosePack(key: string): void {
   // 最稳妥的演示行为就是整页刷新一次 —— 路网、基线、告警全部从新包现取。
   window.location.reload()
 }
+
+// ---- 设置（业主 2026-10-16）：大屏地图的**底图开关** ----
+// 开 = 矢量底图（OpenFreeMap，OSM 数据）+ 描出的路网；关 = **只画路网**（原来「示例路网」那个观感），
+// 一个底图请求都不发。底图那一层挂掉也不影响路网（见 `MapLibreViewer.vue`：本地兜底样式建图）。
+// 与线路图切换器同一套交互：鼠标移出即收起。
+const settingsOpen = ref(false)
 </script>
 
 <template>
@@ -123,6 +130,42 @@ function choosePack(key: string): void {
           </span>
         </span>
         <span class="td-mono" style="font-size: 11px; color: #666">快照 {{ ts ? formatStamp(ts) : '—' }}</span>
+        <!-- 设置：底图开关（业主 2026-10-16）。交互与线路图切换器同款：鼠标移出收起 -->
+        <span class="td-settings" @mouseleave="settingsOpen = false">
+          <button
+            type="button"
+            class="td-settings-btn"
+            :class="{ on: settingsOpen }"
+            :aria-expanded="settingsOpen"
+            aria-haspopup="dialog"
+            @click="settingsOpen = !settingsOpen"
+          >
+            设置
+          </button>
+          <div v-if="settingsOpen" class="td-settings-menu" role="dialog" aria-label="设置">
+            <div class="td-set-row">
+              <span class="td-set-main">
+                <span class="td-set-name">矢量底图</span>
+                <span class="td-set-note">
+                  开：底图来自 OpenFreeMap（OpenStreetMap 数据）<br>
+                  关：只画路网（＝原来的「示例路网」），不发任何底图请求
+                </span>
+              </span>
+              <button
+                type="button"
+                class="td-switch"
+                :class="{ on: basemapEnabled }"
+                role="switch"
+                :aria-checked="basemapEnabled"
+                aria-label="矢量底图开关"
+                @click="setBasemapEnabled(!basemapEnabled)"
+              >
+                <span class="td-switch-knob" />
+              </button>
+            </div>
+            <div class="td-set-foot">底图拉不出来时路网照画，地图内会给「重试」；断网演示可以直接关掉。</div>
+          </div>
+        </span>
         <span class="td-badge-demo">{{ DEMO_BADGE }}</span>
       </div>
     </header>
@@ -235,5 +278,101 @@ function choosePack(key: string): void {
   font-size: 11px;
   color: #999999;
   line-height: 1.4;
+}
+
+/* ---- 设置（顶栏）：目前只有**矢量底图开关**一项 ----
+   口径：开关的开态用品牌蓝（「生效中」语义），不引入第二套色；等色不出现。 */
+.td-settings {
+  position: relative;
+  display: inline-flex;
+}
+.td-settings-btn {
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1px solid #d9dce1;
+  border-radius: 4px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: #1a1a1a;
+}
+.td-settings-btn:hover {
+  border-color: #b9bec6;
+}
+.td-settings-btn.on {
+  border-color: v-bind('TD.brand');
+  color: v-bind('TD.brand');
+}
+.td-settings-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  width: 320px;
+  background: #ffffff;
+  border: 1px solid #e3e5e8;
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+  z-index: 30;
+}
+.td-set-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.td-set-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.td-set-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #1a1a1a;
+}
+.td-set-note {
+  font-size: 11px;
+  color: #999999;
+  line-height: 1.5;
+}
+.td-set-foot {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
+  font-size: 11px;
+  color: #999999;
+  line-height: 1.5;
+}
+/* 开关本体：32×18 的小滑块，开态品牌蓝 */
+.td-switch {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid #d9dce1;
+  border-radius: 9px;
+  background: #f0f1f3;
+  cursor: pointer;
+  position: relative;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.td-switch.on {
+  background: v-bind('TD.brand');
+  border-color: v-bind('TD.brand');
+}
+.td-switch-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition: left 0.15s ease;
+}
+.td-switch.on .td-switch-knob {
+  left: 17px;
 }
 </style>

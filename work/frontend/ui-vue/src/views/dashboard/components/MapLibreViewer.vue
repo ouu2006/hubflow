@@ -72,6 +72,7 @@ import {
   type CameraPin,
 } from '../../../shared/cameras'
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
+import { basemapEnabled } from '../../../shared/settings'
 import {
   ciAvailable,
   ciGradientCss,
@@ -154,9 +155,28 @@ const containerRef = ref<HTMLDivElement | null>(null)
 const mapRef = shallowRef<MapLibreMap | null>(null)
 /** 路网是否已经就位 —— **只判本地样式**，不判公网底图 */
 const ready = ref(false)
-/** 底图状态：loading / ok / failed。**只影响底图**，路网不看它 */
-const basemap = ref<'loading' | 'ok' | 'failed'>('loading')
+/**
+ * 底图这一层的状态（**只管底图，不管路网**）：
+ *   `off`     —— 顶栏「设置」里关掉了：不拉任何底图资源，只剩路网（＝原「示例路网」观感）
+ *   `loading` —— 正在拉 OpenFreeMap 样式
+ *   `ok`      —— 底图已合入
+ *   `failed`  —— 拉不到：路网照画 + 角标给「重试」，并按退避自动重试
+ */
+const basemap = ref<'off' | 'loading' | 'ok' | 'failed'>(basemapEnabled.value ? 'loading' : 'off')
 const basemapMsg = ref('')
+/**
+ * 「正在再试一次」——**只在失败态追加**，不把状态切回 `loading`。
+ * 为什么：自动重试若把角标切回「加载中」，那个模板分支会把「重试」按钮**卸载再挂载**，
+ * 按钮在 DOM 里不稳定（实测：CDP 点它时被 Playwright 判为 "element is not stable"，
+ * 点了 30 s 点不上）。留在失败态、只换按钮文案，按钮才点得动。
+ */
+const basemapRetrying = ref(false)
+/** 失败后的**退避自动重试**间隔（手动「重试」会把计数清零） */
+const RETRY_DELAYS_MS = [2000, 6000, 12000]
+let retryStep = 0
+let retryTimer = 0
+/** 当前挂载的是不是"底图已合入"的那份样式（关开关时据此决定要不要换回兜底样式） */
+let remoteApplied = false
 
 /**
  * 路网几何与来源口径。
@@ -428,7 +448,59 @@ function mergedStyle(remote: StyleSpecification): StyleSpecification {
   }
 }
 
-async function loadBasemap(map: MapLibreMap): Promise<void> {
+/** 把底图那一层**整层撤掉**：样式换回"本地兜底 + 本组件图层"，路网一行不动 */
+function dropBasemap(map: MapLibreMap): void {
+  window.clearTimeout(retryTimer)
+  retryStep = 0
+  if (!remoteApplied) return // 本来就是"只有路网"，不必再换一次样式
+  remoteApplied = false
+  map.once('styledata', () => {
+    if (disposed) return
+    fitToNetwork(map)
+    applyViewState(map)
+  })
+  map.setStyle(mergedStyle(FALLBACK_STYLE), { diff: false })
+}
+
+/** 失败后按 2s / 6s / 12s 退避自动重试（最多三次）；开关关掉或组件卸载即停 */
+function scheduleRetry(map: MapLibreMap): void {
+  if (retryStep >= RETRY_DELAYS_MS.length) return
+  const delay = RETRY_DELAYS_MS[retryStep]
+  retryStep++
+  retryTimer = window.setTimeout(() => {
+    if (!disposed) void applyBasemap(map, { retry: true })
+  }, delay)
+}
+
+/** 手动「重试」（角标上的按钮）：计数清零，立刻再拉一次 */
+function retryBasemap(): void {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  retryStep = 0
+  void applyBasemap(map, { retry: true })
+}
+
+/**
+ * 拉底图并合入。三件事按顺序判：
+ *   ① 设置里关着 → **一个请求都不发**，把已有的底图层撤掉；
+ *   ② 拉到了 → 与**本组件自己的图层规格**合成一份 style 再挂载（路网在整份样式里，不会中途空窗）；
+ *   ③ 拉不到 → 保留兜底样式（路网照画），角标给原因 + 「重试」，并按退避自动重试。
+ *
+ * 为什么不用 `map.setStyle(STYLE_URL)` 直接换：那会把路网图层一起冲掉，换完还得"再挂一遍"，
+ * 中间那段时间图上什么都没有 —— 正是本单要避免的状态。
+ *
+ * `retry: true` = 失败后的再试：**状态留在 `failed`**，只把按钮文案换掉（见 `basemapRetrying`）。
+ */
+async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): Promise<void> {
+  window.clearTimeout(retryTimer)
+  if (!basemapEnabled.value) {
+    basemap.value = 'off'
+    basemapRetrying.value = false
+    dropBasemap(map)
+    return
+  }
+  if (opts.retry) basemapRetrying.value = true
+  else basemap.value = 'loading'
   const ctrl = new AbortController()
   const timer = window.setTimeout(() => ctrl.abort(), BASEMAP_TIMEOUT_MS)
   try {
@@ -438,7 +510,7 @@ async function loadBasemap(map: MapLibreMap): Promise<void> {
     if (remote?.version !== 8 || !remote.sources || !Array.isArray(remote.layers)) {
       throw new Error('样式形状不对')
     }
-    if (disposed) return
+    if (disposed || !basemapEnabled.value) return
     // 换样式后重新取景 + 重贴选中态；车辆与摄像头是 DOM Marker，不受影响。
     // ⚠️ 监听要先挂再 `setStyle` —— 反过来万一 styledata 已同步派发就漏掉了。
     map.once('styledata', () => {
@@ -447,11 +519,16 @@ async function loadBasemap(map: MapLibreMap): Promise<void> {
       applyViewState(map)
     })
     map.setStyle(mergedStyle(remote), { diff: false })
+    remoteApplied = true
     basemap.value = 'ok'
+    basemapRetrying.value = false
+    retryStep = 0
   } catch (e) {
-    if (disposed) return
+    if (disposed || !basemapEnabled.value) return
     basemap.value = 'failed'
+    basemapRetrying.value = false
     basemapMsg.value = e instanceof Error && e.name === 'AbortError' ? '拉取超时' : '拉取失败'
+    scheduleRetry(map)
   } finally {
     window.clearTimeout(timer)
   }
@@ -569,8 +646,8 @@ function initMap(): void {
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
     map.on('click', onMapClick)
-    // 底图**随后**再拉：成功就把底图合进来，失败就保持"只有路网"
-    void loadBasemap(map)
+    // 底图**随后**再拉（设置里关着就一个请求都不发）：成功就把底图合进来，失败就保持"只有路网"
+    void applyBasemap(map)
   })
 
   // 单块瓦片失败是常态噪声，不打扰用户；这里只留一个不遮挡地图的状态角标
@@ -610,6 +687,14 @@ watch(routeKey, () => {
   }
 })
 
+/** 顶栏「设置」里的底图开关：开 → 拉底图；关 → 撤掉底图层（路网一行不动） */
+watch(basemapEnabled, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  retryStep = 0
+  void applyBasemap(map)
+})
+
 watch(
   () => props.vehicles,
   () => {
@@ -625,6 +710,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposed = true
+  window.clearTimeout(retryTimer)
   camMarkers.forEach((m) => m.remove())
   camMarkers = []
   vehMarkers.forEach((v) => v.marker.remove())
@@ -639,11 +725,21 @@ onUnmounted(() => {
   <div class="mlmap">
     <div ref="containerRef" class="mlmap-canvas" />
 
-    <!-- 底图状态角标：**只占一个小角、不覆盖地图** —— 底图拉不出来时路网照样看
-         （旧版是一块 inset:0 的整屏遮罩，会把路网一起盖住） -->
+    <!-- 底图状态角标：**只占一个小角、不覆盖地图** —— 底图拉不出来（或设置里关掉）时路网照样看。
+         旧版是一块 inset:0 的整屏遮罩，会把路网一起盖住。 -->
     <div v-if="basemap !== 'ok'" class="basemap-note">
-      <template v-if="basemap === 'loading'">底图加载中…</template>
-      <template v-else>底图不可用（{{ basemapMsg }}）· 路网照画</template>
+      <template v-if="basemap === 'off'">底图已关闭（顶栏「设置」里可开）· 只画路网</template>
+      <template v-else-if="basemap === 'loading'">底图加载中…</template>
+      <template v-else>
+        <span>底图不可用（{{ basemapMsg }}）· 路网照画</span>
+        <!-- ⚠️ 按钮**文案不许变**：自动重试时若在「重试 / 重试中…」之间改文案，按钮宽度跟着变，
+             CDP 端会一直判它 "element is not stable"（实测点了 30 s 点不上）。
+             所以「正在重试…」另起一个 span，按钮只切换 disabled（只改透明度，不改尺寸）。 -->
+        <span v-if="basemapRetrying" class="basemap-retrying">正在重试…</span>
+        <button type="button" class="basemap-retry" :disabled="basemapRetrying" @click="retryBasemap">
+          重试
+        </button>
+      </template>
     </div>
 
     <!-- 来源口径水印（自绘视图搬来） -->
@@ -722,7 +818,7 @@ onUnmounted(() => {
   height: 100%;
 }
 
-/* 底图状态角标：小、不挡视线、不响应鼠标（路网才是主角） */
+/* 底图状态角标：小、不挡视线、不响应鼠标；只有里面的「重试」按钮可点（路网才是主角） */
 .basemap-note {
   position: absolute;
   top: 10px;
@@ -735,6 +831,30 @@ onUnmounted(() => {
   color: #666666;
   pointer-events: none;
   z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.basemap-retry {
+  pointer-events: auto;
+  padding: 1px 8px;
+  font: inherit;
+  font-size: 11px;
+  color: v-bind('BRAND');
+  background: #ffffff;
+  border: 1px solid v-bind('BRAND');
+  border-radius: 3px;
+  cursor: pointer;
+}
+.basemap-retry:hover {
+  background: #eef4ff;
+}
+.basemap-retry:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.basemap-retrying {
+  color: #999999;
 }
 
 /* 来源口径水印（顶部居中偏左，避开右上角的缩放控件与右下角的署名） */
