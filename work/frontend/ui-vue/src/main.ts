@@ -17,7 +17,7 @@ import './style.css'
 //    「页面画 Z 的路网、mock 发另一个包的基线」的错位画面。
 setActivePackKey(restorePackKey(import.meta.env.VITE_STATION_PACK ?? 'Z'))
 
-// #61 twin_preview:挂载前拉 SUMO 真路网(原地替换站点包路网,NetMap/面板/mock 统一生效)。
+// #61 twin_preview:挂载前拉 SUMO 真路网(原地替换站点包路网,地图/面板/mock 统一生效)。
 // 桥接服务(:8102,经 /twin-api 代理)不可用即保持站点包路网,1.2 s 超时不阻塞白屏。
 //
 // ⚠️ 是否拉由**站点包**决定(`pack.bridge.enabled`):桥接服务跑的是它自己那份 OSM 切片,

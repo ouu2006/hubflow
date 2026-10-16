@@ -53,7 +53,7 @@ function choosePack(key: string): void {
   if (key === packKey.value) return
   switchPack(key)
   packKey.value = key
-  // 站点包是惰性读的,但页面里不少值(NetMap 投影边界、mock 缓存)是模块级常量,
+  // 站点包是惰性读的,但页面里不少值(mock 缓存、快照状态)是模块级常量,
   // 最稳妥的演示行为就是整页刷新一次 —— 路网、基线、告警全部从新包现取。
   window.location.reload()
 }

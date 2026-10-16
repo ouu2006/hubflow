@@ -1,24 +1,32 @@
 <script setup lang="ts">
-// 矢量底图版路网图:MapLibre GL + OpenFreeMap(底图为 OpenStreetMap 数据)。
+// 大屏中央路网图：**MapLibre GL 单渲染器**（Issue IKM5T1）。
 //
-// 为什么不走高德(2026-10-15 换):
-//   ① **坐标系不用转** —— 站点包统一存 WGS-84(`stations/README.md`),OpenFreeMap 的 OSM 数据
-//      也是 WGS-84,画上去天然对齐;高德是 GCJ-02,必须转,不转整体偏约 600 m;
-//   ② **不需要 Key / 注册 / 安全密钥** —— 没有高德「商业目的须先购买技术服务许可」
-//      (高德 3.2.1)那条风险,也没有 INVALID_USER_SCODE 这类坑;
+// 业主 2026-10-16 口径：大屏地图只留一个 —— 删掉「示例路网」那套自绘 SVG（NetMap.vue），
+// 只留矢量地图；「示例路网」不再是一个模式，它**退化成矢量地图里的那些路网线条本身**。
+//
+// 本文件的两件正事：
+//   ① **底图与路网解耦**：先用**本地兜底样式**把地图建起来，路网 source/layer 立刻加上并取景；
+//      OpenFreeMap 的样式**随后**异步拉，成功再把底图合进来，失败就只用兜底那份。
+//      于是"底图拉不出来"只影响底图 —— **路网照画、不白屏、不被提示层遮住**。
+//   ② **功能一项不少**：原先自绘视图里的四件事搬到本文件 ——
+//      车辆动点 / 悬停浮牌 / 推荐路线 / 图例 + 水印（图例、水印、浮牌都是 DOM 覆盖层，
+//      不进 MapLibre 的图层栈）。
+//
+// 为什么不走高德（2026-10-15 换，PR !19）：
+//   ① **坐标系不用转** —— 站点包统一存 WGS-84，OpenFreeMap 的 OSM 数据也是 WGS-84，天然对齐；
+//   ② **不需要 Key / 注册** —— 没有高德「商业目的须先购买技术服务许可」那条风险；
 //   ③ 与仓库既定方向一致 —— 手册 §8.3 / D7 的口径就是「路网走 OSM」。
 //
-// 合规(改之前先读 `docs/条款核实.md`):
-//   · OSM 数据受 ODbL 约束,**必须署名** —— 故保留 MapLibre 默认的 AttributionControl,
-//     不得隐藏、不得被 UI 遮挡(署名文案由瓦片服务声明,实测为
-//     「OpenFreeMap © OpenMapTiles Data from OpenStreetMap」);
-//   · **不缓存瓦片、不做离线包**。断网演示的正解是**自建瓦片**(OSM 数据本身允许),
-//     不是缓存别人的公共服务;
-//   · OpenFreeMap 是第三方免费公共服务(无 SLA),其自身条款**尚未进过本仓库的条款核实清单** ——
-//     一期若只在队内演示可用,对外发布前须补核(另见「审图号」要求,OSM 底图无审图号)。
+// 合规（改之前先读 `docs/条款核实.md`）：
+//   · OSM 数据受 ODbL 约束，**必须署名** —— MapLibre 默认的 AttributionControl 保留，
+//     不得隐藏、不得被 UI 遮挡；**路网那一份署名单独画**（`.attribution`），
+//     这样底图挂了署名仍在（条款核实 E-11 / E-13）；
+//   · **不缓存瓦片、不做离线包**。断网演示的正解是**自建瓦片**，不是缓存别人的公共服务；
+//   · OpenFreeMap 是第三方免费公共服务（无 SLA），其自身条款**尚未进过本仓库的条款核实清单** ——
+//     对外发布前须补核（另见「审图号」要求，OSM 底图无审图号）。
 //
-// 语义纪律(与 NetMap 一致):路段色只表示拥挤度/等级;品牌蓝只画「当前/已选」。
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+// 语义纪律（照抄自绘视图）：路段色只表示拥挤度/等级；品牌蓝只画「当前 / 已选 / 推荐」。
+import { computed, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from 'vue'
 import {
   Map as MapLibreMap,
   Marker,
@@ -29,79 +37,149 @@ import {
   type FilterSpecification,
   type GeoJSONSource,
   type LineLayerSpecification,
+  type MapMouseEvent,
+  type StyleSpecification,
 } from 'maplibre-gl'
-// ⚠️ 必须显式指定 worker 地址,否则**生产构建底图空白**(实测踩过):
-//   MapLibre 的矢量瓦片解析跑在独立 worker 里(508 KB),主包按
-//   `new URL('./maplibre-gl-worker.mjs', import.meta.url)` 找它。dev 下(已 exclude 出依赖预打包)
-//   它恰好与主包同目录、能被 Vite 直接端出来;但**打包后那个兄弟文件不会被产出** ——
-//   dist 里只有 index.js/css,运行时去要 `/assets/maplibre-gl-worker.mjs` 直接落空,
-//   报「Worker failed to load」,地图整块空白且不报 HTTP 错(worker 加载失败不走 response 事件)。
+// ⚠️ 必须显式指定 worker 地址，否则**生产构建底图空白**（实测踩过）：
+//   MapLibre 的矢量瓦片解析跑在独立 worker 里（508 KB），主包按
+//   `new URL('./maplibre-gl-worker.mjs', import.meta.url)` 找它。dev 下（已 exclude 出依赖预打包）
+//   它恰好与主包同目录、能被 Vite 直接端出来；但**打包后那个兄弟文件不会被产出** ——
+//   dist 里只有 index.js/css，运行时去要 `/assets/maplibre-gl-worker.mjs` 直接落空，
+//   报「Worker failed to load」，地图整块空白且不报 HTTP 错（worker 加载失败不走 response 事件）。
 //   用 `?url` 让 Vite 把这个 worker 文件真正产出到 assets/ 并返回它的地址。
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
-// ⚠️ 也必须显式 import:`tsconfig.app.json` 的 `types: ["vite/client"]` 只放行 vite/client,
-//    所以 `@types/geojson` 的全局 `GeoJSON` 命名空间**不可见**(用 `GeoJSON.FeatureCollection`
-//    会报 TS2503 Cannot find namespace 'GeoJSON')。
+// ⚠️ 也必须显式 import：`tsconfig.app.json` 的 `types: ["vite/client"]` 只放行 vite/client，
+//    所以 `@types/geojson` 的全局 `GeoJSON` 命名空间**不可见**（用 `GeoJSON.FeatureCollection`
+//    会报 TS2503 Cannot find namespace 'GeoJSON'）。
 import type { FeatureCollection } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorkerUrl)
-import { DEMO_NETWORK } from '../../../shared/demoNetwork'
-import type { DemoSegment } from '../../../shared/demoNetwork'
-import { TD } from '../../../shared/theme'
-// 摄像头布点 / 只摄像头段上色 / 感知层深链 —— **与自绘视图(NetMap)共用同一套口径**
-// (Issue IKLX5Y:单一真值来源 = 站点包 channels;规则不在两个视图里各写一份)
-import { cameraPins, isCameraCovered, perceptionHref } from '../../../shared/cameras'
+
 import {
+  DEMO_NETWORK,
+  isOsmNetwork,
+  networkSourceLabel,
+  OSM_ATTRIBUTION,
+  OSM_COPYRIGHT_URL,
+  type DemoSegment,
+} from '../../../shared/demoNetwork'
+import {
+  cameraPins,
+  isCameraCovered,
+  packColorPolicy,
+  perceptionHref,
+  type CameraPin,
+} from '../../../shared/cameras'
+import { DRIVER_COLORS, TD } from '../../../shared/theme'
+import {
+  ciAvailable,
+  ciGradientCss,
   ciStyleColor,
+  CI_BAND_NOTE,
+  CI_BANDS,
+  CI_DISCLAIMER,
+  CI_MAX,
   levelStyle,
   UNAVAILABLE,
   type CongestionViewMode,
+  type DriverType,
   type SegmentRecord,
+  type VehicleRecord,
 } from '../../../shared/traffic'
-
-/** OpenFreeMap 的 Liberty 样式(免 Key、免注册;数据来自 OpenStreetMap) */
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
-const SRC = 'hubflow-route'
-const LAYER_CASING = `${SRC}-casing`
-const LAYER_LINE = `${SRC}-line`
-const LAYER_SELECTED = `${SRC}-selected`
+import LevelBadge from './LevelBadge.vue'
 
 const BRAND = TD.brand
 
-/** 摄像头 Marker(重绘 / 卸载时移除) */
-let camMarkers: Marker[] = []
+/** OpenFreeMap 的 Liberty 样式（免 Key、免注册；数据来自 OpenStreetMap） */
+const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+/**
+ * **本地兜底样式**：不依赖任何公网资源，只用来把地图建起来。
+ * 路网图层与摄像头图钉在这份样式上就位，因此"底图能不能拉到"**不参与**路网是否画得出来。
+ */
+const FALLBACK_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [] }
+/** 底图拉取上限：超时即按"底图不可用"处理，**不阻塞路网** */
+const BASEMAP_TIMEOUT_MS = 8000
+
+const SRC = 'hubflow-route'
+const LAYER_HEAT = `${SRC}-heat`
+const LAYER_CASING = `${SRC}-casing`
+const LAYER_LINE = `${SRC}-line`
+const LAYER_ROUTE_HALO = `${SRC}-route-halo`
+const LAYER_ROUTE = `${SRC}-route`
+const LAYER_SELECTED = `${SRC}-selected`
+
+/** 悬停浮牌尺寸（只用于翻面判断，与 CSS 里的 min/max-width 对应） */
+const CHIP_W = 210
+const CHIP_H = 26
+
+/** 'level' = 四级视图（默认） · 'index' = 拥挤指数视图 */
+type MapMode = CongestionViewMode
 
 const props = withDefaults(
   defineProps<{
     segments: SegmentRecord[]
     selectedId: string | null
-    mode?: CongestionViewMode
-    /** 快照时间(仅用于图例展示) */
+    /** 孪生车辆动点（位置随快照刷新平滑移动） */
+    vehicles?: VehicleRecord[]
+    /** 当前高亮路线包含的路段 id（推荐 / 备选 / 离站） */
+    routeSegments?: string[]
+    mode?: MapMode
+    /** 快照时间（热力视图的"更新时间戳"，手册 §11.2 必现） */
     ts?: string
+    /** 跟随鼠标的信息浮牌文字（空串不画） */
+    hoverChip?: string
+    /** 紧凑图例 */
+    legend?: boolean
   }>(),
   {
+    vehicles: () => [],
+    routeSegments: () => [],
     mode: 'level',
     ts: '',
+    hoverChip: '',
+    legend: true,
   },
 )
 
 const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
 
-/** 容器**始终渲染**(不用 v-if 挂载),从根上避免「容器还没进 DOM 就初始化」那类静默失败 */
+/** 容器**始终渲染**（不用 v-if 挂载），从根上避免「容器还没进 DOM 就初始化」那类静默失败 */
 const containerRef = ref<HTMLDivElement | null>(null)
-const mapRef = ref<MapLibreMap | null>(null)
+/**
+ * ⚠️ 地图实例用 `shallowRef`：`ref()` 会对它做深度解包（`UnwrapRef`），
+ * 解出来的类型丢掉类的私有成员与方法，再传回 `map.setFilter(...)` 这类接口就报
+ * 「missing _setupResizeObserver」的假类型错；何况地图实例本来也不该被深度代理。
+ */
+const mapRef = shallowRef<MapLibreMap | null>(null)
+/** 路网是否已经就位 —— **只判本地样式**，不判公网底图 */
 const ready = ref(false)
-const notice = ref('')
+/** 底图状态：loading / ok / failed。**只影响底图**，路网不看它 */
+const basemap = ref<'loading' | 'ok' | 'failed'>('loading')
+const basemapMsg = ref('')
 
+/**
+ * 路网几何与来源口径。
+ * ⚠️ `DEMO_NETWORK.segments` 是当前站点包的惰性快照：桥接覆盖发生在挂载前
+ * （`main.ts` 拉 `/twin-api/network`），本组件挂载时它已经定了。
+ */
 const net = DEMO_NETWORK.segments
+const sourceLabel = networkSourceLabel()
+const osmActive = computed(() => isOsmNetwork())
+/** 只摄像头段上色（站点包 `colorPolicy`）——老包的 `'all'` 行为不变 */
+const cameraOnly = packColorPolicy() === 'camera-covered'
+const pins = cameraPins()
+
+// ---- 路段染色（四级 / 指数两种视图） ----
+
 const segById = computed(() => new Map(props.segments.map((s) => [s.segment_id, s])))
 const isIndex = computed(() => props.mode === 'index')
 
 /**
- * 路段色:四级判级色 / CI 色阶;无记录一律灰(数据不可用)——与 NetMap 同一口径。
- * 「只摄像头段上色」策略(站点包 `colorPolicy === 'camera-covered'`)下,没摄像头覆盖的段
- * 也走灰;它靠**更细的线宽 + 更低透明度**与"有摄像头但没数据"区分开(见 `widthExpr`),
- * 免得两种灰在图上长得一样。
+ * 路段色。三档，别混：
+ *   ① 有监控且数据可用 → 等级色 / ci 色阶；
+ *   ② 有监控但数据不可用 → 灰（粗，`UNAVAILABLE`）；
+ *   ③ **没监控** → 灰（细、淡）——"这段没摄像头"本身是个信息，不能与 ② 长得一样。
  */
 function colorOf(seg: DemoSegment): string {
   if (!isCameraCovered(seg.segment_id)) return UNAVAILABLE.color
@@ -110,7 +188,16 @@ function colorOf(seg: DemoSegment): string {
   return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
 }
 
-/** 站点包坐标是 WGS-84,**直接喂给 MapLibre 即可** —— 不做任何坐标转换 */
+/** 热力晕染强度（仅指数视图且 ci 可用）：随 ci 单调增，不改任何判级着色 */
+function heatOf(seg: DemoSegment): number {
+  if (!isCameraCovered(seg.segment_id)) return 0
+  const rec = segById.value.get(seg.segment_id)
+  if (!rec || !ciAvailable(rec)) return 0
+  const v = Math.min(CI_MAX, Math.max(0, rec.ci as number))
+  return Math.round((0.1 + (v / CI_MAX) * 0.5) * 100) / 100
+}
+
+/** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
 function routeGeoJson(): FeatureCollection {
   return {
     type: 'FeatureCollection',
@@ -121,8 +208,10 @@ function routeGeoJson(): FeatureCollection {
         name: seg.name,
         kind: seg.kind,
         color: colorOf(seg),
-        /** 该段是否有摄像头覆盖(策略 'all' 时恒 true)—— 线宽/透明度按它分档 */
+        /** 该段是否有摄像头覆盖（策略 'all' 时恒 true）—— 线宽/透明度按它分档 */
         covered: isCameraCovered(seg.segment_id),
+        /** 热力晕染强度（0 = 不画） */
+        heat: heatOf(seg),
       },
       geometry: { type: 'LineString', coordinates: seg.coords },
     })),
@@ -131,8 +220,8 @@ function routeGeoJson(): FeatureCollection {
 
 /**
  * 线宽 = 主/支两档 × 「没摄像头覆盖」系数。
- * 收细 + 压透明度是「只摄像头段上色」策略下"这段没监控"的画法(业主 2026-10-15),
- * 与"有摄像头但当前没数据"的灰区分开(后者是正常线宽)。
+ * 收细 + 压透明度是「只摄像头段上色」策略下"这段没监控"的画法（业主 2026-10-15），
+ * 与"有摄像头但当前没数据"的灰区分开（后者用正常线宽）。
  */
 const widthExpr = (main: number, ramp: number): ExpressionSpecification => [
   '*',
@@ -140,79 +229,116 @@ const widthExpr = (main: number, ramp: number): ExpressionSpecification => [
   ['case', ['==', ['get', 'covered'], false], 0.55, 1],
 ]
 
-function addRouteLayers(map: MapLibreMap): void {
-  if (map.getSource(SRC)) return
-
-  map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
-
-  // 白色描边底衬:让彩色路段在浅底图上分得开(与 NetMap 同一手法)
-  map.addLayer({
-    id: LAYER_CASING,
-    type: 'line',
-    source: SRC,
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: { 'line-color': '#FFFFFF', 'line-width': widthExpr(11, 9) },
-  } satisfies LineLayerSpecification)
-
-  map.addLayer({
-    id: LAYER_LINE,
-    type: 'line',
-    source: SRC,
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': ['get', 'color'],
-      'line-width': widthExpr(5.5, 4.5),
-      'line-opacity': ['case', ['==', ['get', 'covered'], false], 0.4, 1],
-    },
-  } satisfies LineLayerSpecification)
-
-  // 选中路段描边:品牌蓝(「当前/已选」语义),虚线,不覆盖判级色
-  map.addLayer({
-    id: LAYER_SELECTED,
-    type: 'line',
-    source: SRC,
-    filter: selectedFilter(),
-    layout: { 'line-cap': 'round', 'line-join': 'round' },
-    paint: {
-      'line-color': BRAND,
-      'line-width': 2.2,
-      'line-dasharray': [2, 2],
-      'line-opacity': 0.9,
-    },
-  } satisfies LineLayerSpecification)
-
-  // 交互:点击选中 / 悬停变手型(与 NetMap 的「hover 即切换」不同,
-  // 这里只做**点击**选中 —— MapLibre 的 mouseenter 在快速划过时抖动明显)
-  map.on('click', LAYER_LINE, (e) => {
-    const id = e.features?.[0]?.properties?.segment_id
-    if (typeof id === 'string' && id) emit('select', id)
-  })
-  map.on('mouseenter', LAYER_LINE, () => {
-    map.getCanvas().style.cursor = 'pointer'
-  })
-  map.on('mouseleave', LAYER_LINE, () => {
-    map.getCanvas().style.cursor = ''
-  })
-}
-
 function selectedFilter(): FilterSpecification {
   return ['==', ['get', 'segment_id'], props.selectedId ?? '']
 }
 
+function routeFilter(): FilterSpecification {
+  return ['in', ['get', 'segment_id'], ['literal', props.routeSegments ?? []]]
+}
+
 /**
- * 摄像头布点(Issue IKLX5Y):与自绘视图(NetMap)**同一套口径** ——
- * 位置取站点包 `channels[].lon/lat`(落在该段折线上的示意点,**不是路测点位**),
- * 点击跳到感知层对应通道。矢量底图上用 MapLibre Marker 画。
- * 实心 = 有视频源、空心 = 未接入视频源(本期留空)——两件事在页面上要分开说。
+ * 本组件自有的图层（按绘制顺序：底衬 → 热力 → 色线 → 路线 → 选中）。
+ * 同一份规格用在两处：建图时按顺序 `addLayer`；底图样式合进来时作为 `layers` 尾部一起挂载
+ * —— **两处只有一份定义**，不会出现"底图在/不在时路网长得不一样"。
+ */
+function lineLayerSpecs(): LineLayerSpecification[] {
+  return [
+    // 白色描边底衬：让彩色路段在浅底图上分得开（与自绘视图同一手法）
+    {
+      id: LAYER_CASING,
+      type: 'line',
+      source: SRC,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#FFFFFF', 'line-width': widthExpr(11, 9) },
+    },
+    // 热力晕染：只指数视图有值；四级视图 heat 恒 0，等于不画
+    {
+      id: LAYER_HEAT,
+      type: 'line',
+      source: SRC,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': widthExpr(26, 22),
+        'line-opacity': ['get', 'heat'],
+      },
+    },
+    {
+      id: LAYER_LINE,
+      type: 'line',
+      source: SRC,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': widthExpr(5.5, 4.5),
+        'line-opacity': ['case', ['==', ['get', 'covered'], false], 0.4, 1],
+      },
+    },
+    // 推荐路线：品牌蓝（「推荐」语义，不得用等级色）
+    {
+      id: LAYER_ROUTE_HALO,
+      type: 'line',
+      source: SRC,
+      filter: routeFilter(),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': BRAND, 'line-width': 17, 'line-opacity': 0.16 },
+    },
+    {
+      // ⚠️ 这条虚线**不动**：自绘视图里那是 CSS `stroke-dashoffset` 动画，
+      //    canvas 图层没有对应能力（要么起 rAF 定时器改 line-dasharray，要么放弃动效）。
+      //    一期先给静态虚线 —— 高亮本身在，动效不引入常驻定时器。
+      id: LAYER_ROUTE,
+      type: 'line',
+      source: SRC,
+      filter: routeFilter(),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': BRAND, 'line-width': 3, 'line-dasharray': [14, 10], 'line-opacity': 0.9 },
+    },
+    // 选中路段描边：品牌蓝（「当前 / 已选」语义），虚线，不覆盖判级色
+    {
+      id: LAYER_SELECTED,
+      type: 'line',
+      source: SRC,
+      filter: selectedFilter(),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': BRAND, 'line-width': 2.4, 'line-dasharray': [4, 6], 'line-opacity': 0.9 },
+    },
+  ]
+}
+
+function addRouteLayers(map: MapLibreMap): void {
+  if (map.getSource(SRC)) return
+  map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
+  for (const spec of lineLayerSpecs()) map.addLayer(spec)
+}
+
+// ---- 摄像头布点 ----
+
+/** 摄像头标记（重绘 / 卸载时移除） */
+let camMarkers: Marker[] = []
+/** 被悬停的摄像头（浮牌钉在图钉上方，与路段浮牌区分） */
+const pin = ref<CameraPin | null>(null)
+
+/**
+ * 摄像头布点（Issue IKLX5Y）：位置取站点包 `channels[].lon/lat`（落在该段折线上的示意点，
+ * **不是路测点位**），点击跳到感知层对应通道。
+ * 实心 = 有视频源、空心 = 未接入视频源（本期留空）——两件事在页面上要分开说。
  */
 function addCameraPins(map: MapLibreMap): void {
-  for (const p of cameraPins()) {
+  for (const p of pins) {
     const el = document.createElement('div')
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
     el.textContent = p.cid.replace('C-', '')
     el.title = `${p.cid} ${p.name} · ${p.segment_id} · ${
       p.hasVideo ? '有视频源' : '未接入视频源 · 本期留空'
     } · 点击进感知层`
+    el.addEventListener('mouseenter', () => {
+      pin.value = p
+    })
+    el.addEventListener('mouseleave', () => {
+      pin.value = null
+    })
     el.addEventListener('click', () => {
       window.location.href = perceptionHref(p.source)
     })
@@ -220,7 +346,58 @@ function addCameraPins(map: MapLibreMap): void {
   }
 }
 
-/** 视野适配到整张路网(边界留白,避免线贴边) */
+// ---- 车辆动点（自绘视图搬来：`transform` 过渡 = 平滑移动） ----
+
+const VEH_LABEL: Record<DriverType, string> = {
+  D1: '送客车辆',
+  D2: '接客车辆',
+  D3: '往返车辆(出租车 / 网约车)',
+}
+
+// 图例**由 DRIVER_COLORS 生成**，不手写行——否则新增司机类型时地图画了、图例却漏
+const VEH_LEGEND = (Object.keys(DRIVER_COLORS) as DriverType[]).map((t) => ({
+  t,
+  color: DRIVER_COLORS[t],
+  label: VEH_LABEL[t],
+}))
+
+const vehMarkers = new Map<string, { marker: Marker; el: HTMLDivElement }>()
+
+function syncVehicles(map: MapLibreMap | null): void {
+  if (!map || !ready.value) return
+  const alive = new Set<string>()
+  for (const v of props.vehicles ?? []) {
+    alive.add(v.vehicle_id)
+    const existing = vehMarkers.get(v.vehicle_id)
+    if (existing) {
+      existing.marker.setLngLat([v.lon, v.lat])
+      existing.el.title = `${v.vehicle_id} · ${v.state} · ${v.segment_id}${
+        v.is_demo_bound ? ' · 演示绑定车' : ''
+      }`
+      continue
+    }
+    const el = document.createElement('div')
+    el.className = 'veh-dot'
+    el.style.background = DRIVER_COLORS[v.driver_type]
+    el.title = `${v.vehicle_id} · ${v.state} · ${v.segment_id}${v.is_demo_bound ? ' · 演示绑定车' : ''}`
+    // 首帧不要过渡：否则新车会从左上角滑进来
+    el.style.transition = 'none'
+    requestAnimationFrame(() => {
+      el.style.transition = 'transform 1.9s linear'
+    })
+    const marker = new Marker({ element: el }).setLngLat([v.lon, v.lat]).addTo(map)
+    vehMarkers.set(v.vehicle_id, { marker, el })
+  }
+  for (const [id, item] of vehMarkers) {
+    if (alive.has(id)) continue
+    item.marker.remove()
+    vehMarkers.delete(id)
+  }
+}
+
+// ---- 取景 ----
+
+/** 视野适配到整张路网（边界留白，避免线贴边） */
 function fitToNetwork(map: MapLibreMap): void {
   const lons = net.flatMap((s) => s.coords.map((c) => c[0]))
   const lats = net.flatMap((s) => s.coords.map((c) => c[1]))
@@ -234,58 +411,182 @@ function fitToNetwork(map: MapLibreMap): void {
   )
 }
 
+// ---- 底图：异步、可失败、失败只丢自己 ----
+
+/**
+ * 把 OpenFreeMap 的样式与**本组件自己的图层**合成一份再挂载。
+ *
+ * 为什么不用 `map.setStyle(STYLE_URL)` 直接换：那会把路网图层一起冲掉，
+ * 换完还得"再挂一遍"，中间那段时间图上什么都没有 —— 正是本单要避免的状态。
+ * 合成后再切，路网在整份样式里，从一开始就在。
+ */
+function mergedStyle(remote: StyleSpecification): StyleSpecification {
+  return {
+    ...remote,
+    sources: { ...(remote.sources ?? {}), [SRC]: { type: 'geojson', data: routeGeoJson() } },
+    layers: [...(remote.layers ?? []), ...lineLayerSpecs()],
+  }
+}
+
+async function loadBasemap(map: MapLibreMap): Promise<void> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), BASEMAP_TIMEOUT_MS)
+  try {
+    const res = await fetch(STYLE_URL, { signal: ctrl.signal })
+    if (!res.ok) throw new Error(`样式 http ${res.status}`)
+    const remote = (await res.json()) as StyleSpecification
+    if (remote?.version !== 8 || !remote.sources || !Array.isArray(remote.layers)) {
+      throw new Error('样式形状不对')
+    }
+    if (disposed) return
+    // 换样式后重新取景 + 重贴选中态；车辆与摄像头是 DOM Marker，不受影响。
+    // ⚠️ 监听要先挂再 `setStyle` —— 反过来万一 styledata 已同步派发就漏掉了。
+    map.once('styledata', () => {
+      if (disposed) return
+      fitToNetwork(map)
+      applyViewState(map)
+    })
+    map.setStyle(mergedStyle(remote), { diff: false })
+    basemap.value = 'ok'
+  } catch (e) {
+    if (disposed) return
+    basemap.value = 'failed'
+    basemapMsg.value = e instanceof Error && e.name === 'AbortError' ? '拉取超时' : '拉取失败'
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
+/** 数据/选中/路线变化后，把视图状态贴回图层（换样式之后也要重贴一次） */
+function applyViewState(map: MapLibreMap): void {
+  const src = map.getSource(SRC) as GeoJSONSource | undefined
+  if (src) void src.setData(routeGeoJson())
+  if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
+  if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilter())
+  if (map.getLayer(LAYER_ROUTE_HALO)) map.setFilter(LAYER_ROUTE_HALO, routeFilter())
+}
+
+// ---- 交互：点击选中 / 悬停即切换选中 + 浮牌跟随 ----
+
+const mouse = ref<{ x: number; y: number } | null>(null)
+/** 地图移动/缩放后要重算浮牌落点（`map.project()` 不是响应式的） */
+const camTick = ref(0)
+
+function hoveredSegmentId(map: MapLibreMap, point: MapMouseEvent['point']): string | null {
+  if (!map.getLayer(LAYER_LINE)) return null
+  const hit = map.queryRenderedFeatures(point, { layers: [LAYER_LINE] })
+  const id = hit?.[0]?.properties?.segment_id
+  return typeof id === 'string' && id ? id : null
+}
+
+function onMapMouseMove(e: MapMouseEvent): void {
+  const map = mapRef.value
+  if (!map) return
+  mouse.value = { x: e.point.x, y: e.point.y }
+  const id = hoveredSegmentId(map, e.point)
+  map.getCanvas().style.cursor = id ? 'pointer' : ''
+  // 悬停即切换选中（业主 2026-10-14：不要"靠点击才切换"）——浮牌据此吸附在当前路段上
+  if (id && id !== props.selectedId) emit('select', id)
+}
+
+function onMapMouseOut(): void {
+  mouse.value = null
+}
+
+function onMapClick(e: MapMouseEvent): void {
+  const map = mapRef.value
+  if (!map) return
+  const id = hoveredSegmentId(map, e.point)
+  if (id) emit('select', id)
+}
+
+/** 跟随鼠标的信息浮牌落点 = 选中路段折线上离鼠标最近的采样点（沿线走，鼠标离开线也不消失） */
+const chipStyle = computed(() => {
+  const map = mapRef.value
+  const m = mouse.value
+  void camTick.value // 地图动过就重算
+  if (!map || !m || !props.selectedId || !props.hoverChip) return {}
+  const seg = net.find((s) => s.segment_id === props.selectedId)
+  if (!seg) return {}
+  let best = map.project(seg.coords[0] as [number, number])
+  let bestD = Number.POSITIVE_INFINITY
+  for (const c of seg.coords) {
+    const p = map.project(c as [number, number])
+    const d = (p.x - m.x) ** 2 + (p.y - m.y) ** 2
+    if (d < bestD) {
+      bestD = d
+      best = p
+    }
+  }
+  const w = containerRef.value?.clientWidth ?? 0
+  const flipX = best.x + CHIP_W + 18 > w
+  const flipY = best.y - CHIP_H - 14 < 0
+  return {
+    left: `${flipX ? best.x - CHIP_W - 14 : best.x + 14}px`,
+    top: `${flipY ? best.y + 16 : best.y - CHIP_H - 12}px`,
+  }
+})
+
+/** 摄像头浮牌落点 = 图钉正上方（钉在图钉上，不跟鼠标） */
+const camChipStyle = computed(() => {
+  const map = mapRef.value
+  const p = pin.value
+  void camTick.value
+  if (!map || !p) return {}
+  const pt = map.project([p.lon, p.lat])
+  return { left: `${Math.max(6, pt.x - 96)}px`, top: `${Math.max(6, pt.y - 62)}px` }
+})
+
+// ---- 建图 ----
+
+let disposed = false
+
 function initMap(): void {
   if (!containerRef.value) return
   const map = new MapLibreMap({
     container: containerRef.value,
-    style: STYLE_URL,
-    center: [112.67, 23.2],
-    zoom: 13,
-    // 不隐藏默认署名控件:OSM/ODbL 要求署名(见文件头「合规」)
+    // ⚠️ 起手是**本地兜底样式**：路网据此立刻画出来，不等公网（本单的核心）
+    style: FALLBACK_STYLE,
+    center: [112.657, 23.215],
+    zoom: 14,
+    // 不隐藏默认署名控件：OSM/ODbL 要求署名（见文件头「合规」）
   })
   mapRef.value = map
   map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right')
-  map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-left')
-
-  let timeoutId = 0
+  // 比例尺放右下（左下角留给图例）
+  map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right')
 
   map.on('load', () => {
-    window.clearTimeout(timeoutId)
     addRouteLayers(map)
     addCameraPins(map)
     fitToNetwork(map)
     ready.value = true
+    // 车辆要在 ready 之后再同步（`syncVehicles` 以 ready 为前置）
+    syncVehicles(map)
+    map.on('move', () => {
+      camTick.value++
+    })
+    map.on('mousemove', onMapMouseMove)
+    map.on('mouseout', onMapMouseOut)
+    map.on('click', onMapClick)
+    // 底图**随后**再拉：成功就把底图合进来，失败就保持"只有路网"
+    void loadBasemap(map)
   })
 
-  // 只在**样式/底图加载不出来**时给软提示;单块瓦片失败不报错、不遮挡地图
-  map.on('error', (e: unknown) => {
-    if (ready.value) return
-    const msg =
-      e && typeof e === 'object' && 'error' in e && e.error instanceof Error
-        ? e.error.message
-        : '样式或瓦片加载失败'
-    notice.value = `底图加载异常:${msg}`
-  })
-
-  // 12 s 还没 load:大概率离线。给一句实话,而不是让用户对着空白地图猜
-  timeoutId = window.setTimeout(() => {
-    if (!ready.value) notice.value = '底图加载超时(可能处于离线状态)—— 路网线仍按当前数据绘制'
-  }, 12000)
+  // 单块瓦片失败是常态噪声，不打扰用户；这里只留一个不遮挡地图的状态角标
 }
 
-/** 重绘:数据 / 视图模式变化时只换 GeoJSON,不重建地图 */
+// ---- 响应式：数据 / 模式 / 选中 / 路线 / 车辆 ----
+
 watch(
   () => [props.segments, props.mode] as const,
   () => {
     const map = mapRef.value
     if (!map || !ready.value) return
-    // 源由本组件用固定 id 创建,断言安全;用 GeoJSONSource 才能真正拿到 setData 的类型
-    const src = map.getSource(SRC) as GeoJSONSource | undefined
-    if (src) void src.setData(routeGeoJson())
+    applyViewState(map)
   },
 )
 
-/** 选中变化:只改高亮层的 filter,不动数据 */
 watch(
   () => props.selectedId,
   () => {
@@ -295,15 +596,36 @@ watch(
   },
 )
 
+watch(
+  () => props.routeSegments,
+  () => {
+    const map = mapRef.value
+    if (!map || !ready.value) return
+    for (const id of [LAYER_ROUTE, LAYER_ROUTE_HALO]) {
+      if (map.getLayer(id)) map.setFilter(id, routeFilter())
+    }
+  },
+)
+
+watch(
+  () => props.vehicles,
+  () => {
+    syncVehicles(mapRef.value)
+  },
+)
+
 onMounted(async () => {
-  // 容器始终在 DOM 里,nextTick 只为确保布局尺寸已就绪(尺寸为 0 时地图会渲染成空白)
+  // 容器始终在 DOM 里，nextTick 只为确保布局尺寸已就绪（尺寸为 0 时地图会渲染成空白）
   await nextTick()
   initMap()
 })
 
 onUnmounted(() => {
+  disposed = true
   camMarkers.forEach((m) => m.remove())
   camMarkers = []
+  vehMarkers.forEach((v) => v.marker.remove())
+  vehMarkers.clear()
   mapRef.value?.remove()
   mapRef.value = null
   ready.value = false
@@ -313,9 +635,72 @@ onUnmounted(() => {
 <template>
   <div class="mlmap">
     <div ref="containerRef" class="mlmap-canvas" />
-    <div v-if="!ready" class="mlmap-state">
-      <div class="mlmap-state-main">{{ notice || '底图加载中…' }}</div>
-      <div class="mlmap-state-sub">底图:OpenFreeMap(OpenStreetMap 数据)</div>
+
+    <!-- 底图状态角标：**只占一个小角、不覆盖地图** —— 底图拉不出来时路网照样看
+         （旧版是一块 inset:0 的整屏遮罩，会把路网一起盖住） -->
+    <div v-if="basemap !== 'ok'" class="basemap-note">
+      <template v-if="basemap === 'loading'">底图加载中…</template>
+      <template v-else>底图不可用（{{ basemapMsg }}）· 路网照画</template>
+    </div>
+
+    <!-- 来源口径水印（自绘视图搬来） -->
+    <div class="watermark">{{ sourceLabel }}</div>
+
+    <!-- 路网 OSM 署名：单独一份，**底图挂了也仍在**（E-11 / E-13） -->
+    <div v-if="osmActive" class="attribution">
+      <a :href="OSM_COPYRIGHT_URL" target="_blank" rel="noopener">{{ OSM_ATTRIBUTION }}</a>
+    </div>
+
+    <!-- 摄像头浮牌（悬停图钉时；与路段浮牌是两套，不混） -->
+    <div v-if="pin" class="cam-chip" :style="camChipStyle">
+      <b>{{ pin.cid }}</b> {{ pin.name }}
+      <span class="cam-chip-sub">
+        {{ pin.segment_id }} · {{ pin.hasVideo ? '有视频源' : '未接入视频源 · 本期留空' }} · 点击进感知层
+      </span>
+    </div>
+
+    <!-- 跟随鼠标的信息浮牌：吸附在当前选中路段上，沿线走 -->
+    <div v-if="mouse && hoverChip" class="hover-chip" :style="chipStyle">
+      {{ hoverChip }}
+    </div>
+
+    <!-- 图例（自绘视图搬来；index 视图是色阶版，level 视图是四级版） -->
+    <div v-if="legend" class="legend">
+      <template v-if="isIndex">
+        <div class="lg-title">拥挤指数色阶(ci · 0~100)</div>
+        <div class="lg-ramp" :style="{ background: ciGradientCss() }" />
+        <div class="lg-scale">
+          <span v-for="b in CI_BANDS" :key="b">{{ b }}</span>
+        </div>
+        <div class="lg-note">{{ CI_BAND_NOTE }}</div>
+        <div class="lg-note strong">{{ CI_DISCLAIMER }}</div>
+        <div class="lg-sep" />
+        <div class="lg-row"><LevelBadge :level="1" stale />灰 = 数据不可用(缺 ci 或数据陈旧)</div>
+        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+        </div>
+        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
+      </template>
+      <template v-else>
+        <div class="lg-title">四级编码(颜色 · 竖条 · 文字)</div>
+        <div class="lg-row"><LevelBadge :level="1" /></div>
+        <div class="lg-row"><LevelBadge :level="2" /></div>
+        <div class="lg-row"><LevelBadge :level="3" /></div>
+        <div class="lg-row"><LevelBadge :level="4" /></div>
+        <div class="lg-row"><LevelBadge :level="1" stale /></div>
+        <div class="lg-sep" />
+        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+        </div>
+        <div class="lg-row"><span class="dot flow" />推荐路线(当前)</div>
+        <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
+        <template v-if="cameraOnly">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="dot cam-dot" />摄像头布点（点击进感知层）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
+          <div class="lg-note">未挂摄像头的路段只画灰轮廓、不上色</div>
+        </template>
+      </template>
     </div>
   </div>
 </template>
@@ -333,29 +718,169 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
 }
-.mlmap-state {
+
+/* 底图状态角标：小、不挡视线、不响应鼠标（路网才是主角） */
+.basemap-note {
   position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  background: #f7f8fa;
-  z-index: 2;
-  pointer-events: none;
-}
-.mlmap-state-main {
-  font-size: 12px;
-  color: #666666;
-}
-.mlmap-state-sub {
+  top: 10px;
+  left: 12px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
   font-size: 11px;
-  color: #999999;
+  color: #666666;
+  pointer-events: none;
+  z-index: 3;
 }
 
-/* MapLibre 自己生成的 DOM 不在 scoped 作用域内,须用 :deep() 才生效。
-   署名控件只调字号,**不隐藏、不遮挡**(OSM/ODbL 署名义务)。 */
+/* 来源口径水印（顶部居中偏左，避开右上角的缩放控件与右下角的署名） */
+.watermark {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: #999999;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* 路网 OSM 署名：贴在右下角署名控件上方，**不得遮挡地图控件** */
+.attribution {
+  position: absolute;
+  right: 6px;
+  bottom: 24px;
+  font-size: 10px;
+  color: #666666;
+  background: rgba(255, 255, 255, 0.85);
+  padding: 1px 4px;
+  border-radius: 3px;
+  z-index: 2;
+}
+.attribution a {
+  color: #666666;
+}
+
+/* 跟随鼠标的信息浮牌：蓝框白底，贴鼠标右上、越界翻面，不挡鼠标 */
+.hover-chip {
+  position: absolute;
+  min-width: 120px;
+  max-width: 260px;
+  padding: 4px 10px;
+  background: #ffffff;
+  border: 1.2px solid v-bind('BRAND');
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 11px;
+  font-weight: 500;
+  color: v-bind('BRAND');
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 4;
+}
+
+/* 图例：左下角（比例尺已挪到右下，不再打架） */
+.legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 9px 12px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  pointer-events: none;
+  z-index: 2;
+}
+.lg-title {
+  font-size: 11px;
+  color: #666666;
+  margin-bottom: 1px;
+}
+.lg-row {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: #1a1a1a;
+}
+.lg-row .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  margin-right: 7px;
+  display: inline-block;
+}
+.lg-row.ts {
+  color: #999999;
+}
+.lg-ramp {
+  height: 8px;
+  border-radius: 2px;
+}
+.lg-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: #999999;
+}
+.lg-note {
+  font-size: 10px;
+  color: #999999;
+}
+.lg-note.strong {
+  color: #666666;
+}
+.lg-sep {
+  height: 1px;
+  background: #eeeeee;
+  margin: 2px 0;
+}
+.dot.flow {
+  background: linear-gradient(90deg, transparent 40%, #0052d9 40%);
+}
+/* 图例里的摄像头小圆点：与外圈同款（实心 = 有视频源、空心 = 未接入） */
+.dot.cam-dot {
+  background: #37474f;
+  border: 1.6px solid v-bind('BRAND');
+}
+.dot.cam-dot.empty {
+  background: #ffffff;
+}
+
+/* 车辆动点：从自绘视图搬来 —— transform 过渡 = 平滑移动 */
+.veh-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1.6px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+/* 摄像头浮牌：钉在图钉上方，不跟鼠标 */
+.cam-chip {
+  position: absolute;
+  width: 192px;
+  padding: 5px 9px;
+  background: #ffffff;
+  border: 1.2px solid v-bind('BRAND');
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: #1a1a1a;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 5;
+}
+.cam-chip-sub {
+  display: block;
+  color: #666666;
+}
+
+/* MapLibre 自己生成的 DOM 不在 scoped 作用域内，须用 :deep() 才生效。
+   署名控件只调字号，**不隐藏、不遮挡**（OSM/ODbL 署名义务）。 */
 :deep(.maplibregl-ctrl-attrib) {
   font-size: 10px;
 }
@@ -364,10 +889,10 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.85);
 }
 
-/* 摄像头图钉(Issue IKLX5Y):与自绘视图同款语义 ——
-   实心深灰 = 有视频源;空心白底 = 未接入视频源(本期留空)。
-   品牌蓝只作描边(「可操作」语义),不当填充色用。
-   Marker 的 DOM 由 document.createElement 造,不在 scoped 作用域内,故用 :deep()。 */
+/* 摄像头图钉（Issue IKLX5Y）：与自绘视图同款语义 ——
+   实心深灰 = 有视频源；空心白底 = 未接入视频源（本期留空）。
+   品牌蓝只作描边（「可操作」语义），不当填充色用。
+   Marker 的 DOM 由 document.createElement 造，不在 scoped 作用域内，故用 :deep()。 */
 :deep(.cam-pin) {
   width: 20px;
   height: 20px;

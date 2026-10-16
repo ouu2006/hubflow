@@ -106,10 +106,14 @@ npm install        # 仅首次;或 mklink /J node_modules 指向上游已装好�
 npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向至 /dashboard,无登录)
 ```
 
-**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:SVG 路网四级染色 + 车辆动点 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 暂沿 [`../assembly/README.md`](../assembly/README.md) 第二节历史清单(vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
+**M1 已有**:三栏布局(左:路段监测 + 线路方案;中:**矢量地图**(OpenFreeMap 底图 + 描出的路网)四级染色 + 车辆动点 + 悬停浮牌 + 路线高亮;右:路段详情)· 四级三重编码(手册 §6.2 色值/竖条图标/文字)· 数据陈旧灰显"数据不可用" · mock 端点与 SSE 暂沿 [`../assembly/README.md`](../assembly/README.md) 第二节历史清单(vehicles/reservation/alternatives 字段按契约 v2.0:元素不带 is_simulated、state 封闭取值、slots_reserved/lease_expire_s、备选带 reason)。
 
-**口径**:页面数据全部 `is_simulated = true` 示例数据;底图为**示例路网(非实测)**,待 #36/#37 站点包产物替换;一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。
+**口径**:页面数据全部 `is_simulated = true` 示例数据;路网几何取自站点包(站点包 Z 的几何是 OSM 真值),底图为 **OSM 矢量底图**(OpenFreeMap,免 Key);一期无视频画面(检测画面归二期);不做 3D(手册风险表第 20 条)。
 **(2026-10-12 更新)底图与站名现已由站点包层提供**(见第十一节),替换站点包即换站,不再直接改代码里的常量。
+
+> **(2026-10-16 · Issue IKM5T1)大屏地图只剩一个渲染器**:「示例路网 / 矢量地图」两个模式标签已删,`components/NetMap.vue`(自绘 SVG)已删;它的四件事——**车辆动点 / 悬停浮牌 / 推荐路线 / 图例 + 水印**——搬进 `components/MapLibreViewer.vue`。
+> **底图与路网解耦**:地图先用**本地兜底样式**建起来、路网立刻画并取景,OpenFreeMap 的样式**随后**异步拉,成功再把底图合进来;**拉不到就只丢底图** —— 路网、图钉、图例照常在位(旧版把路网层挂在公网样式的 `load` 里,拉不到就整块空白)。
+> 因此"示例路网"不再是一个模式,它**退化成底图不可用时的样子**。验收看两条:① 正常态七件事齐(路网 / 摄像头 / 车辆 / 浮牌 / 图例 / 水印 / 署名);② 屏蔽 `tiles.openfreemap.org` 后刷新,路网照画、不被提示层遮挡。
 
 ## 八、决策层 · 决策工作台(Issue #59,2026-10-11;三层收敛见第十三节)
 
@@ -143,7 +147,7 @@ npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向�
 
 | 项 | 实现 |
 |---|---|
-| 视图切换 | **四级视图 ↔ 拥挤指数视图**(`NetMap` 新增 `mode` prop;`/heat` 页头切换,`aria-pressed` 标注) |
+| 视图切换 | **四级视图 ↔ 拥挤指数视图**(地图组件 `components/MapLibreViewer.vue` 的 `mode` prop;`/heat` 页头切换,`aria-pressed` 标注) |
 | 图例 | 四级视图沿用四级三重编码图例;指数视图给**色阶 + 档位刻度(0/25/50/75/100)+ 灰档说明** |
 | 更新时间戳 | 页头「更新时间戳(快照时间)」+ 图例内 + 页脚,**三处必现**(手册 §:1858) |
 | 辅助排序 | 指数视图下路段列表**按 `ci` 降序**并显示 `ci` 值(手册 §6.5 第 1 条:CI 可用于辅助排序) |
@@ -210,8 +214,8 @@ PR #69 合入 `main` 后,又跑了 **4 路全新上下文独立审查**(手册�
 **记录不改(附理由)**:
 
 - `traffic.ts` 色阶:蓝 `#1E6FD9` 与黄 `#F2B705` 色相互补,过渡中点(ci≈25)必然接近中性灰 `#8C8C8C`——这是**手册 §6.2 四级色顺序本身**带来的,改锚点或改色相会动到手册语义,故不改;判据以灰档行(三重编码 + 文字「不可用」)为准,不靠颜色单通道区分(注释已写明)。
-- `/perception` 在真路网覆盖下展示 OSM 派生路段名却整页无署名(署名只渲染在 `NetMap` 内):**另开 Issue**,不在本修复范围。
-- `NetMap.osmActive` 是无响应式依赖的 `computed`(挂载前已 `await` 载入,当前不可触发):记此不修。
+- `/perception` 在真路网覆盖下展示 OSM 派生路段名却整页无署名(署名当年只渲染在 `NetMap` 内):**另开 Issue**,不在本修复范围。(2026-10-16 IKM5T1 起署名由 `components/MapLibreViewer.vue` 渲染,本条转为历史记录。)
+- `NetMap.osmActive` 是无响应式依赖的 `computed`(挂载前已 `await` 载入,当前不可触发):记此不修。(该组件已于 2026-10-16 随 IKM5T1 删除,本条转为历史记录。)
 - `HeatView.refresh` 无在飞去重 / 取消(SSE 每 2s 一次,慢响应可能后到覆盖新快照):记此不修。
 
 ## 十、四页重做:按设计稿替换既有四页(Issue #78,2026-10-12)
@@ -243,7 +247,7 @@ PR #69 合入 `main` 后,又跑了 **4 路全新上下文独立审查**(手册�
 **删除**:`views/dashboard/components/` 下的 `SegmentListPanel.vue`、`SegmentDetailPanel.vue`、`RoutePanel.vue`。
 三者是旧深色大屏的栏内组件,信息层级已被新页取代;保留它们会让"同一字段两套口径"漂移。新页各自持有自己的栏内组件。
 
-**改造**:`NetMap.vue` 按浅色主题重写(白底衬 + 品牌蓝路线高亮)并新增叠加层(站点块 / 场区虚线框 / **断面标记(边界·内部)** / 落客点);
+**改造**:`NetMap.vue` 按浅色主题重写(白底衬 + 品牌蓝路线高亮)并新增叠加层(站点块 / 场区虚线框 / **断面标记(边界·内部)** / 落客点);(该文件已于 2026-10-16 随 **IKM5T1** 删除——其画法搬进 `components/MapLibreViewer.vue`,本节为历史记录。)
 `LevelBadge.vue` 增加**图形色与文字色分离**(TDesign 的「图形用标准阶、文字用深一阶」两列色),新增 `anti` 反色开关供深色画面区用。
 
 ### 10.2 配色迁移(**本单最大的兼容项**)
@@ -538,7 +542,7 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 - `:size` **必须用 `v-model:size`**，单向绑定不会把拖出来的 px 宽度回写到源变量，`@resize-end` 存进 `localStorage` 的就永远是默认值。
 - 中栏**不给 `size`**——`ElSplitter` 会把剩余空间自动瓜分给未指定 `size` 的 panel（中栏不用自己算）。
 - 激活态类名是 `.el-splitter-bar__dragger-active`（不是 `.is-active`）。
-- 中栏 `NetMap` 自己按 `getBoundingClientRect()` 换算拖拽位移（`components/NetMap.vue`），**改完必须亲手拖一次地图栏**，确认缩放 / 平移仍准。
+- 中栏地图是**一块 MapLibre 画布**(容器尺寸变化由 MapLibre 自己跟踪),**改完必须亲手拖一次地图栏**,确认路网仍铺满、取景不跑偏。
 - scoped 样式下，`ElSplitter` 子组件内部渲染的元素不带本组件的 scope 属性 → 覆盖规则一律写成 `.el-splitter.td-splitter :deep(...)`，且**后半段不能带 `>` 去直接指向 splitter 的子元素**（dragger 是 `.el-splitter-bar` 的子元素，不是 splitter 的直接子元素）。
 
 **配色（守 §6.2「品牌蓝只表示当前 / 已选 / 可操作」「等级色不得出现在壳层」）**：分隔条竖线默认取 `var(--td-component-border)` 中性灰，hover / 拖拽中取 `var(--td-brand-color)` #0052D9（= 正在被操作）。**刻意不覆盖 element-plus 默认主题蓝之外的状态色**——全仓库不新增任何 `--el-` 变量覆盖，`src/style.css` 的 `--td-*` 仍是唯一色源。

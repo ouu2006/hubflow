@@ -68,7 +68,7 @@ export function demoSegment(id: string): DemoSegment | undefined {
 }
 
 // ---- 真路网覆盖(#61 twin_preview):入口在挂载前拉 /twin-api/network 原地替换,
-// NetMap / 两个面板 / mock 的静态读取统一生效;桥接服务不可用则保持站点包路网不变。
+// 地图 / 两个面板 / mock 的静态读取统一生效;桥接服务不可用则保持站点包路网不变。
 // 二站(自建示意路网)关掉桥接(`pack.bridge.enabled === false`),入口不拉,也就不会覆盖。
 const NETWORK_SOURCE = { twin: false }
 

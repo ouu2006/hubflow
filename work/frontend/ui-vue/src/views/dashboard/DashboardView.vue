@@ -34,7 +34,7 @@ import {
   getTrafficVehicles,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import { demoSegment, isOsmNetwork, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
+import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
 import { cameraCountOf } from '../../shared/cameras'
 import { activePack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
@@ -65,7 +65,6 @@ import {
 } from '../../shared/traffic'
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from './components/LevelBadge.vue'
-import NetMap from './components/NetMap.vue'
 import MapLibreViewer from './components/MapLibreViewer.vue'
 import AlertList from './components/AlertList.vue'
 import BandDistribution from './components/BandDistribution.vue'
@@ -93,8 +92,8 @@ const router = useRouter()
 //      否则出双层滚动条或「滚不动」——见本文件 <style> 内 `.el-splitter.td-splitter > .el-splitter-panel` 覆盖规则。
 //   ② `.el-splitter-bar` 宽度是 0(只有 16px 的 dragger 绝对定位覆盖),
 //      且 `.td-body { gap: 10px }` 换成 splitter 后不再生效 → 需给 bar 一个宽度维持栏间距。
-//   ③ 中栏 NetMap 自己按 `getBoundingClientRect()` 换算拖拽位移(`NetMap.vue` 内),
-//      栏宽变化本身不会坏(viewBox + preserveAspectRatio 自适应),但**改完要亲手拖一次地图栏**。
+//   ③ 中栏地图(一个 MapLibre 画布,矢量的平移/缩放由 MapLibre 自己跟踪容器尺寸),
+//      栏宽变化不会坏,但**改完要亲手拖一次地图栏**,确认路网仍铺满、不跑偏。
 //
 // ⚠️ 第四个易踩点(实测 CDP 拖拽才暴露,静态检查看不出来):
 //   `ElSplitterPanel` 内部拖完后改的是**它自己的** panel.size,并 emit `update:size`;
@@ -187,10 +186,8 @@ function onBarMouseDown(e: MouseEvent): void {
   lastBarDown = { at: now, x: e.clientX, y: e.clientY }
 }
 
-/** 底图来源短文案(页面水印/页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
+/** 路网来源短文案(页面页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
 const sourceLabel = networkSourceLabel()
-/** 底图是否真 OSM 路网 —— 只有它为真时地图内才有署名,底图说明文案随之分支(否则不写"署名见地图内") */
-const osmActive = isOsmNetwork()
 /** 路网几何出处(真值 / 示例样例)—— 真几何与示意几何不能混说(见 demoNetwork.networkGeometryNote) */
 const geometryNote = networkGeometryNote()
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
@@ -224,21 +221,12 @@ const viewMode = ref<CongestionViewMode>('level')
 const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
 
-// ---------- 中栏底图切换(自绘路网 / 矢量底图) ----------
-// 'svg'    = 自绘 SVG 路网(零依赖,断网也能演示)
-// 'vector' = MapLibre + OpenFreeMap 矢量底图(真实 OSM 底图;WGS-84 直接对齐,无需坐标转换)
-type MapViewMode = 'svg' | 'vector'
-
-/**
- * 默认底图**按"当前路网是什么"来定**(业主 2026-10-15:「想要的效果更接近矢量地图」):
- *   · 路网是**真 OSM 几何**(站点包 Z,或孪生桥接覆盖)→ 默认**矢量底图**:
- *     真实道路叠真实底图,位置天然对得上,这才是要看的效果;
- *   · 路网是**占位 / 示意几何**(已删除的 A / B / Y 包属于这种)→ 默认**自绘路网**:
- *     占位坐标放到真地图上必然整体错位(当年的包 A 就偏 28.6 km),自绘反而干净。
- * 判据复用 `isOsmNetwork()` —— 它同时管 OSM 署名义务,是"这套几何是不是真 OSM"的现成口径。
- * 两个标签都留着,用户随时可以手动切。
- */
-const mapViewMode = ref<MapViewMode>(isOsmNetwork() ? 'vector' : 'svg')
+// ---------- 中栏地图 · 单渲染器(Issue IKM5T1) ----------
+// 只留**一个**地图组件(MapLibre:矢量底图 + 描出的路网)。原先"示例路网 / 矢量地图"两个模式已删:
+//   · 自绘那套(NetMap.vue)的四件事——车辆动点 / 悬停浮牌 / 推荐路线 / 图例+水印——搬进了地图组件;
+//   · 而"示例路网"那个观感**在底图拉不出来时自动出现**:地图先用本地兜底样式建起来、路网立刻画,
+//     底图失败只丢底图(详见 `components/MapLibreViewer.vue` 头部注释)。
+// 只剩站点包 Z、几何统一 WGS-84,所以不再需要"按包 / 按路网切底图"的分支。
 
 let unsubscribe: (() => void) | null = null
 
@@ -832,32 +820,11 @@ function gotoDecision(): void {
               <div class="map-toolbar">
                 <div class="map-toolbar-left">
                   <span class="map-title">全路段状态</span>
-                  <span class="map-tag">底图：{{ mapViewMode === 'vector' ? 'OpenFreeMap · OSM' : '自绘路网' }}</span>
-                </div>
-                <div class="map-toolbar-right">
-                  <span
-                    class="map-seg-item"
-                    :class="{ on: mapViewMode === 'svg' }"
-                    role="button"
-                    :aria-pressed="mapViewMode === 'svg'"
-                    @click="mapViewMode = 'svg'"
-                  >
-                    示例路网
-                  </span>
-                  <span
-                    class="map-seg-item"
-                    :class="{ on: mapViewMode === 'vector' }"
-                    role="button"
-                    :aria-pressed="mapViewMode === 'vector'"
-                    @click="mapViewMode = 'vector'"
-                  >
-                    矢量地图
-                  </span>
+                  <span class="map-tag">底图：OpenFreeMap · OSM（拉不到时只画路网）</span>
                 </div>
               </div>
               <div class="td-card-body flush map-body">
-                <NetMap
-                  v-if="mapViewMode === 'svg'"
+                <MapLibreViewer
                   :segments="segments"
                   :vehicles="vehicles"
                   :selected-id="selectedId"
@@ -868,22 +835,9 @@ function gotoDecision(): void {
                   :legend="true"
                   @select="onSelect"
                 />
-                <MapLibreViewer
-                  v-else
-                  :segments="segments"
-                  :selected-id="selectedId"
-                  :mode="viewMode"
-                  :ts="snapshotTs"
-                  @select="onSelect"
-                />
               </div>
               <div class="map-caption">
-                <template v-if="mapViewMode === 'vector'">
-                  底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:{{ geometryNote }}
-                </template>
-                <template v-else>
-                  底图来源:{{ sourceLabel }} · {{ geometryNote }}<template v-if="osmActive"> · OSM 署名见地图内</template>
-                </template>
+                底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:{{ geometryNote }}
               </div>
             </section>
           </div>
@@ -1299,7 +1253,8 @@ function gotoDecision(): void {
   flex: 1 1 auto;
   min-height: 0;
 }
-/* 底图切换条(业主 2026-10-15):左"全路段状态"+当前底图口径,右两个标签 */
+/* 地图工具条(业主 2026-10-16):只留"全路段状态"+当前底图口径 ——
+   「示例路网 / 矢量地图」两个模式标签已删(Issue IKM5T1:只留一个渲染器) */
 .map-toolbar {
   flex: 0 0 auto;
   display: flex;
@@ -1309,8 +1264,7 @@ function gotoDecision(): void {
   border-bottom: 1px solid var(--td-component-stroke);
   gap: 10px;
 }
-.map-toolbar-left,
-.map-toolbar-right {
+.map-toolbar-left {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1326,17 +1280,6 @@ function gotoDecision(): void {
   background: var(--td-bg-color-secondary);
   padding: 2px 8px;
   border-radius: 10px;
-}
-.map-seg-item {
-  font-size: 12px;
-  color: var(--td-text-color-secondary);
-  cursor: pointer;
-  padding: 2px 8px;
-  border-radius: 4px;
-}
-.map-seg-item.on {
-  color: var(--td-brand-color);
-  background: var(--td-brand-color-1);
 }
 .map-body {
   flex: 1;
