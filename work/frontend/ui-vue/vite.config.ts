@@ -1,5 +1,6 @@
 import vue from '@vitejs/plugin-vue'
 import { defineConfig, loadEnv } from 'vite'
+import { basemapProxyPlugin } from './src/dev/basemap-proxy.ts'
 import { mockApiPlugin } from './src/mock/index.ts'
 import { setActivePackKey } from './src/station-packs/index.ts'
 
@@ -47,7 +48,15 @@ export default defineConfig(({ mode }) => {
   const server = { proxy, port: Number(env.VITE_DEV_PORT) || 5173 }
 
   return {
-    plugins: [vue(), ...(useMock ? [mockApiPlugin()] : [])],
+    plugins: [
+      vue(),
+      ...(useMock ? [mockApiPlugin()] : []),
+      // 底图同源直通(2026-10-16):dev/preview 上把 /basemap/* 转发到 OpenFreeMap。
+      // 为什么不用现成的 vite proxy:vite 的 http-proxy 同样跑在 Node(一样绕开系统代理),
+      // 但它会把上游响应头**原样全透**、且路径任意拼——写自家中继是为了**只透传白名单响应头 +
+      // 不接受完整 URL**(上游主机写死),不把这条路由做成开放代理。见 src/dev/basemap-proxy.ts。
+      basemapProxyPlugin(),
+    ],
     // ⚠️ 必须把 maplibre-gl 排除出依赖预打包,否则**矢量底图起不来**:
     //   MapLibre 主包用 `new URL('./maplibre-gl-worker.mjs', import.meta.url)` 引一个
     //   独立的 508 KB worker 文件(矢量瓦片解析全在 worker 里跑)。

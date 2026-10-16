@@ -74,6 +74,12 @@ import {
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import { basemapEnabled } from '../../../shared/settings'
 import {
+  BASEMAP_PROXY_PROBE,
+  BASEMAP_STYLE_URL,
+  setBasemapProxyDetected,
+  toBasemapUrl,
+} from '../../../shared/basemap'
+import {
   ciAvailable,
   ciGradientCss,
   ciStyleColor,
@@ -92,15 +98,26 @@ import LevelBadge from './LevelBadge.vue'
 
 const BRAND = TD.brand
 
-/** OpenFreeMap 的 Liberty 样式（免 Key、免注册；数据来自 OpenStreetMap） */
-const STYLE_URL = 'https://tiles.openfreemap.org/styles/liberty'
+/**
+ * OpenFreeMap 的 Liberty 样式（免 Key、免注册；数据来自 OpenStreetMap）。
+ * 地址口径与"同源直通"开关都在 `shared/basemap.ts`（本机系统代理会黑洞掉上游域名，见那里注释）。
+ */
+const STYLE_URL = BASEMAP_STYLE_URL
 /**
  * **本地兜底样式**：不依赖任何公网资源，只用来把地图建起来。
  * 路网图层与摄像头图钉在这份样式上就位，因此"底图能不能拉到"**不参与**路网是否画得出来。
  */
 const FALLBACK_STYLE: StyleSpecification = { version: 8, sources: {}, layers: [] }
-/** 底图拉取上限：超时即按"底图不可用"处理，**不阻塞路网** */
+/** 底图**样式**拉取上限：超时即按"底图不可用"处理，**不阻塞路网** */
 const BASEMAP_TIMEOUT_MS = 8000
+/**
+ * 底图**瓦片**就绪上限。样式拿到 ≠ 底图画得出来：本机实测过"样式命中 HTTP 缓存 3 ms 返回 200，
+ * 而 tilejson / `.pbf` 全部挂到超时"——那时地图只剩 Liberty 样式里的底色层（没有路、没有建筑），
+ * 旧代码却已经把状态写成 `ok`。所以拿到样式后还要**等矢量瓦片真的就绪**，等不到一样算失败。
+ */
+const BASEMAP_TILES_TIMEOUT_MS = 8000
+/** 同源直通代理的探测上限（探不到就直连上游，不能让探测本身拖慢建图） */
+const BASEMAP_PROBE_TIMEOUT_MS = 1500
 
 const SRC = 'hubflow-route'
 const LAYER_HEAT = `${SRC}-heat`
@@ -175,6 +192,12 @@ const basemapRetrying = ref(false)
 const RETRY_DELAYS_MS = [2000, 6000, 12000]
 let retryStep = 0
 let retryTimer = 0
+/**
+ * 底图这一轮拉取的**代次**。每次 `applyBasemap` 自增，用来让"上一轮"的异步尾巴（瓦片轮询、
+ * 关开关后的在途请求）认出自己已经过期 —— 只看 `disposed` 不够：开关一开一关、或手动连点两次
+ * 「重试」时，旧那一轮还会把状态写回 `ok`。
+ */
+let basemapRun = 0
 /** 当前挂载的是不是"底图已合入"的那份样式（关开关时据此决定要不要换回兜底样式） */
 let remoteApplied = false
 /**
@@ -456,7 +479,6 @@ function mergedStyle(remote: StyleSpecification): StyleSpecification {
 /** 把底图那一层**整层撤掉**：样式换回"本地兜底 + 本组件图层"，路网一行不动 */
 function dropBasemap(map: MapLibreMap): void {
   window.clearTimeout(retryTimer)
-  retryStep = 0
   if (!remoteApplied) return // 本来就是"只有路网"，不必再换一次样式
   remoteApplied = false
   map.once('styledata', () => {
@@ -486,13 +508,17 @@ function retryBasemap(): void {
 }
 
 /**
- * 拉底图并合入。三件事按顺序判：
+ * 拉底图并合入。四件事按顺序判：
  *   ① 设置里关着 → **一个请求都不发**，把已有的底图层撤掉；
- *   ② 拉到了 → 与**本组件自己的图层规格**合成一份 style 再挂载（路网在整份样式里，不会中途空窗）；
- *   ③ 拉不到 → 保留兜底样式（路网照画），角标给原因 + 「重试」，并按退避自动重试。
+ *   ② 样式拉到了 → 与**本组件自己的图层规格**合成一份 style 再挂载（路网在整份样式里，不会中途空窗）；
+ *   ③ **瓦片真的就绪** → 才把状态写成 `ok`；
+ *   ④ 任何一步拉不到 → 退回兜底样式（路网照画），角标给原因 + 「重试」，并按退避自动重试。
  *
  * 为什么不用 `map.setStyle(STYLE_URL)` 直接换：那会把路网图层一起冲掉，换完还得"再挂一遍"，
  * 中间那段时间图上什么都没有 —— 正是本单要避免的状态。
+ *
+ * ⚠️ ③ 不是多余的：本机实测过"样式命中 HTTP 缓存 3 ms 返回 200，而 tilejson / `.pbf` 全部挂到超时"
+ * —— 那时地图只剩 Liberty 样式里的底色层（没有路、没有建筑），单看②就报"底图正常"是**假的**。
  *
  * `retry: true` = 失败后的再试：**状态留在 `failed`**，只把按钮文案换掉（见 `basemapRetrying`）。
  */
@@ -509,17 +535,19 @@ async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): P
   }
   if (opts.retry) basemapRetrying.value = true
   else basemap.value = 'loading'
+  const run = ++basemapRun
+  const stale = () => disposed || run !== basemapRun || !basemapEnabled.value
   const ctrl = new AbortController()
   inflightCtrl = ctrl
   const timer = window.setTimeout(() => ctrl.abort(), BASEMAP_TIMEOUT_MS)
   try {
-    const res = await fetch(STYLE_URL, { signal: ctrl.signal })
+    const res = await fetch(toBasemapUrl(STYLE_URL), { signal: ctrl.signal })
     if (!res.ok) throw new Error(`样式 http ${res.status}`)
     const remote = (await res.json()) as StyleSpecification
     if (remote?.version !== 8 || !remote.sources || !Array.isArray(remote.layers)) {
       throw new Error('样式形状不对')
     }
-    if (disposed || !basemapEnabled.value) return
+    if (stale()) return
     // 换样式后重新取景 + 重贴选中态；车辆与摄像头是 DOM Marker，不受影响。
     // ⚠️ 监听要先挂再 `setStyle` —— 反过来万一 styledata 已同步派发就漏掉了。
     map.once('styledata', () => {
@@ -529,19 +557,54 @@ async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): P
     })
     map.setStyle(mergedStyle(remote), { diff: false })
     remoteApplied = true
+    if (!(await waitForBasemapTiles(map, remote, stale))) {
+      throw new Error('瓦片拉取超时')
+    }
+    if (stale()) return
     basemap.value = 'ok'
     basemapRetrying.value = false
     retryStep = 0
   } catch (e) {
-    if (disposed || !basemapEnabled.value) return
+    if (stale()) return
     basemap.value = 'failed'
     basemapRetrying.value = false
-    basemapMsg.value = e instanceof Error && e.name === 'AbortError' ? '拉取超时' : '拉取失败'
+    // 样式已经挂上去过（②之后才失败）→ 退回去，别留着"只有底色"的半张底图
+    if (remoteApplied) dropBasemap(map)
+    basemapMsg.value = e instanceof Error ? e.message : '拉取失败'
+    if (e instanceof Error && e.name === 'AbortError') basemapMsg.value = '拉取超时'
     scheduleRetry(map)
   } finally {
     window.clearTimeout(timer)
     if (inflightCtrl === ctrl) inflightCtrl = null
   }
+}
+
+/** 这份样式里"要从公网拉瓦片"的源（geojson 是我们自己的路网，不算） */
+function tileSourceIds(remote: StyleSpecification): string[] {
+  return Object.entries(remote.sources ?? {})
+    .filter(([, spec]) => (spec as { type?: string })?.type !== 'geojson')
+    .map(([id]) => id)
+}
+
+/**
+ * 等底图瓦片真的就绪（轮询 `isSourceLoaded`）。到点还没就绪 → `false`。
+ * 轮询而不是挂 `sourcedata` 监听：事件只在"有变化"时来，黑洞代理下可能**一个都不来**。
+ */
+async function waitForBasemapTiles(
+  map: MapLibreMap,
+  remote: StyleSpecification,
+  stale: () => boolean,
+): Promise<boolean> {
+  const ids = tileSourceIds(remote)
+  if (ids.length === 0) return true
+  const deadline = Date.now() + BASEMAP_TILES_TIMEOUT_MS
+  while (Date.now() < deadline) {
+    if (stale()) return false
+    const present = new Set(Object.keys(map.getStyle()?.sources ?? {}))
+    if (ids.every((id) => present.has(id) && map.isSourceLoaded(id))) return true
+    await new Promise((r) => window.setTimeout(r, 300))
+  }
+  return false
 }
 
 /** 数据/选中/路线变化后，把视图状态贴回图层（换样式之后也要重贴一次） */
@@ -628,6 +691,30 @@ const camChipStyle = computed(() => {
 
 let disposed = false
 
+/**
+ * 探一下 dev/preview 上那条**底图同源直通**路由在不在（见 `shared/basemap.ts` 头部）。
+ *
+ * 为什么要探而不是"配个 env 开关了事"：生产构建里根本没有这条路由，写死同源前缀会让线上
+ * 底图 100% 404；而"按 mode 分支"又管不到 `vite preview` 看 dist 的场景。探一下最省事：
+ * 拿到 JSON 就是挂了，拿到 HTML（SPA 回退的 index.html）或超时就当没挂，回落直连上游。
+ *
+ * 探测失败**不影响建图**：它就是一次 1.5 s 上限的请求，拿不到就照旧走公网。
+ */
+async function detectBasemapProxy(): Promise<void> {
+  const ctrl = new AbortController()
+  const timer = window.setTimeout(() => ctrl.abort(), BASEMAP_PROBE_TIMEOUT_MS)
+  try {
+    const res = await fetch(BASEMAP_PROXY_PROBE, { signal: ctrl.signal, cache: 'no-store' })
+    if (!res.ok) return
+    const body = (await res.json()) as { ok?: boolean }
+    setBasemapProxyDetected(body?.ok === true)
+  } catch {
+    setBasemapProxyDetected(false)
+  } finally {
+    window.clearTimeout(timer)
+  }
+}
+
 function initMap(): void {
   if (!containerRef.value) return
   const map = new MapLibreMap({
@@ -636,6 +723,9 @@ function initMap(): void {
     style: FALLBACK_STYLE,
     center: [112.657, 23.215],
     zoom: 14,
+    // 底图那几类请求（样式 / tilejson / 瓦片 / sprite / 字形）统一过一遍地址改写：
+    // 探到同源直通就换成本地前缀（绕开系统代理），没探到就原样返回。
+    transformRequest: (url) => ({ url: toBasemapUrl(url) }),
     // 不隐藏默认署名控件：OSM/ODbL 要求署名（见文件头「合规」）
   })
   mapRef.value = map
@@ -715,6 +805,8 @@ watch(
 onMounted(async () => {
   // 容器始终在 DOM 里，nextTick 只为确保布局尺寸已就绪（尺寸为 0 时地图会渲染成空白）
   await nextTick()
+  // 先探代理再建图：`applyBasemap` 的第一次样式请求也要走同源直通（探测本身有 1.5 s 上限）
+  await detectBasemapProxy()
   initMap()
 })
 

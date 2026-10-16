@@ -121,6 +121,16 @@ npm run dev        # 浏览器打开 http://localhost:5173/(根路径重定向�
 > ⚠️ 重试按钮的**文案必须固定**(只切 `disabled`):实测在「重试 / 重试中…」之间改文案会让按钮尺寸抖动,CDP 端判 `element is not stable`、点了 30 s 点不上。
 > ⚠️ **路网那一份 OSM 署名与底图无关**:`MapLibreViewer` 里的 `.attribution` 只要"这套几何是 OSM"(站点包 Z 就是)就渲染,所以**关掉底图后署名仍在**(E-11 / E-13 不因开关失效);MapLibre 自带的署名控件才是跟着底图走的。
 
+> **(2026-10-16 追加)底图补两件事:同源直通 + 瓦片真就绪才算成功。** 起因是实测"底图只出底色层,路和建筑全不见"——旧代码把这种状态判成了 `ok`。查下来是**本机环境**问题,不是功能缺失:
+> ① **系统代理黑洞**:本机开着 `http://127.0.0.1:7897`(verge-mihomo),它把境外域名直接黑洞掉;浏览器的请求走它,而 **Node 的 `fetch` 不读系统代理**。实测同一时刻 `curl https://tiles.openfreemap.org/...`(走代理)返回 `000`,`curl --noproxy '*'`(直连)返回 `200`。
+> ② **样式命中缓存、瓦片挂死**:样式文件命中 HTTP 缓存 3 ms 返回 200,而 tilejson / `.pbf` 全部挂到超时 —— 单看"样式拉到了"就会误报成功,地图上只剩 Liberty 样式里的底色层。
+>
+> 修法分两半:
+> · **`src/dev/basemap-proxy.ts`(vite 插件,`apply: 'serve'`)**:dev / preview 上挂一条 `/basemap/*` → `https://tiles.openfreemap.org` 的**服务器转发**。走 Node 直连就绕开了系统代理。为了不当开放代理:上游主机写死白名单、**只透传白名单响应头**、**不接受完整 URL**、不落盘、不预取;非 GET/HEAD 返 405;上游超时返 504 带 `code`。`/basemap/health` 返 `{ok:true}` 供前端探测。合规上只做"转发",不缓存不预取(对照 [`../../docs/条款核实.md`](../../docs/条款核实.md) 红线 1 / 必做 2)。
+> · **`src/shared/basemap.ts`(地址口径,浏览器与 Node 两侧共用)**:`MapLibreViewer` 建图前先探一次 `/basemap/health`(1.5 s 上限,探不到就当没挂、回落直连上游),探到就把 MapLibre 的 `transformRequest` 里所有上游 URL 换成本地前缀。**生产构建里没有这条路由**,所以靠探测而不是写死或按 `mode` 分支(`vite preview` 看 dist 的场景按 mode 也分不对)。
+> · **状态机多一关**:拿到样式后还要 `waitForBasemapTiles()` 轮询 `isSourceLoaded`,**瓦片真的就绪才写 `ok`**;等不到一样算失败,并把已合入的底图**撤回去**(不留"只有底色"的半张底图)。轮询而不是挂 `sourcedata` 监听:黑洞代理下一个事件都不会来。
+> · 验收两条不变(① 正常态七件事齐 ② 屏蔽 `tiles.openfreemap.org` 后路网照画),**再加一条**:正常态底图上必须能看见**水系/道路**等非底色图层,不能只是纯色。
+
 ## 八、决策层 · 决策工作台(Issue #59,2026-10-11;三层收敛见第十三节)
 
 **三层定位**(业主 2026-10-11 裁定,2026-10-13 收敛为三页):第一层感知层 `/perception` → 第二层决策层 `/decision`(本节)→ 第三层监控大屏 `/dashboard`。
