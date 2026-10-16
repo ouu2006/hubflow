@@ -7,7 +7,11 @@ import os
 import re
 import sys
 
-ROOT = r"C:\dev\hubflow\work\frontend\harmony"
+# 【评审修复】原来硬编码 ROOT = r"C:\dev\hubflow\..."，在作者本机以外的任何环境
+# （CI / 队友机器 / Linux）都会「扫描 0 个源文件」且各项全 PASS —— 假绿，比不设门禁更危险。
+# 现在按本脚本位置反推仓库根目录：<repo>/scripts/frontend_gate.py → <repo>
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.join(REPO_ROOT, "work", "frontend", "harmony")
 ETS = os.path.join(ROOT, "entry", "src", "main", "ets")
 
 # 口径红线：页面用户可见文案不得出现这三个词（「请服从现场指挥」是手册固定措辞，例外）
@@ -50,6 +54,10 @@ def strip_comments(src):
         elif c == "/" and i + 1 < n and src[i + 1] == "*":
             i += 2
             while i + 1 < n and not (src[i] == "*" and src[i + 1] == "/"):
+                # 【评审修复】块注释内的换行要保留：否则注释后面的代码行号整体前移，
+                # 门禁报出来的行号与真实文件对不上（原来报 23，实际在 47 行）。
+                if src[i] == "\n":
+                    out.append("\n")
                 i += 1
             i += 2
         else:
@@ -369,18 +377,43 @@ def gate_car_moves(files):
     return bad, ["车标随「继续」沿路线移动"]
 
 
+def gate_color_param(files):
+    """颜色参数必须传合法色值（#hex）或常量引用，绝不能把常量名当字符串
+
+    【2026-10-16 PR #29 真事】Colors 收口时写出 `.fontColor('TEXT_WHITE')` 这种
+    「常量名当字符串」的调用，ArkUI 解析不出合法色值 → 27 处颜色静默失效
+    （应急/降级/不可用提示条、路线卡文字、地图角标全部中招）。
+    注意必须 strip_comments 后再查：我们自己在注释里写了反例警示文案，
+    按原文查会误报（strip_comments 保留换行，行号不错位）。
+    """
+    bad = []
+    pat = re.compile(r"\.(fontColor|backgroundColor|borderColor|color)\(\s*'([A-Za-z_][A-Za-z0-9_]*)'\s*\)")
+    for p in files:
+        if not p.endswith(".ets"):
+            continue
+        for i, line in enumerate(strip_comments(read(p)).splitlines(), 1):
+            m = pat.search(line)
+            if m:
+                bad.append(
+                    f"{rel(p)}:{i} .{m.group(1)}('{m.group(2)}') —— "
+                    f"传的是常量名字符串，ArkUI 解析不出合法色值；应去掉引号写 {m.group(2)}"
+                )
+    return bad, ["颜色参数不得传常量名字符串"]
+
+
 GATES = [
-    ("1/11 CRLF 行尾", gate_crlf),
-    ("2/11 未使用 import", gate_unused_import),
-    ("3/11 违禁词", gate_forbidden),
-    ("4/11 地图可插拔架构", gate_scheme),
-    ("5/11 真实路网数据", gate_realkey),
-    ("6/11 Canvas 重画条件", gate_forcetype),
-    ("7/11 转向推进上限", gate_maneuver_limit),
-    ("8/11 开关必须触发重画", gate_epoch_bump),
-    ("9/11 应急态不得吃掉正文", gate_emergency_keep),
-    ("10/11 距离文案不得写死", gate_dist_not_hardcoded),
-    ("11/11 车标随继续移动", gate_car_moves),
+    ("1/12 CRLF 行尾", gate_crlf),
+    ("2/12 未使用 import", gate_unused_import),
+    ("3/12 违禁词", gate_forbidden),
+    ("4/12 地图可插拔架构", gate_scheme),
+    ("5/12 真实路网数据", gate_realkey),
+    ("6/12 Canvas 重画条件", gate_forcetype),
+    ("7/12 转向推进上限", gate_maneuver_limit),
+    ("8/12 开关必须触发重画", gate_epoch_bump),
+    ("9/12 应急态不得吃掉正文", gate_emergency_keep),
+    ("10/12 距离文案不得写死", gate_dist_not_hardcoded),
+    ("11/12 车标随继续移动", gate_car_moves),
+    ("12/12 颜色参数合法", gate_color_param),
 ]
 
 
@@ -388,6 +421,10 @@ def main():
     files = walk_ets()
     total = 0
     print(f"扫描 {len(files)} 个源文件\n")
+    # 【评审修复】扫不到文件说明 ROOT 路径不对，此时任何 PASS 都是假的，直接判失败
+    if not files:
+        print("扫描到 0 个源文件 —— ROOT 路径配置错误，门禁未生效（假绿）")
+        return 1
     for name, fn in GATES:
         bad, desc = fn(files)
         mark = "PASS" if not bad else "FAIL"

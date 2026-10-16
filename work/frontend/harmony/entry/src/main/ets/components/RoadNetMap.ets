@@ -5,7 +5,7 @@ import { SelfDrawRenderer } from '../common/SelfDrawRenderer';
 import { PlanMeta, arrivalPlans, buildPlanRoute, departurePlans, planOf, planAt, pointAtRatio } from '../common/RoutePlan';
 import { REAL_ROAD_NETWORK } from '../common/RealNet';
 import { LevelMeta, LEVEL_META_LIST } from '../common/LevelMeta';
-import {TEXT_WHITE, BG_MAP_TAG, BG_MAP_TAG_EMERGENCY, BG_MAP_TAG_SUB, TEXT_MAP_FOOT, TEXT_MAP_LABEL, TEXT_MAP_LABEL_SUB} from '../common/Colors';
+import { TEXT_WHITE, BG_MAP_TAG, BG_MAP_TAG_EMERGENCY, BG_MAP_TAG_SUB, TEXT_MAP_FOOT, TEXT_MAP_LABEL, TEXT_MAP_LABEL_SUB } from '../common/Colors';
 import { MAP_BACKEND_DESC } from '../common/MapTypes';
 
 /**
@@ -112,11 +112,18 @@ export struct RoadNetMap {
   @Prop @Watch('onRepaintChange') unavailable: boolean = false;
   @Prop @Watch('onRepaintChange') colorBlind: boolean = false;
   /** 要画亮的路线（导航页传 arrival_route，离站页传 departure_route） */
-  @Prop routeMode: string = 'arrival';
+  /** 要画亮的路线（导航页传 arrival_route，离站页传 departure_route）
+   * 【评审修复】routeMode 也要挂 @Watch：导航页 arrival↔departure 切换时不能只等
+   * repaintEpoch 兜底，否则又回到「切了但地图慢一拍」 */
+  @Prop @Watch('onRepaintChange') routeMode: string = 'arrival';
   /** 图幅高度（vp）；三页统一 470vp —— 大于首屏可视高度，所以一进来整屏是地图 */
-  @Prop mapHeight: number = 470;
+  /** 图幅高度（vp）；三页统一 470vp
+   * 【评审修复】同 routeMode：高度变化时同步重画，保证画布尺寸落定后再画 */
+  @Prop @Watch('onRepaintChange') mapHeight: number = 470;
   /** 落客点标识（取自 fixture，不硬编码） */
-  @Prop dropLabel: string = 'DROP-03';
+  /** 落客点标识（取自 fixture，不硬编码）
+   * 【评审修复】同 routeMode：离站导航「离站出口」↔「DROP-03」切换时即时重画 */
+  @Prop @Watch('onRepaintChange') dropLabel: string = 'DROP-03';
   /** 当前方案序号（0 = 路线一推荐, 1 = 路线二, 2 = 路线三），决定画哪条路线臂 */
   @Prop @Watch('onRepaintChange') pickedIndex: number = 0;
   /**
@@ -190,7 +197,9 @@ export struct RoadNetMap {
   @Prop @Watch('onRepaintChange') blank: boolean = false;
 
   /** 选路页红线强调：true 时红线描边加宽（落客/离站选路地图） */
-  @Prop selection: boolean = false;
+  /** 选路页红线强调：true 时红线描边加宽（落客/离站选路地图）
+   * 【评审修复】一并收口：所有影响绘制的 prop 全部挂 @Watch，不留隐式兜底依赖 */
+  @Prop @Watch('onRepaintChange') selection: boolean = false;
 
   /**
    * 【停止引导闸门 —— 应急态 / 数据不可用时必须为 true】
@@ -363,7 +372,7 @@ export struct RoadNetMap {
             .fontColor(TEXT_WHITE)
         }
         .padding({ top: 4, bottom: 4, left: 7, right: 7 })
-        .backgroundColor('BG_MAP_TAG_EMERGENCY')
+        .backgroundColor(BG_MAP_TAG_EMERGENCY)
         .borderRadius(5)
         .margin({ top: 30, left: 8 })
 
@@ -374,7 +383,7 @@ export struct RoadNetMap {
           Text('路况图例')
             .fontSize(9)
             .fontWeight(FontWeight.Medium)
-            .fontColor('TEXT_MAP_LABEL')
+            .fontColor(TEXT_MAP_LABEL)
           ForEach(LEVEL_META_LIST, (m: LevelMeta) => {
             Row({ space: 4 }) {
               Text(m.glyph)
@@ -382,12 +391,12 @@ export struct RoadNetMap {
                 .fontColor(this.colorBlind ? '#5F5E5A' : m.textColor)
               Text(this.colorBlind ? `${m.name}(灰)` : m.name)
                 .fontSize(9)
-                .fontColor('TEXT_MAP_LABEL_SUB')
+                .fontColor(TEXT_MAP_LABEL_SUB)
             }
           }, (m: LevelMeta) => `${m.name}_${this.unavailable}_${this.colorBlind}`)
         }
         .padding(6)
-        .backgroundColor('BG_MAP_TAG')
+        .backgroundColor(BG_MAP_TAG)
         .borderRadius(6)
         // 用户 13:14 指令：图例紧贴「自绘OSM 路网图」这行字下方一点点，
         // 放进它和路线图之间的空档，不要压到路线（y:150 实测压到路线，故回收到 y:50）
@@ -401,13 +410,13 @@ export struct RoadNetMap {
         Row({ space: 4 }) {
           Text('▨')
             .fontSize(8)
-            .fontColor('TEXT_MAP_FOOT')
+            .fontColor(TEXT_MAP_FOOT)
           Text(MAP_BACKEND_DESC)
             .fontSize(8)
-            .fontColor('TEXT_MAP_FOOT')
+            .fontColor(TEXT_MAP_FOOT)
         }
         .padding({ top: 2, bottom: 2, left: 5, right: 5 })
-        .backgroundColor('BG_MAP_TAG_SUB')
+        .backgroundColor(BG_MAP_TAG_SUB)
         .borderRadius(4)
         .position({ x: 158, y: 30 })
         }

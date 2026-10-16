@@ -180,7 +180,7 @@ export struct RouteOptionCard {
             .fontColor(this.colorBlind || this.unavailable || lv < 1
               ? '#8B8B8B'
               : levelMetaOf(lv, false).color)
-        }, (lv: number, idx: number) => `dot_${idx}_${lv}`)
+        }, (lv: number, idx: number) => `dot_${this.pathId}_${idx}_${lv}`)
         Text(this.levelsText)
           .fontSize(9)
           .fontColor(TEXT_SECONDARY)
