@@ -12,7 +12,8 @@
 //   · 摄像头**没有视频源**（`hasVideo: false`）不等于"没有摄像头"，更不等于"数据可用"——
 //     三件事在页面上要分开说（见 `views/perception/`）；
 //   · 上色策略来自包（`colorPolicy`），**默认 `'all'` 是既有行为**，本站才用 `'camera-covered'`
-//     —— 不让这一单的规则外溢到 A / B / Y 三个既有包。
+//     —— 当年是为了不让这一单的规则外溢到 A / B / Y 三个既有包（三者已随 IKM4KP / IKM4XX 删除）；
+//     将来加站仍按"上色策略由包声明"这条办。
 
 import { activePack } from '../station-packs/index.ts'
 import type { PackChannel, PackColorPolicy } from '../station-packs/types.ts'
