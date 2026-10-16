@@ -9,11 +9,9 @@
   "scripts": {
     "dev": "vite",
     "dev:remote": "vite --mode remote",
-    "dev:y": "vite --mode y",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview",
     "preview:mock": "vite preview --mode mock",
-    "dev:station2": "vite --mode station2",
     "dev:z": "vite --mode z"
   },
   "dependencies": {

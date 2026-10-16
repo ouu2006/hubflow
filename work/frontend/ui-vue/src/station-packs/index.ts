@@ -1,27 +1,24 @@
 // 站点包选择器 —— 浏览器与 vite mock 中间件**共用同一份**(mock 也从这个图里取包)。
 //
 // 为什么需要"选择器"这一层:站点包讲的是"一份包 = 一个站",而运行时要回答的问题是
-// "现在这份前端跑的是哪个站"。答案只能有一个来源,否则会出现"页面画二站路网、
-// mock 端一站基线"这种对不上的画面。两个入口各注入一次、共用这一个键:
-//   · 浏览器:`main.ts` 读构建期的 `import.meta.env.VITE_STATION_PACK`(`.env.station2` 里写),
+// "现在这份前端跑的是哪个站"。答案只能有一个来源,否则会出现"页面画 Z 的路网、
+// mock 端 A 的基线"这种对不上的画面。两个入口各注入一次、共用这一个键:
+//   · 浏览器:`main.ts` 读构建期的 `import.meta.env.VITE_STATION_PACK`(`.env.z` 里写),
 //     在挂载前注入 —— 之后所有组件与模块读到的都是同一份包;
 //   · vite mock:`vite.config.ts` 用 `loadEnv` 读同一个变量,经 `mockApiPlugin({ pack })` 注入。
-// 取不到就落默认包 A(肇庆东站示例路网),保证 `npm run dev` 的行为与接包之前完全一致。
+// 取不到就落默认包 Z(肇庆东站 OSM 真路网)—— **站点包以 Z 为主**(IKM4KP:包 B / Y 已删除,
+// A 保留为可切换次包)。
 
 import { STATION_A } from './stationA.ts'
-import { STATION_B } from './stationB.ts'
-import { STATION_Y } from './stationY.ts'
 import { STATION_Z } from './stationZ.ts'
 import type { StationPack } from './types.ts'
 
 export const PACKS: Record<string, StationPack> = {
   A: STATION_A,
-  B: STATION_B,
-  Y: STATION_Y,
   Z: STATION_Z,
 }
 
-export const DEFAULT_PACK_KEY = 'A'
+export const DEFAULT_PACK_KEY = 'Z'
 
 let injectedKey: string | null = null
 
@@ -40,6 +37,9 @@ export function setActivePackKey(key: string): void {
  * 而 `injectedKey` 是模块级变量、刷新即丢 —— 没有这一步,切换器**选完就退回默认包**,
  * 等于坏的。读不到 / 读坏了就落回注入值(构建期的 `VITE_STATION_PACK`)。
  * Node 侧(mock 中间件)没有 `localStorage`,靠 try/catch 静默落回注入值。
+ *
+ * ⚠️ 老浏览器里可能残留**已删除的包键**(如 `'B'` / `'Y'`,IKM4KP 删掉了这两个包):
+ *    `PACKS[k]` 这一关就是为它设的 —— 未知键一律落回注入值,不白屏。
  */
 export function restorePackKey(fallback: string): string {
   try {
@@ -79,7 +79,7 @@ export function activePackKey(): string {
 
 /** 当前生效的站点包 */
 export function activePack(): StationPack {
-  return PACKS[activePackKey()] ?? STATION_A
+  return PACKS[activePackKey()] ?? STATION_Z
 }
 
 /** 包自检说明(页脚展示用):包键 + 这个包是什么 */
