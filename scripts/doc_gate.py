@@ -723,7 +723,23 @@ def check_task_log(repo: Repo) -> Check:
             [Failure(TASK_LOG, "文件不存在 —— 每完成一单要在这里留一行（见 docs/任务记录.md 第二节）")],
             0,
         )
-    rows, format_failures = parse_task_ledger(data.decode("utf-8", "replace"))
+    text = data.decode("utf-8", "replace")
+    rows, format_failures = parse_task_ledger(text)
+    # 未闭合的 HTML 注释会把整张表从渲染里藏掉 —— 而行级检查全绿（本 PR 就真踩过一次）。
+    # 这一条专门拦它：`<!--` 与 `-->` 必须成对。
+    # ⚠️ 先剥掉围栏代码块与行内代码再数：那些地方的标记是**字面文字**，Markdown 不会当注释
+    #    （本文件的第四节表格里就写着 `<!--` / `-->` 当说明，不剥掉会自己把自己数成一条）。
+    prose = re.sub(r"(?ms)^[ \t]*(`{3,}|~{3,})[^\n]*\n.*?^[ \t]*\1[ \t]*$", "", text)
+    prose = re.sub(r"`[^`\n]*`", "", prose)
+    opens, closes = prose.count("<!--"), prose.count("-->")
+    if opens != closes:
+        format_failures.append(
+            Failure(
+                TASK_LOG,
+                f"HTML 注释没闭合（`<!--` {opens} 个 / `-->` {closes} 个）—— 未闭合会把整张表从渲染里藏掉，"
+                "按行查的检查却全绿；把注释补齐或删掉",
+            )
+        )
     return Check(format_failures, len(rows))
 
 
