@@ -52,6 +52,7 @@ from typing import Any
 
 from fastapi import FastAPI, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 import uvicorn
@@ -345,121 +346,6 @@ def _c_vph_with_factors(c_base: float | None, factors: list[dict[str, Any]], gra
     return round(c_base * coefficient, 1)
 
 
-_INDICATOR_FIELDS = {"x": "x", "v": "v_kmh", "k": "k_vpk", "L_q": "L_q_m", "T_d": "T_d_min"}
-
-
-def _indicator_level(value: float, bounds: list[float]) -> int:
-    """按指标边界算档（升序 = 越大越堵；降序 = 越小越堵，如速度）。"""
-    if len(bounds) < 3:
-        return 1
-    if bounds[0] < bounds[-1]:
-        return min(4, 1 + sum(1 for bound in bounds if value >= bound))
-    return min(4, 1 + sum(1 for bound in bounds if value < bound))
-
-
-def _congestion_index(record: dict[str, Any], grading: dict[str, Any]) -> float | None:
-    """CI = 四项加权（只展示、不判级；权重与参考值读站点包）。"""
-    weights = [w for w in (grading.get("weights") or []) if isinstance(w, dict)]
-    if not weights:
-        return None
-    ref = grading.get("ref") or {}
-    queue_ref = 0.0
-    for item in grading.get("level_bounds") or []:
-        if isinstance(item, dict) and item.get("indicator") == "L_q":
-            bounds = [b for b in (item.get("bounds") or []) if _num(b) is not None]
-            queue_ref = float(bounds[-1]) if bounds else 0.0
-    norms: dict[str, float] = {}
-    x_ref = _num(ref.get("x_ref"))
-    x_value = _num(record.get("x"))
-    if x_ref and x_value is not None:
-        norms["x"] = _clamp(x_value / x_ref, 0.0, 1.0)
-    v_jam = _num(ref.get("v_jam_kmh"))
-    v_value = _num(record.get("v_kmh"))
-    if v_jam and v_value is not None and v_value > 0:
-        norms["v"] = _clamp(v_jam / v_value, 0.0, 1.0)
-    lq = _num(record.get("L_q_m"))
-    if queue_ref > 0 and lq is not None:
-        norms["L_q"] = _clamp(lq / queue_ref, 0.0, 1.0)
-    t_ref = _num(ref.get("T_ref_min"))
-    td = _num(record.get("T_d_min"))
-    if t_ref and td is not None:
-        norms["T_d"] = _clamp(td / t_ref, 0.0, 1.0)
-    total = 0.0
-    for weight in weights:
-        indicator = weight.get("indicator")
-        w = _num(weight.get("w")) or 0.0
-        total += w * norms.get(str(indicator), 0.0)
-    return round(total * 100.0, 1)
-
-
-def _grade_segment(record: dict[str, Any], grading: dict[str, Any]) -> dict[str, Any]:
-    """给「上游未带判级字段」的记录补 `level` / `level_name` / `triggered_by` / `ci`。
-
-    这是**形状补全**，不是重跑感知层判级模型：阈值 / 权重 / 参考值全部读
-    `stations/thresholds.json` 的 `grading` 组；上游一旦带 `level`，调用方不会走到这里。
-    """
-    unavailable = {
-        "level": 0,
-        "level_name": LEVEL_NAME_FALLBACK,
-        "triggered_by": [],
-        "ci": None,
-    }
-    if not grading.get("level_bounds"):
-        return unavailable
-
-    # ① 可用性门（站点包给了阈值才判）
-    age = _num(record.get("data_age_s"))
-    freshness = _num(grading.get("data_freshness_s"))
-    if age is not None and freshness is not None and age > freshness:
-        return unavailable
-    confidence = _num(record.get("confidence"))
-    confidence_min = _num(grading.get("confidence_min"))
-    if confidence is not None and confidence_min is not None and confidence < confidence_min:
-        return unavailable
-
-    # ② 硬触发（站点包声明了因素编号才生效）
-    hard_ids = {str(i) for i in (grading.get("hard_trigger_factor_ids") or [])}
-    if hard_ids:
-        applied = {str(f.get("factor_id")) for f in record.get("factors_applied") or [] if isinstance(f, dict)}
-        if hard_ids & applied:
-            level = _int(grading.get("hard_trigger_level")) or 4
-            return {
-                "level": level,
-                "level_name": _level_name(level),
-                "triggered_by": ["hard_factor"],
-                "ci": _congestion_index(record, grading),
-            }
-
-    # ③ 四项并列取最高（不做平均）
-    per_metric: dict[str, int] = {}
-    for item in grading.get("level_bounds") or []:
-        if not isinstance(item, dict):
-            continue
-        indicator = item.get("indicator")
-        field = _INDICATOR_FIELDS.get(str(indicator))
-        if field is None:
-            continue
-        value = _num(record.get(field))
-        if indicator == "v":
-            # 速度档要求畅通速度在场（站点包给），缺了就不拿这一项判
-            if _num(record.get("v_f_kmh")) is None or value is None:
-                continue
-        if value is None:
-            continue
-        bounds = [b for b in (item.get("bounds") or []) if _num(b) is not None]
-        if len(bounds) < 3:
-            continue
-        per_metric[str(indicator)] = _indicator_level(value, [float(b) for b in bounds])
-    level = max(per_metric.values()) if per_metric else 1
-    focused = sorted(key for key, value in per_metric.items() if value == level)
-    return {
-        "level": level,
-        "level_name": _level_name(level),
-        "triggered_by": focused,
-        "ci": _congestion_index(record, grading),
-    }
-
-
 # ---------------------------------------------------------------- 路段快照（三层回落）
 
 
@@ -500,16 +386,18 @@ def _normalize_segment(raw: dict[str, Any], grading: dict[str, Any],
         q_vph, c_vph = _num(record.get("q_vph")), _num(record.get("c_vph"))
         record["x"] = round(q_vph / c_vph, 3) if q_vph is not None and c_vph else None
 
-    # 上游已判级 → 透传；未判级 → 按站点包 grading 组做形状补全（不重跑模型）
+    # 上游已判级 → 透传；**未判级 → 不做任何判级重算**（判级唯一实现是感知层 level.py）。
+    # 接口层只做形状层：level=0 + 「数据不可用」，绝不把"没判级"兜底成"畅通"（TC-11 同口径）。
     if _valid_level(raw.get("level")):
         record["level"] = raw["level"]
         record["level_name"] = _level_name(raw["level"], raw.get("level_name"))
         triggered = raw.get("triggered_by")
         record["triggered_by"] = [str(item) for item in triggered] if isinstance(triggered, list) else []
-        if record.get("ci") is None:
-            record["ci"] = _congestion_index(record, grading)
     else:
-        record.update(_grade_segment(record, grading))
+        record["level"] = 0
+        record["level_name"] = LEVEL_NAME_FALLBACK
+        record["triggered_by"] = []
+        record["level_source"] = "upstream_missing"
 
     record["is_simulated"] = True
     # pred 是可选字段：上游没有就不写这个键（契约 §1.1）
@@ -547,7 +435,8 @@ def _station_baseline_segments() -> tuple[list[dict[str, Any]], str]:
         capacity = _num(edge.get("capacity_vph"))
         segments.append({
             "segment_id": segment_id,
-            "source": None,
+            # 站点包静态基线不是任何一条链路的运行产物；按站点包基线口径标 twin（并在 note 说明）
+            "source": "twin",
             "q_vph": None,
             "v_kmh": None,
             "v_f_kmh": _num(edge.get("speed_limit")),
@@ -824,24 +713,36 @@ def build_overview(snapshot: dict[str, Any]) -> dict[str, Any]:
     unavailable_count = sum(1 for record in segments if _is_stale(record) or not _valid_level(record.get("level")))
     level_distribution.append({"level": 0, "name": LEVEL_NAME_FALLBACK, "count": unavailable_count})
 
+    # 无可用运行指标 → avg_speed/delta 给 null（不是 0.0：0 会被读成"实测均速 0"）
+    has_speed = q_sum > 0
+    factor_ids = {
+        str(f.get("factor_id"))
+        for record in segments
+        for f in (record.get("factors_applied") or [])
+        if isinstance(f, dict) and f.get("factor_id")
+    }
     payload: dict[str, Any] = {
         "ts": snapshot["payload"]["ts"],
         "is_simulated": True,
         "window_sec": snapshot["payload"]["window_sec"],
-        "avg_speed_kmh": round(avg_speed, 1),
-        # 无上一版快照（接口层无状态）：环比如实给 0，不拿随机数冒充
-        "avg_speed_delta_kmh": 0.0,
+        "avg_speed_kmh": round(avg_speed, 1) if has_speed else None,
+        # 接口层无状态、没有上一版快照：环比一律 null（不拿 0 冒充"持平"）
+        "avg_speed_delta_kmh": None,
         "worst_segment": worst,
         "vehicles_inbound": inbound if vehicles_available else None,
         "vehicles_guided": guided if vehicles_available else None,
         "guided_rate": round(guided / inbound, 4) if vehicles_available and inbound > 0 else None,
-        "active_factors": sum(len(record.get("factors_applied") or []) for record in segments),
+        # 活跃因素 = **不同 factor_id 的个数**（不是各段 factors_applied 条数求和）
+        "active_factors": len(factor_ids),
         "level_distribution": level_distribution,
         "segment_total": len(segments),
         "unavailable_count": unavailable_count,
     }
-    if snapshot["note"]:
-        payload["note"] = snapshot["note"]
+    notes = [snapshot["note"]] if snapshot["note"] else []
+    if not has_speed:
+        notes.append("无可用运行指标：avg_speed_kmh / avg_speed_delta_kmh 为 null（不是实测 0）")
+    if notes:
+        payload["note"] = "；".join(notes)
     return payload
 
 
@@ -1241,7 +1142,8 @@ def _next_train(clock: str) -> str | None:
     if not times:
         return None
     later = sorted(time for time in times if time > clock)
-    return later[0] if later else sorted(times)[0]
+    # 末班车之后没有"今天下一班"→ 如实 null；不回绕到当日首班（那会给出早于 clock 的时刻）
+    return later[0] if later else None
 
 
 def build_context() -> dict[str, Any]:
@@ -1322,8 +1224,8 @@ def _select_route_request(body: dict[str, Any]) -> tuple[dict[str, Any] | None, 
     session_id = body.get("session_id")
     if isinstance(session_id, str) and session_id:
         matched = [request for request in requests if request.get("session_id") == session_id]
-        if matched:
-            return matched[0], requests
+        # 给了 session_id 但产物里没有 → 如实"找不到"，绝不拿 requests[0] 顶别人的路线
+        return (matched[0] if matched else None), requests
     return (requests[0] if requests else None), requests
 
 
@@ -1368,6 +1270,12 @@ async def _http_exception_handler(request: Request, exc: StarletteHTTPException)
     if exc.status_code in (404, 405):
         return _error(404, "NOT_FOUND", f"端点不存在或方法不匹配: {request.method} {request.url.path}")
     return _error(exc.status_code, "HTTP_ERROR", str(exc.detail))
+
+
+@app.exception_handler(RequestValidationError)
+async def _validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """参数校验失败也走统一信封（契约 §七：每一个响应都带 is_simulated）。"""
+    return _error(422, "BAD_REQUEST", "参数校验失败", "请求参数不合法，未做任何计算（演示接口）")
 
 
 @app.exception_handler(Exception)

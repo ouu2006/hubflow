@@ -190,6 +190,29 @@ def _quote(segment_id: str) -> str:
     return urllib.parse.quote(segment_id, safe="")
 
 
+def _engine_sample_ids() -> tuple[str | None, str | None]:
+    """从引擎产物里取「真实存在的」session_id / 段号，供 route/recommend·locate 形状对照。
+
+    traffic.py 对 session_id 做**严格匹配**（给了但产物里没有 → 404，不拿 requests[0] 顶包），
+    所以形状对照必须用产物里真实有的 session，而不是自造一个。
+    """
+    path = ROOT / "work" / "engine" / "out" / "routes.json"
+    if not path.is_file():
+        return None, None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None, None
+    for request in payload.get("requests") or []:
+        if not isinstance(request, dict):
+            continue
+        session_id = request.get("session_id")
+        location = request.get("location") if isinstance(request.get("location"), dict) else {}
+        if isinstance(session_id, str) and session_id:
+            return session_id, location.get("segment_id")
+    return None, None
+
+
 def endpoint_specs(side: str, segment_id: str, alert_id: str | None) -> list[dict]:
     """同一份端点清单，按各自服务的数据（段号 / 告警号）实例化。
 
@@ -215,10 +238,17 @@ def endpoint_specs(side: str, segment_id: str, alert_id: str | None) -> list[dic
          "required-get"),
         ("context", "GET", "/api/traffic/context", None, "required-get"),
         ("report/compare", "GET", "/api/traffic/report/compare", None, "required-get"),
-        ("route/recommend", "POST", "/api/traffic/route/recommend",
-         {"session_id": "S-shape-check", "location": {"segment_id": segment_id, "offset_m": 0}}, "required-post"),
-        ("locate", "POST", "/api/traffic/locate", {"session_id": "S-shape-check"}, "required-post"),
     ]
+    # route/recommend / locate 用引擎产物里**真实存在的** session_id 做形状对照；
+    # 引擎产物缺失时这两项不列入「必须 200」清单（回落阶段会单独验证如实 404）。
+    engine_session, engine_segment = _engine_sample_ids()
+    if engine_session:
+        specs.extend([
+            ("route/recommend", "POST", "/api/traffic/route/recommend",
+             {"session_id": engine_session, "location": {"segment_id": engine_segment or segment_id, "offset_m": 0}},
+             "required-post"),
+            ("locate", "POST", "/api/traffic/locate", {"session_id": engine_session}, "required-post"),
+        ])
     if alert_id:
         specs.extend([
             ("plan/dispatch", "POST", "/api/traffic/plan/dispatch",

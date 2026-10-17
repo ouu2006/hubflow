@@ -1,6 +1,6 @@
 {
   "issue": "IKMF1T",
-  "generated_at": "2026-10-17T23:15:55+0800",
+  "generated_at": "2026-10-17T23:36:20+0800",
   "method": "实跑对照：同一路径分别请求 vite mock（http://127.0.0.1:5173）与接口层 traffic.py（http://127.0.0.1:8000），比对顶格键与嵌套键集；取值不参与比对（数据源不同）。",
   "mock_reachable": true,
   "required_three_top_level_equal": true,
@@ -90,7 +90,15 @@
         "ts",
         "window_sec"
       ],
-      "key_diffs": []
+      "key_diffs": [
+        {
+          "path": "$.segments[]",
+          "only_mock": [],
+          "only_ours": [
+            "level_source"
+          ]
+        }
+      ]
     },
     {
       "name": "segments/{id}",
