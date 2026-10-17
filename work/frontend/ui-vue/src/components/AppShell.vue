@@ -43,8 +43,8 @@ const showHead = computed(() => props.title !== '' || !!slots.headRight)
 const stationName = computed(() => props.station ?? activePack().station.name)
 
 // ---- 线路图切换器(业主 2026-10-14):顶栏直接选包,选完即换整套路网/基线 ----
-// ⚠️ 2026-10-16(IKM4XX):本站点包只剩 Z —— **只有一个包时整个控件不渲染**
-//    (留一个只有单项的下拉就是死控件)。将来加站(包多起来)它自动回来。
+// 2026-10-17(IKMDKY 子单①):包有两个 —— Z(61 段现行)/ Z21(旧 21 段对照)，切换器恢复显示；
+// 只有一个包时仍不渲染(留一个只有单项的下拉就是死控件)。
 const packList = packItems()
 const packKey = ref<string>(activePackKey())
 const packOpen = ref(false)

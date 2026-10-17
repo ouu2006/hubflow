@@ -59,6 +59,11 @@ const CHANNELS: PackChannel[] = [
 //                         SZ-054（旧 SZ-05 场区出入道）        2 级 缓行
 //                         SZ-024（旧 SZ-07 停车场北支）        1 级 畅通
 //                         SZ-019（旧 SZ-12 停车场站门口）      4 级 严重拥堵
+//
+// ⚠️ **迁到新段后 L_q_m / T_d_min 按新段长收口**：旧包是按"整条路"给的排队长度
+//    （旧 SZ-01 段长 3873 m、L_q=420 m），新段只有 49.6 / 83.1 m，原值会算出
+//    L_q/L_seg ≈ 8.5 这种不成立的排队比。这里按"排队长度不超过段长"重给演示值，
+//    仍然全是编造值，不是实测。
 const SEGMENT_BASES: PackSegmentBase[] = [
   {
     segment_id: 'SZ-010',
@@ -67,9 +72,9 @@ const SEGMENT_BASES: PackSegmentBase[] = [
     v_kmh: 18,
     v_f_kmh: 50,
     k_vpk: 178,
-    L_q_m: 420,
+    L_q_m: 36,
     L_seg_m: 49.6,
-    T_d_min: 13,
+    T_d_min: 1.5,
     x: 0.8,
     c_base_vph: 4000,
     c_vph: 4000,
@@ -89,9 +94,9 @@ const SEGMENT_BASES: PackSegmentBase[] = [
     v_kmh: 18,
     v_f_kmh: 50,
     k_vpk: 178,
-    L_q_m: 420,
+    L_q_m: 58,
     L_seg_m: 83.1,
-    T_d_min: 13,
+    T_d_min: 2,
     x: 0.8,
     c_base_vph: 4000,
     c_vph: 4000,
@@ -177,9 +182,9 @@ const SEGMENT_BASES: PackSegmentBase[] = [
     v_kmh: 34,
     v_f_kmh: 50,
     k_vpk: 47,
-    L_q_m: 80,
+    L_q_m: 30,
     L_seg_m: 54.3,
-    T_d_min: 1.4,
+    T_d_min: 1,
     x: 0.6,
     c_base_vph: 2667,
     c_vph: 2667,
