@@ -1,0 +1,979 @@
+{
+  "issue": "IKMF1T",
+  "generated_at": "2026-10-17T23:36:20+0800",
+  "method": "实跑对照：同一路径分别请求 vite mock（http://127.0.0.1:5173）与接口层 traffic.py（http://127.0.0.1:8000），比对顶格键与嵌套键集；取值不参与比对（数据源不同）。",
+  "mock_reachable": true,
+  "required_three_top_level_equal": true,
+  "comparable_endpoint_count": 21,
+  "all_comparable_top_level_equal": false,
+  "endpoints": [
+    {
+      "name": "meta",
+      "method": "GET",
+      "path": "meta",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "demo_badge",
+        "is_simulated",
+        "sources",
+        "station",
+        "tabs",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "demo_badge",
+        "is_simulated",
+        "sources",
+        "station",
+        "tabs",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "overview",
+      "method": "GET",
+      "path": "overview",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "active_factors",
+        "avg_speed_delta_kmh",
+        "avg_speed_kmh",
+        "guided_rate",
+        "is_simulated",
+        "level_distribution",
+        "segment_total",
+        "ts",
+        "unavailable_count",
+        "vehicles_guided",
+        "vehicles_inbound",
+        "window_sec",
+        "worst_segment"
+      ],
+      "ours_top_keys": [
+        "active_factors",
+        "avg_speed_delta_kmh",
+        "avg_speed_kmh",
+        "guided_rate",
+        "is_simulated",
+        "level_distribution",
+        "segment_total",
+        "ts",
+        "unavailable_count",
+        "vehicles_guided",
+        "vehicles_inbound",
+        "window_sec",
+        "worst_segment"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "segments",
+      "method": "GET",
+      "path": "segments",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "is_simulated",
+        "segments",
+        "ts",
+        "window_sec"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "segments",
+        "ts",
+        "window_sec"
+      ],
+      "key_diffs": [
+        {
+          "path": "$.segments[]",
+          "only_mock": [],
+          "only_ours": [
+            "level_source"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "segments/{id}",
+      "method": "GET",
+      "path": "/api/traffic/segments/{id}",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "L_q_m",
+        "L_seg_m",
+        "T_d_min",
+        "c_base_vph",
+        "c_vph",
+        "ci",
+        "confidence",
+        "data_age_s",
+        "factors_applied",
+        "is_simulated",
+        "k_vpk",
+        "level",
+        "level_name",
+        "q_vph",
+        "segment_id",
+        "source",
+        "triggered_by",
+        "v_f_kmh",
+        "v_kmh",
+        "x"
+      ],
+      "ours_top_keys": [
+        "L_q_m",
+        "L_seg_m",
+        "T_d_min",
+        "c_base_vph",
+        "c_vph",
+        "ci",
+        "confidence",
+        "data_age_s",
+        "factors_applied",
+        "is_simulated",
+        "k_vpk",
+        "level",
+        "level_name",
+        "q_vph",
+        "segment_id",
+        "source",
+        "triggered_by",
+        "v_f_kmh",
+        "v_kmh",
+        "x"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "segments/{id}/sources",
+      "method": "GET",
+      "path": "/api/traffic/segments/{id}/sources",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "deltas",
+        "is_simulated",
+        "segment_id",
+        "slots",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "deltas",
+        "is_simulated",
+        "segment_id",
+        "slots",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "vehicles",
+      "method": "GET",
+      "path": "vehicles",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "is_simulated",
+        "ts",
+        "vehicles"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "ts",
+        "vehicles"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "network",
+      "method": "GET",
+      "path": "network",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "attribution",
+        "dropoffs",
+        "is_simulated",
+        "note",
+        "origin",
+        "sections",
+        "segments",
+        "stations",
+        "ts",
+        "zones"
+      ],
+      "ours_top_keys": [
+        "attribution",
+        "dropoffs",
+        "is_simulated",
+        "note",
+        "origin",
+        "sections",
+        "segments",
+        "stations",
+        "ts",
+        "zones"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "thresholds",
+      "method": "GET",
+      "path": "thresholds",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "changelog",
+        "ci_weights",
+        "is_simulated",
+        "rows",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "changelog",
+        "ci_weights",
+        "is_simulated",
+        "rows",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "factors",
+      "method": "GET",
+      "path": "factors",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "factors",
+        "is_simulated",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "factors",
+        "is_simulated",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "assimilation",
+      "method": "GET",
+      "path": "assimilation",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "counts",
+        "gate",
+        "is_simulated",
+        "records",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "counts",
+        "gate",
+        "is_simulated",
+        "records",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "alerts",
+      "method": "GET",
+      "path": "alerts",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "alerts",
+        "is_simulated",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "alerts",
+        "is_simulated",
+        "ts"
+      ],
+      "key_diffs": [
+        {
+          "path": "$.alerts[]",
+          "only_mock": [
+            "channels",
+            "dispatch_at",
+            "dispatch_ratio_pct"
+          ],
+          "only_ours": []
+        }
+      ]
+    },
+    {
+      "name": "predict",
+      "method": "GET",
+      "path": "predict",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": false,
+      "mock_top_keys": [
+        "is_simulated",
+        "model",
+        "points",
+        "segment_id",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "model",
+        "note",
+        "points",
+        "segment_id",
+        "ts"
+      ],
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "heat-matrix",
+      "method": "GET",
+      "path": "heat-matrix",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": false,
+      "mock_top_keys": [
+        "bucket_sec",
+        "buckets",
+        "is_simulated",
+        "labels",
+        "rows",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "bucket_sec",
+        "buckets",
+        "is_simulated",
+        "labels",
+        "note",
+        "rows",
+        "ts"
+      ],
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "ci-history",
+      "method": "GET",
+      "path": "ci-history",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": false,
+      "mock_top_keys": [
+        "is_simulated",
+        "max",
+        "min",
+        "points",
+        "segment_id"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "max",
+        "min",
+        "note",
+        "points",
+        "segment_id"
+      ],
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "context",
+      "method": "GET",
+      "path": "context",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": false,
+      "mock_top_keys": [
+        "derived_factors",
+        "injected",
+        "is_simulated",
+        "source",
+        "station_id",
+        "summary",
+        "time",
+        "ts",
+        "weather"
+      ],
+      "ours_top_keys": [
+        "derived_factors",
+        "injected",
+        "is_simulated",
+        "note",
+        "source",
+        "station_id",
+        "summary",
+        "time",
+        "ts",
+        "weather"
+      ],
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "report/compare",
+      "method": "GET",
+      "path": "report/compare",
+      "mock_status": 404,
+      "ours_status": 200,
+      "top_keys_equal": null,
+      "mock_top_keys": [
+        "code",
+        "message"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "note",
+        "rows",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "route/recommend",
+      "method": "POST",
+      "path": "route/recommend",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": false,
+      "mock_top_keys": [
+        "alternatives",
+        "arrival_route",
+        "departure_route",
+        "driver_type",
+        "is_simulated",
+        "location",
+        "parking_mode",
+        "pickup_route",
+        "request_id",
+        "reservation",
+        "session_id",
+        "why"
+      ],
+      "ours_top_keys": [
+        "alternatives",
+        "arrival_route",
+        "departure_route",
+        "driver_type",
+        "factors_note",
+        "is_simulated",
+        "location",
+        "od_id",
+        "parking_mode",
+        "pickup_route",
+        "quota",
+        "request_id",
+        "reroute",
+        "reservation",
+        "session_id",
+        "why"
+      ],
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "factors_note",
+            "od_id",
+            "quota",
+            "reroute"
+          ]
+        },
+        {
+          "path": "$.alternatives[]",
+          "only_mock": [],
+          "only_ours": [
+            "edges"
+          ]
+        },
+        {
+          "path": "$.arrival_route",
+          "only_mock": [],
+          "only_ours": [
+            "edges"
+          ]
+        },
+        {
+          "path": "$.departure_route",
+          "only_mock": [],
+          "only_ours": [
+            "edges"
+          ]
+        }
+      ]
+    },
+    {
+      "name": "locate",
+      "method": "POST",
+      "path": "locate",
+      "mock_status": 404,
+      "ours_status": 200,
+      "top_keys_equal": null,
+      "mock_top_keys": [
+        "code",
+        "message"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "match_confidence",
+        "note",
+        "offset_m",
+        "segment_id",
+        "source"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "plan/dispatch",
+      "method": "POST",
+      "path": "plan/dispatch",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "alert_id",
+        "at",
+        "channel",
+        "is_simulated",
+        "ratio_pct",
+        "receipt"
+      ],
+      "ours_top_keys": [
+        "alert_id",
+        "at",
+        "channel",
+        "is_simulated",
+        "ratio_pct",
+        "receipt"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "plan/ack",
+      "method": "POST",
+      "path": "plan/ack",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "alert_id",
+        "at",
+        "is_simulated",
+        "result",
+        "status"
+      ],
+      "ours_top_keys": [
+        "alert_id",
+        "at",
+        "is_simulated",
+        "result",
+        "status"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "alerts(下发后)",
+      "method": "GET",
+      "path": "alerts(下发后)",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "alerts",
+        "is_simulated",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "alerts",
+        "is_simulated",
+        "ts"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "alerts/reset",
+      "method": "POST",
+      "path": "alerts/reset",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "is_simulated",
+        "reset"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "reset"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "factors/reset",
+      "method": "POST",
+      "path": "factors/reset",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "is_simulated",
+        "reset"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "reset"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "factors(POST)",
+      "method": "POST",
+      "path": "factors(POST)",
+      "mock_status": 200,
+      "ours_status": 404,
+      "top_keys_equal": null,
+      "mock_top_keys": [
+        "applied",
+        "factors_applied",
+        "is_simulated",
+        "level",
+        "level_name",
+        "segment_id"
+      ],
+      "ours_top_keys": [
+        "code",
+        "is_simulated",
+        "message",
+        "note"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "scenario",
+      "method": "POST",
+      "path": "scenario",
+      "mock_status": 200,
+      "ours_status": 404,
+      "top_keys_equal": null,
+      "mock_top_keys": [
+        "applied",
+        "effects",
+        "factors",
+        "is_simulated",
+        "note",
+        "segment_ids",
+        "ts"
+      ],
+      "ours_top_keys": [
+        "code",
+        "is_simulated",
+        "message",
+        "note"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "scenario/reset",
+      "method": "POST",
+      "path": "scenario/reset",
+      "mock_status": 200,
+      "ours_status": 404,
+      "top_keys_equal": null,
+      "mock_top_keys": [
+        "is_simulated",
+        "reset"
+      ],
+      "ours_top_keys": [
+        "code",
+        "is_simulated",
+        "message",
+        "note"
+      ],
+      "key_diffs": []
+    }
+  ],
+  "sse": {
+    "ok": true,
+    "event": "traffic_snapshot",
+    "data_keys": [
+      "is_simulated",
+      "note",
+      "ts"
+    ],
+    "mock_event": "traffic_snapshot",
+    "mock_data_keys": [
+      "is_simulated",
+      "note",
+      "ts"
+    ]
+  },
+  "value_differences": [
+    {
+      "title": "数据源不同",
+      "detail": "mock 取前端站点包（站点 Z 的 SZ 段 / 61 段真 OSM 路网占位基线 + 演示抖动）；traffic.py 取运行产物（感知 / 孪生 / 引擎 / 站点包），段号、条数、取值本就不同。**形状对照只比键集，不比取值。**"
+    },
+    {
+      "title": "三层回落的层次职责",
+      "detail": "engine routes.json 是**路线产物**（没有路段指标字段），所以 `/segments` 的回落链是 video → twin → stations 基线；engine routes 用于 route/recommend 与 locate，缺产物时这两端点如实 404 + note（不代算 ETA）。这不是跳过一层，是该层本来就没有路段指标。"
+    },
+    {
+      "title": "route/recommend",
+      "detail": "traffic.py 按契约 §二 端出引擎产物（含 od_id / reroute / quota / factors_note，arrival_route / alternatives 带 edges）；mock 是前端站点包的演示骨架（无上述契约字段）。以契约 §二 为准，差异已登记。"
+    },
+    {
+      "title": "network",
+      "detail": "mock 有真 OSM 几何 coords；traffic.py 的站点包 network.json 只有占位节点坐标（无经纬度），如实给空折线 coords: []，不编几何。"
+    },
+    {
+      "title": "上游产物自身的口径问题（如实透传，不改数）",
+      "detail": "运行产物里 video 链路的 ci=0 却给出 level=4（上游指标 / 判级口径不一致），traffic.py 按「只端数据」原样透出，不替上游改数；并排时 SEG-003 的 delta 会体现该差异。"
+    },
+    {
+      "title": "站点身份与运行产物的命名空间",
+      "detail": "meta / network 的站点身份取 `work/twin/site-ranges.json` 的 default_site（zhaoqingdong / 肇庆东站），而当前运行产物是样例网的段号命名空间——两者不一致是数据管线现状，接口层不硬编站点名、也不改数据。"
+    },
+    {
+      "title": "vehicles",
+      "detail": "`work/twin/out/vehicles.json` 是样例值（ts=2026-01-01、经纬度为占位），接口层如实透传，不拿合成车顶替；该端点二期下线。"
+    },
+    {
+      "title": "heat-matrix / ci-history / predict",
+      "detail": "接口层没有时序历史 / CI 预测产物：heat-matrix 只有当前桶有值、ci-history 只回当前单点、predict 点集为空；三者都带 note 说明，顶格键因此比 mock 多一个 note。"
+    },
+    {
+      "title": "context",
+      "detail": "天气 / 气温 / 能见度没有数据源：字段保留、值为 null 并在 note 说明；mock 的天气是站点包演示值。"
+    },
+    {
+      "title": "alerts",
+      "detail": "接口层没有预置告警剧本，按既有口径从 segments 快照派生（level ≥ 3）；mock 的 4 条四态告警来自站点包演示剧本。告警元素的可选留痕字段（channels / dispatch_at / dispatch_ratio_pct / writeback）在真正下发 / 回写后同样出现——对照表里的「alerts(下发后)」一行就是两边各做一次下发 + 回写后的形状比对。"
+    },
+    {
+      "title": "thresholds",
+      "detail": "ci_weights 的 key 用站点包 grading.weights 的指标名（x / v / L_q / T_d），mock 前端展示口径把排队项写成 k；rows 的刻度用站点包 level_bounds（v 是 km/h，mock 是速度比）。"
+    },
+    {
+      "title": "unimplemented",
+      "detail": "POST /factors、POST /scenario、POST /scenario/reset 是写快照端点：接口层只读快照，按本单口径如实 404 + note（不假装成功）。mock 侧是演示内存态。"
+    },
+    {
+      "title": "写端点演示态",
+      "detail": "plan/dispatch / plan/ack / alerts/reset / factors/reset 已实现，但演示态存在服务进程内存里（重启复位，与 mock 同性质）；README §二 要求正式落库留痕，属后续落库单。"
+    },
+    {
+      "title": "未匹配方法",
+      "detail": "照搬 mock 的纪律：未匹配路径 / 未注册方法一律 404（FastAPI 默认 405 已统一改 404），GET 打 POST-only 端点返回 404 而不是 405。"
+    },
+    {
+      "title": "locate / report/compare",
+      "detail": "契约 §七 列了这两个端点、mock 路由表没有：traffic.py 已实现（locate 取引擎孪生真值；report 无报表产物 → 空壳 + note），mock 侧 404。"
+    }
+  ],
+  "traffic_endpoint_status": [
+    {
+      "name": "meta",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "overview",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "segments",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "segments/{id}",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "segments/{id}/sources",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "vehicles",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "network",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "thresholds",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "factors",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "assimilation",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "alerts",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "predict",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "heat-matrix",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "ci-history",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "context",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "report/compare",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "route/recommend",
+      "method": "POST",
+      "category": "required-post",
+      "status": 200
+    },
+    {
+      "name": "locate",
+      "method": "POST",
+      "category": "required-post",
+      "status": 200
+    },
+    {
+      "name": "plan/dispatch",
+      "method": "POST",
+      "category": "required-post",
+      "status": 200
+    },
+    {
+      "name": "plan/ack",
+      "method": "POST",
+      "category": "required-post",
+      "status": 200
+    },
+    {
+      "name": "alerts(下发后)",
+      "method": "GET",
+      "category": "required-get",
+      "status": 200
+    },
+    {
+      "name": "alerts/reset",
+      "method": "POST",
+      "category": "required-post",
+      "status": 200
+    },
+    {
+      "name": "factors/reset",
+      "method": "POST",
+      "category": "required-post",
+      "status": 200
+    },
+    {
+      "name": "factors(POST)",
+      "method": "POST",
+      "category": "unimplemented",
+      "status": 404
+    },
+    {
+      "name": "scenario",
+      "method": "POST",
+      "category": "unimplemented",
+      "status": 404
+    },
+    {
+      "name": "scenario/reset",
+      "method": "POST",
+      "category": "unimplemented",
+      "status": 404
+    }
+  ]
+}
