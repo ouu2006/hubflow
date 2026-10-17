@@ -219,9 +219,9 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
 |---|---|
 | `python work/engine/run.py --sample` | 退出 0；`out/routes.json` 8310 B / `run_log.json` 730 B，与改动前基线**逐字节一致** |
 | `python work/engine/run.py --sample --compare` | 退出 0；`requests=4`、`reservation=null 条数=0`、4 个 OD 的 `harm_check.passed` 全 `true`、每 OD `alternatives=2`；`run_log.is_reservation_effective=true` |
-| `--compare` 连跑两遍逐字节比对 | `routes.json` 23275 B / `run_log.json` 1992 B **两次完全一致** |
+| `--compare` 连跑两遍逐字节比对 | `routes.json` 22366 B / `run_log.json` 2277 B **两次完全一致** |
 | 参数写死检查（issue 原文 `grep -nE "0\.85\|30(\.0)?\b\|90(\.0)?\b\|0\.10"`） | `reserve.py` / `reroute.py` **0 命中** |
-| `python scripts/doc_gate.py` | 8/8 组全过（1 条既有 `[注意]` 与本次改动无关） |
+| `python scripts/doc_gate.py` | 代码与契约相关 **1–7 组全过**；第 8 组（任务记录台账）本次交付时因 `docs/任务记录.md` 的台账行格式失败 —— 属 `docs/` 范围，本单按纪律不碰（已报 Lead），与 `work/engine/` 改动无关 |
 
 ## 十七、TC-17 三项结论（**如实记录，不粉饰**）
 
@@ -262,4 +262,30 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
   （真网算路在 IKMDKY ③' 之后）。
 - **遗留 4**：`--compare` 是引擎侧对照实验（固定车辆群、确定性），不是 SUMO 闭环对照；
   孪生侧闭环实验仍归后续 issue。
+
+## 二十、快速独立审查整改（2026-10-17，4 条逐条处置）
+
+> 背景：Lead 用全新上下文只读 diff 做了一次快速独立审查，提 4 条发现。
+> **逐条复核结论：4 条全部成立，全部已修**；`--sample` 输出仍逐字节未变。
+
+| # | 审查发现 | 复核 | 整改 |
+|---|---|---|---|
+| 1 | `reroute.py` 判据①用「当前时刻算的剩余 ETA − 登记时整条路径 ETA」，在途车（`progress_edges>0`）差值为负，几乎只有封路 `+inf` 能触发 | **成立** | 租约新增 `edge_times_s`（逐边计划服务时间，由 `reserve.walk_slots_detail()` 产出）；判据①改为「当前剩余 ETA − **登记时对同一段剩余路**的计划耗时」（`_planned_remaining_eta_s()`）：`progress=0` 时仍等于整条路径 ETA（口径不变），在途车只比剩余段、不再差出已走过那段。 |
+| 2 | `reroute.py` `progress=0` 时复用含被拒候选的 `lease["candidates"]`；`reroute()` 改道后不复核约束①/②，可能落到已判超 `x_safe` / 伤前车的路线 | **成立** | ① 租约只保存 `feasible_candidates`（**登记时通过两条约束**的候选），不再存全部候选；② `best_alternative()` 对每条候选复核 `max_slot_x ≤ x_safe`（`reserve.max_slot_x()`；先把本车旧占用临时撤掉再试算，`finally` 恢复）与 `harm_check.max_eta_increase_s ≤ eps_harm_s`（排除本车、对**全量租约**算），不合规候选不参与择优；`reroute()` 只登记复核过的路径。 |
+| 3 | `run.py` 的 `inserted` 直接等于 `attempted`，有未准入车时虚报插入数 | **成立** | 四计数改为自洽：`attempted = inserted + not_entered`、`inserted = completed + in_transit`；`completed` 按「预计到达时刻是否落在评估窗口内」拆出 `in_transit`。`comparison.groups.*` 与 `run_log.groups.*` 同步，并加 `counts_note` 说明口径。 |
+| 4 | 写入产物的 TC-17 说明硬编码 `x_safe=0.85` / 橙档边界 `0.8`，站点包标定后文案与实参不符 | **成立** | `_tc17_summary()` 改为**从站点包读**：`x_safe` 取 `params["x_safe"]`，橙档边界取 `grading.level_bounds` 里 `x` 的第 2 个边界，文案用这两个实参格式化。 |
+
+**定向验证（临时脚本，不进仓库，见报告）**：
+- #1：`progress=0` 基线 = 整条路径 ETA；`progress=1` 基线 = 剩余边计划时间之和（不再为负）；**无封路、只人为加塞**即可 `should_reroute()=True`。
+- #2：OD-02 租约的 `feasible_candidates` 与登记时被拒候选**不相交**（1 条可行 / 2 条被拒）；人为把某候选路径顶到 `x_safe` 以上 → `_candidate_feasible()` 返回 `None`（拒绝改道）。
+- #3：三组车辆均满足 `attempted = inserted + not_entered`、`inserted = completed + in_transit`（450 = 450 + 0；450 = 433/434 + 16/17）。
+- #4：把 `x_safe` 改 0.7、橙档边界改 0.9 后，产物文案随之变成「`x_safe`(0.7)高于判级橙档边界(0.9)」，不再出现 0.85 / 0.8。
+
+**整改后的产物数字（真跑）**：`--sample` 与基线逐字节一致（8310 B / 730 B）；`--sample --compare` 两遍逐字节一致（`routes.json` 22366 B / `run_log.json` 2277 B）；TC-17 三项数字不变（① 1.1 s ≤ 30 s ✅；② 仍如实 FAIL；③ 60073.79 < 61072.84 ✅）；突发再疏导：突发时刻在途 20 辆，改道 **3** 辆（其余候选被复核出的约束①拒绝，属预期行为），`routes.json` 的 OD-01 代表车 `reroute={count:1, reason:…}` 仍有值。
+
+**复核口径说明（避免误读）**：
+- 判据①的基线仍来自**登记那一刻**的规划 —— 差值语义是「相对登记时计划变慢了多少」，与手册 §7.6 `eta - l.eta` 一致；不是「相对上一次周期」。
+- 再疏导演示仍用「全封」（`factors.json` 里第一条倍率 ≤ 0 的 demo 值）：样例路网上半幅封闭（×0.5）造成的 ETA 增量达不到 `eps_harm_s` 触发阈，**有限变慢能触发**这条由上面 #1 的定向验证覆盖。
+- `--sample` 的冻结基线文案（`why` 里仍写「W3 尚未实现」）保持原样：它是被判定引用的对照组基线，改一个字就破坏逐字节一致。
+
 

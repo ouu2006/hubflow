@@ -498,8 +498,23 @@ def _estimate_progress(
     lease: dict[str, Any],
     now_epoch_s: float,
 ) -> int:
-    """按当前预约表估算这辆车到 `now_epoch_s` 已经走完几条边(给"是否还在分岔前"用)。"""
+    """估算这辆车到 `now_epoch_s` 已经走完几条边(给"是否还在分岔前"用)。
+
+    优先用租约里登记时算好的**逐边计划服务时间**累计(与再疏导的 ETA 基线同一套规划);
+    没有逐边时间的老租约退回"按当前预约表逐边推进"的估算。
+    """
     path = list(lease.get("path") or [])
+    edge_times = lease.get("edge_times_s")
+    if isinstance(edge_times, list) and len(edge_times) == len(path):
+        elapsed_s = float(now_epoch_s) - float(lease.get("start_epoch_s", 0.0))
+        if elapsed_s <= 0.0:
+            return 0
+        covered_s = 0.0
+        for index, edge_time in enumerate(edge_times):
+            covered_s += float(edge_time)
+            if covered_s > elapsed_s:
+                return index
+        return len(path)
     now_cursor = float(lease.get("start_epoch_s", 0.0))
     for index, edge_id in enumerate(path):
         slot_index = reserve.slot_index_of(now_cursor, table.slot_minutes)
@@ -526,6 +541,13 @@ def _compare_group_metrics(
     )
     served = {str(record["session_id"]): float(record["eta_s"]) for record in admitted}
     total_travel_time_s = sum(served.values())
+    #: 四计数的 completed / in_transit:按"预计到达时刻是否已落在评估窗口内"拆
+    completed_count = sum(
+        1
+        for record in admitted
+        if float(record["departure_epoch_s"]) + float(record["eta_s"]) <= float(end_epoch_s)
+    )
+    in_transit_count = len(admitted) - completed_count
     #: 全网总行程时间(辆·秒,含背景车流):TC-17 第③项的口径
     network_total_time_s = table.network_total_time_s(start_epoch_s, end_epoch_s)
 
@@ -541,7 +563,10 @@ def _compare_group_metrics(
         "group": group_result["group"],
         "group_label": group_result["group_label"],
         "attempted": len(records),
-        "completed": len(admitted),
+        #: 成功登记预约的车数(= completed + in_transit);不是 attempted
+        "inserted": len(admitted),
+        "completed": completed_count,
+        "in_transit": in_transit_count,
         "not_entered": len(records) - len(admitted),
         "removed": 0,
         "max_eta_increase_s": round(max_eta_increase_s, 2),
@@ -652,7 +677,9 @@ def _run_compare_group(
                 }
             )
             continue
-        cells, eta_s = reserve.walk_slots(table, list(path), start_epoch_s, extra=1.0)
+        cells, eta_s, edge_times = reserve.walk_slots_detail(
+            table, list(path), start_epoch_s, extra=1.0
+        )
         # ①② 不做约束,但**同样度量**"这辆车加入后对前车 ETA 的最大影响",给 TC-17 留对照
         harm = reserve.harm_check(table, cells, leases, params)
         table.reserve(cells)
@@ -661,12 +688,14 @@ def _run_compare_group(
             "od_id": od_id,
             "path": list(path),
             "cells": cells,
+            #: 与 ③ 的租约同形:逐边计划时间 + 通过约束的候选(本组无约束,候选即本条路径)
+            "edge_times_s": [float(value) for value in edge_times],
+            "feasible_candidates": [list(path)],
             "eta_s": float(eta_s),
             "start_epoch_s": start_epoch_s,
             "expire_at_epoch_s": start_epoch_s + float(params["lease_expire_s"]),
             "confirmed": True,
             "reroute_count": 0,
-            "candidates": [list(path)],
         }
         records.append(
             {
@@ -1117,7 +1146,9 @@ def _run_reroute_demo(
     closed_segment = sorted(segment_counts, key=lambda seg: (-segment_counts[seg], seg))[0]
     table.close_segment(closed_segment)
 
-    events = reroute.check_and_reroute(table, in_transit, graph, params, event_ts)
+    events = reroute.check_and_reroute(
+        table, in_transit, graph, params, event_ts, all_leases=leases
+    )
     return {
         "event_ts": event_ts,
         "closure_source": closure,
@@ -1136,12 +1167,17 @@ def _tc17_summary(
     group_metrics: dict[str, dict[str, Any]],
     baseline_orange_red: list[str],
     params: dict[str, Any],
+    grading: dict[str, Any],
 ) -> dict[str, Any]:
     """TC-17 三项判据的对比数据(③ 协同推荐 vs ② "此刻最快" 对照组)。"""
     experimental = group_metrics["cooperative"]
     control = group_metrics["fastest"]
     no_guidance = group_metrics["no_guidance"]
     eps_harm_s = float(params["eps_harm_s"])
+    #: 解释口径冲突时**从站点包读实际值**,不把 demo 数值写死进产物文案
+    x_safe_value = float(params["x_safe"])
+    x_level_bounds = _x_level_bounds(grading)
+    orange_bound = x_level_bounds[1] if len(x_level_bounds) >= 2 else None
 
     experimental_served: dict[str, float] = experimental["served"]
     control_served: dict[str, float] = control["served"]
@@ -1161,9 +1197,15 @@ def _tc17_summary(
             f"对照组 x={control['segment_max_saturation'][segment_id]})"
             for segment_id in new_vs_control
         )
+        if orange_bound is None:
+            conflict_text = "判级橙档边界缺失,无法比较 x_safe 与橙档边界"
+        else:
+            conflict_text = (
+                f"`x_safe`({x_safe_value:g})高于判级橙档边界({orange_bound:g})"
+            )
         orange_note = (
             f"判据未过:实验组相对对照组新增橙/红路段 {details}。"
-            "原因是站点包 demo 数值之间的口径冲突 —— `x_safe`(0.85)高于判级橙档边界(0.8),"
+            f"原因是站点包 demo 数值之间的口径冲突 —— {conflict_text},"
             "实验组在约束上限内合法登记就可能把原本黄档的路段推到橙档;"
             "**如实记录,不通过改代码常量 / 调阈值凑过**(待池·P 标定后由开发B 统一改站点包)"
         )
@@ -1299,7 +1341,7 @@ def run_compare(cfg: dict[str, Any]) -> int:
         )
 
     baseline_orange_red = _baseline_orange_red(segments_state, grading)
-    tc17 = _tc17_summary(group_metrics, baseline_orange_red, params)
+    tc17 = _tc17_summary(group_metrics, baseline_orange_red, params, grading)
 
     reroute_demo = _run_reroute_demo(
         group_results["cooperative"], graph, params, factors_payload, base_ts, window_s, tz
@@ -1396,6 +1438,13 @@ def run_compare(cfg: dict[str, Any]) -> int:
                     "① 与 ② 在样例数据上路线恰好一致(自由流最短路 = BPR 快照最快),"
                     "所以两组指标相同 —— 这是数据事实,不是复制粘贴;② 与 ③ 的差异才是协同机制的效果"
                 ),
+                "counts_note": (
+                    "TC-17 评测协议四计数在本引擎侧评估里的口径:attempted=需求车辆总数;"
+                    "inserted=成功登记预约的车(=completed + in_transit);not_entered=被两条约束拒绝的车;"
+                    "removed=0(评估期不做在线增删)。completed 按'预计到达时刻落在评估窗口内'统计,"
+                    "in_transit=窗口结束时仍未到达;四计数自洽:attempted = inserted + not_entered,"
+                    "inserted = completed + in_transit;**inserted 不等于 attempted**(有未准入车时 attempted 更大)"
+                ),
                 "reroute_demo": reroute_demo,
             },
             "tc17": tc17,
@@ -1403,8 +1452,11 @@ def run_compare(cfg: dict[str, Any]) -> int:
                 group: {
                     "group_label": group_metrics[group]["group_label"],
                     "attempted": group_metrics[group]["attempted"],
-                    "inserted": group_metrics[group]["attempted"],
+                    #: inserted = 成功登记的车(= completed + in_transit);不能直接用 attempted,
+                    #: 有未准入车时那样会虚报插入数(2026-10-17 快速独立审查发现 3)
+                    "inserted": group_metrics[group]["completed"] + group_metrics[group]["in_transit"],
                     "completed": group_metrics[group]["completed"],
+                    "in_transit": group_metrics[group]["in_transit"],
                     "not_entered": group_metrics[group]["not_entered"],
                     "removed": group_metrics[group]["removed"],
                     "max_eta_increase_s": group_metrics[group]["max_eta_increase_s"],
@@ -1447,8 +1499,12 @@ def run_compare(cfg: dict[str, Any]) -> int:
         },
         "groups": {
             group: {
+                "attempted": group_metrics[group]["attempted"],
+                "inserted": group_metrics[group]["inserted"],
                 "completed": group_metrics[group]["completed"],
+                "in_transit": group_metrics[group]["in_transit"],
                 "not_entered": group_metrics[group]["not_entered"],
+                "removed": group_metrics[group]["removed"],
                 "max_eta_increase_s": group_metrics[group]["max_eta_increase_s"],
                 "total_travel_time_s": group_metrics[group]["total_travel_time_s"],
                 "network_total_time_s": group_metrics[group]["network_total_time_s"],

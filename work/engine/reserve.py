@@ -241,12 +241,48 @@ class SlotTable:
 
 def _max_slot_x(table: SlotTable, cells: list[tuple[str, int]]) -> float:
     """路径上所有时段格子的最大饱和度(含本车 `extra=1`;没有格子时为 0)。"""
+    return max_slot_x(table, cells, extra=1.0)
+
+
+def max_slot_x(
+    table: SlotTable,
+    cells: list[tuple[str, int]],
+    extra: float = 1.0,
+) -> float:
+    """公开的"路径最大时段饱和度"口径:再疏导复核约束①时复用,与 `harm_check` 同一算式。"""
     peak = 0.0
     for segment_id, slot_index in cells:
-        value = table.saturation(segment_id, slot_index, extra=1.0)
+        value = table.saturation(segment_id, slot_index, extra=float(extra))
         if value > peak:
             peak = value
     return peak
+
+
+def walk_slots_detail(
+    table: SlotTable,
+    path: list[str],
+    start_epoch_s: float,
+    extra: float = 1.0,
+) -> tuple[list[tuple[str, int]], float, list[float]]:
+    """`walk_slots()` 的详细版:额外返回**逐边**服务时间(秒)。
+
+    逐边时间供再疏导使用:判断"这辆车现在还要多久"时,必须拿**同一辆车、同一位置、
+    同一套规划**下的剩余 ETA 做同类比较 —— 不能拿"从当前时刻算的剩余 ETA"去减
+    "登记时整条路径的 ETA",那样在途车会永远差出已走过的那一段(见 DESIGN.md「审查整改」)。
+    """
+    cells: list[tuple[str, int]] = []
+    edge_times: list[float] = []
+    start_epoch_s = float(start_epoch_s)
+    elapsed_s = 0.0
+    for edge_id in path:
+        segment_id = table.edge_segment(edge_id)
+        slot_index = slot_index_of(start_epoch_s + elapsed_s, table.slot_minutes)
+        cells.append((segment_id, slot_index))
+        segment_time = table.tt(edge_id, slot_index, extra)
+        edge_times.append(segment_time)
+        elapsed_s += segment_time
+    #: ETA 用"从 0 累加"的小数算,不拿 epoch 大数累加(否则浮点精度会丢到 1e-7 秒量级)
+    return cells, elapsed_s, edge_times
 
 
 def walk_slots(
@@ -262,14 +298,8 @@ def walk_slots(
       - `extra=1` 表示"把这辆新车自己算进去"(试算用);已登记前车复算时传 `extra=0`,
         因为前车自己的占用已经在 `reserved` 里了。
     """
-    cells: list[tuple[str, int]] = []
-    now = float(start_epoch_s)
-    for edge_id in path:
-        segment_id = table.edge_segment(edge_id)
-        slot_index = slot_index_of(now, table.slot_minutes)
-        cells.append((segment_id, slot_index))
-        now += table.tt(edge_id, slot_index, extra)
-    return cells, now - float(start_epoch_s)
+    cells, eta_s, _edge_times = walk_slots_detail(table, path, start_epoch_s, extra)
+    return cells, eta_s
 
 
 def harm_check(
@@ -380,18 +410,27 @@ def recommend(
     ```
 
     全部候选被两条约束丢弃 → `status = capacity_shortage`,**不返回任何路线**。
+
+    登记出的租约额外带 `edge_times_s`(逐边服务时间)与 `feasible_candidates`
+    (只含**通过两条约束**的候选路径):reroute.py 用前者做"这辆车现在还要多久"的同类口径基线,
+    用后者保证再疏导不会落回登记时已被拒的路线。
     """
     start_epoch_s = iso_to_epoch_s(now_ts)
     session_id = str(od.get("session_id") or od.get("od_id") or "S-unknown")
     x_safe = float(params["x_safe"])
 
     candidates: list[dict[str, Any]] = []
-    ok_candidates: list[tuple[float, tuple[str, ...], list[str], list[tuple[str, int]], dict[str, Any]]] = []
+    #: (eta, 路径元组, 路径, 格子, harm_check, 逐边服务时间)
+    ok_candidates: list[
+        tuple[float, tuple[str, ...], list[str], list[tuple[str, int]], dict[str, Any], list[float]]
+    ] = []
     rejected: list[dict[str, Any]] = []
 
     for path in candidate_paths:
         edge_path = list(path)
-        cells, eta_s = walk_slots(table, edge_path, start_epoch_s, extra=1.0)
+        cells, eta_s, edge_times = walk_slots_detail(
+            table, edge_path, start_epoch_s, extra=1.0
+        )
         harm = harm_check(table, cells, leases, params)
         reason = None
         if not harm["passed"]:
@@ -403,7 +442,7 @@ def recommend(
             )
             rejected.append({"path": edge_path, "reason": reason, "harm_check": harm})
         else:
-            ok_candidates.append((eta_s, tuple(edge_path), edge_path, cells, harm))
+            ok_candidates.append((eta_s, tuple(edge_path), edge_path, cells, harm, edge_times))
         candidates.append(
             {
                 "path": edge_path,
@@ -430,7 +469,7 @@ def recommend(
             "lease": None,
         }
 
-    eta_s, _key, edge_path, cells, harm = min(
+    eta_s, _key, edge_path, cells, harm, edge_times = min(
         ok_candidates, key=lambda item: (round(item[0], 6), item[1])
     )
     table.reserve(cells)
@@ -439,12 +478,15 @@ def recommend(
         "od_id": str(od.get("od_id") or ""),
         "path": list(edge_path),
         "cells": cells,
+        #: 逐边服务时间:再疏导判断"这辆车现在还要多久"时用同类口径做基线(见 reroute.py)
+        "edge_times_s": list(edge_times),
         "eta_s": float(eta_s),
         "start_epoch_s": start_epoch_s,
         "expire_at_epoch_s": start_epoch_s + float(params["lease_expire_s"]),
         "confirmed": False,
         "reroute_count": 0,
-        "candidates": [list(path) for path in candidate_paths],
+        #: 只有**通过两条约束**的候选才进这里 —— 再疏导不能落到登记时已被拒的路线
+        "feasible_candidates": [list(item[2]) for item in ok_candidates],
     }
     leases[session_id] = lease
 

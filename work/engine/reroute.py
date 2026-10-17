@@ -12,9 +12,15 @@
 | `k_candidates` / `max_path_overlap`(备用路径生成) | 同上 |
 
 三个条件**同时**满足才改:
-  ① 重新沿剩余路径走的 ETA 比登记时增加超过触发阈值;
+  ① 重新沿剩余路径走的 ETA,比**登记时对同一段剩余路的计划耗时**增加超过触发阈值
+     (同类口径比较:在途车只比剩余段,不拿"剩余 ETA"减"整条路径 ETA");
   ② 该车改道次数 < `reroute_max`;
   ③ 还在"下一个可分岔路口之前"(改道方案相对剩余路径的分岔点仍在车前方 —— 车还没开过)。
+
+**改道候选必须复核约束①/②**:
+  - 候选只从登记时通过约束的 `feasible_candidates` 里取(还没出发时),或从当前位置重新生成(已出发);
+  - 每条候选都要复核 `max_slot_x ≤ x_safe` 与 `harm_check.max_eta_increase_s ≤ eps_harm_s`
+    —— 改道同样不能落到已超饱和 / 会伤前车的路线。
 
 **收益不到 `hysteresis` 不改**:更优路径的 ETA 改善率必须严格大于 `hysteresis`,否则维持原路线
 (防"改过去又改回来"的抖动)。改道后把旧格子的占用撤掉、把新格子的占用登记进同一张预约表。
@@ -64,6 +70,69 @@ def _remaining_eta(
         return [], 0.0
     _cells, eta_s = reserve.walk_slots(table, remaining, float(now_epoch_s), extra=0.0)
     return remaining, eta_s
+
+
+def _planned_remaining_eta_s(lease: dict[str, Any]) -> float | None:
+    """登记时对**剩余路段**的预计耗时(同类口径基线)。
+
+    判据①要比较的是"同一位置、同一规划"下的两个剩余 ETA:
+      - 登记时预计从现在起还要多久 → 用租约里逐边的计划服务时间,把还没走的那几条加起来;
+      - 现在预计还要多久 → 用当前预约表重新 `walk` 剩余路径。
+    **不能**拿"当前剩余 ETA"去减"登记时整条路径 ETA"——在途车已经走掉一段,差值必然为负,
+    结果只有封路(+inf)才可能触发再疏导(2026-10-17 快速独立审查发现 1)。
+    """
+    path = list(lease.get("path") or [])
+    progress = int(lease.get("progress_edges", 0))
+    edge_times = lease.get("edge_times_s")
+    if isinstance(edge_times, list) and len(edge_times) == len(path):
+        return float(sum(float(value) for value in edge_times[progress:]))
+    # 兼容没有逐边计划耗时的租约(本模块自己登记的租约都带;外部传入的旧租约按边数比例摊)
+    if not path:
+        return None
+    if progress == 0:
+        return float(lease["eta_s"])
+    return float(lease["eta_s"]) * float(len(path[progress:])) / float(len(path))
+
+
+def _candidate_feasible(
+    table: reserve.SlotTable,
+    lease: dict[str, Any],
+    path: list[str],
+    leases: dict[str, dict[str, Any]] | None,
+    params: dict[str, Any],
+    now_epoch_s: float,
+) -> tuple[list[tuple[str, int]], float, list[float]] | None:
+    """改道候选是否仍满足约束①(饱和度)与约束②(不伤害前车);不满足返回 None。
+
+    做法:
+      1. 先把本车**旧占用**临时撤掉,再试算候选(=`extra=1` 把这辆车算进去)并算 `max_slot_x`;
+      2. 再在"当前表(含本车旧占用)"上用与 `recommend()` 相同的 `harm_check` 度量对**其他**
+         前车的 ETA 伤害(`session_id` 排除本车);
+      3. 撤掉的旧占用在 `finally` 里恢复 —— 本函数不改变预约表。
+    拒绝时返回 None,调用方继续看下一条候选(不会落到已超 x_safe / 伤前车的路线)。
+    """
+    own_cells = list(lease.get("cells") or [])
+    table.release(own_cells)
+    try:
+        cells, eta_s, edge_times = reserve.walk_slots_detail(
+            table, list(path), float(now_epoch_s), extra=1.0
+        )
+        max_x = reserve.max_slot_x(table, cells)
+    finally:
+        table.reserve(own_cells)
+    if not math.isfinite(max_x) or max_x > float(params["x_safe"]):
+        return None
+    if leases:
+        others = {
+            session_id: other
+            for session_id, other in leases.items()
+            if session_id != lease.get("session_id")
+        }
+        if others:
+            harm = reserve.harm_check(table, cells, others, params)
+            if float(harm["max_eta_increase_s"]) > float(params["eps_harm_s"]):
+                return None
+    return cells, eta_s, edge_times
 
 
 def is_before_next_branch(
@@ -120,11 +189,15 @@ def best_alternative(
     params: dict[str, Any],
     table: reserve.SlotTable | None = None,
     now_epoch_s: float | None = None,
+    leases: dict[str, dict[str, Any]] | None = None,
 ) -> list[str] | None:
     """按滞回判据挑一条更优路径;收益不到 `hysteresis` 就返回 None(防抖)。
 
-    - 车辆还没出发(`progress_edges = 0`)时,优先复用**登记时的候选集**(它们已满足路径重叠度约束);
+    - 车辆还没出发(`progress_edges = 0`)时,优先复用**登记时通过两条约束的候选集**
+      (`lease["feasible_candidates"]`,只含合规路线);
     - 车辆已走过部分路段时,从**当前位置**用 Yen 重新生成候选(K / 重叠度仍读站点包);
+    - 每条候选都要**复核约束①(饱和度)与约束②(不伤害前车)** 才参与择优 ——
+      改道同样不能落回已超 x_safe / 伤前车的路线(2026-10-17 快速独立审查发现 2);
     - 收益 = `(当前剩余 ETA - 备选 ETA) / 当前剩余 ETA`,严格大于 `hysteresis` 才改;
     - 当前路已不可通行(+inf)时,任何有限 ETA 的备选都视为 100% 收益。
     """
@@ -155,7 +228,14 @@ def best_alternative(
         edge_path = list(path)
         if not edge_path or edge_path == remaining:
             continue
-        _cells, eta_s = reserve.walk_slots(table, edge_path, float(now_epoch_s), extra=0.0)
+        checked = _candidate_feasible(
+            table, lease, edge_path, leases, params, float(now_epoch_s)
+        )
+        if checked is None:
+            continue  # 复核没过:不参与择优
+        _cells, eta_s, _edge_times = checked
+        if not math.isfinite(eta_s):
+            continue
         scored.append((eta_s, tuple(edge_path), edge_path))
     if not scored:
         return None
@@ -182,13 +262,15 @@ def should_reroute(
     table: reserve.SlotTable | None = None,
     now_epoch_s: float | None = None,
     candidate_paths: list[list[str]] | None = None,
+    leases: dict[str, dict[str, Any]] | None = None,
 ) -> bool:
     """三个条件**同时**满足才返回 True(手册 §7.6 的 `if` 行)。
 
-    ① 剩余路径重算 ETA 比登记时增加**超过触发阈值**(阈值 = `reroute_threshold_s(params)`);
+    ① 剩余路径重算 ETA 比**登记时对同一段剩余路的计划耗时**增加超过触发阈值
+       (`_planned_remaining_eta_s`,同类口径比较,阈值 = `reroute_threshold_s(params)`);
     ② `reroute_count < reroute_max`;
     ③ 还在下一个可分岔路口之前(`is_before_next_branch`);
-    并通过 `best_alternative` 的 `hysteresis` 收益判据。
+    并通过 `best_alternative` 的 `hysteresis` 收益判据;候选还要复核约束①/②。
     通过时把改道方案暂存到 `lease["_pending_better"]`,供 `reroute()` 取用。
     """
     if table is None or now_epoch_s is None:
@@ -200,13 +282,24 @@ def should_reroute(
     if not remaining:
         return False
 
-    increase_s = eta_now - float(lease["eta_s"])
+    planned_remaining_s = _planned_remaining_eta_s(lease)
+    if planned_remaining_s is None:
+        return False
+    increase_s = eta_now - planned_remaining_s
     threshold_s = reroute_threshold_s(params)
     # 当前 ETA 为 +inf(前方封路)时 increase 也是 +inf,必然超阈
     if not (increase_s > threshold_s):
         return False
 
-    better = best_alternative(graph, lease, candidate_paths, params, table, now_epoch_s)
+    better = best_alternative(
+        graph,
+        lease,
+        candidate_paths,
+        params,
+        table,
+        now_epoch_s,
+        leases=leases,
+    )
     if better is None:
         return False
     if not is_before_next_branch(lease, graph, better):
@@ -241,18 +334,19 @@ def reroute(
 
     if table is not None and now_epoch_s is not None:
         table.release(list(lease.get("cells") or []))
-        cells, eta_s = reserve.walk_slots(
+        cells, eta_s, edge_times = reserve.walk_slots_detail(
             table, list(better_path), float(now_epoch_s), extra=1.0
         )
         table.reserve(cells)
         lease["path"] = [str(edge_id) for edge_id in better_path]
         lease["cells"] = cells
+        lease["edge_times_s"] = [float(value) for value in edge_times]
         lease["eta_s"] = float(eta_s)
         lease["start_epoch_s"] = float(now_epoch_s)
         lease["expire_at_epoch_s"] = float(now_epoch_s)
         lease["progress_edges"] = 0
         # 旧候选集是"从原起点出发"的路径,改道后已不适用;清空后下次从当前位置重新生成
-        lease["candidates"] = []
+        lease["feasible_candidates"] = []
     else:
         lease["path"] = [str(edge_id) for edge_id in better_path]
         lease["progress_edges"] = 0
@@ -266,14 +360,18 @@ def check_and_reroute(
     graph: network.Graph,
     params: dict[str, Any],
     now_ts: str,
+    all_leases: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """一个决策周期(手册 §7.6 `every_60s()` 里"前车优先"的那段)。
 
-    按**进入顺序**遍历在途租约(先进入的前车优先被疏导),超过次数上限的不再处理;
-    返回本周期发生的改道事件列表(`{session_id, eta_before_s, eta_after_s, reroute}`),
-    供 run.py 写进 `--compare` 的再疏导记录。**没有事件时返回空列表**(不编事件)。
+    - 按**进入顺序**遍历在途租约(先进入的前车优先被疏导),超过次数上限的不再处理;
+    - `leases` 是本周期要检查的**在途子集**;约束②复核"会不会伤前车"时要看**全量租约**,
+      由 `all_leases` 传入(缺省时退回 `leases`);
+    - 返回本周期发生的改道事件列表(`{session_id, eta_before_s, eta_after_s, reroute}`),
+      供 run.py 写进 `--compare` 的再疏导记录。**没有事件时返回空列表**(不编事件)。
     """
     now_epoch_s = reserve.iso_to_epoch_s(now_ts)
+    harm_scope = all_leases if all_leases is not None else leases
     events: list[dict[str, Any]] = []
     ordered = sorted(
         leases,
@@ -291,7 +389,8 @@ def check_and_reroute(
             params,
             table=table,
             now_epoch_s=now_epoch_s,
-            candidate_paths=list(lease.get("candidates") or []),
+            candidate_paths=list(lease.get("feasible_candidates") or []),
+            leases=harm_scope,
         ):
             continue
 
