@@ -11,7 +11,7 @@ import './style.css'
 
 // 站点包注入(**必须早于任何用到包的模块求值**):`.env.z` 里写 `VITE_STATION_PACK=Z`,
 // `vite --mode z` 起来就是肇庆东站 OSM 真路网。取不到则落默认包 Z
-// —— **本仓现在只有一个包:Z**(IKM4KP 删 B / Y、IKM4XX 删 A)。
+// —— 本仓现有两个包:Z(61 段现行)/ Z21(旧 21 段对照,IKMDKY 子单①起)。
 // ⚠️ 先问 `restorePackKey`:顶栏线路图切换器选完会整页刷新,而包键是模块级变量、刷新即丢 ——
 //    不读回 localStorage 的话,切换器选完就退回默认包(等于坏的)。
 // ⚠️ 这个兜底必须与 `vite.config.ts` 注入 mock 的默认值**同为 Z**:只改一处就会出现

@@ -212,6 +212,8 @@ export interface PackScenario {
 export interface StationPack {
   /** 包标识(与文件名/环境变量取值一致) */
   key: string
+  /** 顶栏切换器 / 大屏按钮上的短标签(多包同站时用来区分);缺省用 `station.name` */
+  label?: string
   /** 一句话说明这个包是什么(页面页脚/自检用) */
   note: string
   station: PackStation

@@ -37,7 +37,7 @@ import {
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
 import { basemapEnabled } from '../../shared/settings'
 import { cameraCountOf } from '../../shared/cameras'
-import { activePack } from '../../station-packs/index'
+import { activePack, activePackKey, packItems, switchPack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
 import {
@@ -207,6 +207,16 @@ const mapCaption = computed(() =>
 )
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
+
+// 大屏工具条上的「路网版本」切换（IKMDKY 子单①）：Z = 61 段新几何 / Z21 = 旧 21 段对照。
+// 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
+const packChoices = packItems()
+const currentPackKey = activePackKey()
+function onPackChange(key: string): void {
+  if (key === currentPackKey) return
+  switchPack(key)
+  window.location.reload()
+}
 
 // ---------- 快照状态 ----------
 const overview = ref<TrafficOverview | null>(null)
@@ -837,6 +847,22 @@ function gotoDecision(): void {
                   <span class="map-title">全路段状态</span>
                   <span class="map-tag">{{ basemapTag }}</span>
                 </div>
+                <!-- 路网版本切换（IKMDKY 子单①）：Z=61 段新几何 / Z21=旧 21 段对照 -->
+                <div class="map-toolbar-right">
+                  <span class="pack-switch" role="group" aria-label="切换路网版本">
+                    <button
+                      v-for="p in packChoices"
+                      :key="p.key"
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: p.key === currentPackKey }"
+                      :aria-pressed="p.key === currentPackKey"
+                      @click="onPackChange(p.key)"
+                    >
+                      {{ p.name }}
+                    </button>
+                  </span>
+                </div>
               </div>
               <div class="td-card-body flush map-body">
                 <MapLibreViewer
@@ -1283,6 +1309,35 @@ function gotoDecision(): void {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.map-toolbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+/* 路网版本切换（IKMDKY 子单①）：两段式小按钮，选中态用品牌蓝 */
+.pack-switch {
+  display: inline-flex;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.pack-switch-item {
+  padding: 3px 10px;
+  border: 0;
+  background: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pack-switch-item + .pack-switch-item {
+  border-left: 1px solid var(--td-component-stroke);
+}
+.pack-switch-item.on {
+  background: v-bind('TD.brand');
+  color: #ffffff;
 }
 .map-title {
   font-size: 13px;
