@@ -147,3 +147,22 @@
 | ④ 打开页面 | `http://localhost:5173/#/perception` | 帧播放器（播放/倍速/拖动）+ 逐帧检测框 + 轨迹拖尾 + 通道切换；右侧「感知判读」面板给出一组**像素空间近似**的人眼判堵要素（画面占有率、停驻/缓行/通行三态、虚拟断面过车率、近3秒趋势），**米制四指标（q/v/k/L_q）待透视标定链路（M1-9）接入后替换**；下方为 video/twin 双链路指标快照 |
 
 **口径纪律**：画面是**样本视频离线回放**（非本站现场、非实时流），页面角标与页脚已标注「样本视频回放 · 演示数据(模拟)」；**不得**表述为"实时画面/现场实测"。前端对检测流与指标快照分别标注数据来源，两者不混。
+
+## 八、摄像头 ↔ 通道 ↔ 路段 三段映射（Issue IKMDKY）
+
+> **一次性定死**：「哪路视频算在哪条路段上」不再只活在运行产物里，而是登记在
+> [`mapping/camera-segments.json`](mapping/camera-segments.json)（**唯一真值来源**，规则与现状见
+> [`mapping/README.md`](mapping/README.md)）。
+
+| 项 | 口径 |
+|---|---|
+| 三段字段 | `cam_id`（cam-01…cam-06）· `channel_id`（= 感知服务 `stream_id`，road2 / track1）· `segment_id`（现役站点段号 `SZ-###`） |
+| 现役段号命名空间 | **`SZ-###`（3 位）** = 站点 Z 真 OSM 路网（61 段）；**`SEG-###` 只属 7 节点样例网**（engine samples / App fixture / `stations/*.json` 占位件），不是本站真网 |
+| 多对一 | 一路通道只算一条路段；一条路段可以有多路通道 |
+| 无视频源 | `has_video_source: false` = 本期没有视频流；**不等于**没有摄像头，更**不等于**数据可用（TC-11） |
+| 服务端补字段 | `server.py` 在 `/api/perception/streams` 与 `/streams/{sid}/meta` 响应里补 `segment_id` / `cam_id` / `cid` / `mapping_status` / `mapping_note`（**不改 `data/monitor/*/meta.json` 数据文件**，那是导出产物）；未登记通道返回 `unmapped` + `null`，不编造 |
+| 当前结果 | 6 路摄像头里 **C-02→road2→SZ-005、C-05→track1→SZ-024**（样本视频回放，非本站现场、演示映射）；其余 4 路无视频源 |
+| 自检 | `python tools/check_camera_map.py`（6 路逐条对账 + `SZ-###` 零悬空 + `SEG-###` 活跃引用清单 + 站点包 channels 与登记表一致） |
+
+> **换源时怎么改**：先改 `mapping/camera-segments.json`，再同步 `stationZ.ts` 的 `channels`，跑自检与门禁；真实摄像头接入时按 **IKMHMX** 重做标定与映射。样本视频里的 `road2/track1` 不是肇庆东站现场，**不得**把该映射说成"实拍路段"。
+

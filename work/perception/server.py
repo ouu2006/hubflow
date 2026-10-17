@@ -34,6 +34,59 @@ app.add_middleware(
 
 DATA_DIR = Path(__file__).resolve().parent / "data" / "monitor"
 
+# ---- 摄像头 ↔ 通道 ↔ 路段 三段映射（Issue IKMDKY，唯一真值来源）----
+# 数据文件 `data/monitor/*/meta.json` 不带 segment_id；本服务在**响应层**按登记表补
+# `segment_id` / `cam_id` / `mapping_status`，**不改数据文件**（数据文件是导出产物）。
+ROOT = Path(__file__).resolve().parents[2]
+MAPPING_PATH = ROOT / "work/perception/mapping/camera-segments.json"
+
+
+def _load_mapping() -> dict:
+    if not MAPPING_PATH.is_file():
+        return {}
+    try:
+        return json.loads(MAPPING_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return {}
+
+
+MAPPING = _load_mapping()
+#: stream_id → 该通道绑定的登记信息（cam_id / segment_id / status / note）
+STREAM_MAP: dict[str, dict] = {}
+for _v in MAPPING.get("video_streams", []):
+    STREAM_MAP[str(_v.get("stream_id"))] = {
+        "cam_id": _v.get("cam_id"),
+        "segment_id": _v.get("segment_id"),
+        "mapping_status": _v.get("status", "demo-mapped"),
+        "mapping_note": _v.get("note", ""),
+    }
+CAM_MAP: dict[str, dict] = {str(c.get("cam_id")): c for c in MAPPING.get("cameras", [])}
+
+
+def _enrich_meta(meta: dict) -> dict:
+    """按登记表给通道 meta 补三段映射字段（只读登记表；不编造）。"""
+    sid = str(meta.get("stream_id", ""))
+    hit = STREAM_MAP.get(sid)
+    if hit is None:
+        return {
+            **meta,
+            "segment_id": None,
+            "cam_id": None,
+            "cid": None,
+            "mapping_status": "unmapped",
+            "mapping_note": "该通道未在 work/perception/mapping/camera-segments.json 登记",
+        }
+    cam = CAM_MAP.get(str(hit.get("cam_id"))) or {}
+    return {
+        **meta,
+        "segment_id": hit.get("segment_id"),
+        "cam_id": hit.get("cam_id"),
+        "cid": cam.get("cid"),
+        "mapping_status": hit.get("mapping_status"),
+        "mapping_note": hit.get("mapping_note", ""),
+    }
+
+
 
 def _envelope(payload: dict) -> JSONResponse:
     body = {"is_simulated": True, **payload}
@@ -59,7 +112,16 @@ def _read_json(path: Path) -> dict:
 @app.get("/api/perception/health")
 def health() -> JSONResponse:
     streams = sorted(p.name for p in DATA_DIR.iterdir() if p.is_dir()) if DATA_DIR.is_dir() else []
-    return _envelope({"status": "ok" if streams else "empty", "streams": streams, "data_dir": str(DATA_DIR)})
+    return _envelope(
+        {
+            "status": "ok" if streams else "empty",
+            "streams": streams,
+            "data_dir": str(DATA_DIR),
+            "mapping_registry": str(MAPPING_PATH.relative_to(ROOT)) if MAPPING else None,
+            "mapping_cameras": len(MAPPING.get("cameras", [])),
+            "mapping_video_streams": len(STREAM_MAP),
+        }
+    )
 
 
 @app.get("/api/perception/streams")
@@ -70,13 +132,13 @@ def streams() -> JSONResponse:
     for d in sorted(DATA_DIR.iterdir()):
         meta_path = d / "meta.json"
         if d.is_dir() and meta_path.is_file():
-            items.append(_read_json(meta_path))
+            items.append(_enrich_meta(_read_json(meta_path)))
     return _envelope({"streams": items})
 
 
 @app.get("/api/perception/streams/{sid}/meta")
 def stream_meta(sid: str) -> JSONResponse:
-    return _envelope(_read_json(_stream_dir(sid) / "meta.json"))
+    return _envelope(_enrich_meta(_read_json(_stream_dir(sid) / "meta.json")))
 
 
 @app.get("/api/perception/streams/{sid}/detections")

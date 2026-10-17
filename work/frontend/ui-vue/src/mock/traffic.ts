@@ -105,11 +105,11 @@ function vehicleBases(): PackVehicleBase[] {
 //
 // 状态门控(**默认态不碰站点包基线**,实测踩过才这么写):
 //   · **未注入**(`scenarioState` 全空)→ `applyFactors` 只叠人工置位,站点包基线**逐位不动**
-//     —— 站点包可以在基线里烘入环境因素(当年的包 A:SEG-003 / SEG-007 各烘了一条 F01 大雨 ×0.75,
+//     —— 站点包可以在基线里烘入环境因素(当年的包 A 曾在两条样例路段上各烘了一条 F01 大雨 ×0.75,
 //     `c_vph` 也按它折算过),默认态再去乘一遍会把整张基线推高一档(`x` 0.54→0.71、level 2→3),QA 基线全漂。
 //     此时 `context.derived_factors` 只是**环境观测**(站点包声明的那套天气),页面必须分开标注。
 //   · **已注入** → 先把包里烘入的环境因素**反算剔除**(÷倍率),再按当前环境状态乘一遍:
-//     把天气切成"晴"时 SEG-003 的折减也跟着解除,同一因素绝不乘两次。
+//     把天气切成"晴"时那两条样例段的折减也跟着解除,同一因素绝不乘两次。
 
 interface ManualFactor {
   segment_id: string
@@ -541,9 +541,9 @@ function buildNetwork(): TrafficNetwork {
 
 // ---------- 同一路段双数据源并排(TC-19) ----------
 
-// 一期有视频链路覆盖的路段由**站点包**声明;一站那份的 SEG-004 追加理由保留备查:
-// 视频感知页的通道台账把样本视频 C-05 track1 映射到 SEG-004,该路段指标确实由视频链路产出,
-// 故并排时 video 槽位必须可用。
+// 一期有视频链路覆盖的路段由**站点包**声明;一站那份的样例段追加理由保留备查:
+// 视频感知页的通道台账把样本视频 C-05 track1 映射到 SZ-024（见 work/perception/mapping/camera-segments.json），
+// 该路段指标确实由视频链路产出,故并排时 video 槽位必须可用。
 // 取值函数而不是常量:本模块在 vite 配置里就被 import,那时包键还没注入(见 station-packs/index.ts)。
 function videoCovered(): Set<string> {
   return new Set(activePack().videoCovered)
