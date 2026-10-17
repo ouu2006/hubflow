@@ -7,29 +7,101 @@
     "calibrated_at": "2026-10-13",
     "sample_days": 0,
     "weights": [
-      { "indicator": "x", "w": 0.4 },
-      { "indicator": "v", "w": 0.25 },
-      { "indicator": "L_q", "w": 0.25 },
-      { "indicator": "T_d", "w": 0.1 }
+      {
+        "indicator": "x",
+        "w": 0.4
+      },
+      {
+        "indicator": "v",
+        "w": 0.25
+      },
+      {
+        "indicator": "L_q",
+        "w": 0.25
+      },
+      {
+        "indicator": "T_d",
+        "w": 0.1
+      }
     ],
-    "ref": { "x_ref": 1.0, "v_jam_kmh": 5, "T_ref_min": 15 },
+    "ref": {
+      "x_ref": 1.0,
+      "v_jam_kmh": 5,
+      "T_ref_min": 15
+    },
     "level_bounds": [
-      { "indicator": "x", "bounds": [0.6, 0.8, 0.95] },
-      { "indicator": "v", "bounds": [30, 20, 10] },
-      { "indicator": "L_q", "bounds": [80, 200, 400] },
-      { "indicator": "T_d", "bounds": [3, 8, 15] }
+      {
+        "indicator": "x",
+        "bounds": [
+          0.6,
+          0.8,
+          0.95
+        ]
+      },
+      {
+        "indicator": "v",
+        "bounds": [
+          30,
+          20,
+          10
+        ]
+      },
+      {
+        "indicator": "L_q",
+        "bounds": [
+          80,
+          200,
+          400
+        ]
+      },
+      {
+        "indicator": "T_d",
+        "bounds": [
+          3,
+          8,
+          15
+        ]
+      }
     ],
     "factor_floor": 0.4,
     "queue_headway_m": 7,
     "saturation_flow_vph_per_lane": 1800,
     "data_freshness_s": 120,
-    "defaults": { "v_f_kmh": 40, "c_vph": 1600 },
+    "defaults": {
+      "v_f_kmh": 40,
+      "c_vph": 1600,
+      "confidence": 0.75
+    },
     "by_segment": [
-      { "segment_id": "SEG-001", "v_f_kmh": 50, "c_vph": 1800 },
-      { "segment_id": "SEG-002", "v_f_kmh": 30, "c_vph": 1200 },
-      { "segment_id": "SEG-003", "v_f_kmh": 30, "c_vph": 600 },
-      { "segment_id": "SEG-004", "v_f_kmh": 30, "c_vph": 600 }
-    ]
+      {
+        "segment_id": "SEG-001",
+        "v_f_kmh": 50,
+        "c_vph": 1800
+      },
+      {
+        "segment_id": "SEG-002",
+        "v_f_kmh": 30,
+        "c_vph": 1200
+      },
+      {
+        "segment_id": "SEG-003",
+        "v_f_kmh": 30,
+        "c_vph": 600
+      },
+      {
+        "segment_id": "SEG-004",
+        "v_f_kmh": 30,
+        "c_vph": 600
+      }
+    ],
+    "confidence_min": 0.6,
+    "hard_trigger_factor_ids": [
+      "F07",
+      "F08"
+    ],
+    "hard_trigger_level": 4,
+    "hysteresis_periods": 2,
+    "confidence": 0.9
   },
   "decision": {
     "param_version": "v0-demo",
@@ -51,6 +123,7 @@
     "hard_rule_ci": "CI(四项加权合成)不得作为判级依据,只用于热力展示与辅助排序;判级只看四项指标(手册 6.5 第 1 条)",
     "hard_rule_by_segment": "判级代码里不得出现全站唯一阈值常量 —— 一律按 segment_id 从 by_segment 取,取不到用 defaults 并在 confidence 上降权(手册 6.6)",
     "why_arrays": "weights / level_bounds / by_segment 用数组而不是对象键,是为了过 doc_gate 的契约字段 snake_case 检查(SEG-001 这类 ID 键会被判违规)",
-    "why_two_versions": "两组各自带 param_version / calibrated_at / sample_days —— 判级与决策的标定来源不同,版本会各自前进"
+    "why_two_versions": "两组各自带 param_version / calibrated_at / sample_days —— 判级与决策的标定来源不同,版本会各自前进",
+    "grading_gate_note": "IKMF1S 补登：confidence_min / hard_trigger_factor_ids / hard_trigger_level / hysteresis_periods 为【待标定】demo 值（池·P 标定后替换）；另补 confidence（基准置信度）与 defaults.confidence（参数回落时降权值），均为【待标定】demo 值（IKMF1S）"
   }
 }
