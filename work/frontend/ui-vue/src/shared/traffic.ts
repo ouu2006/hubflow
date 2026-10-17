@@ -126,6 +126,17 @@ export interface RecommendResult {
   is_simulated: true
 }
 
+/**
+ * 地图路线高亮分组（Issue IKMF1W）。
+ * - `arrival`  推荐路线：品牌蓝实线（「当前 / 已选」语义，不用等级色）
+ * - `alternative` 备选路线：灰虚线（可多条同时画）
+ * - `departure` 离站路线：紫色实线（第三种语义色，与等级色 / 品牌蓝分开）
+ */
+export interface RouteHighlight {
+  kind: 'arrival' | 'alternative' | 'departure'
+  segments: string[]
+}
+
 // ---------- 四级编码(手册 §6.2,照抄) ----------
 
 export interface LevelStyle {

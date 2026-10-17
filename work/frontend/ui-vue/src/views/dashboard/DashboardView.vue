@@ -32,6 +32,7 @@ import {
   getTrafficSegments,
   getTrafficThresholds,
   getTrafficVehicles,
+  postRouteRecommend,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
@@ -56,6 +57,8 @@ import {
   type CongestionViewMode,
   type FactorApplied,
   type HeatMatrix,
+  type RecommendResult,
+  type RouteHighlight,
   type SegmentRecord,
   type SegmentSourcePair,
   type ThresholdSnapshot,
@@ -363,8 +366,143 @@ watch(selectedId, (id) => {
   void loadSelectedSide(id)
 })
 
+// ---------- 推荐路线（Issue IKMF1W）----------
+//
+// 数据来自 `POST /api/traffic/route/recommend`（vite mock 与接口层同一契约；引擎 routes.json
+// 就绪后由接口层端出真结果，本页数据形状不变）。
+// 口径三条（判定依据见 Issue IKMF1W「完成判定」）：
+//   ① 只消费契约字段 `arrival_route` / `alternatives[].segments` / `departure_route`，不新增字段；
+//   ② 接口不可达 → **保持不画路线** + 可读提示，绝不用本地 fallback 编一条假路线（与 TC-11 同口径）；
+//   ③ 路线是**连通图拼出来的演示骨架**，不是引擎 K 最短路 + 预约输出，也**不是按当时路况重算的结果**——
+//      页面文案与图例必须如实标注。
+type RouteView = 'all' | 'arrival' | 'alternative' | 'departure'
+const ROUTE_VIEWS: { key: RouteView; name: string }[] = [
+  { key: 'all', name: '全部' },
+  { key: 'arrival', name: '推荐' },
+  { key: 'alternative', name: '备选' },
+  { key: 'departure', name: '离站' },
+]
+/** 推荐快照（null = 接口不可达或无数据；此时地图不画任何路线） */
+const recommend = ref<RecommendResult | null>(null)
+const recommendLoading = ref(false)
+const recommendError = ref('')
+/** 三态切换：全部 / 推荐 / 备选 / 离站（截图三态用同一套按钮） */
+const routeView = ref<RouteView>('all')
+/** 当前站点包内的段数（卡片文案用；切包后不写死 61） */
+const packSegmentCount = computed(() => activePack().segments.length)
+/** 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线 */
+const packSegmentIds = new Set(activePack().segments.map((s) => s.segment_id))
+
+async function loadRecommend(): Promise<void> {
+  recommendLoading.value = true
+  recommendError.value = ''
+  try {
+    const pack = activePack()
+    recommend.value = await postRouteRecommend({
+      // 演示车固定用站点包的定位锚点（与 App 绑定演示车同一口径）；一期不是真实行程
+      session_id: `demo-${pack.key}`,
+      location: {
+        segment_id: pack.recommend.location_segment_id,
+        offset_m: pack.recommend.location_offset_m,
+      },
+    })
+  } catch (e) {
+    // 失败降级：清空路线 + 给出可读提示；不得拿 fallback 假数据兜底
+    recommend.value = null
+    recommendError.value = `推荐接口不可达（${e instanceof Error ? e.message : '未知错误'}）：保持不画路线，不编造演示路线`
+  } finally {
+    recommendLoading.value = false
+  }
+}
+
+/** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
+const routeHighlights = computed<RouteHighlight[]>(() => {
+  const r = recommend.value
+  if (!r) return []
+  const groups: RouteHighlight[] = []
+  if (routeView.value === 'all' || routeView.value === 'arrival') {
+    groups.push({ kind: 'arrival', segments: r.arrival_route.segments })
+  }
+  if (routeView.value === 'all' || routeView.value === 'alternative') {
+    for (const a of r.alternatives) {
+      if (a.segments && a.segments.length > 0) groups.push({ kind: 'alternative', segments: a.segments })
+    }
+  }
+  if (routeView.value === 'all' || routeView.value === 'departure') {
+    if (r.departure_route && r.departure_route.segments.length > 0) {
+      groups.push({ kind: 'departure', segments: r.departure_route.segments })
+    }
+  }
+  return groups
+})
+
+interface RouteCard {
+  key: string
+  kind: RouteHighlight['kind']
+  kindName: string
+  pathId: string
+  eta: number
+  segments: string[]
+  note: string
+}
+
+/** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
+const routeCards = computed<RouteCard[]>(() => {
+  const r = recommend.value
+  if (!r) return []
+  const cards: RouteCard[] = []
+  if (routeView.value === 'all' || routeView.value === 'arrival') {
+    cards.push({
+      key: 'arrival',
+      kind: 'arrival',
+      kindName: '推荐路线',
+      pathId: r.arrival_route.path_id,
+      eta: r.arrival_route.eta_min,
+      segments: r.arrival_route.segments,
+      note: r.why,
+    })
+  }
+  if (routeView.value === 'all' || routeView.value === 'alternative') {
+    r.alternatives.forEach((a, i) => {
+      cards.push({
+        key: `alt-${a.path_id}-${i}`,
+        kind: 'alternative',
+        kindName: `备选 ${i + 1}`,
+        pathId: a.path_id,
+        eta: a.eta_min,
+        segments: a.segments ?? [],
+        note: a.reason,
+      })
+    })
+  }
+  if (routeView.value === 'all' || routeView.value === 'departure') {
+    if (r.departure_route) {
+      cards.push({
+        key: 'departure',
+        kind: 'departure',
+        kindName: '离站路线',
+        pathId: r.departure_route.path_id,
+        eta: r.departure_route.eta_min,
+        segments: r.departure_route.segments,
+        note: '送完人之后的离站方向（契约 departure_route）；一期为演示路线',
+      })
+    }
+  }
+  return cards
+})
+
+/** 路线里引用了当前站点包不存在的段号 → 如实提示（不画点不出的段） */
+const routeMissing = computed<string[]>(() => {
+  const missing = new Set<string>()
+  for (const g of routeHighlights.value) {
+    for (const id of g.segments) if (!packSegmentIds.has(id)) missing.add(id)
+  }
+  return [...missing]
+})
+
 onMounted(() => {
   void refresh()
+  void loadRecommend()
   unsubscribe = subscribeTrafficSnapshot(() => {
     void refresh()
   })
@@ -869,7 +1007,7 @@ function gotoDecision(): void {
                   :segments="segments"
                   :vehicles="vehicles"
                   :selected-id="selectedId"
-                  :route-segments="[]"
+                  :routes="routeHighlights"
                   :mode="viewMode"
                   :ts="snapshotTs"
                   :hover-chip="mapChip"
@@ -887,6 +1025,54 @@ function gotoDecision(): void {
         <el-splitter-panel v-model:size="colRight" :min="COL_MIN_RIGHT">
           <!-- 右栏 · 路段信息 -->
           <div class="td-col col-right td-scroll">
+        <!-- 推荐路线（Issue IKMF1W）：三态切换 + 演示骨架标注；接口不可达时不画路线、不编造假路线 -->
+        <section class="td-card route-card">
+          <div class="td-card-head">
+            推荐路线
+            <span class="td-head-tag">演示骨架 · 连通段拼接</span>
+          </div>
+          <div class="td-card-body">
+            <p v-if="recommendLoading" class="route-hint">正在读取推荐快照…</p>
+            <p v-else-if="recommendError" class="route-hint warn">{{ recommendError }}</p>
+            <template v-else-if="recommend">
+              <div class="route-tabs">
+                <button
+                  v-for="t in ROUTE_VIEWS"
+                  :key="t.key"
+                  type="button"
+                  class="route-tab"
+                  :class="{ on: routeView === t.key }"
+                  @click="routeView = t.key"
+                >
+                  {{ t.name }}
+                </button>
+              </div>
+              <div class="route-meta">
+                <span class="route-badge">演示数据（模拟）</span>
+                <span>
+                  起点 {{ recommend.location.segment_id }} · 定位来源
+                  {{ recommend.location.source === 'twin' ? '孪生真值' : 'App 定位' }}
+                </span>
+              </div>
+              <div v-for="c in routeCards" :key="c.key" class="route-item" :class="c.kind">
+                <div class="route-item-head">
+                  <span class="route-kind">{{ c.kindName }}</span>
+                  <span class="route-eta td-num">{{ c.eta }} min</span>
+                </div>
+                <div class="route-segs td-mono">{{ c.segments.join(' → ') || '—' }}</div>
+                <div class="route-note">{{ c.note }}</div>
+              </div>
+              <p v-if="routeMissing.length" class="route-hint warn">
+                路线里有 {{ routeMissing.length }} 段不在当前站点包（{{ routeMissing.join(', ') }}），这些段不会被画出；不补造数据。
+              </p>
+              <p class="route-why">
+                演示路线：在 {{ packSegmentCount }} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，<b>不是</b>引擎 K 最短路 + 预约输出，也<b>不是</b>按当前路况重算出来的结果。
+                颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。
+              </p>
+            </template>
+            <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
+          </div>
+        </section>
         <section class="td-card">
           <div class="td-card-head">
             路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? '—' }}</span>
@@ -1584,6 +1770,102 @@ function gotoDecision(): void {
 .empty {
   margin: 8px 2px;
   font-size: 12px;
+  color: var(--td-text-color-placeholder);
+}
+
+/* ---------- 推荐路线卡片（IKMF1W）---------- */
+.route-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.route-tab {
+  flex: 1;
+  padding: 5px 0;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.route-tab.on {
+  color: #ffffff;
+  background: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+}
+.route-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+}
+.route-badge {
+  padding: 1px 6px;
+  font-size: 10px;
+  color: #a06a00;
+  background: var(--td-warning-color-1);
+  border-radius: 3px;
+}
+.route-item {
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  background: var(--td-bg-color-container-hover);
+  border-radius: var(--td-radius-sm);
+  border-left: 3px solid #0052d9;
+}
+.route-item.alternative {
+  border-left-color: #8c8c8c;
+}
+.route-item.departure {
+  border-left-color: #7b61ff;
+}
+.route-item-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.route-kind {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+.route-eta {
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+}
+.route-segs {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+  word-break: break-all;
+}
+.route-note {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
+.route-hint {
+  margin: 6px 2px;
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+.route-hint.warn {
+  color: #a06a00;
+  background: var(--td-warning-color-1);
+  padding: 5px 8px;
+  border-radius: 3px;
+}
+.route-why {
+  margin: 8px 2px 2px;
+  font-size: 11px;
+  line-height: 1.6;
   color: var(--td-text-color-placeholder);
 }
 </style>

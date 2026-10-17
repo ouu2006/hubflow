@@ -91,6 +91,7 @@ import {
   UNAVAILABLE,
   type CongestionViewMode,
   type DriverType,
+  type RouteHighlight,
   type SegmentRecord,
   type VehicleRecord,
 } from '../../../shared/traffic'
@@ -123,9 +124,21 @@ const SRC = 'hubflow-route'
 const LAYER_HEAT = `${SRC}-heat`
 const LAYER_CASING = `${SRC}-casing`
 const LAYER_LINE = `${SRC}-line`
+/** 推荐路线（品牌蓝实线；「当前 / 已选」语义，不得用等级色） */
 const LAYER_ROUTE_HALO = `${SRC}-route-halo`
 const LAYER_ROUTE = `${SRC}-route`
+/** 备选路线（灰虚线；可多条一起画） */
+const LAYER_ROUTE_ALT_HALO = `${SRC}-route-alt-halo`
+const LAYER_ROUTE_ALT = `${SRC}-route-alt`
+/** 离站路线（紫色实线；第三种语义色，与等级色 / 品牌蓝分开） */
+const LAYER_ROUTE_DEP_HALO = `${SRC}-route-dep-halo`
+const LAYER_ROUTE_DEP = `${SRC}-route-dep`
 const LAYER_SELECTED = `${SRC}-selected`
+
+/** 备选路线的灰（TDesign gray-7 同族；不是等级色，也不是"数据不可用"的灰档） */
+const ROUTE_ALT_COLOR = '#6B6B6B'
+/** 离站路线色（紫色；与品牌蓝 / 四级色都不撞，只表示"第 3 种路线语义"） */
+const ROUTE_DEPART_COLOR = '#7B61FF'
 
 /** 悬停浮牌尺寸（只用于翻面判断，与 CSS 里的 min/max-width 对应） */
 const CHIP_W = 210
@@ -140,8 +153,8 @@ const props = withDefaults(
     selectedId: string | null
     /** 孪生车辆动点（位置随快照刷新平滑移动） */
     vehicles?: VehicleRecord[]
-    /** 当前高亮路线包含的路段 id（推荐 / 备选 / 离站） */
-    routeSegments?: string[]
+    /** 推荐 / 备选 / 离站三组路线高亮（IKMF1W；空数组 = 不画路线） */
+    routes?: RouteHighlight[]
     mode?: MapMode
     /** 快照时间（热力视图的"更新时间戳"，手册 §11.2 必现） */
     ts?: string
@@ -152,7 +165,7 @@ const props = withDefaults(
   }>(),
   {
     vehicles: () => [],
-    routeSegments: () => [],
+    routes: () => [],
     mode: 'level',
     ts: '',
     hoverChip: '',
@@ -282,8 +295,28 @@ function selectedFilter(): FilterSpecification {
 }
 
 function routeFilter(): FilterSpecification {
-  return ['in', ['get', 'segment_id'], ['literal', props.routeSegments ?? []]]
+  return ['in', ['get', 'segment_id'], ['literal', routeIdsOf('arrival')]]
 }
+
+/**
+ * 取某一组（或多组）路线要高亮的路段 id —— 去重后作为图层 filter 的 `literal`。
+ * 备选可能有多条，叠成一组灰虚线一起画（同一条段重复出现只画一次）。
+ */
+function routeIdsOf(...kinds: RouteHighlight['kind'][]): string[] {
+  const out = new Set<string>()
+  for (const g of props.routes ?? []) {
+    if (!kinds.includes(g.kind)) continue
+    for (const id of g.segments) out.add(id)
+  }
+  return [...out]
+}
+
+function routeFilterOf(...kinds: RouteHighlight['kind'][]): FilterSpecification {
+  return ['in', ['get', 'segment_id'], ['literal', routeIdsOf(...kinds)]]
+}
+
+/** 任一组路线存在时才在图上画图例三行（否则不占地方） */
+const hasRoutes = computed(() => (props.routes ?? []).some((g) => g.segments.length > 0))
 
 /**
  * 本组件自有的图层（按绘制顺序：底衬 → 热力 → 色线 → 路线 → 选中）。
@@ -323,7 +356,46 @@ function lineLayerSpecs(): LineLayerSpecification[] {
         'line-opacity': ['case', ['==', ['get', 'covered'], false], 0.4, 1],
       },
     },
-    // 推荐路线：品牌蓝（「推荐」语义，不得用等级色）
+    // 备选路线：灰虚线（在推荐 / 离站下面画，避免盖住主路线）
+    {
+      id: LAYER_ROUTE_ALT_HALO,
+      type: 'line',
+      source: SRC,
+      filter: routeFilterOf('alternative'),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#FFFFFF', 'line-width': 10, 'line-opacity': 0.7 },
+    },
+    {
+      id: LAYER_ROUTE_ALT,
+      type: 'line',
+      source: SRC,
+      filter: routeFilterOf('alternative'),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': ROUTE_ALT_COLOR,
+        'line-width': 3,
+        'line-dasharray': [9, 7],
+        'line-opacity': 0.95,
+      },
+    },
+    // 离站路线：紫色实线（第三语义色；不与推荐蓝、等级色混用）
+    {
+      id: LAYER_ROUTE_DEP_HALO,
+      type: 'line',
+      source: SRC,
+      filter: routeFilterOf('departure'),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#FFFFFF', 'line-width': 11, 'line-opacity': 0.7 },
+    },
+    {
+      id: LAYER_ROUTE_DEP,
+      type: 'line',
+      source: SRC,
+      filter: routeFilterOf('departure'),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ROUTE_DEPART_COLOR, 'line-width': 3, 'line-opacity': 0.92 },
+    },
+    // 推荐路线：品牌蓝（「推荐」语义，不得用等级色）——实线，最上层
     {
       id: LAYER_ROUTE_HALO,
       type: 'line',
@@ -333,15 +405,14 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       paint: { 'line-color': BRAND, 'line-width': 17, 'line-opacity': 0.16 },
     },
     {
-      // ⚠️ 这条虚线**不动**：自绘视图里那是 CSS `stroke-dashoffset` 动画，
-      //    canvas 图层没有对应能力（要么起 rAF 定时器改 line-dasharray，要么放弃动效）。
-      //    一期先给静态虚线 —— 高亮本身在，动效不引入常驻定时器。
+      // ⚠️ 实线与旧版虚线的差别：IKMF1W 起推荐路线用**品牌蓝实线**（"当前 / 已选"语义），
+      //    备选才是灰虚线；旧版把"推荐"画成虚线，和"选中路段"的虚线语义撞车。
       id: LAYER_ROUTE,
       type: 'line',
       source: SRC,
       filter: routeFilter(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': BRAND, 'line-width': 3, 'line-dasharray': [14, 10], 'line-opacity': 0.9 },
+      paint: { 'line-color': BRAND, 'line-width': 3.4, 'line-opacity': 0.95 },
     },
     // 选中路段描边：品牌蓝（「当前 / 已选」语义），虚线，不覆盖判级色
     {
@@ -774,16 +845,26 @@ watch(
 )
 
 /**
- * 路线高亮按**内容**监听，不按数组引用：父组件传的是内联 `[]`（每次渲染都是新引用），
- * 按引用监听的写法会在每次快照刷新时白跑一遍 `setFilter`。
+ * 路线高亮按**内容**监听，不按数组引用：父组件传的是 computed 产物，快照刷新时会重建引用，
+ * 按引用监听的写法会在每次刷新时白跑一遍 `setFilter`。
  */
-const routeKey = computed(() => (props.routeSegments ?? []).join('\u0000'))
+const routeKey = computed(() =>
+  (props.routes ?? []).map((g) => `${g.kind}:${g.segments.join(',')}`).join('|'),
+)
 
 watch(routeKey, () => {
   const map = mapRef.value
   if (!map || !ready.value) return
-  for (const id of [LAYER_ROUTE, LAYER_ROUTE_HALO]) {
-    if (map.getLayer(id)) map.setFilter(id, routeFilter())
+  const updates: [string, FilterSpecification][] = [
+    [LAYER_ROUTE, routeFilter()],
+    [LAYER_ROUTE_HALO, routeFilter()],
+    [LAYER_ROUTE_ALT, routeFilterOf('alternative')],
+    [LAYER_ROUTE_ALT_HALO, routeFilterOf('alternative')],
+    [LAYER_ROUTE_DEP, routeFilterOf('departure')],
+    [LAYER_ROUTE_DEP_HALO, routeFilterOf('departure')],
+  ]
+  for (const [id, filter] of updates) {
+    if (map.getLayer(id)) map.setFilter(id, filter)
   }
 })
 
@@ -894,7 +975,14 @@ onUnmounted(() => {
         <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
           <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
         </div>
-        <div class="lg-row"><span class="dot flow" />推荐路线(当前)</div>
+        <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
+        <template v-if="hasRoutes">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
+          <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
+          <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div class="lg-note">演示路线：连通段序列拼接，不随时间重算</div>
+        </template>
         <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
         <template v-if="cameraOnly">
           <div class="lg-sep" />
@@ -1068,6 +1156,20 @@ onUnmounted(() => {
 }
 .dot.flow {
   background: linear-gradient(90deg, transparent 40%, #0052d9 40%);
+}
+/* 路线图例：用短线段示意线型（实线 / 虚线 / 第三种颜色） */
+.lg-line {
+  width: 22px;
+  height: 0;
+  margin-right: 7px;
+  display: inline-block;
+  border-top: 3px solid #0052d9;
+}
+.lg-line.alternative {
+  border-top: 3px dashed #8c8c8c;
+}
+.lg-line.departure {
+  border-top: 3px solid #7b61ff;
 }
 /* 图例里的摄像头小圆点：与外圈同款（实心 = 有视频源、空心 = 未接入） */
 .dot.cam-dot {
