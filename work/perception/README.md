@@ -164,5 +164,34 @@
 | 当前结果 | 6 路摄像头里 **C-02→road2→SZ-005、C-05→track1→SZ-024**（样本视频回放，非本站现场、演示映射）；其余 4 路无视频源 |
 | 自检 | `python tools/check_camera_map.py`（6 路逐条对账 + `SZ-###` 零悬空 + `SEG-###` 活跃引用清单 + 站点包 channels 与登记表一致） |
 
-> **换源时怎么改**：先改 `mapping/camera-segments.json`，再同步 `stationZ.ts` 的 `channels`，跑自检与门禁；真实摄像头接入时按 **IKMHMX** 重做标定与映射。样本视频里的 `road2/track1` 不是肇庆东站现场，**不得**把该映射说成"实拍路段"。
+> **换源时怎么改**：先改 `mapping/camera-segments.json`，跑生成器 `gen_station_channels.py`，再跑自检与门禁；真实摄像头接入时按 **IKMHMX** 重做标定与映射。样本视频里的 `road2/track1` 不是肇庆东站现场，**不得**把该映射说成"实拍路段"。
+
+## 九、视频感知链路：三脚本入库 + 一条命令跑通（Issue IKMF1S，2026-10-17）
+
+> **先找回再重写**：`calib.py` / `metrics.py` 从 `archive/task-three-page-pipeline` 分支**找回原件**（commit `6130978`）；
+> `level.py` 按当前 `stations/thresholds.json` 的 **`grading` 组**适配（旧结构是 `grade`）；新增 `run_chain.py` 串联入口。
+> **不是重写、不是新造**——找回来源写进本节与 PR。
+
+| 文件 | 作用 | 口径 |
+|---|---|---|
+| `calib.py` | 透视标定：`stations/calibration.json` 控制点 → 单应矩阵（留一交叉验证 + 尺度误差 + 有效标定带） | 控制点是 **inferred 演示值**（非池·V 现场拾取）；换站/换视频重做标定 |
+| `metrics.py` | 四项指标：流量 / 平均车速 / 密度 / 排队长度（只用有效标定带内的点） | 两条链路共用；不按 `source` 分支 |
+| `level.py` | 五步判级（可用性门 → 硬触发 → 四项取最高 → 因素修正 → 防抖） | 阈值全读 `stations/thresholds.json` 的 `grading` 组；**代码不写死判级数字** |
+| `run_chain.py`（新） | `data/monitor/<stream>/{meta,detections,frames}` → `out/latest/segments_video.json`（契约 `segments.json` 形状，`source: "video"`） | 通道→路段映射**只读** `mapping/camera-segments.json`；时间戳取输入 meta（不读系统时钟）→ 同输入连跑 3 次**逐字节一致**（M1-3） |
+
+**用法（仓库根）**：
+
+```bash
+python work/perception/run_chain.py            # 写 out/latest/segments_video.json + pipeline_status.json
+python work/perception/run_chain.py --check    # 与既有产物逐字节比对
+python work/perception/level.py --self-test    # 判级自检：3 次一致 + 覆盖 ≥2 档 + 降档防抖
+python work/perception/calib.py --all          # 标定自检：重投影误差 / 尺度误差 / 有效标定带
+```
+
+**当前本机数据**：只有 `road2` / `track1` **2 路样本视频**（不是 6 段）——所以本机只能举证 2 条路段：
+`road2→SZ-005（level 3 拥堵）`、`track1→SZ-024（level 1 畅通）`；**6 段覆盖（M1-9）未达成**，缺的 4 段视频不在仓库/本机，
+**不伪造、不拿别的视频顶**，如实记阻塞（视频源与真实标定归 IKMHMX / 二期现场接入）。
+
+> **口径纪律**：样本视频**非本站现场**、`is_simulated: true`、`source: "video"`；页面与产物不得出现「实测 / 实时 / 现场」；
+> 标定 `inferred: true` 的精度数字只是**留一交叉验证的演示值**，**不得**当 M1-9 的现场精度结论。
 
