@@ -210,10 +210,34 @@ export const STATION_Z: StationPack = {
     attribution: '地图数据 © OpenStreetMap 贡献者，依 ODbL 许可',
   },
 
-  // 断面：本单不落断面（断面是走廊/同化那条线的事，另开单）
-  sections: [],
-  dropoffs: [],
-  zones: [],
+  // ---- 断面 / 点位（IKM4TE mock 数据；业主 2026-10-17：先用 mock 代替，真实化归 IKMHMX）----
+  // ⚠️ `sections` 是**候选清单**，`boundary/internal` 逐条标了 role，但**尚未经队长签字冻结**
+  //    （冻结清单属 M1-10 / TC-20 前置；IKMHMX 负责签字冻结与真实化）。这里只是让页面/契约形状先跑通。
+  sections: [
+    // 边界候选：主干道外围断面（允许回灌的候选）
+    { point_id: 'P-B01', segment_id: 'SZ-001', name: '吉庆大道西侧上游断面（候选边界·待冻结）', role: 'boundary', offset: 0.5 },
+    { point_id: 'P-B02', segment_id: 'SZ-003', name: '吉庆大道北侧上游断面（候选边界·待冻结）', role: 'boundary', offset: 0.5 },
+    { point_id: 'P-B03', segment_id: 'SZ-004', name: '吉庆大道东侧上游断面（候选边界·待冻结）', role: 'boundary', offset: 0.5 },
+    { point_id: 'P-B04', segment_id: 'SZ-009', name: '吉庆大道南侧上游断面（候选边界·待冻结）', role: 'boundary', offset: 0.5 },
+    { point_id: 'P-B05', segment_id: 'SZ-015', name: '鼎湖大道北侧上游断面（候选边界·待冻结）', role: 'boundary', offset: 0.5 },
+    // 内部断面：站前/停车场内部，**禁止回灌**（TC-20 第②项）
+    { point_id: 'P-I01', segment_id: 'SZ-018', name: '停车场内部通道断面（内部·禁止回灌）', role: 'internal', offset: 0.5 },
+    { point_id: 'P-I02', segment_id: 'SZ-019', name: '停车场·站门口断面（内部·禁止回灌）', role: 'internal', offset: 0.5 },
+    { point_id: 'P-I03', segment_id: 'SZ-022', name: '停车场内部通道断面2（内部·禁止回灌）', role: 'internal', offset: 0.5 },
+    { point_id: 'P-I04', segment_id: 'SZ-024', name: '停车场北支断面（内部·禁止回灌）', role: 'internal', offset: 0.5 },
+    { point_id: 'P-I05', segment_id: 'SZ-054', name: '场区出入道断面（内部·禁止回灌）', role: 'internal', offset: 0.5 },
+    { point_id: 'P-I06', segment_id: 'SZ-055', name: '场区出入道断面2（内部·禁止回灌）', role: 'internal', offset: 0.5 },
+  ],
+  // 落客点 / 候客区（mock：坐标取对应路段折线上的演示点，不是踏勘点位；真实化归 IKMHMX）
+  dropoffs: [
+    { id: 'DROP-01', name: '停车场·站门口落客区（演示点）', lon: 112.6582025, lat: 23.21537 },
+    { id: 'DROP-02', name: '停车场北支落客区（演示点）', lon: 112.6583471, lat: 23.21514 },
+    { id: 'DROP-03', name: '场区落客区（演示点）', lon: 112.6562027, lat: 23.2158868 },
+  ],
+  zones: [
+    { id: 'ZONE-01', name: '候客区·停车场北支（演示点）', lon: 112.6588897, lat: 23.2148643 },
+    { id: 'ZONE-02', name: '蓄车区·场区通道（演示点）', lon: 112.6558858, lat: 23.2147712 },
+  ],
   stations: [
     // 站点块 = 站房位置（坐标取自 OSM node 9195330007 的公开坐标；该节点**不在本切片内**，
     // 故它只当锚点用，图上站点块是示意，不代表站房轮廓）
@@ -225,11 +249,75 @@ export const STATION_Z: StationPack = {
   // 不画车辆小球（业主口径：用路段级着色表达路况）
   vehicleBases: [],
 
-  alerts: [],
+  // ---- 告警 / 下发 / 分流建议（IKM4TE mock 数据；演示剧本，非现场实况）----
+  // 四态各一条：待认领 / 处置中 / 已闭环 / 误报；level 会被 mock 按**当前路段快照**重映射（#75 第④条）。
+  alerts: [
+    {
+      alert_id: 'DEMO-AL-2026-1017-001',
+      segment_id: 'SZ-019',
+      level: 4,
+      triggered_by: ['L_q', 'x'],
+      factor_ids: ['F07'],
+      ago_min: 12,
+      status: '待认领',
+    },
+    {
+      alert_id: 'DEMO-AL-2026-1017-002',
+      segment_id: 'SZ-010',
+      level: 3,
+      triggered_by: ['x'],
+      factor_ids: ['F11'],
+      ago_min: 20,
+      status: '处置中',
+    },
+    {
+      alert_id: 'DEMO-AL-2026-1017-003',
+      segment_id: 'SZ-054',
+      level: 2,
+      triggered_by: ['v'],
+      factor_ids: [],
+      ago_min: 35,
+      status: '已闭环',
+    },
+    {
+      alert_id: 'DEMO-AL-2026-1017-004',
+      segment_id: 'SZ-005',
+      level: 2,
+      triggered_by: ['v'],
+      factor_ids: [],
+      ago_min: 45,
+      status: '误报',
+    },
+  ],
 
-  seedDispatch: {},
+  // 预置一条「已下发」回执，演示处置工作台有历史可看（mock 内存态，刷新复位）
+  seedDispatch: {
+    'DEMO-AL-2026-1017-002': { channel: '导航软件推送', ratio_pct: 15, dispatch_ago_min: 5 },
+  },
 
-  diversion: {},
+  // 分流建议（演示值，非模型输出）：未命中路段走 diversionFallback
+  diversion: {
+    'SZ-019': {
+      segment_id: 'SZ-019',
+      target_segment_id: 'SZ-024',
+      target_name: '停车场·北支',
+      base_pct: 30,
+      min_pct: 10,
+      max_pct: 50,
+      expect: '站门口排队长度下降（演示值）',
+      why: '站门口段演示严重拥堵，建议把部分车流导向停车场北支 / 候客区（演示建议，非模型输出）',
+    },
+    'SZ-010': {
+      segment_id: 'SZ-010',
+      target_segment_id: 'SZ-015',
+      target_name: '鼎湖大道',
+      base_pct: 20,
+      min_pct: 0,
+      max_pct: 40,
+      expect: '进场干道饱和度下降（演示值）',
+      why: '吉庆大道进场段演示拥堵，建议部分车流走鼎湖大道进场（演示建议，非模型输出）',
+    },
+  },
   diversionFallback: {
     segment_id: '',
     target_segment_id: '',
@@ -237,8 +325,8 @@ export const STATION_Z: StationPack = {
     base_pct: 0,
     min_pct: 0,
     max_pct: 0,
-    expect: '本包不提供分流建议（演示范围只到"路网 + 摄像头"）',
-    why: '本包不提供分流建议（演示范围只到"路网 + 摄像头"）',
+    expect: '本路段暂无分流建议（演示包未预置）',
+    why: '本路段暂无分流建议（演示包未预置；不是"不需要分流"的结论）',
   },
 
   // 感知通道 = 6 路摄像头（生成物，来源见 work/perception/mapping/camera-segments.json）
@@ -259,8 +347,49 @@ export const STATION_Z: StationPack = {
    */
   colorPolicy: 'camera-covered',
 
-  // 断面同化不在本单范围
-  assimilation: [],
+  // 数据同化状态（IKM4TE mock 数据）：仅候选边界断面允许回灌；内部断面恒 false（TC-20 第②项）。
+  // ⚠️ 本批是**演示值（mock）**，不是真实回灌；真实回灌 / 门控 / 熔断归 IKMHMX（M1-10 / TC-20）。
+  assimilation: [
+    {
+      point_id: 'P-B01',
+      name: '吉庆大道西侧上游断面（候选边界）',
+      segment_id: 'SZ-001',
+      role: 'boundary',
+      enabled: false,
+      flow_dev_pct: null,
+      speed_dev_pct: null,
+      confidence: 0.62,
+      gate_reason: 'confidence_low',
+      gate_detail: '置信度 0.62 < 门控 0.75（演示值；真实回灌/门控归 IKMHMX）',
+      reason: '演示值：同化未开启（mock 状态，非真实回灌；IKMHMX 真实化后按边界断面接入）',
+    },
+    {
+      point_id: 'P-B05',
+      name: '鼎湖大道北侧上游断面（候选边界）',
+      segment_id: 'SZ-015',
+      role: 'boundary',
+      enabled: false,
+      flow_dev_pct: null,
+      speed_dev_pct: null,
+      confidence: 0.52,
+      gate_reason: 'confidence_low',
+      gate_detail: '置信度 0.52 < 门控 0.75（演示值）',
+      reason: '演示门控：置信度不足，停止回灌（mock 数据）',
+    },
+    {
+      point_id: 'P-I02',
+      name: '停车场·站门口断面（内部）',
+      segment_id: 'SZ-019',
+      role: 'internal',
+      enabled: false,
+      flow_dev_pct: null,
+      speed_dev_pct: null,
+      confidence: 0.0,
+      gate_reason: null,
+      gate_detail: null,
+      reason: '内部断面禁止回灌（TC-20 第②项；演示数据）',
+    },
+  ],
   assimilationGate: { confidence_min: 0.75, data_age_max_s: 120 },
 
   context: {
@@ -268,7 +397,40 @@ export const STATION_Z: StationPack = {
     calendar: '工作日',
     next_train_note: '演示值 · 本包不含列车数据',
   },
-  scenarios: [],
+  // 场景剧本（IKM4TE mock 数据）：**环境上下文侧预设**（F01/F02/F03/F10），与「人工置位」（F07/F08/F11）是两个口子；
+  // key 必须与 `ScenarioInjectPanel.vue` 的 applyPreset 对应，否则页面 chip 点了没反应。
+  scenarios: [
+    {
+      key: 'baseline',
+      name: '基线（晴·平峰）',
+      note: '天气晴 + 平峰时段（演示剧本；每档都可一键注入并重算判级）',
+      factor_ids: [],
+    },
+    {
+      key: 'rain-peak',
+      name: '大雨·晚高峰',
+      note: 'F01 大雨 × 0.75 通行能力 + 晚高峰需求（演示剧本）',
+      factor_ids: ['F01', 'F10'],
+    },
+    {
+      key: 'fog-night',
+      name: '大雾·夜间',
+      note: 'F01 大雾 + F02 夜间（演示剧本；检测置信度按因素表折减）',
+      factor_ids: ['F01', 'F02'],
+    },
+    {
+      key: 'train-burst',
+      name: '列车到达·需求×1.35',
+      note: 'F03 列车到达放量 + F10 时段（演示剧本）',
+      factor_ids: ['F03', 'F10'],
+    },
+    {
+      key: 'accident-loop',
+      name: '事故后绕行峰值',
+      note: '早高峰 + 需求 ×1.2 的环境侧演示档（事故本身走「人工置位」F07，别混口子）',
+      factor_ids: ['F10'],
+    },
+  ],
 
   // ⚠️ 演示骨架（IKMF1W 2026-10-17）：三组段序列是**在 61 段真 OSM 几何上按"相邻段端点落在
   //    另一段折线上（≤25 m）"的连通关系拼出来的**，不是引擎的 K 最短路 + 预约输出，也不是
