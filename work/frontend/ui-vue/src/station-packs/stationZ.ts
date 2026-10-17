@@ -206,7 +206,12 @@ export const STATION_Z: StationPack = {
   station: {
     station_id: 'ZQNZ',
     name: '肇庆东站',
-    subtitle: '真路网 · 站区 500 m / 61 段 · 吉庆大道 / 鼎湖大道 / 场区通道',
+    // ⚠️ 范围/段数来自 `work/twin/site-ranges.json`（IKM4B4 登记表，脚本推定 500 m / 61 段）；
+    //    改范围先改登记表，再跑 `python work/twin/netpack/check_site_ranges.py` 对账。
+    subtitle: '真路网 · 站区 500 m（脚本推定）/ 61 段 · 吉庆大道 / 鼎湖大道 / 场区通道',
+    range_m: 500,
+    range_source: 'script',
+    segment_count: 61,
   },
 
   segments: STATION_Z_SEGMENTS,

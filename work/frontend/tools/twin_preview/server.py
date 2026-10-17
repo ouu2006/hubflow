@@ -25,6 +25,7 @@ import argparse
 import json
 import math
 import random
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -39,11 +40,19 @@ from fastapi.responses import JSONResponse
 
 DIR = Path(__file__).resolve().parent
 
+# ---- 站点范围登记表（IKM4B4）：站房锚点 / 范围半径 / 路段数目标一律读 work/twin/site-ranges.json ----
+ROOT = DIR.parents[3]
+if str(ROOT / "work/twin") not in sys.path:
+    sys.path.insert(0, str(ROOT / "work/twin"))
+from site_config import DEFAULT_CONFIG_PATH, load_site  # noqa: E402
+
+_SITE = load_site(None)
+
 #: 默认门牌（**向后兼容**：不传参数就是原来那一套，不是给某个站加的分支）
 DEFAULT_NET_FILE = DIR / "station.net.xml"
-#: 默认站房锚点（经纬度）——仅**启发式选路段**那条路用；有映射表时完全不读它
-DEFAULT_STATION_LONLAT = (112.6551321, 23.2166791)
-DEFAULT_SEG_COUNT = 10
+#: 默认站房锚点（经纬度）——读登记表；仅**启发式选路段**那条路用，有映射表时完全不读它
+DEFAULT_STATION_LONLAT = tuple(float(v) for v in _SITE["anchor_lonlat"])
+DEFAULT_SEG_COUNT = int(_SITE.get("bridge_seg_count", 10))
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8102
 
@@ -107,8 +116,8 @@ CHAIN_MAX_HOPS = 64
 CHAIN_TURN_MAX_DEG = 75.0
 #: 短于此长度的链视为**路口接头碎片**，不成段（实测原实现会把 3.6 m / 4.1 m 的接头当"站区连接线"）
 MIN_SEG_LEN_M = 30.0
-#: 只收站区范围内的链（米）。超出这个半径的链不属于"站前"演示范围
-STATION_RADIUS_M = 1200.0
+#: 只收站区范围内的链（米）。读登记表的 range_m（IKM4B4：不再写死全站共用一个常数）
+STATION_RADIUS_M = float(_SITE["range_m"])
 SEED = 42
 
 app = FastAPI(title="hubflow twin preview", docs_url=None, redoc_url=None)
@@ -621,32 +630,42 @@ def vehicles() -> JSONResponse:
 
 
 def parse_args(argv: list[str] | None = None) -> BridgeConfig:
-    """命令行参数 —— **换站 / 换网只改参数，不改代码，也不加任何站点分支**。"""
+    """命令行参数 —— **换站 / 换网只改配置或参数，不改代码，也不加任何站点分支**。"""
     parser = argparse.ArgumentParser(description="twin_preview：SUMO TraCI 小仿真 → 车辆真值")
+    parser.add_argument("--config", default=str(DEFAULT_CONFIG_PATH),
+                        help="站点范围登记表（默认 work/twin/site-ranges.json）")
+    parser.add_argument("--site-id", default=None,
+                        help="登记表里的 site_id（缺省取 default_site）")
     parser.add_argument("--net", default=str(DEFAULT_NET_FILE), dest="net_file",
                         help="SUMO 路网 .net.xml（默认：本目录的 station.net.xml）")
     parser.add_argument("--assignment", default="", dest="assignment_file",
                         help="「SEG → SUMO 边链」映射表 JSON；**给了它就不再从路网里猜路段**"
                              "（无名路 / 无地理配准的网必须给）")
-    parser.add_argument("--station-lonlat", default=",".join(map(str, DEFAULT_STATION_LONLAT)),
-                        dest="station_lonlat", help="站房锚点「经度,纬度」——只在不给映射表时用于挑路段")
-    parser.add_argument("--seg-count", type=int, default=DEFAULT_SEG_COUNT, dest="seg_count",
-                        help="不给映射表时，路段数补足到几条")
+    parser.add_argument("--station-lonlat", default="",
+                        dest="station_lonlat", help="站房锚点「经度,纬度」（缺省取登记表）")
+    parser.add_argument("--seg-count", type=int, default=0, dest="seg_count",
+                        help="不给映射表时，路段数补足到几条（缺省取登记表 bridge_seg_count）")
     parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_PORT,
                         help=f"默认 {DEFAULT_PORT}；二站可换 8103 好两站同时开")
     parser.add_argument("--site-name", default="", dest="site_name",
-                        help="展示用站点名（可空；不填就用路网文件名）")
+                        help="展示用站点名（缺省取登记表 site_name）")
     ns = parser.parse_args(argv)
-    lon, lat = (float(v) for v in str(ns.station_lonlat).split(","))
+
+    site = load_site(ns.site_id, Path(ns.config))
+    global STATION_RADIUS_M
+    STATION_RADIUS_M = float(site["range_m"])
+    station_lonlat = ns.station_lonlat or ",".join(str(v) for v in site["anchor_lonlat"])
+    lon, lat = (float(v) for v in str(station_lonlat).split(","))
+    seg_count = ns.seg_count or int(site.get("bridge_seg_count", DEFAULT_SEG_COUNT))
     return BridgeConfig(
         net_file=Path(ns.net_file),
         assignment_file=Path(ns.assignment_file) if ns.assignment_file else None,
         station_lonlat=(lon, lat),
-        seg_count=ns.seg_count,
+        seg_count=seg_count,
         host=ns.host,
         port=ns.port,
-        site_name=ns.site_name,
+        site_name=ns.site_name or str(site.get("site_name", "")),
     )
 
 

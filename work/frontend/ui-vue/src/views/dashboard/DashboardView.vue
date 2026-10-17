@@ -211,6 +211,20 @@ const mapCaption = computed(() =>
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
 
+// ---------- 本站范围与路段数（Issue IKM4B4）----------
+// 来源：`work/twin/site-ranges.json`（每站一份登记表）→ 站点包 station 字段 → 本页只展示。
+// 口径：范围是**脚本推定 / 人工圈定**的结果，不是官方划定；页面不报精度数字。
+const siteMeta = computed(() => activePack().station)
+const RANGE_SOURCE_LABEL: Record<string, string> = {
+  manual: '人工圈定',
+  script: '脚本推定',
+  'ai-assisted': 'AI 辅助候选（已人工确认）',
+}
+const rangeSourceLabel = computed<string>(() => {
+  const src = siteMeta.value.range_source
+  return src ? (RANGE_SOURCE_LABEL[src] ?? src) : '来源未登记'
+})
+
 // 大屏工具条上的「路网版本」切换（IKMDKY 子单①）：Z = 61 段新几何 / Z21 = 旧 21 段对照。
 // 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
 const packChoices = packItems()
@@ -1236,6 +1250,7 @@ function gotoDecision(): void {
 
     <template #foot>
       <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <span>本站范围 {{ siteMeta.range_m ?? '—' }} m（{{ rangeSourceLabel }}）· 路段 {{ siteMeta.segment_count ?? segments.length }} 条</span>
       <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · 底图:{{ sourceLabel }}</span>
       <span class="right">
         口径:一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)· {{ CI_DISCLAIMER }}

@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
-"""站点 OSM 切片 → 站点包 Z 的路网（Issue IKLX5Y）。
+"""站点 OSM 切片 → 站点包 Z 的路网（**第一代口径，已退役**；Issue IKLX5Y）。
+
+> ⚠️ 现行口径是 `build_junction_pack.py`（先路线 → 再分段 → 再打标签，61 段）。本脚本
+> 只保留给历史产物复现；**不要再拿它覆盖前端的 `stationZ.network.ts`**（那是新管线产物）。
+> 本单（IKM4B4）只做一件事：把站点名 / 阈值 / 切片改成**读登记表**，去掉写死值。
 
 输入：一份 OSM 切片（`.osm`，Overpass 导出，带 node / way / tag）。
 输出：
   ① `network.json` —— 机器可读的路网真值（每段带组成它的 OSM way id，可追溯）；
-  ② `stationZ.network.ts` —— 前端站点包的几何部分（纯脚本产物，勿手改）。
+  ② 前端几何 TS（纯脚本产物，勿手改）。
 
-## 路段粒度（业主 2026-10-15 裁定：按路名归并）
+## 路段粒度（第一代口径：按路名归并）
 
 1. **归并键**：有名用 `name`；无名按 `service`；再退 `highway`。
 2. **串链**：同组内共享 OSM 节点的 way 首尾相接成一串。
@@ -17,18 +21,16 @@
 
 ## 两条硬口径
 
-· 脚本里**不出现任何站点名与坐标**（手册 §8.4：换站只改参数）——站点名走 `--site`；
+· 脚本里**不出现任何站点名与坐标**（手册 §8.4：换站只改配置）——站点名/锚点/阈值读
+  `work/twin/site-ranges.json`，也可用 CLI 覆盖；
 · 产物只由脚本生成，**不许手改**；`--check` 重跑一遍与既有产物逐字节比对。
 
-用法（仓库根）：
+用法（仓库根；**输出路径必须显式给**，防误覆盖新管线产物）：
 
-    python work/twin/netpack/build_station_pack.py \
-        --osm work/frontend/tools/twin_preview/station.osm \
-        --site 肇庆东站 \
-        --out-json work/twin/netpack/network.json \
-        --out-ts work/frontend/ui-vue/src/station-packs/stationZ.network.ts
+    python work/twin/netpack/build_station_pack.py --site-id zhaoqingdong \
+        --out-json /tmp/network.json --out-ts /tmp/stationZ.network.ts --check
 
-    python work/twin/netpack/build_station_pack.py ... --check   # 只比对，不写
+    # 换站：往 work/twin/site-ranges.json 加一条记录，再 --site-id <新站>
 """
 from __future__ import annotations
 
@@ -39,6 +41,17 @@ import re
 import sys
 from collections import defaultdict
 from pathlib import Path
+
+#: 站点范围登记表读取器在 work/twin/site_config.py（换站只改 JSON，脚本零改动）
+_TWIN_DIR = Path(__file__).resolve().parent.parent
+if str(_TWIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_TWIN_DIR))
+from site_config import DEFAULT_CONFIG_PATH, load_site, repo_path  # noqa: E402
+
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001
+    pass
 
 RAD = math.pi / 180
 R = 6371000.0
@@ -193,7 +206,9 @@ def dedup(line):
     return keep
 
 
-def snap_merge(pieces, tol=SNAP_M):
+def snap_merge(pieces, tol=None):
+    if tol is None:
+        tol = SNAP_M
     """端点相距 ≤ tol 的两片接起来（反复做，直到接不动）。每片是 `(line, way_ids)`。
 
     这一条是路上"路口两侧各是一条 way、各自建节点"的对策——不并片会把一个路口
@@ -308,22 +323,49 @@ def fmt_ts(site: str, segs, osm_name: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--osm", required=True, help="OSM 切片路径")
-    ap.add_argument("--site", required=True, help="站点名（写进 network.json；脚本里不硬编码）")
-    ap.add_argument("--out-json", required=True)
-    ap.add_argument("--out-ts", required=True)
+    ap = argparse.ArgumentParser(description="第一代口径（已退役）：按路名归并出站点路段")
+    ap.add_argument("--config", default=str(DEFAULT_CONFIG_PATH), help="站点范围登记表")
+    ap.add_argument("--site-id", default=None, help="登记表里的 site_id（缺省取 default_site）")
+    ap.add_argument("--osm", default=None, help="OSM 切片路径（缺省取配置 osm_file）")
+    ap.add_argument("--site", default=None, help="站点名（缺省取配置 site_name；脚本里不硬编码）")
+    ap.add_argument("--out-json", required=True, help="产物 JSON（**必须显式给**，防覆盖新管线产物）")
+    ap.add_argument("--out-ts", required=True, help="产物 TS（**必须显式给**）")
     ap.add_argument("--check", action="store_true", help="只比对既有产物，不写")
     a = ap.parse_args()
 
-    nodes, ways = parse_osm(Path(a.osm))
+    cfg_path = Path(a.config)
+    site = load_site(a.site_id, cfg_path) if cfg_path.exists() else None
+    if site is None and not (a.osm and a.site):
+        print("❌ 找不到登记表（--config），且未给 --osm / --site")
+        return 2
+
+    def pick(key: str, cli_value, fallback=None):
+        if cli_value is not None and cli_value != "":
+            return cli_value
+        if site is not None and key in site:
+            return site[key]
+        return fallback
+
+    # 阈值也读登记表（换站只改配置）；CLI 可覆盖
+    global SNAP_M, MIN_SEG_M
+    SNAP_M = float(pick("snap_m", None, SNAP_M))
+    MIN_SEG_M = float(pick("min_seg_m", None, MIN_SEG_M))
+
+    site_name = str(pick("site_name", a.site, ""))
+    osm_raw = pick("osm_file", a.osm)
+    if not site_name or not osm_raw:
+        print("❌ 站点名 / OSM 切片路径不全")
+        return 2
+    osm_path = repo_path(osm_raw) if not Path(osm_raw).is_absolute() else Path(osm_raw)
+
+    nodes, ways = parse_osm(osm_path)
     segs = build(ways)
-    osm_name = Path(a.osm).name
+    osm_name = osm_path.name
 
     net = {
         "is_simulated": True,
         "note": "几何取自 OpenStreetMap 切片（真值）；路况指标一律为演示数据（模拟），本文件不含任何指标",
-        "site": a.site,
+        "site": site_name,
         "crs": "WGS-84",
         "source": "OpenStreetMap (ODbL 1.0)",
         "generated_by": "work/twin/netpack/build_station_pack.py",
@@ -342,7 +384,7 @@ def main() -> int:
     }
 
     json_text = json.dumps(net, ensure_ascii=False, indent=2) + "\n"
-    ts_text = fmt_ts(a.site, segs, osm_name)
+    ts_text = fmt_ts(site_name, segs, osm_name)
 
     if a.check:
         bad = 0
@@ -364,7 +406,7 @@ def main() -> int:
     Path(a.out_json).write_text(json_text, encoding="utf-8", newline="\n")
     Path(a.out_ts).write_text(ts_text, encoding="utf-8", newline="\n")
 
-    print(f"站点：{a.site}   way {len(ways)} 条（车行 {len(car_ways(ways))}）→ 路段 {len(segs)} 段")
+    print(f"站点：{site_name}   way {len(ways)} 条（车行 {len(car_ways(ways))}）→ 路段 {len(segs)} 段")
     for s in segs:
         print(f"  {s['segment_id']:<7}{s['kind']:<6}{s['name']:<30}"
               f"{s['length_m']:>7.0f} m  {len(s['coords']):>3} 点  way {len(s['way_ids'])} 条")

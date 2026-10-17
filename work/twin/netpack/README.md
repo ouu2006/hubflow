@@ -28,7 +28,7 @@
 | ① | **范围** | **圆心 = 站点 OSM 坐标**；**半径自动推** = 站区车道（`service=parking_aisle`/`driveway`/`amenity=parking`）最远点 **× 1.2**，四舍五入到 **50 m**；该站没画站区车道时回落「全部路网最远点 × 0.45」 | 每站大小不同，**不能全靠人量**；肇庆东验算：429 m ×1.2 = 515 → **500 m**，与业主口述一致 |
 | ② | **粒度** | **按交叉口之间一段** | 路口天然带拓扑；每段有自己的车道/限速/容量，BPR 才有落点 |
 | ③ | **无名路** | 段名 = 路名；同名多段才加后缀；无真实路名沿用**通用译名** | **不许编造路名** |
-| ④ | **段数** | **97 段**（切片全量）/ **61 段**（500 m 范围内） | 由 ② 的粒度 + ① 的范围共同决定；**范围一变要重跑** |
+| ④ | **段数** | **97 段**（切片全量）/ **61 段**（500 m 范围内） | 由 ② 的粒度 + ① 的范围共同决定；**范围一变要重跑**；每站的段数目标登记在 `work/twin/site-ranges.json` 的 `seg_target`（不是靠 `--seg-count` 拆长路凑数） |
 
 ### 硬约束：几何保真自检
 
@@ -36,30 +36,57 @@
 
 **为什么有这条**：第一版跳过了「路线」这一步，直接对 way 做**节点吸附**再切段 —— 吸附会把端点坐标**替换**成另一个点，折线被拉扯变形：停车场里 16~19 m 的车位排被横着连起来，图上出现**横穿车位排的假线**（业主肉眼发现的）。有了这条自检，这类错误**结构上不可能再出现**。
 
-### 一键复现
+### 一键复现（**全部默认值来自站点范围登记表**）
 
 ```bash
-# 在仓库根执行
-python work/twin/netpack/build_junction_pack.py \
-    --osm work/frontend/tools/twin_preview/station.osm \
-    --site 肇庆东站 \
-    --anchor-lonlat 112.6581162,23.2173959 \
-    --auto-range --min-coverage-pct 10 \
-    --out-json work/twin/netpack/network_junction.json \
-    --out-ts   work/twin/netpack/stationZ_junction.network.ts
+# 在仓库根执行：默认读 work/twin/site-ranges.json 的 zhaoqingdong 记录
+python work/twin/netpack/build_junction_pack.py --site-id zhaoqingdong
 
 # 只校验：重跑一遍与既有产物**逐字节**比对（不写盘，不一致非 0 退出）
-python work/twin/netpack/build_junction_pack.py ... --check
+python work/twin/netpack/build_junction_pack.py --site-id zhaoqingdong --check
+
+# 三方对账：登记表 ↔ 路网产物 ↔ 前端站点包 / 切片 bbox
+python work/twin/netpack/check_site_ranges.py
 ```
 
 **输出两件**：
 - `network_junction.json` —— **几何 + 拓扑 + 属性占位**（`nodes[]` / `edges[]` / `stats` / `range_reason` / `contract_map`）；
 - `stationZ_junction.network.ts` —— 前端站点包几何（**切换前端时才用**）。
 
+### 站点范围登记表（Issue IKM4B4，**每站一份**）
+
+**唯一载体**：`work/twin/site-ranges.json`。脚本的参数 / 路径 / 范围 / 段数目标全部从它读；**脚本从不写这张表**（改配置只能人工编辑）。
+
+| 字段 | 含义 |
+|---|---|
+| `site_id` / `site_name` | 站标识 / 展示名（脚本里不出现任何站点名） |
+| `anchor_lonlat` | 站点锚点 `[lon, lat]`（圆心；来自 OSM 站点坐标） |
+| `range_m` | **演示范围半径**（米）。肇庆东 = 500 m（业主 2026-10-17 口径） |
+| `pull_bbox` | **拉取范围** `[min_lon, min_lat, max_lon, max_lat]`——比演示范围放大一圈，留 `role: "boundary"` 的上游断面（M1-10）；**与 range_m 分开登记，不混成一个** |
+| `seg_target` | 该站**路段数目标**（人工确认）；与 `range_m` 成对登记 |
+| `seg_prefix` / `snap_m` / `junction_tol_m` / `min_seg_m` / `min_coverage_pct` | 该站分段参数 |
+| `osm_file` / `out_json` / `out_ts` | 该站切片与产物路径（相对仓库根） |
+| `station_pack_ts` / `station_pack_meta_ts` | 前端站点包几何 / 元信息路径（供对账脚本用） |
+| `range_source` | `manual`（人工圈定）/ `script`（脚本推定）/ `ai-assisted`（AI 候选 + 人工确认） |
+| `decided_by` / `date` / `evidence` | 谁定的、哪天、凭什么（脚本推定的写清依据）——**范围不许"没来由"** |
+
+**来源规则（脚本 / AI 只出候选，人工确认才生效）**：
+- `script` 站：`build_junction_pack.py` 每次用**同一算法复算**范围并与登记表对账（不一致 → 退出码 2，**脚本不自动改登记表**）；
+- `manual` 站：直接用 `range_m`，不自动推；
+- `ai-assisted`：AI / 脚本只出**候选**（依据：路网密度、边界断面位置、OD 覆盖），**必须人工确认后**才写进表；
+- 范围不是官方划定、**不报精度数字**；几何真值来自 OSM。
+
+**大屏 / 接口可查**：登记表的 `range_m` / `range_source` / `seg_target` 落进站点包 `station` 字段（`range_m` / `range_source` / `segment_count` + `subtitle`），
+大屏页脚显示「本站范围 X m（来源）· 路段 N 条」；`GET /api/traffic/meta` 的 `station` 直接带这三个字段。
+
 ### 换一个站要改什么
 
-只换 **三个参数**：`--osm`（新站切片）、`--site`（站名）、`--anchor-lonlat`（站点坐标）。
-**脚本里不出现任何站点名与坐标**（手册 §8.4），脚本本身零改动。
+**只往 `work/twin/site-ranges.json` 加一条记录**，然后 `--site-id <新站>` 跑脚本 —— **脚本一行不改**（手册 §8.4 / IKM4B4 专属一）。
+加记录后用 `check_site_ranges.py` 对账；`--auto-range` 只打印**候选范围**并提示"确认后人工改登记表"，不写配置。
+
+> ⚠️ `stations/map_source.json` 仍是 **IKLLX2 的 7 节点占位件**（`bbox` 与本目录切片无关）。
+> 本目录的拉取范围已登记在 `site-ranges.json` 的 `pull_bbox` + 切片本身；`stations/map_source.json`
+> 的真值重建归 `map_ingest.py` / 数据契约收口，**本单不手改 `stations/` 下 JSON**（开发规范第 7 节）。
 
 ### 与 `stations/network.json` 的关系（**待开发B 裁定**）
 
