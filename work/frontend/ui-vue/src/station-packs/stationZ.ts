@@ -14,32 +14,19 @@
 // 本单不判定主干 / 分支；走廊落位另开单。
 
 import { STATION_Z_SEGMENTS } from './stationZ.network.ts'
-import type { PackChannel, PackSegmentBase, StationPack } from './types.ts'
+import { CAMERA_CHANNELS } from './cameraChannels.generated.ts'
+import type { PackSegmentBase, StationPack } from './types.ts'
 
 // ---- 摄像头布点（6 路）----
 //
-// 布点口径：**按决策点布**——把"司机要在哪儿做选择"的地方各放一个：
-//   cam-01 吉庆大道·西进口（从西侧进场，含走廊最西那个口子）
-//   cam-02 吉庆大道·中段（三个东侧口子汇入处）
-//   cam-03 场区出入口（拐进停车场那一下）
-//   cam-04 停车场·站门口（走到站口最后一段）
-//   cam-05 停车场·北支（停车场内部北侧通道）
-//   cam-06 鼎湖大道·进场（另一条进场干道）
-//
-// ⚠️ **坐标不是路测点，也不是踏勘点位**：6 个坐标都取自**该段自己的折线**（其中 5 个取在
-//    折线顶点上，C-06 落在折线段中间）——只保证"图钉画在这条线上"，不表示实地位置。
-// ⚠️ **`hasVideo: false`**：本批摄像头**全部没有视频源**（业主：视频样本先不弄）。
-//    感知层对它们显示「未接入视频源 · 本期留空」，**不得**说成"样本视频未导出"。
+// **唯一真值来源 = `work/perception/mapping/camera-segments.json`**（IKMDKY 三段映射登记表）；
+// 本文件**不再手写通道表**，只 import 生成物 `cameraChannels.generated.ts`
+// （生成器：`work/perception/tools/gen_station_channels.py`；改映射先改登记表再生成）。
+//   · cam_id ↔ channel_id（= `source`，感知服务 stream_id）↔ segment_id
+//   · 6 路里 **C-02 / C-05 能对上样本视频**（road2 / track1，样本视频非本站现场、映射仅演示）
+//   · 其余 4 路如实标「未接入视频源」——`hasVideo: false` **不等于**没有摄像头、更不等于数据可用
 // ⚠️ **IKMDKY 切新段后的段号映射**：6 个摄像头按**几何最近**落到新 61 段上（段号 2 位 → 3 位）；
 //    C-06 原坐标在站区 500 m 之外，沿鼎湖大道就近落到站区边界段 SZ-015（演示布点，非实测坐标）。
-const CHANNELS: PackChannel[] = [
-  { cid: 'C-01', source: 'cam-01', name: '吉庆大道·西进口', segment_id: 'SZ-010', lon: 112.6548733, lat: 23.2151734, hasVideo: false },
-  { cid: 'C-02', source: 'cam-02', name: '吉庆大道·中段', segment_id: 'SZ-005', lon: 112.6573791, lat: 23.2139003, hasVideo: false },
-  { cid: 'C-03', source: 'cam-03', name: '场区出入口', segment_id: 'SZ-054', lon: 112.6570652, lat: 23.2140549, hasVideo: false },
-  { cid: 'C-04', source: 'cam-04', name: '停车场·站门口', segment_id: 'SZ-019', lon: 112.6577645, lat: 23.2156324, hasVideo: false },
-  { cid: 'C-05', source: 'cam-05', name: '停车场·北支', segment_id: 'SZ-024', lon: 112.6588897, lat: 23.2148643, hasVideo: false },
-  { cid: 'C-06', source: 'cam-06', name: '鼎湖大道·进场', segment_id: 'SZ-015', lon: 112.6535729, lat: 23.2150334, hasVideo: false },
-]
 
 // ---- 路段基线（演示值）----
 //
@@ -48,10 +35,10 @@ const CHANNELS: PackChannel[] = [
 // 数值是**编造的演示值**（一眼能看出是整数 / 整档），不是任何模型的输出。
 //
 // ⚠️ **`source` 一律取 `'twin'`（孪生链路 / 虚拟检测器）**，不是 `'video'`：
-//    本站**没有任何视频链路**——6 路摄像头全是空窗（`hasVideo: false`），
-//    一份视频指标都产不出来。若在这里写 `'video'`，双数据源并排（TC-19）与
+//    本包没有任何**本站段**的视频链路指标；6 路摄像头里只有 C-02/C-05 有样本视频，
+//    而样本视频非本站现场、不产出本站段指标。若在这里写 `'video'`，双数据源并排（TC-19）与
 //    数据供给对照带（DataSupplyPanel）就会把编造的演示值列成"视频链路槽位"，
-//    与感知层的空窗**自相矛盾**（口径红线：不得把模拟值说成实测值）。
+//    与"样本视频只做感知演示"的口径**自相矛盾**（口径红线：不得把模拟值说成实测值）。
 //
 // 等级分布刻意做成"进场堵、场区通"的演示剧情：
 //   新段号（由旧段迁入）：SZ-010 / SZ-005（旧 SZ-01 吉庆大道）  3 级 拥堵
@@ -254,12 +241,13 @@ export const STATION_Z: StationPack = {
     why: '本包不提供分流建议（演示范围只到"路网 + 摄像头"）',
   },
 
-  // 感知通道 = 6 路摄像头（本批无视频源：`hasVideo: false`）
-  channels: CHANNELS,
+  // 感知通道 = 6 路摄像头（生成物，来源见 work/perception/mapping/camera-segments.json）
+  channels: CAMERA_CHANNELS,
   /**
-   * **视频链路覆盖 = 空**：本批摄像头全部没有视频源（业主：视频样本先不弄），
-   * 一份视频指标都产不出来。写空数组 → 双源并排（TC-19）的 video 槽位如实显示"不可用"，
-   * 而不是拿编造的演示值冒充视频链路 —— 与感知层的空窗同口径。
+   * **视频链路覆盖 = 空**：本包没有任何**本站段**的视频链路指标（站点包 Z 不给 `source: "video"` 的段基线）。
+   * ⚠️ 注意别和"有没有视频源"混：6 路摄像头里 C-02/C-05 有**样本视频**（感知演示用，非本站现场），
+   *    但样本视频**不产出本站段指标**，所以 video 槽位仍如实显示"不可用"（TC-19/TC-11），
+   *    不拿编造的演示值冒充视频链路，也不把样本视频算成"本站实测"。
    * ⚠️ 这与 `colorPolicy: 'camera-covered'` **不是一回事**：那条说的是"哪几条段**有摄像头**，
    *    可以上色"（摄像头 = 布点，与有没有视频源无关）；本条说的是"哪几条段有**视频链路数据**"。
    */

@@ -129,6 +129,11 @@ export interface PackDiversion {
 /** 感知通道 ↔ 路段映射(`source` 与感知服务 stream_id 对齐) */
 export interface PackChannel {
   cid: string
+  /**
+   * 摄像头编号（cam-01…cam-06，Issue IKMDKY）。与 `work/perception/mapping/camera-segments.json`
+   * 的 `cam_id` 一一对应；`source` 是**感知服务 stream_id**（有视频源时 = channel_id，无视频源时沿用 cam_id）。
+   */
+  cam_id?: string
   source: string
   name: string
   segment_id: string

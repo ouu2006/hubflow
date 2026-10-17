@@ -1,0 +1,110 @@
+{
+  "is_simulated": true,
+  "registry_version": "2026-10-17",
+  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY）。唯一真值来源：页面画的与后端发的都取本文件；样本视频非本站现场，映射仅用于演示/联调。",
+  "segment_id_namespaces": {
+    "SZ-###": "站点 Z 真 OSM 路网（61 段，见 work/twin/netpack/network_junction.json / stationZ.network.ts）—— 本站唯一现役段号",
+    "SEG-###": "7 节点样例网（stations/network.json 占位件 + work/engine/samples/ + 鸿蒙 App fixture）—— 样例数据专用，不是本站真网；保留不改名，避免把样例冒充本站",
+    "SZ-##": "旧 21 段对照包 Z21（stationZ21.*，只用于顶栏切换对照，定稿后按 netpack README 删除）"
+  },
+  "rules": [
+    "一路通道只能算一条路段；一条路段可以有多路通道（多对一）",
+    "cam_id ↔ channel_id ↔ segment_id 只有这一份登记表：页面（stationZ.channels）与后端（接口层 / meta）取同一个键",
+    "无视频源 ≠ 没有摄像头 ≠ 数据可用：has_video_source=false 只表示本期没有视频流",
+    "样本视频非本站现场：video_streams 的 segment_id 是演示映射（依据写 evidence），真实摄像头接入时按 IKMHMX 重做标定",
+    "拿不到的值标 null 或【待核实】，不编坐标 / 段号"
+  ],
+  "cameras": [
+    {
+      "cam_id": "cam-01",
+      "cid": "C-01",
+      "name": "吉庆大道·西进口",
+      "segment_id": "SZ-010",
+      "channel_id": null,
+      "has_video_source": false,
+      "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
+      "lon": 112.6548733,
+      "lat": 23.2151734
+    },
+    {
+      "cam_id": "cam-02",
+      "cid": "C-02",
+      "name": "吉庆大道·中段",
+      "segment_id": "SZ-005",
+      "channel_id": "road2",
+      "has_video_source": true,
+      "mapping_evidence": "视频↔摄像头沿用 2026-10-13 运行产物 provenance（road2→C-02 / track1→C-05）；摄像头→段号沿用 IKMDKY 子单① 的几何最近重映射；**本表登记后即唯一真值来源**（前端生成物与后端都读本表；样本视频非本站现场，映射仅演示）",
+      "lon": 112.6573791,
+      "lat": 23.2139003
+    },
+    {
+      "cam_id": "cam-03",
+      "cid": "C-03",
+      "name": "场区出入口",
+      "segment_id": "SZ-054",
+      "channel_id": null,
+      "has_video_source": false,
+      "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
+      "lon": 112.6570652,
+      "lat": 23.2140549
+    },
+    {
+      "cam_id": "cam-04",
+      "cid": "C-04",
+      "name": "停车场·站门口",
+      "segment_id": "SZ-019",
+      "channel_id": null,
+      "has_video_source": false,
+      "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
+      "lon": 112.6577645,
+      "lat": 23.2156324
+    },
+    {
+      "cam_id": "cam-05",
+      "cid": "C-05",
+      "name": "停车场·北支",
+      "segment_id": "SZ-024",
+      "channel_id": "track1",
+      "has_video_source": true,
+      "mapping_evidence": "视频↔摄像头沿用 2026-10-13 运行产物 provenance（road2→C-02 / track1→C-05）；摄像头→段号沿用 IKMDKY 子单① 的几何最近重映射；**本表登记后即唯一真值来源**（前端生成物与后端都读本表；样本视频非本站现场，映射仅演示）",
+      "lon": 112.6588897,
+      "lat": 23.2148643
+    },
+    {
+      "cam_id": "cam-06",
+      "cid": "C-06",
+      "name": "鼎湖大道·进场",
+      "segment_id": "SZ-015",
+      "channel_id": null,
+      "has_video_source": false,
+      "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
+      "lon": 112.6535729,
+      "lat": 23.2150334
+    }
+  ],
+  "video_streams": [
+    {
+      "stream_id": "road2",
+      "source_file": "road2.mp4",
+      "cam_id": "cam-02",
+      "cid": "C-02",
+      "segment_id": "SZ-005",
+      "legacy_product_segment_id": "SEG-003",
+      "status": "demo-mapped",
+      "evidence": "provenance.channel=C-02（2026-10-13 运行产物）；该产物里的 SEG-003 属 7 节点样例网，不是本站段号，本表不沿用；本表登记后即唯一真值来源",
+      "note": "样本视频回放（非本站现场）· 演示数据（模拟）；真实摄像头接入时按 IKMHMX 重做标定与映射"
+    },
+    {
+      "stream_id": "track1",
+      "source_file": "track1.mp4",
+      "cam_id": "cam-05",
+      "cid": "C-05",
+      "segment_id": "SZ-024",
+      "legacy_product_segment_id": "SEG-004",
+      "status": "demo-mapped",
+      "evidence": "provenance.channel=C-05（2026-10-13 运行产物）；该产物里的 SEG-004 属 7 节点样例网，不是本站段号，本表不沿用；本表登记后即唯一真值来源",
+      "note": "样本视频回放（非本站现场）· 演示数据（模拟）；真实摄像头接入时按 IKMHMX 重做标定与映射"
+    }
+  ],
+  "coordinate_note": "摄像头坐标是**演示布点**：取自该段自己的折线（只保证图钉画在这条线上），不是路测点、也不是踏勘点位；唯一真值来源仍以本表为准。"
+}

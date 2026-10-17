@@ -672,7 +672,7 @@ const rankRows = computed(() =>
 // 极简口径(业主 2026-10-14):图上只画路段线,断面/落客点/场区/站点不再下发地图;
 // 文字只出现在跟随鼠标的浮牌(hover-chip)里。
 
-/** 选中 chip:SEG-003 拥堵 · 摄像头 2 路 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
+/** 选中 chip:路段拥堵 · 摄像头 2 路 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
 const mapChip = computed<string>(() => {
   // 摄像头数按**段号**现算(Issue IKLX5Y),不看有没有快照记录:
   // 没有摄像头的那 16 段**本来就没有记录**,若等记录才拼浮牌,这些段悬停时什么都没有

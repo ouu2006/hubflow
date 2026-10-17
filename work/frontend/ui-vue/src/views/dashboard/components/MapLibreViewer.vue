@@ -442,7 +442,8 @@ const pin = ref<CameraPin | null>(null)
 /**
  * 摄像头布点（Issue IKLX5Y）：位置取站点包 `channels[].lon/lat`（落在该段折线上的示意点，
  * **不是路测点位**），点击跳到感知层对应通道。
- * 实心 = 有视频源、空心 = 未接入视频源（本期留空）——两件事在页面上要分开说。
+ * 实心 = 有**样本视频源**（演示，非本站现场）、空心 = 未接入视频源（本期留空）——两件事在页面上要分开说，
+ * 且"有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
  */
 function addCameraPins(map: MapLibreMap): void {
   for (const p of pins) {
@@ -450,7 +451,7 @@ function addCameraPins(map: MapLibreMap): void {
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
     el.textContent = p.cid.replace('C-', '')
     el.title = `${p.cid} ${p.name} · ${p.segment_id} · ${
-      p.hasVideo ? '有视频源' : '未接入视频源 · 本期留空'
+      p.hasVideo ? '有样本视频源（演示，非本站现场）' : '未接入视频源 · 本期留空'
     } · 点击进感知层`
     el.addEventListener('mouseenter', () => {
       pin.value = p
@@ -938,7 +939,7 @@ onUnmounted(() => {
     <div v-if="pin" class="cam-chip" :style="camChipStyle">
       <b>{{ pin.cid }}</b> {{ pin.name }}
       <span class="cam-chip-sub">
-        {{ pin.segment_id }} · {{ pin.hasVideo ? '有视频源' : '未接入视频源 · 本期留空' }} · 点击进感知层
+        {{ pin.segment_id }} · {{ pin.hasVideo ? '有样本视频源（演示，非本站现场）' : '未接入视频源 · 本期留空' }} · 点击进感知层
       </span>
     </div>
 
@@ -986,9 +987,9 @@ onUnmounted(() => {
         <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
         <template v-if="cameraOnly">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />摄像头布点（点击进感知层）</div>
+          <div class="lg-row"><span class="dot cam-dot" />摄像头 · 有样本视频源（演示，非本站现场）</div>
           <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
-          <div class="lg-note">未挂摄像头的路段只画灰轮廓、不上色</div>
+          <div class="lg-note">样本视频非本站现场；未挂摄像头的路段只画灰轮廓、不上色</div>
         </template>
       </template>
     </div>
