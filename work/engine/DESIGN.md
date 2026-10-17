@@ -10,16 +10,17 @@
 | 层 | 状态 | 说明 |
 |---|---|---|
 | **`stations/` 九件结构** | ✅ **定稿并冻结** | 见第二节；两组顶层键名写进 [`docs/数据契约.md`](../../docs/数据契约.md) 第六节 6.3 |
-| **`run.py --sample`** | ✅ 可跑 | 不依赖上游、不依赖 SUMO，读 `samples/` + `stations/thresholds.json` 写 `out/` |
+| **`run.py --sample`** | ✅ 可跑（对照组基线）；`--sample --compare` 已接三组对照 | 不依赖上游、不依赖 SUMO，读 `samples/` + `stations/thresholds.json` 写 `out/`；`--compare` 见文末「IKMF1V 实现记录」 |
 | **`network.py`（路网 + BPR）** | ✅ **实做**（W1 交付项） | 统一图结构载入与校验、`t = t0·(1+α·x^β)` |
 | **`candidates.py`（K 最短路）** | ✅ **实做**（W1 交付项） | Yen 算法 + 路径重叠度 ≤ 0.7 筛选 |
-| `reserve.py`（时段容量预约 + 不伤害） | ⬜ 空壳 | W3 |
+| **`reserve.py`（时段容量预约 + 不伤害）** | ✅ **实做**（W3；IKMF1V） | `SlotTable` / `walk_slots()` / `harm_check()` / `recommend()` / `release_expired()`，见文末实现记录 |
 | `locate.py`（定位匹配） | ⬜ 空壳 | W4 |
-| `reroute.py`（前车再疏导） | ⬜ 空壳 | W5 |
+| **`reroute.py`（前车再疏导）** | ✅ **实做**（W5；IKMF1V） | 三条件 + `hysteresis` 滞回 + 每车最多改道次数，见文末实现记录 |
 | `predict.py`（预测 L0） | ⬜ 空壳 | W5 |
 | `map_ingest.py` / `ingest_t1.py` / `ingest_t2.py` | ⛔ **不在本任务** | 分别归 Issue #37 / #41 |
 
-**四个空壳的实现体一律抛 `NotImplementedError`**，不返回编造的结果。W0 骨架的哲学是"**骨架即隐性契约**"：先把函数边界与输入输出类型定下来，让下游能照着对接。
+**仍为空壳的 `locate.py` / `predict.py` 实现体一律抛 `NotImplementedError`**，不返回编造的结果。W0 骨架的哲学是"**骨架即隐性契约**"：先把函数边界与输入输出类型定下来，让下游能照着对接。
+
 
 ## 二、站点包九件：结构与归属
 
@@ -57,6 +58,7 @@
   1. **本输出等于手册 7.6 的「对照组」**（"此刻最快"，普通导航做法），**不是实验组**。真正让实验组区别于对照组的是时段容量预约与不伤害前车约束。
   2. `routes.json` 的 `reservation` **恒为 `null`**。契约第二节把 `reservation` 列为必填，这里**如实置空**，**不编一个 `harm_check.passed = true` 出来** —— 编出来正是 issue 反复强调的"静默假通过"。`out/run_log.json` 里另记 `is_reservation_effective: false`。
 - **影响面**：`out/` 是运行产物、已 gitignore，不进仓库。
+- **IKMF1V 之后**：`--sample` **仍保持**上面这条"此刻最快基线"口径（判定引用它，不许改）；协同推荐走 `--sample --compare` 的 ③ 组，见文末「IKMF1V 实现记录」。
 
 ## 四、`out/routes.json` 的信封形状（**一处需要下游知晓的约定**）
 
@@ -92,7 +94,7 @@ ls -l out/                   # routes.json + run_log.json
 1. **样例路网是为演示"造"出来的**：`network_sample.json` / `stations/network.json` 的 7 节点 / 17 边都是一个最小玩具图，只保证 M1-4 的"≥3 个 OD 对出候选"能演示。**它不是肇庆东站的真实路网** —— 真值待 Issue #37（`map_ingest.py`）产出。
 2. **`stations/` 九件全是占位值**：列车时刻、点位经纬度、标定控制点等均为"一眼能看出是样例"的整数/占位值，**不是实测数据**，对外材料一律按"演示数据（模拟）"口径。
 3. **`od[].exit_node` 是本次新加的字段**（见数据契约 6.3）：`routes.json` 的 `departure_route` 必填，但"送完人之后去哪"此前无处安放。已写进契约；`demand.json` 的脚本归开发A，**开发A 若要改名请提 Issue**。
-4. **`--sample` 不接预约/不伤害/再疏导**（见第三节 ③），因此 `quota` 也恒为 `null`。
+4. **`--sample` 不接预约/不伤害/再疏导**（见第三节 ③），因此 `quota` 也恒为 `null`（`--compare` 的 ③ 协同链路里 `reservation` / `quota` / `reroute` 都有值，见文末「IKMF1V 实现记录」）。
 5. **`run.py` 不带 `--sample` 会抛 `NotImplementedError`** —— 真链路要 SUMO 孪生数据（`work/twin`）与站点包路网（`network.json`，Issue #37），两者都还没到位。
 
 ---
@@ -133,3 +135,131 @@ PR #82 兜底审留了五项，本件是它落地的记录。四项在代码、�
 | C | 照旧把上客点位写进 `dropoff_point` | ✗ 就是本件要修的毛病 |
 
 **选 A 的代价说清楚**：点位 id 落在 `why` 这种自由文本里，下游要解析才能拿到。**W3 接口层如果真需要结构化地拿"上客点"，那时再走契约流程加字段**——本件不替它决定。
+
+---
+
+# 附：IKMF1V 实现记录（W3 时段容量预约 + W5 前车再疏导 + `--compare` 三组对照）
+
+> 本件把 `[reserve.py](reserve.py)` / `[reroute.py](reroute.py)` 两个空壳做实，并给 `[run.py](run.py)` 加 `--compare`。
+> 口径：**`--sample` 的现有行为一字未动**（它是对照组基线，被 `DESIGN.md` 与多条判定引用），新增全部走 `--sample --compare`。
+
+## 十四、交付
+
+| 文件 | 内容 | 对着哪条判定 |
+|---|---|---|
+| `reserve.py` | `SlotTable`（时段预约表 + 每段 t0 / 背景流 / 通行能力缓存）、`walk_slots()`（沿路径按 `slot_minutes` 推进）、`harm_check()`（约束②，只返回契约三字段）、`remaining_quota()`（`quota` 新口径）、`recommend()`（约束①+②、登记预约与租约、全候选被丢弃 → `capacity_shortage`）、`release_expired()` | M1-4 / 契约 §二 / 本单专属一、二 |
+| `reroute.py` | `is_before_next_branch()` / `best_alternative()`（`hysteresis` 滞回）/ `should_reroute()`（三条件同时满足）/ `reroute()`（回写 `{count, reason}`，每车最多改道次数读站点包）/ `check_and_reroute()`（一个决策周期） | W5 / 契约 §二 `reroute` |
+| `run.py` | 新增 `--compare`：① 不推荐 ② 此刻最快 ③ 协同推荐；输出 TC-17 三项对比数据 + `capacity_shortage` / 租约释放 / 突发再疏导证据；`run_log.is_reservation_effective = true` | TC-17 / 契约 §二 |
+| `DESIGN.md` | 本记录 | [`开发规范.md`](../../docs/开发规范.md) 总原则④ |
+
+## 十五、需要申报的六处做法
+
+### ① 模块内部签名按"显式传状态"扩展（跨模块契约签名未变）
+
+手册 §7.6 的伪代码是**模块级全局状态**（`background` / `reserved` / `leases` 挂在模块上）。本实现把状态收进 `SlotTable` 并显式传参，例如：
+
+```text
+walk_slots(table, path, start_epoch_s, extra=1)   # 手册的 walk(path, t_start, extra)
+harm_check(table, cells, leases, params)          # 手册的 max_eta_increase(...)
+recommend(graph, od, candidate_paths, segments, params, table, leases, now_ts)
+release_expired(table, leases, now_ts)            # 多一个 table:释放时要把格子撤掉
+```
+
+理由：**确定性 + 可测**（同一输入不依赖模块全局残留）。**跨模块契约签名未变**——接口层的决策入口仍是"给请求 → 出契约响应体"，`routes.json` 字段一个没动。
+
+### ② 格子量纲 = 辆/时段；BPR 复用 `network.travel_time_s`，不复制公式
+
+- 手册 §7.6 写明 `background` / `reserved` / `cap` 都是**辆/分钟**，`extra=1` 是"把这辆新车算进去"；
+  所以格子里按 **辆/时段** 计数，`cap` 由 `segments.c_vph` 换算成"辆/时段"（`slot_minutes` 从站点包读）。
+- `SlotTable.tt()` **不另写一份 BPR**：把格子里车数换算成 `extra_vph` 喂给
+  `network.travel_time_s`（全仓唯一 BPR 实现）。`x` 本身即无量纲饱和度，**惩罚项不再除以 c**
+  （与 `network.py` 顶部量纲注释一致）；改站点包 `alpha` / `beta` / `slot_minutes`，产物跟着动。
+
+### ③ `quota` 按 v2.0 新口径实现
+
+`remaining_quota()` = 这条路径**各格子"再塞几辆仍能保持饱和度 ≤ x_safe"的最小值**（整数），
+不是 v1.0 的"配额发号计数"。`recommend()` 对每条候选各算一个，`run.py` 折成
+`{"<path_id>": 剩余可预约量}`。
+
+### ④ `REROUTE_TH` 在站点包 decision 组**没有独立键**（缺口申报）
+
+手册 §7.7 把"再疏导触发阈值 `REROUTE_TH`"标为【待标定】，但
+`stations/thresholds.json` 的 `decision` 组**没有这个键**。**不在代码里写死一个数字**：
+`reroute_threshold_s(params)` 暂代用同组的 `eps_harm_s`（两者同为"ETA 增加量（秒）"阈值），
+并在函数 docstring 写明"站点包补键后改读新键"。
+**本单不碰 `stations/`**（跨目录禁区），补键由后续站点包变动统一做。
+
+### ⑤ `--compare` 的三组口径（TC-17 对照实验）
+
+- **车辆群**：每 OD `demand_vph × segments.window_sec / 3600` 辆，按 `3600 / demand_vph` 等间隔出发
+  —— 固定车辆群、无随机数、不读系统时钟（确定性）。
+- **① 不推荐**：自由流最短路（没有推荐时的驾驶员习惯路线）。
+- **② 此刻最快**：用**同一份 segments 快照**算出 `--sample` 的推荐 + 备选，整批车辆跟着这条
+  "普通导航"推荐走（不做时段预约、看不见后车）。
+- **③ 协同推荐**：在同一批候选上叠时段容量预约 + 不伤害前车约束 + 前车再疏导。
+- 三组**同一份输入、同一批车辆、同一套站点包参数**。样例数据上 ① 与 ② 的路线恰好相同
+  （自由流最短路与 BPR 快照的最快路径一致），产物里如实并列，**不硬造差异**。
+- **全网总行程时间口径**：`Σ 每段每时段 (背景车流 + 已预约) × 该时段服务时间`（辆·秒，
+  **把被拖慢的背景车流也算进去**，对应 TC-17 的"全网"）；另列"被引导车辆共同车辆群"口径作参考
+  （TC-17 评测协议口径，两者都写进产物，不挑好看的报）。
+
+### ⑥ 演示事件从站点包数据推、不写死常量
+
+- **突发再疏导**：从 `stations/factors.json` 的 `demo_multipliers` 里取**第一条倍率 ≤ 0** 的
+  demo 取值（样例是 F07 交通事故·全封）作为封路注入；封哪条路段 = 突发时刻在途车辆**剩余路径里
+  出现最多**的那条段（并列按段号；数据驱动，不写死段号）。
+- **`capacity_shortage`**：取第一个 OD 的每条候选，按 `remaining_quota()` 把预约表顶满，使"再加一辆
+  必然超约束①"；再请求推荐必须返回 `capacity_shortage` 且无路线（**不硬塞**）。
+- **租约释放**：登记一张未确认采纳的租约 → 时钟推进 `lease_expire_s + recompute_period_s`
+  → `release_expired()` 后占用格子归零。
+
+## 十六、自检（真实跑过，输出摘要）
+
+| 命令 | 结果 |
+|---|---|
+| `python work/engine/run.py --sample` | 退出 0；`out/routes.json` 8310 B / `run_log.json` 730 B，与改动前基线**逐字节一致** |
+| `python work/engine/run.py --sample --compare` | 退出 0；`requests=4`、`reservation=null 条数=0`、4 个 OD 的 `harm_check.passed` 全 `true`、每 OD `alternatives=2`；`run_log.is_reservation_effective=true` |
+| `--compare` 连跑两遍逐字节比对 | `routes.json` 23275 B / `run_log.json` 1992 B **两次完全一致** |
+| 参数写死检查（issue 原文 `grep -nE "0\.85\|30(\.0)?\b\|90(\.0)?\b\|0\.10"`） | `reserve.py` / `reroute.py` **0 命中** |
+| `python scripts/doc_gate.py` | 8/8 组全过（1 条既有 `[注意]` 与本次改动无关） |
+
+## 十七、TC-17 三项结论（**如实记录，不粉饰**）
+
+| 判据 | 结果 | 数字 |
+|---|---|---|
+| ① 前车 ETA 最大增加 ≤ `eps_harm_s` | ✅ | ③ **1.1 s** ≤ 30 s（② 用同样口密度出来 6.14 s） |
+| ② 不新增橙 / 红路段 | ❌ | ③ 新增 `SEG-001`（x=0.8125）；② 同段 x=0.625 |
+| ③ 全网总行程时间低于对照组 | ✅ | ③ **60073.79** < ② **61072.84**（辆·秒，含背景车流） |
+
+**② 为什么不过 —— 站点包 demo 数值口径冲突，不是实现编造：**
+
+1. `x_safe = 0.85`【待标定】**高于**判级橙档边界 `0.8`（`thresholds.grading.level_bounds` 的 x 档）；
+2. OD-02 的唯一可行备选是 `SEG-001 → SEG-015`（另两条候选经过 `SEG-003`，其背景饱和度已
+   0.833，+1 辆即超 `x_safe`，属约束①合法拒绝）；
+3. OD-02 需求 5 辆/分钟 → 实验组合法登记后 `SEG-001` 的 x = 0.625 + 5/26.67 = **0.8125**，达橙档；
+4. 对照组（普通导航）走 `SEG-011 → SEG-003`、不经过 `SEG-001`，所以这是"实验组新增的橙档"。
+
+**没有为了让判据变绿去改代码常量或调阈值**（issue 第六节点名的造假红线）；
+待池·P 标定后由开发B 统一改站点包（`x_safe` 与档位二选一或都调），本单不碰 `stations/`。
+补充留痕：③ 的"被引导车辆共同车辆群"口径总耗时 15964.71 vs ② 15957.31（③ 高 0.05%），
+原因是 OD-02 被约束逼到自由流更慢的备选、而 ② 的拥堵惩罚很小，两者基本抵消；
+产物里单列，**没有拿车辆口径当判据凑过**。
+
+## 十八、`capacity_shortage` 证据（本单专属一）
+
+`comparison.capacity_shortage_evidence`：OD-01 的三条候选按剩余可预约量顶满预约表后，三个候选的
+瓶颈格子饱和度分别为 0.825 / 0.8333 / 0.8333（上限 0.85）；再请求一次 → 每条候选都超 `x_safe`
+（0.8625 / 0.8667 / 0.8667），输出 `status = capacity_shortage`、`has_route = false`、
+`suggest = 外围等待 / 延后出发 / 换停车场`，**没有硬给一条路线**。
+
+## 十九、边界与遗留风险
+
+- **只改 `work/engine/`**：未动 `docs/` / `stations/` / 其它 `work/` 目录（`git status` 可查）。
+- **`--sample` 现有行为未改**：改动前后 `out/routes.json` / `run_log.json` 逐字节一致。
+- **遗留 1**：`REROUTE_TH` 缺口（见 ④）—— 站点包补键后改读新键。
+- **遗留 2**：TC-17 ② 的 demo 数值冲突（见 十七）—— 需池·P 标定或站点包调整，**本单不能改站点包**。
+- **遗留 3**：样例 7 节点只是为了跑通机制，**不是真网**；不要拿本产物数字当性能 / 效果结论
+  （真网算路在 IKMDKY ③' 之后）。
+- **遗留 4**：`--compare` 是引擎侧对照实验（固定车辆群、确定性），不是 SUMO 闭环对照；
+  孪生侧闭环实验仍归后续 issue。
+
