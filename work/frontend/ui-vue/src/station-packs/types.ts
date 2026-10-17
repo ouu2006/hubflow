@@ -19,6 +19,15 @@ export interface PackStation {
   station_id: string
   name: string
   subtitle: string
+  /**
+   * 本站演示范围（米）——来自 `work/twin/site-ranges.json`（IKM4B4 登记表），
+   * 由 `work/twin/netpack/check_site_ranges.py` 对账。页面只展示，不参与任何计算。
+   */
+  range_m?: number
+  /** 范围来源：manual=人工圈定 / script=脚本推定 / ai-assisted=AI 辅助候选（已人工确认） */
+  range_source?: 'manual' | 'script' | 'ai-assisted'
+  /** 本站路段数（= site-ranges.json 的 seg_target），页面只展示，不参与计算 */
+  segment_count?: number
 }
 
 /** 路段几何(契约 `TrafficNetwork.segments` 的子集) */

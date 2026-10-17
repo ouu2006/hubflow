@@ -346,7 +346,19 @@ export interface ManualFactorResult {
 export interface TrafficMeta {
   ts: string
   is_simulated: true
-  station: { station_id: string; name: string; subtitle: string }
+  /**
+   * 站点元信息。`range_m` / `range_source` / `segment_count` 来自
+   * `work/twin/site-ranges.json`（IKM4B4 登记表，每站一份），由接口层原样透传；
+   * 缺省可缺（老包 / 老接口保持兼容），大屏只展示、不参与计算。
+   */
+  station: {
+    station_id: string
+    name: string
+    subtitle: string
+    range_m?: number
+    range_source?: 'manual' | 'script' | 'ai-assisted'
+    segment_count?: number
+  }
   /** 两条链路(D1′):视频感知链路 + 孪生链路 */
   sources: { key: TrafficSource; name: string }[]
   /** 口径角标(手册要求页面常驻「演示数据(模拟)· 双数据源」) */

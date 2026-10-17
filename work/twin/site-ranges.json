@@ -1,0 +1,36 @@
+{
+  "is_simulated": true,
+  "schema_version": "1.0",
+  "note": "站点范围登记表（Issue IKM4B4）：每站一份，范围/拉取 bbox/路段数目标/切片与产物路径都在这里。范围不是官方划定，不报精度数字；几何真值来自 OSM。",
+  "range_source_rule": {
+    "manual": "人工在底图上圈定并截图留证（一期原始口径）",
+    "script": "脚本按站区车道最远点 × 1.2 自动推定（业主 2026-10-17 裁定）；推定结果须人工确认后才写进本表",
+    "ai-assisted": "AI / 脚本只出候选范围（依据：路网密度、边界断面位置、OD 覆盖），必须人工确认后写入本表，AI 不直接定范围"
+  },
+  "default_site": "zhaoqingdong",
+  "sites": [
+    {
+      "site_id": "zhaoqingdong",
+      "site_name": "肇庆东站",
+      "anchor_lonlat": [112.6581162, 23.2173959],
+      "range_m": 500,
+      "pull_bbox": [112.6482379, 23.2092208, 112.6647876, 23.2249875],
+      "seg_target": 61,
+      "seg_prefix": "SZ",
+      "snap_m": 30,
+      "junction_tol_m": 2,
+      "min_seg_m": 20,
+      "min_coverage_pct": 10,
+      "bridge_seg_count": 10,
+      "osm_file": "work/frontend/tools/twin_preview/station.osm",
+      "out_json": "work/twin/netpack/network_junction.json",
+      "out_ts": "work/twin/netpack/stationZ_junction.network.ts",
+      "station_pack_ts": "work/frontend/ui-vue/src/station-packs/stationZ.network.ts",
+      "station_pack_meta_ts": "work/frontend/ui-vue/src/station-packs/stationZ.ts",
+      "range_source": "script",
+      "decided_by": "IKMERX 自动推定（build_junction_pack.py --auto-range）",
+      "date": "2026-10-17",
+      "evidence": "network_junction.json range_reason：站区车道最远点 429 m × 1.2 = 515.2 m → 四舍五入到 50 m 档 = 500 m；业主 2026-10-17 口径为「脚本自动推定，肇庆东 500 m」"
+    }
+  ]
+}

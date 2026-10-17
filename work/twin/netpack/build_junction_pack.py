@@ -36,20 +36,25 @@ ull`）；
 
 ## 用法（仓库根）
 
-    python work/twin/netpack/build_junction_pack.py \
-        --osm work/frontend/tools/twin_preview/station.osm --site 肇庆东站 \
-        --out-json work/twin/netpack/network_junction.json
+    # 默认读 work/twin/site-ranges.json（每站一份：范围 / 拉取 bbox / 段数目标 / 切片与产物路径）
+    python work/twin/netpack/build_junction_pack.py --site-id zhaoqingdong
 
-    ... --check          # 只比对，不写盘（逐字节一致才算通过）
-    ... --out-ts X.ts     # 可选：前端站点包几何（切换前端时才用）
-    ... --no-merge-coincident   # 不合并几何重合的段（复现合并前的段数）
+    # 只比对：重跑一遍与既有产物**逐字节**比对（不写盘，不一致非 0 退出）
+    python work/twin/netpack/build_junction_pack.py --site-id zhaoqingdong --check
+
+    # 给新站做「候选范围」：只打印候选、不自动写配置（人工确认后往 site-ranges.json 加一条记录）
+    python work/twin/netpack/build_junction_pack.py \
+        --osm <切片> --site <站名> --out-json <产物> \
+        --anchor-lonlat <lon,lat> --auto-range
+
+    # 可覆盖项：--snap-m / --seg-prefix / --min-coverage-pct / --out-ts（空串=不输出）/ --no-merge-coincident
 
 ## 硬口径
 
-- 脚本里**不出现任何站点名与坐标**（手册 §8.4：换站只改参数）；
+- 脚本里**不出现任何站点名与坐标**（手册 §8.4：换站只改配置）；
+- 范围 / 段数目标一律读 `work/twin/site-ranges.json`（IKM4B4 登记表），**不在代码里写死**；
 - 产物只由脚本生成、**不许手改**；
-- **不编造数据**：抽不到的属性就是 
-ull`；
+- **不编造数据**：抽不到的属性就是 `null`；
 - 几何取自 OSM（真值）；`is_simulated: true`，属性一期为演示占位。
 """
 from __future__ import annotations
@@ -62,8 +67,20 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
+#: 站点范围登记表读取器在 work/twin/site_config.py（换站只改 JSON，脚本零改动）
+_TWIN_DIR = Path(__file__).resolve().parent.parent
+if str(_TWIN_DIR) not in sys.path:
+    sys.path.insert(0, str(_TWIN_DIR))
+from site_config import DEFAULT_CONFIG_PATH, load_site, repo_path  # noqa: E402
+
 RAD = math.pi / 180
 R = 6371000.0
+
+# Windows 控制台默认 GBK：中文可编码，但 ✅/❌ 会抛 UnicodeEncodeError；统一 UTF-8 输出。
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:  # noqa: BLE001 —— 老 Python / 被重定向时忽略
+    pass
 
 #: 路线阶段：端点相距多近算"同一路口的两侧"（米，只用于把两片路接起来，**不移动顶点**）
 DEFAULT_SNAP_M = 30.0
@@ -730,51 +747,111 @@ def fmt_ts(edges, osm_name: str) -> str:
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="先获取路线，再分段，再打标签（含拓扑）")
-    ap.add_argument("--osm", required=True)
-    ap.add_argument("--site", required=True)
-    ap.add_argument("--out-json", required=True)
-    ap.add_argument("--out-ts", default=None)
-    ap.add_argument("--snap-m", type=float, default=DEFAULT_SNAP_M,
-                    help="路线阶段：端点对接半径（米）")
-    ap.add_argument("--junction-tol-m", type=float, default=DEFAULT_JUNCTION_TOL_M,
-                    help="分段阶段：判定同一路口点的坐标容差（米）")
-    ap.add_argument("--min-seg-m", type=float, default=DEFAULT_MIN_SEG_M)
-    ap.add_argument("--seg-prefix", default=DEFAULT_SEG_PREFIX)
+    ap = argparse.ArgumentParser(
+        description="先获取路线，再分段，再打标签（含拓扑）。默认参数与路径读 work/twin/site-ranges.json（每站一份）"
+    )
+    ap.add_argument("--config", default=str(DEFAULT_CONFIG_PATH),
+                    help="站点范围登记表（默认 work/twin/site-ranges.json）")
+    ap.add_argument("--site-id", default=None,
+                    help="登记表里的 site_id（缺省取 default_site）；换站只加一条记录、脚本不改")
+    ap.add_argument("--osm", default=None, help="OSM 切片路径（缺省取配置 osm_file）")
+    ap.add_argument("--site", default=None, help="站点显示名（缺省取配置 site_name）")
+    ap.add_argument("--out-json", default=None, help="产物 JSON（缺省取配置 out_json）")
+    ap.add_argument("--out-ts", default=None,
+                    help="前端几何 TS（缺省取配置 out_ts；传空串表示不输出）")
+    ap.add_argument("--snap-m", type=float, default=None)
+    ap.add_argument("--junction-tol-m", type=float, default=None)
+    ap.add_argument("--min-seg-m", type=float, default=None)
+    ap.add_argument("--seg-prefix", default=None)
     ap.add_argument("--check", action="store_true")
     ap.add_argument("--anchor-lonlat", default=None,
-                    help="站点锚点 \"lon,lat\"（配合 --range-m 做范围过滤）")
-    ap.add_argument("--range-m", type=float, default=0.0,
-                    help="范围半径（米）；0 = 不过滤")
+                    help="站点锚点 \"lon,lat\"（缺省取配置 anchor_lonlat）")
+    ap.add_argument("--range-m", type=float, default=None,
+                    help="范围半径（米）；缺省取配置 range_m；0 = 不过滤")
     ap.add_argument("--auto-range", action="store_true",
-                    help="自动推半径：站区车道（停车场/场区道）最远点 ×1.2，四舍五入到 50 m")
-    ap.add_argument("--min-coverage-pct", type=float, default=10.0,
-                    help="段落在圈内的里程占比低于此值就丢掉（默认 10%%）")
+                    help="按站区车道最远点×1.2 推**候选**半径（只打印候选，不自动写配置）")
+    ap.add_argument("--min-coverage-pct", type=float, default=None,
+                    help="段落在圈内的里程占比低于此值就丢掉（缺省取配置，默认 10%%）")
     ap.add_argument("--no-merge-coincident", dest="merge_coincident",
                     action="store_false", help="不合并几何重合的段（复现合并前段数）")
     a = ap.parse_args()
+
+    # ---- 参数解析：登记表为默认，CLI 可覆盖；换站只改配置、脚本零改动 ----
+    cfg_path = Path(a.config)
+    site = load_site(a.site_id, cfg_path) if cfg_path.exists() else None
+    if site is None and not (a.osm and a.site and a.out_json):
+        print("❌ 找不到站点范围登记表（--config），且未给全 --osm / --site / --out-json")
+        return 2
+
+    def pick(key: str, cli_value, fallback=None):
+        if cli_value is not None and cli_value != "":
+            return cli_value
+        if site is not None and key in site:
+            return site[key]
+        return fallback
+
+    site_name = pick("site_name", a.site, "")
+    osm_raw = pick("osm_file", a.osm)
+    out_json_raw = pick("out_json", a.out_json)
+    if not site_name or not osm_raw or not out_json_raw:
+        print("❌ 站点名 / OSM 切片 / 产物路径三者不全（配置或 CLI 补）")
+        return 2
+    osm_path = repo_path(osm_raw) if not Path(osm_raw).is_absolute() else Path(osm_raw)
+    if not osm_path.exists():
+        print(f"❌ OSM 切片不存在：{osm_path}")
+        return 2
+    out_json = repo_path(out_json_raw) if not Path(out_json_raw).is_absolute() else Path(out_json_raw)
+    out_ts_raw = a.out_ts if a.out_ts is not None else pick("out_ts", None)
+    out_ts = repo_path(out_ts_raw) if out_ts_raw else None
+
+    snap_m = float(pick("snap_m", a.snap_m, DEFAULT_SNAP_M))
+    junction_tol_m = float(pick("junction_tol_m", a.junction_tol_m, DEFAULT_JUNCTION_TOL_M))
+    min_seg_m = float(pick("min_seg_m", a.min_seg_m, DEFAULT_MIN_SEG_M))
+    seg_prefix = str(pick("seg_prefix", a.seg_prefix, DEFAULT_SEG_PREFIX))
+    min_coverage_pct = float(pick("min_coverage_pct", a.min_coverage_pct, 10.0))
 
     anchor = None
     if a.anchor_lonlat:
         parts = [float(x) for x in a.anchor_lonlat.split(",")]
         anchor = (parts[0], parts[1])
+    elif site is not None and site.get("anchor_lonlat"):
+        anchor = tuple(float(v) for v in site["anchor_lonlat"])
 
-    nodes_ll, ways = parse_osm(Path(a.osm))
+    range_m = float(a.range_m) if a.range_m is not None else (float(site["range_m"]) if site else 0.0)
+
+    nodes_ll, ways = parse_osm(osm_path)
     car = car_ways(ways)
-    osm_name = Path(a.osm).name
+    osm_name = osm_path.name
 
     auto_reason = None
-    if a.auto_range:
+    # `range_source=script` 的站（当前口径：脚本自动推）默认用**同一算法复算**并与登记表对账；
+    # manual 站直接用登记值，不自动改。脚本**从不写登记表**（改配置只能人工编辑）。
+    use_auto = a.auto_range or (
+        site is not None and site.get("range_source") == "script" and a.range_m is None
+    )
+    if use_auto:
         if anchor is None:
-            print("❌ --auto-range 需要同时给 --anchor-lonlat（站点锚点）")
+            print("❌ 自动推范围需要站点锚点（--anchor-lonlat 或配置 anchor_lonlat）")
             return 2
-        a.range_m, auto_reason = auto_range_m(car, nodes_ll, anchor)
-        print(f"自动推范围：{auto_reason['basis']} → **{a.range_m:.0f} m**")
+        computed, auto_reason = auto_range_m(car, nodes_ll, anchor)
+        if a.auto_range:
+            print(f"范围候选（**仅候选，不自动写配置**）：{auto_reason['basis']} → **{computed:.0f} m**")
+        if site is not None and abs(computed - float(site["range_m"])) > 1e-6:
+            print(f"❌ 配置 range_m={site['range_m']} 与脚本复算 {computed:.0f} m 不一致；"
+                  "请人工确认后改 work/twin/site-ranges.json（脚本不自动改登记表）")
+            return 2
+        range_m = computed
 
-    r_nodes, r_edges, stats = build(car, nodes_ll, a.snap_m, a.junction_tol_m,
-                                    a.min_seg_m, a.seg_prefix, a.merge_coincident,
-                                    a.range_m, anchor, a.min_coverage_pct)
+    r_nodes, r_edges, stats = build(car, nodes_ll, snap_m, junction_tol_m,
+                                    min_seg_m, seg_prefix, a.merge_coincident,
+                                    range_m, anchor, min_coverage_pct)
     stats["range_reason"] = auto_reason
+
+    # 范围 → 段数目标对账：seg_target 是人工定的目标，脚本不自动改（范围一变要人工重定）
+    if site is not None and int(site.get("seg_target", 0)) and stats["segments"] != int(site["seg_target"]):
+        print(f"❌ 段数 {stats['segments']} ≠ 配置 seg_target {site['seg_target']}："
+              "范围/阈值变了要人工重定段数目标，**未写盘**")
+        return 2
 
     # ⚠️ 几何保真自检必须在**写盘之前**跑：失败时不能把坏产物落盘
     #    （快速独立审查抓到的顺序问题 —— 早先是先写盘再自检，退出码 2 时坏文件已经在仓库里了）
@@ -783,13 +860,13 @@ def main() -> int:
               " —— **未写盘**，先修算法")
         return 2
 
-    payload = make_payload(r_nodes, r_edges, stats, a.site, osm_name, a.snap_m,
-                           a.junction_tol_m, a.min_seg_m, a.seg_prefix,
-                           a.range_m, anchor, a.min_coverage_pct)
+    payload = make_payload(r_nodes, r_edges, stats, site_name, osm_name, snap_m,
+                           junction_tol_m, min_seg_m, seg_prefix,
+                           range_m, anchor, min_coverage_pct)
     json_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
-    targets = [(Path(a.out_json), json_text)]
-    if a.out_ts:
-        targets.append((Path(a.out_ts), fmt_ts(r_edges, osm_name)))
+    targets = [(out_json, json_text)]
+    if out_ts is not None:
+        targets.append((out_ts, fmt_ts(r_edges, osm_name)))
 
     if a.check:
         bad = 0
@@ -808,7 +885,7 @@ def main() -> int:
         path.write_text(text, encoding="utf-8", newline="\n")   # 仓库统一 LF
         print(f"→ {path}")
 
-    print(f"\n站点：{a.site}   way {len(ways)} 条（车行 {len(car)}）")
+    print(f"\n站点：{site_name}   way {len(ways)} 条（车行 {len(car)}）")
     print(f"第1步 获取路线：{stats['roads']} 条")
     print(f"第2步 分段：路口点 {stats['junction_points']} 个 → {stats['segments']} 段 / "
           f"{stats['nodes']} 节点 / 总长 {stats['total_length_m']:.0f} m"
