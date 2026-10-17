@@ -597,6 +597,21 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 `vue-tsc --noEmit -p tsconfig.app.json` exit 0；`vite build` exit 0；`python scripts/doc_gate.py` 七组全过。另做了一次**防回归的负向验证**：临时把 `DashboardView.vue` 里 `AlertList` 的 `:level-of` 去掉，`vue-tsc` 当场报 `Property 'levelOf' is missing ... but required`（TS2345）——"下次迁移再漏搬一处"会在类型检查阶段失败，而不是等页面上出现两个等级。
 
+### 13.7 大屏路线闭环：推荐 / 备选 / 离站三态（Issue IKMF1W，2026-10-17）
+
+**一句话口径**：大屏地图从"`routeSegments = []`、一条路线都不画"改成**接 `POST /api/traffic/route/recommend` 并画三组路线**；路线是**连通段序列拼出来的演示骨架**，页面不得暗示"引擎算出来的 / 按当时路况重算的"。
+
+| 项 | 落点 |
+|---|---|
+| 数据来源 | `src/api/traffic.ts` 的 `postRouteRecommend()`（此前已导出、零调用）；mock 由 `src/mock/traffic.ts` 的 `buildRecommend()` 供，接口层 `traffic.py` 落地后同形状替换 |
+| 路线数据 | `src/station-packs/stationZ.ts` 的 `recommend`：推荐 5 段 / 备选 2 条 / 离站 7 段；**三组都按"相邻段端点落在另一段折线上 ≤25 m"的连通关系拼**（自检脚本 `work/frontend/scripts/check_route_connectivity.py`） |
+| 颜色语义 | **推荐 = 品牌蓝实线**（「当前 / 已选」语义）、**备选 = 灰虚线**（可多条叠画）、**离站 = 紫色实线**（第三种语义色，不用等级色）——守 §10.2「品牌蓝只表示当前 / 已选 / 可操作」「等级色只表示拥挤度」 |
+| 三态切换 / 标注 | 右栏「推荐路线」卡片：全部 / 推荐 / 备选 / 离站四个页签；卡片与地图图例都写「演示骨架 · 连通段拼接」，不出现「已接后端 / 按当时路况重算」字样 |
+| 失败降级 | 接口不可达 → `recommend = null`、**不画任何路线**，卡片显示可读提示；**不用本地 fallback 编一条假路线**（TC-11 同口径） |
+| 悬空防护 | 路线引用的段号不在当前站点包时，卡片如实列「N 段不在当前站点包」且不补造数据 |
+
+**实测记录（2026-10-17，1680×1000，Chromium / Tabbit Playwright）**：推荐态 / 备选态 / 离站态三张地图截图可辨（品牌蓝实线 / 灰虚线 / 紫色实线）；拦截 `**/api/traffic/route/recommend` 后刷新，页面显示「推荐接口不可达…保持不画路线，不编造演示路线」且地图无路线；连通性自检 4 条路线全过；`vue-tsc` + `vite build` exit 0；`python scripts/doc_gate.py` 八组全过。
+
 ---
 
 ## 十四、司机端鸿蒙 App：工程骨架 + P0 四页 UI（Issue #88，2026-10-14）

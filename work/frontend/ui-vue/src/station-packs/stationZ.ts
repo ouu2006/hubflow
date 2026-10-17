@@ -277,19 +277,26 @@ export const STATION_Z: StationPack = {
   },
   scenarios: [],
 
+  // ⚠️ 演示骨架（IKMF1W 2026-10-17）：三组段序列是**在 61 段真 OSM 几何上按"相邻段端点落在
+  //    另一段折线上（≤25 m）"的连通关系拼出来的**，不是引擎的 K 最短路 + 预约输出，也不是
+  //    按当时路况重算的结果；只改数据、不改 mock 结构（契约 §二形状不变）。相邻性自检见本 PR。
   recommend: {
     location_segment_id: 'SZ-010',
     location_offset_m: 40,
-    arrival_segments: ['SZ-010', 'SZ-054', 'SZ-011', 'SZ-019'],
-    arrival_eta_min: 6.5,
+    // 推荐：吉庆大道进口 → 场区通道 → 停车场·站门口（575 m ≈ 2.9 min，按演示速度估算）
+    arrival_segments: ['SZ-010', 'SZ-013', 'SZ-002', 'SZ-011', 'SZ-019'],
+    arrival_eta_min: 2.9,
     arrival_dropoff_point: '',
     arrival_walk_min: 3.0,
-    departure_segments: ['SZ-019', 'SZ-011', 'SZ-054', 'SZ-010'],
-    departure_eta_min: 4.0,
+    // 离站：站门口 → 吉庆大道 → 鼎湖大道方向（688 m ≈ 3.3 min）
+    departure_segments: ['SZ-019', 'SZ-011', 'SZ-002', 'SZ-013', 'SZ-010', 'SZ-006', 'SZ-015'],
+    departure_eta_min: 3.3,
+    // 契约要求备选 ≥2 条；两条都是连通序列，且与推荐路线不完全重叠
     alternatives: [
-      { path_id: 'P-2', segments: ['SZ-019', 'SZ-011', 'SZ-054', 'SZ-010', 'SZ-007', 'SZ-016', 'SZ-015'], eta_min: 8.2, note: '走鼎湖大道进场（缓行）' },
+      { path_id: 'P-2', segments: ['SZ-010', 'SZ-012', 'SZ-001', 'SZ-019'], eta_min: 3.9, note: '经吉庆大道直行（演示备选，约 777 m）' },
+      { path_id: 'P-3', segments: ['SZ-010', 'SZ-013', 'SZ-002', 'SZ-011', 'SZ-005', 'SZ-019'], eta_min: 3.3, note: '经吉庆大道东段绕行（演示备选，约 658 m）' },
     ],
-    why: '演示占位：新 61 段路网上按拓扑取的一条示意路径（未做路径搜索，非任何模型输出）；吉庆大道进场段演示拥堵，鼎湖大道稍好，站门口段演示严重拥堵。',
+    why: '演示路线：在 61 段真 OSM 路网上按相邻关系拼出的连通序列（不是引擎 K 最短路 + 预约输出，也不是按当时路况重算的结果）；吉庆大道进场段演示拥堵、站门口段演示严重拥堵。',
   },
 
   // 本站不接孪生桥接服务（桥接服务跑的是另一份路网，接上会把坐标画错位）
