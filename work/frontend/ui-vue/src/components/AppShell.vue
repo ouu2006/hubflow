@@ -2,7 +2,7 @@
 // 四页共用的应用壳(TDesign Light):顶栏(品牌 + 页签 + 站点 + 数据源 + 快照时间 + 演示角标)+ 页头 + 主体 + 页脚。
 // 顶栏骨架在 4 张设计稿里完全一致,抽成一处以免四页各写一套(改一次四处生效)。
 // 语义纪律:页签「当前页」与数据源「已选」一律用品牌蓝;等级色不得出现在壳层。
-import { computed, ref, useSlots } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
 import { RouterLink } from 'vue-router'
 import { APP_TABS, DEMO_BADGE, SOURCE_ITEMS, type AppTabKey, type SourceMode } from '../shared/nav'
 import { basemapEnabled, setBasemapEnabled } from '../shared/settings'
@@ -62,8 +62,34 @@ function choosePack(key: string): void {
 // ---- 设置（业主 2026-10-16）：大屏地图的**底图开关** ----
 // 开 = 矢量底图（OpenFreeMap，OSM 数据）+ 描出的路网；关 = **只画路网**（原来「示例路网」那个观感），
 // 一个底图请求都不发。底图那一层挂掉也不影响路网（见 `MapLibreViewer.vue`：本地兜底样式建图）。
-// 与线路图切换器同一套交互：鼠标移出即收起。
 const settingsOpen = ref(false)
+
+// ---- 弹出层（线路图切换器 / 设置）的关闭规则 ----
+// ⚠️ 2026-10-17 修 bug：原来靠 `@mouseleave` 收起，而菜单与按钮之间有 4px 空隙 ——
+//    鼠标一往下移就离开 wrapper，菜单先收起、指针根本到不了里面的开关（"老是点不着"）。
+//    现在改成：点按钮开/关 + 点外部关闭 + Esc 关闭，菜单不再跟着鼠标走。
+const packRoot = ref<HTMLElement | null>(null)
+const settingsRoot = ref<HTMLElement | null>(null)
+
+function onDocPointerDown(e: PointerEvent): void {
+  const t = e.target as Node
+  if (packRoot.value && !packRoot.value.contains(t)) packOpen.value = false
+  if (settingsRoot.value && !settingsRoot.value.contains(t)) settingsOpen.value = false
+}
+function onDocKeydown(e: KeyboardEvent): void {
+  if (e.key === 'Escape') {
+    packOpen.value = false
+    settingsOpen.value = false
+  }
+}
+onMounted(() => {
+  document.addEventListener('pointerdown', onDocPointerDown)
+  document.addEventListener('keydown', onDocKeydown)
+})
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocPointerDown)
+  document.removeEventListener('keydown', onDocKeydown)
+})
 </script>
 
 <template>
@@ -88,7 +114,7 @@ const settingsOpen = ref(false)
       <div class="td-top-right">
         <!-- 线路图切换器(业主 2026-10-14):选包即换路网,与站点 chip 同源。
              只有一个包时不渲染(IKM4XX)—— 别留只有单项的死控件 -->
-        <span v-if="packList.length > 1" class="net-switch" @mouseleave="packOpen = false">
+        <span v-if="packList.length > 1" ref="packRoot" class="net-switch">
           <button
             type="button"
             class="net-switch-btn"
@@ -130,8 +156,8 @@ const settingsOpen = ref(false)
           </span>
         </span>
         <span class="td-mono" style="font-size: 11px; color: #666">快照 {{ ts ? formatStamp(ts) : '—' }}</span>
-        <!-- 设置：底图开关（业主 2026-10-16）。交互与线路图切换器同款：鼠标移出收起 -->
-        <span class="td-settings" @mouseleave="settingsOpen = false">
+        <!-- 设置：底图开关（业主 2026-10-16）。交互：点按钮开/关，点外部或 Esc 关闭 -->
+        <span ref="settingsRoot" class="td-settings">
           <button
             type="button"
             class="td-settings-btn"

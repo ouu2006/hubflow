@@ -6,17 +6,21 @@
 //   · 浏览器:`main.ts` 读构建期的 `import.meta.env.VITE_STATION_PACK`(`.env.z` 里写),
 //     在挂载前注入 —— 之后所有组件与模块读到的都是同一份包;
 //   · vite mock:`vite.config.ts` 用 `loadEnv` 读同一个变量,经 `mockApiPlugin({ pack })` 注入。
-// **本仓现在只有一个包:Z(肇庆东站 OSM 真路网)** —— B / Y 随 IKM4KP 删除、A 随 IKM4XX 删除。
-// 取不到就落默认包 Z。
+// **本仓现有两个包,同站不同代几何**:
+//   · `Z`   = 现行几何(61 段,站区 500 m,IKMERX 三步管线产物 / IKMDKY 切新段后)
+//   · `Z21` = 旧 21 段过渡几何(按路名归并)——**只用于切换对照**,定稿后按 netpack README 删除。
+// 顶栏「线路图切换器」与监控大屏工具条各有一个入口;取不到就落默认包 Z。
 //
 // ⚠️ **选择器这一层一个字不删**:手册 §8.4「换一个站只改配置、不改引擎代码」靠它成立 ——
 //    将来加站还是"加一个包 + 一行 env",页面与 mock 各自读同一个键这件事不变。
 
 import { STATION_Z } from './stationZ.ts'
+import { STATION_Z21 } from './stationZ21.ts'
 import type { StationPack } from './types.ts'
 
 export const PACKS: Record<string, StationPack> = {
   Z: STATION_Z,
+  Z21: STATION_Z21,
 }
 
 export const DEFAULT_PACK_KEY = 'Z'
@@ -58,8 +62,7 @@ export function restorePackKey(fallback: string): string {
  * `activePack()` 现取,所以下一次拉快照起,页面路网/基线/告警整套跟着换;
  * 同时落一份 localStorage,好让 `choosePack()` 的整页刷新之后仍然生效。
  *
- * 现在只有一个包,顶栏切换器**不再渲染**(见 `AppShell.vue`:只有一个包时不显示),
- * 但本函数保留 —— 将来加站即恢复可用。
+ * 现在有两个包(Z 61 段 / Z21 旧 21 段),顶栏切换器与大屏工具条按钮都调这一支。
  */
 export function switchPack(key: string): void {
   if (!PACKS[key]) return
@@ -92,11 +95,11 @@ export function packNote(): string {
   return `站点包 ${p.key} · ${p.note}`
 }
 
-/** 可选线路清单(顶部栏切换器用):键 + 站名 + 一句话口径 */
+/** 可选线路清单(顶部栏切换器 / 大屏按钮用):键 + 短标签(缺省站名) + 一句话口径 */
 export function packItems(): { key: string; name: string; note: string }[] {
   return Object.values(PACKS).map((p) => ({
     key: p.key,
-    name: p.station.name,
+    name: p.label ?? p.station.name,
     note: p.note,
   }))
 }
