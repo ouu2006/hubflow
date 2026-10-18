@@ -1,7 +1,9 @@
 # IKMS1I 自检记录：交付包 C-4~C-7（真跑输出）
 
-> **演示数据（模拟）**：本记录是**本机真跑**的原始输出摘要，不是性能验收 / M1-6 通过声明。
-> 缺前置（感知样本导出 / 前端 dev server）的步骤**如实标阻塞**，不写「通过」。
+> **演示数据（模拟）**：本记录是**本机真跑**的原始输出摘要，不是性能验收。
+> **M1-6 两种环境如实并列**：① 干净 worktree（无感知样本数据）→ 感知链路阻塞、**M1-6 不声明通过**（§一 1.1）；
+> ② 数据在场（本机主 checkout / 目标机按 README §三 放好 `work/perception/data/monitor/`）→ `--rounds 3`
+> **实测通过、M1-6 通过**（§一 1.2）。缺前置的步骤一律如实标阻塞，不写「通过」。
 
 - 生成时间：2026-10-18（Asia/Shanghai）
 - 被测代码：`work/assembly/`（运行于 `origin/main` 2bb66e5 + 本单未提交改动；提交后 sha 见提交记录）
@@ -10,7 +12,9 @@
 
 ---
 
-## 一、C-4 一键演示：`python work/assembly/demo_all.py --rounds 3`（真跑）
+## 一、C-4 一键演示（M1-6：数据在场时通过；无数据时如实标阻塞）
+
+### 1.1 环境 A · 干净 worktree（无 `work/perception/data/monitor/`）→ 感知链路阻塞，M1-6 不声明通过
 
 命令与退出码：
 
@@ -65,9 +69,55 @@ python work/assembly/demo_all.py --rounds 3
 感知样本导出缺失导致第一项不成立，故本记录只写「三轮真跑完成、逐轮如实记录、**M1-6 未通过**」。
 补前置后可复跑：`python work/assembly/demo_all.py --rounds 3`（脚本会自己起停接口层，无需人工干预）。
 
+
+### 1.2 环境 B · 数据在场（本机放好 `work/perception/data/monitor/`）→ `--rounds 3` 通过，M1-6 通过
+
+> **数据前置**：`work/perception/data/monitor/<stream>/{meta.json,detections.json}` 是**上游样本视频导出产物**，
+> 属 gitignored 数据（视频 / 导出数据不进仓库）。本机复核时由主 checkout 的同名目录以 junction 提供
+> （junction 本身 gitignored、**未提交**）；目标机按 [`README.md`](README.md) §三「C-4 前置数据」放好即可。
+> 以下两次独立运行都**不是**用别处的 mock 数据顶替，而是走真实感知链路 `run_chain.py`。
+
+**（a）Lead 在本工作树（数据在场）实测**（原文摘要）：
+
+```text
+python work/assembly/demo_all.py --rounds 3
+→ exit 0；第 1/2/3 轮 ok（5.1s / 4.39s / 4.37s）
+→ 真网算路 ok、感知链路 ok、接口层 ok、18 端点 + SSE ok
+→ 内存 55.76 / 55.64 / 55.75 MB，growth -0.01 MB，not_continuously_growing=True
+→ "M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功"
+```
+
+**（b）本复核在同一 junction 下复跑**（同环境第二组独立样本，脚本真实输出）：
+
+| 轮次 | 状态 | 总耗时 (s) | 真网算路 | 感知链路 | 接口层 | 端点自检 | 内存（起→止 MB，采样点） |
+|---|---|---|---|---|---|---|---|
+| 1 | ✅ ok | 4.59 | ✅ ok（12 requests / 61 段 / 44 节点） | ✅ ok（2 段：SZ-005 / SZ-024） | ✅ ok | ✅ ok（21 项含写端点 + SSE） | 54.77 → 55.60（3 点） |
+| 2 | ✅ ok | 4.52 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 54.88 → 55.81（4 点） |
+| 3 | ✅ ok | 4.35 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 55.05 → 55.80（3 点） |
+
+```text
+内存趋势：[55.6, 55.81, 55.8]，growth=0.2 MB，allowed_growth_mb=20.0，not_continuously_growing=True
+M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功；内存未持续增长
+[demo exit=0]
+```
+
+- 数据在场时端点数据源变为 `perception.video`（视频感知链路），处置闭环写端点也真跑了一遍：
+  `plan-dispatch 200 → plan-ack 200 → alerts-reset 200（演示后复位）`；SSE `event=traffic_snapshot` 200。
+- 两次运行（Lead 5.1/4.39/4.37s、growth −0.01MB；本复核 4.59/4.52/4.35s、growth 0.20MB）**结论一致**：
+  三轮全 ok、内存未持续增长；耗时/内存的少量差异属机器负载正常波动，**不是两次不同口径**。
+- 每轮日志：`work/assembly/out/demo/round-0N/`；汇总：`work/assembly/out/demo_all_report.json`（gitignored）。
+
+**两种环境的关系（不混淆）**：M1-6 的判定对象是「**数据齐备的演示环境**」——1.2 满足即 **M1-6 通过**；
+1.1 是无上游数据的干净 worktree 的**如实降级记录**（脚本正确地把「0 通道产出」判为阻塞而不是成功），
+两条都保留，避免把「缺数据的 blocked」误读成 M1-6 失败、也避免把「数据在场的通过」误读成任何环境都通过。
+
 ---
 
 ## 二、C-5 压测：`python work/assembly/stress_test.py`（真跑）
+
+> 本节压测在**环境 A（无感知样本数据）**下真跑：路段数据源为 `stations.baseline`。
+> 数据在场时端点数据源会变为 `perception.video`，压测方法 / 口径不变、数字随环境与机器负载变化；
+> 压测报告只陈述实测数字，不判定达标。
 
 ```text
 就绪：2337.3 ms
@@ -154,8 +204,9 @@ C-7 监控自检（演示数据（模拟））· 2026-10-18T14:33:50+08:00
 
 ## 六、遗留 / 阻塞（如实记录）
 
-1. **感知链路阻塞**：`work/perception/data/monitor/` 样本导出缺失（gitignored，上游未提供）→ C-4 每轮感知链路 0 通道产出，
-   **M1-6 不能声明通过**；补数据后 `demo_all.py --rounds 3` 可直接复跑（脚本自动起停，无需人工干预）。
+1. **感知样本数据是 gitignored 前置**：`work/perception/data/monitor/` 不随仓库分发（视频 / 导出数据不进仓库）——
+   干净 worktree 里感知链路如实标阻塞、M1-6 不声明通过（§一 1.1）；数据在场（本机主 checkout / 目标机按 README §三 放好）
+   时 `demo_all.py --rounds 3` **实测通过、M1-6 通过**（§一 1.2，两次独立运行一致）。
 2. 本机未起前端 `npm run dev:remote`：C-4 的「前端截图/录屏素材」不在脚本内（演示脚本只做链路与接口自检），
    前端联调需另行起 dev server；不影响 C-4/C-5 数字。
 3. C-5 未压写端点（会改持久化运行态）与多进程/真实网络链路，报告中已写明覆盖范围；属专项/二期压测。

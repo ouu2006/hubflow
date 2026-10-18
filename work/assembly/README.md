@@ -276,7 +276,7 @@ python work/assembly/traffic.py --reset-state  # 复位运行态（留审计；�
 
 | 交付物 | 文件 | 一条命令 / 怎么用 | 判定口径 |
 |---|---|---|---|
-| **C-4 一键演示** | [`demo_all.py`](demo_all.py) · [`demo_all.ps1`](demo_all.ps1) | `python work/assembly/demo_all.py --rounds 3`（Windows 也可 `demo_all.ps1 --rounds 3`） | 环境检查 → 真网算路 → 感知链路 → 接口层 → 端点自检；每轮日志在 `out/demo/round-<n>/`，汇总 `out/demo_all_report.json`；退出码 0=全成功 / 2=有阻塞 / 1=有失败 |
+| **C-4 一键演示** | [`demo_all.py`](demo_all.py) · [`demo_all.ps1`](demo_all.ps1) | `python work/assembly/demo_all.py --rounds 3`（Windows 也可 `demo_all.ps1 --rounds 3`） | 环境检查 → 真网算路 → 感知链路 → 接口层 → 端点自检；每轮日志在 `out/demo/round-<n>/`，汇总 `out/demo_all_report.json`；退出码 0=全成功 / 2=有阻塞 / 1=有失败；**数据在场时三轮全 ok（M1-6 通过）**，无数据时感知链路如实 blocked（两种环境证据见 [`自检记录-IKMS1I.md`](自检记录-IKMS1I.md) §一） |
 | **C-4 证据** | [`自检记录-IKMS1I.md`](自检记录-IKMS1I.md) | 见该文件「M1-6 三轮」一节 | 三轮逐轮结果 / 耗时 / 内存 / 阻塞项如实记录 |
 | **C-5 压测** | [`stress_test.py`](stress_test.py) · [`压测报告.md`](压测报告.md) | `python work/assembly/stress_test.py` | 3 轮 × 14 只读端点 × 20 次 × 8 并发；实测启动耗时 / P50·P95 / 错误数 / RSS；**不判定性能达标** |
 | **C-6 对外接口** | [`对外接口.md`](对外接口.md) | 直接阅读 | 端点表（27 条，`/plan/audit` 标非契约）/ 请求响应示例 / 信封 / 鉴权形状 / **围栏衔接** / 错误码表 / 演示环境声明 |
@@ -309,6 +309,15 @@ python work/assembly/demo_all.py --skip-engine --skip-perception
 - 汇总报告与**退出码**：`0` 全部步骤成功；`2` 跑完但有阻塞项（**如实记录，不算 M1-6 通过**）；`1` 有失败 / 异常；
 - **不伪造成功**：感知链路在缺 `work/perception/data/monitor/` 样本导出时会「0 通道产出」——
   脚本把这种「命令退出码 0 但产物为空」判为**阻塞**并写明原因（照 README 第五节的产物存在性纪律）。
+
+**C-4 前置数据（gitignored，不在仓库）**：感知链路需要
+`work/perception/data/monitor/<stream>/{meta.json,detections.json}`——这是**上游样本视频导出产物**
+（导出工具：`work/perception/tools/dump_monitor_data.py`；视频与导出数据不进仓库，放共享盘/本机）。
+目标机按上游说明把数据放好（或把共享盘 / 主 checkout 的同名目录链到该路径）即可：
+
+- **数据不在场** → `demo_all.py` 把感知链路**如实标 blocked**，M1-6 不声明通过（干净 worktree 的正常表现）；
+- **数据在场** → `--rounds 3` 实测 **3 轮全 ok、M1-6 通过**（两次独立运行的耗时/内存数字见
+  [`自检记录-IKMS1I.md`](自检记录-IKMS1I.md) §一 1.2）。
 
 **压测（C-5）**——3 轮 × 多并发打只读端点，记录启动耗时 / P50·P95 / 错误数 / 内存曲线：
 

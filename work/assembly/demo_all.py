@@ -25,6 +25,11 @@
 每轮产物：`work/assembly/out/demo/round-<n>/`（各步骤日志 + 命令）；
 汇总报告：`work/assembly/out/demo_all_report.json`（**gitignored**，不提交）。
 
+**数据前置（gitignored，不在仓库）**：感知链路需要 `work/perception/data/monitor/<stream>/{meta.json,detections.json}`
+（上游样本视频导出产物；视频 / 导出数据不进仓库，放共享盘或本机，按 work/assembly/README.md §三 放置）。
+数据不在场时本脚本把感知链路**如实标 blocked**、不声明 M1-6 通过；数据在场时 `--rounds 3` 可跑出
+**M1-6 通过**（实测见 work/assembly/自检记录-IKMS1I.md §一 1.2）。
+
 退出码：0 = 全部步骤成功；2 = 跑完但有阻塞项（如实记录，**不算 M1-6 通过**）；1 = 有失败 / 异常。
 """
 
@@ -263,7 +268,7 @@ def perception_data_status() -> dict[str, Any]:
         return {
             "ready": False,
             "streams": [],
-            "reason": "缺感知样本导出 work/perception/data/monitor/（gitignored；需先跑导出工具，上游未提供）→ 感知链路会 0 通道产出",
+            "reason": "缺感知样本导出 work/perception/data/monitor/（gitignored；上游样本视频导出产物，放置路径与来源见 work/assembly/README.md §三）→ 感知链路会 0 通道产出",
         }
     streams = []
     for stream_dir in sorted(path for path in PERCEPTION_DATA.iterdir() if path.is_dir()):
@@ -882,7 +887,13 @@ def print_summary(report: dict[str, Any]) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="C-4 一键演示：环境检查 → 真网算路 → 感知链路 → 起接口层 → 端点自检 → 收尾"
+        description="C-4 一键演示：环境检查 → 真网算路 → 感知链路 → 起接口层 → 端点自检 → 收尾",
+        epilog=(
+            "数据前置（gitignored，不在仓库）：感知链路需要 "
+            "work/perception/data/monitor/<stream>/{meta.json,detections.json}（上游样本视频导出产物；"
+            "放置路径与来源见 work/assembly/README.md §三）。数据不在场时感知链路如实标 blocked、"
+            "不声明 M1-6 通过；数据在场时 --rounds 3 可跑出 M1-6 通过。"
+        ),
     )
     parser.add_argument("--rounds", type=int, default=1,
                         help="连跑轮数（默认 1；M1-6 用 --rounds 3 无人干预连跑）")
