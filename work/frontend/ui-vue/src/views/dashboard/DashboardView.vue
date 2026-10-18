@@ -1212,7 +1212,7 @@ function onCommandChanged(): void {
         </section>
         <section class="td-card">
           <div class="td-card-head">
-            路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? '—' }}</span>
+            路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? selectedId ?? '—' }}</span>
           </div>
           <div class="td-card-body">
             <template v-if="selectedId">

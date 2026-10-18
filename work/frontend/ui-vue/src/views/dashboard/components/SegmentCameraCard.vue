@@ -21,6 +21,8 @@ const props = defineProps<{ segmentId: string }>()
 const streams = ref<PerceptionStreamMeta[] | null>(null)
 const loading = ref(false)
 const error = ref('')
+/** 帧级加载失败（抽帧 404 / 服务中途挂掉）：该路显示"帧不可用"，不保留破图 */
+const frameFailed = ref<Record<string, boolean>>({})
 const playing = ref(true)
 /** 播放时钟：每 500 ms 走 1 步，抽帧序号 = 时钟 × FRAME_STEP（对 total_frames 取模循环） */
 const tick = ref(0)
@@ -65,6 +67,18 @@ function scheduleRetry(): void {
   }, 8000)
 }
 
+/** 帧加载失败：不回退到别的帧/假图，只如实标"帧不可用"并允许手动重试 */
+function onFrameError(source: string): void {
+  frameFailed.value = { ...frameFailed.value, [source]: true }
+}
+
+function retryFrame(source: string): void {
+  const next = { ...frameFailed.value }
+  delete next[source]
+  frameFailed.value = next
+  tick.value += 1
+}
+
 async function loadStreams(): Promise<void> {
   if (loading.value) return
   loading.value = true
@@ -95,11 +109,12 @@ onUnmounted(() => {
   clearRetry()
 })
 
-// 切路段：帧序号归零（各通道帧数不同，避免沿用上一段的大序号）
+// 切路段：帧序号归零（各通道帧数不同，避免沿用上一段的大序号）；帧失败标记也清掉
 watch(
   () => props.segmentId,
   () => {
     tick.value = 0
+    frameFailed.value = {}
   },
 )
 </script>
@@ -109,7 +124,7 @@ watch(
     <div class="sec-head">
       关联摄像头
       <span class="sub-tag">{{ cameras.length }} 路</span>
-      <span v-if="videoCount" class="td-chip warn">样本视频回放 · 非本站现场</span>
+      <span v-if="hasPlayable" class="td-chip warn">样本视频回放 · 非本站现场</span>
       <a
         v-if="hasPlayable"
         class="cam-play"
@@ -127,7 +142,7 @@ watch(
     </p>
 
     <template v-else>
-      <p v-if="error" class="cam-warn">
+      <p v-if="error && videoCount > 0" class="cam-warn">
         ⚠ {{ error }}
         <button class="td-btn sm" type="button" @click="loadStreams">重试</button>
       </p>
@@ -141,20 +156,27 @@ watch(
             class="td-chip"
             :class="{ ok: view.hasVideo && view.meta, out: !view.hasVideo, err: view.hasVideo && !view.meta && !error }"
           >
-            {{ !view.hasVideo ? '未接入视频源' : view.meta ? '样本视频回放' : error ? '服务不可用' : '未导出' }}
+            {{ !view.hasVideo ? '未接入视频源' : frameFailed[view.source] ? '帧加载失败' : view.meta ? '样本视频回放' : error ? '服务不可用' : '未导出' }}
           </span>
         </div>
 
-        <!-- 有视频源：真实帧预览 -->
+        <!-- 有视频源：真实帧预览（帧级失败 → 空窗 + 重试，不留破图、不伪造） -->
         <template v-if="view.hasVideo && view.meta">
           <div class="cam-media">
             <img
+              v-if="!frameFailed[view.source]"
               class="cam-img"
               :src="perceptionFrameUrl(view.source, frameOf(view))"
               :alt="`${view.cid} ${view.name} 样本视频抽帧`"
               loading="lazy"
+              @error="onFrameError(view.source)"
             />
-            <span class="cam-badge">样本视频回放 · 非本站现场</span>
+            <div v-else class="cam-media cam-nosource">
+              <span class="ns-l1">帧加载失败</span>
+              <span class="ns-l2">不保留破图、不伪造画面</span>
+              <button class="td-btn sm" type="button" @click="retryFrame(view.source)">重试本帧</button>
+            </div>
+            <span v-if="!frameFailed[view.source]" class="cam-badge">样本视频回放 · 非本站现场</span>
           </div>
           <div class="cam-meta td-mono">
             {{ view.meta.width }}×{{ view.meta.height }} · {{ view.meta.fps }} fps · 共

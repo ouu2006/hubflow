@@ -303,12 +303,16 @@ async function refresh(): Promise<void> {
     ctx.value = ctxRes
     thresholds.value = thrRes
     dataError.value = ''
-    // 默认选中第一条「待认领」；深链点名的段优先选它自己的告警（Issue IKMS18）
+    // 默认选中第一条「待认领」；深链点名的段优先选它自己的告警（Issue IKMS18）。
+    // 深链段没有告警时**不自动选别的段**——否则「决策可视化」会被别的段抢走，深链静默失效。
     if (selectedId.value === null && alerts.value.length > 0) {
-      const first = alerts.value.find((a) => a.status === '待认领') ?? alerts.value[0]
       const wanted = deepSegment.value
-      const hit = wanted ? alerts.value.find((a) => a.segment_id === wanted) : undefined
-      selectedId.value = (hit ?? first)?.alert_id ?? null
+      if (wanted) {
+        selectedId.value = alerts.value.find((a) => a.segment_id === wanted)?.alert_id ?? null
+      } else {
+        const first = alerts.value.find((a) => a.status === '待认领') ?? alerts.value[0]
+        selectedId.value = first?.alert_id ?? null
+      }
     }
   } catch (e) {
     if (seq !== refreshSeq) return
@@ -468,9 +472,9 @@ onUnmounted(() => {
 })
 
 // ---------- 决策可视化视图(本单新增)的派生数据 ----------
-/** 该视图按**路段**工作:选中告警所属路段;无告警时深链段号优先,再退回首条路段快照 */
+/** 该视图按**路段**工作:优先选中告警所属路段;没有选中告警时深链段号优先,再退回首条路段快照 */
 const flowSegmentId = computed<string>(
-  () => selected.value?.segment_id ?? deepSegment.value ?? Object.keys(segMap.value)[0] ?? '',
+  () => selected.value?.segment_id ?? (deepSegment.value || Object.keys(segMap.value)[0] || ''),
 )
 
 const flowRecord = computed<SegmentRecord | null>(() => segMap.value[flowSegmentId.value] ?? null)
