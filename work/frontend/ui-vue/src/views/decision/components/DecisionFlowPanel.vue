@@ -7,13 +7,14 @@
 //   ② **处理过程** —— x = q_vph / c_vph 的逐步演算 → 四档阈值对比(当前值落在哪档、离边界多远)→ level;
 //                    因素加权 → 通行能力折减 → x 前后对照;CI 四项加权构成;
 //   ③ **可调控** —— 场景注入(环境侧)+ 人工置位(事件侧,在处置队列视图)+ 分流比例(在处置工作台),
-//                    任一变动由服务端重算,本面板显示注入前后对照;
+//                    mock 模式由 mock 服务端重算并显示注入前后对照;真接口模式(traffic.py)只更新
+//                    环境上下文 / 因素状态、**不重算判级 / CI**,面板如实显示「已注入 + 折算因素」;
 //   ④ **输出**   —— 系统建议(承接段 / 比例 / 预期 / why)+ 预测三档。
 //
 // ⚠️ 口径铁律(违反即不通过):
 //   ① 面板上每个数字都带单位或口径标注,取不到一律「—」,**绝不编造**;
 //   ② 「处理过程」是**演示口径的演算展示**(阈值档位来自接口 /thresholds,不是前端自造),
-//      不得说成"模型推理";一期无真实判级模型(level.py 未实现,站点包给预置等级);
+//      不得说成"模型推理";真接口模式的判级来自上游链路 level 字段,接口层不重算(原样透传);
 //   ③ CI 只用于展示与辅助排序,**不得作为判级依据**(手册 §6.5 第 1 条),冲突以四项指标为准;
 //   ④ 全部 is_simulated = true。
 import { computed } from 'vue'
@@ -30,6 +31,7 @@ import {
   type TrafficContext,
 } from '../../../shared/traffic'
 import type { DiversionSuggestion } from '../../../shared/demoDecision'
+import { USE_MOCK } from '../../../shared/env'
 
 const props = defineProps<{
   record: SegmentRecord | null
@@ -46,6 +48,19 @@ const emit = defineEmits<{ (e: 'changed'): void }>()
 function fmt(v: number | undefined | null, digits = 2): string {
   return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(digits) : '—'
 }
+
+/** 环境上下文一行:真接口模式没有天气观测量 → 缺项一律「—」,不显示 "null℃ / 空单位" */
+const weatherLine = computed<string>(() => {
+  const weather = props.ctx?.weather
+  if (!weather) return '—'
+  const parts = [weather.condition ?? '天气未接入']
+  if (typeof weather.temp_c === 'number') parts.push(`${weather.temp_c}℃`)
+  if (typeof weather.visibility_km === 'number') parts.push(`能见度 ${weather.visibility_km} km`)
+  return parts.join(' · ')
+})
+
+/** 站点包是否给该路段预置了分流建议(base_pct > 0);未预置时比例仍可人工设置,不伪造建议 */
+const hasSuggestion = computed<boolean>(() => (props.suggestion?.base_pct ?? 0) > 0)
 
 // ---------- ① 输入:全部指标 ----------
 interface InRow {
@@ -186,9 +201,9 @@ function bandPos(x: number, max: number): string {
 
           <div class="sec-head">环境上下文(演示数据(模拟))</div>
           <div v-if="ctx" class="ctx-line">
-            {{ ctx.weather.condition }} · {{ ctx.weather.temp_c }}℃ · 能见度 {{ ctx.weather.visibility_km }} km
+            {{ weatherLine }}
             <span class="sep">|</span>{{ ctx.time.clock }} · {{ ctx.time.session }} · {{ ctx.time.calendar }}
-            <span class="sep">|</span>{{ ctx.injected ? '已按演示场景注入' : '站点包默认环境' }}
+            <span class="sep">|</span>{{ ctx.injected ? '已按演示场景注入' : (ctx.scenario ? '未注入(无环境数据源)' : '站点包默认环境') }}
           </div>
           <p v-else class="empty sm">环境上下文未取到</p>
         </div>
@@ -198,7 +213,7 @@ function bandPos(x: number, max: number): string {
       <section class="td-card">
         <div class="td-card-head">
           ② 处理过程 · 判级演算(演示口径,阈值来自接口)
-          <span class="td-head-tag">非模型推理 · level.py 未实现</span>
+          <span class="td-head-tag">{{ USE_MOCK ? '非模型推理 · level.py 未实现' : '接口层不重算判级 · 快照原样展示' }}</span>
         </div>
         <div class="td-card-body">
           <!-- 步骤 1:因素折减 -->
@@ -259,7 +274,8 @@ function bandPos(x: number, max: number): string {
                 <div class="step-line">
                   判级结果:
                   <LevelBadge :level="record.level" />
-                  <span class="sep">·</span>接口快照给的等级为 {{ record.level }}(站点包预置,判级模型未落地)
+                  <span class="sep">·</span>接口快照给的等级为 {{ record.level
+                  }}{{ USE_MOCK ? '(站点包预置,判级模型未落地)' : '(判级来自上游链路 level 字段,接口层不重算)' }}
                 </div>
               </template>
               <p v-else class="empty sm">阈值档位未取到(/thresholds 未起),不做档位演算</p>
@@ -291,7 +307,7 @@ function bandPos(x: number, max: number): string {
       <!-- ③ 可调控 -->
       <section class="td-card">
         <div class="td-card-head">
-          ③ 可调控 · 改任一项,服务端重算判级 / CI / 建议 / 预测
+          {{ USE_MOCK ? '③ 可调控 · 改任一项,服务端重算判级 / CI / 建议 / 预测' : '③ 可调控 · 改任一项只更新环境上下文 / 因素状态（判级由感知层统一重算）' }}
         </div>
         <div class="td-card-body">
           <ScenarioInjectPanel :ctx="ctx" :segment-id="record.segment_id" :presets="presets" @changed="emit('changed')" />
@@ -305,7 +321,7 @@ function bandPos(x: number, max: number): string {
       <section class="td-card">
         <div class="td-card-head">④ 输出 · 系统建议与预测</div>
         <div class="td-card-body">
-          <template v-if="suggestion">
+          <template v-if="suggestion && hasSuggestion">
             <div class="out-line">
               建议分流至 <b>{{ suggestion.target_name }}</b>({{ suggestion.target_segment_id }})
               <span class="sep">·</span>基准比例 <b>{{ suggestion.base_pct }}%</b>
@@ -314,7 +330,9 @@ function bandPos(x: number, max: number): string {
             </div>
             <p class="why">{{ suggestion.why }}</p>
           </template>
-          <p v-else class="empty sm">本路段无系统建议模板(走站点包兜底)</p>
+          <p v-else class="empty sm">
+            本路段暂无系统预置分流建议(站点包未预置) —— 分流比例可在「处置队列」人工设置;这不是"不需要分流"的结论。
+          </p>
 
           <div class="sec-head">未来 15 / 30 分钟预测<span class="sub-tag">L0 · 不报精度</span></div>
           <div v-if="record.pred" class="pred-grid">

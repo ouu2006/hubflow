@@ -7,11 +7,13 @@
 //      是**环境上下文**,走 `POST /api/traffic/scenario` 这个独立口子。本面板必须写明这一点,
 //      不得把两者混称。
 //   ② 天气 / 时段为**编造的演示值**,面板头常驻「演示数据(模拟)」。
-//   ③ 注入后判级 / CI / 建议 / 预测随之重算(服务端同一条重算路径),面板显示注入前后对照,
-//      对照数值来自服务端返回,前端不自己算。
+//   ③ mock 模式:注入后判级 / CI / 建议 / 预测随之重算,面板显示注入前后对照;
+//      **真接口模式(traffic.py)**:接口层只更新环境上下文与 derived_factors、**不重算判级 / ci**,
+//      所以 effects 如实为空 —— 面板只显示「已注入 / 折算因素」，不伪造等级变化(判级由感知层统一重算)。
 import { computed, ref } from 'vue'
 import { postTrafficScenario, postTrafficScenarioReset } from '../../../api/traffic'
 import type { ScenarioResult, TimeSession, TrafficContext, WeatherCondition } from '../../../shared/traffic'
+import { USE_MOCK } from '../../../shared/env'
 
 const props = defineProps<{
   ctx: TrafficContext | null
@@ -57,7 +59,9 @@ async function apply(): Promise<void> {
       demand_mult: demandTouched.value ? demandMult.value : undefined,
       segment_id: props.segmentId || undefined,
     })
-    msg.value = '已注入(服务端重算判级 / CI,演示口径)'
+    msg.value = USE_MOCK
+      ? '已注入(服务端重算判级 / CI,演示口径)'
+      : '已注入（接口层只更新环境上下文与折算因素；判级由感知层统一重算，接口层不重算；接口层内存态，重启复位）'
     emit('changed')
   } catch (e) {
     msg.value = `注入失败:${e instanceof Error ? e.message : String(e)}`
@@ -65,7 +69,6 @@ async function apply(): Promise<void> {
     busy.value = false
   }
 }
-
 async function applyPreset(key: string): Promise<void> {
   // `demand` = 该档要显式注入的需求倍率;不给就是"按所选时段的 F10 倍率折算"(服务端算)
   const map: Record<string, { weather?: WeatherCondition; session?: TimeSession; demand?: number }> = {
@@ -183,15 +186,17 @@ async function reset(): Promise<void> {
     </div>
 
     <div class="btn-row">
-      <button type="button" class="td-btn primary" :disabled="busy" @click="apply">注入并重算</button>
+      <button type="button" class="td-btn primary" :disabled="busy" @click="apply">
+        {{ USE_MOCK ? '注入并重算' : '注入环境上下文' }}
+      </button>
       <button type="button" class="td-btn" :disabled="busy" @click="reset">复位环境</button>
       <span class="note inline">
-        当前环境:{{ ctx ? `${ctx.weather.condition} · ${ctx.time.session}` : '—' }}
+        当前环境:{{ ctx ? `${ctx.weather.condition ?? '天气未接入'} · ${ctx.time.session}` : '—' }}
         <template v-if="ctx">（{{ ctx.injected ? '已注入' : '站点包默认' }}）</template>
       </span>
     </div>
 
-    <!-- 注入前后对照(服务端返回,前端不算) -->
+    <!-- 注入前后对照(服务端返回,前端不算);真接口模式 effects 如实为空 → 只显示折算因素 -->
     <div v-if="effect" class="cmp">
       <span class="cmp-k">本路段对照(基线口径,不含快照抖动)</span>
       <span class="cmp-v">
@@ -200,6 +205,13 @@ async function reset(): Promise<void> {
         饱和度 <b class="td-num">{{ effect.x_before }} → {{ effect.x_after }}</b>
       </span>
     </div>
+    <p v-else-if="result" class="note msg">
+      {{ result.effects_note ?? '接口层未返回注入前后判级对照（判级由感知层统一重算，前端不自己算）' }}
+    </p>
+    <p v-if="result" class="note msg">
+      折算环境因素:
+      <b>{{ result.factors.map((f) => `${f.factor_id} ${f.name} ×${f.multiplier}`).join('；') || '无（当前环境不产生 F01/F02/F03/F10）' }}</b>
+    </p>
     <p v-if="msg" class="note msg">{{ msg }}</p>
   </section>
 </template>

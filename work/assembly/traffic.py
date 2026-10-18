@@ -14,8 +14,24 @@
 | ① 视频链路 | `work/perception/out/latest/segments_video.json` | 路段指标（source=video） |
 | ② 孪生链路 | `work/twin/out/latest/segments_twin.json` | 路段指标（source=twin） |
 | ②' 孪生快照 | `work/twin/out/segments.json` | ② 缺失时的契约形状兜底 |
-| ③ 引擎路线 | `work/engine/out/routes.json` | `route/recommend` / `locate` |
+| ③ 引擎路线·真网 | `work/engine/out/real/routes.json` | `route/recommend` / `locate`（**优先**，IKMS11 真网 SZ-###） |
+| ③' 引擎路线·样例 | `work/engine/out/routes.json` | 真网产物缺失时回退（样例网 SEG-###） |
 | ④ 站点包 | `stations/*.json` | 静态基线（路网 / 点位 / 阈值 / 场景 / 列车） |
+
+路线响应的 `data_source` 与响应头 `X-Traffic-Data-Source` 标来源；两层段号命名空间不同，
+不把两层请求拼在一起、不把路线 ETA 与路段快照指标混算（`segments_not_in_snapshot` 如实列出差异段）。
+
+## 写端点（一期：进程内存态，重启复位；不落库、不写快照）
+
+| 端点 | 语义 | 口径 |
+|---|---|---|
+| `POST /api/traffic/factors` | 人工置位 F07 / F08 / F11 | 只记因素状态；`level / ci` 不重算，响应 `level_recomputed: false` + note |
+| `POST /api/traffic/factors/reset` | 清空人工置位 | 幂等演示复位 |
+| `POST /api/traffic/scenario` | 场景注入 F01 / F02 / F03 / F10（环境侧） | 只改环境状态与 `derived_factors`；`effects` 如实为空（判级需感知层重算） |
+| `POST /api/traffic/scenario/reset` | 清空场景注入 | 幂等演示复位 |
+
+`GET /context`、`GET /factors`、`GET /segments` 会反映内存态（注入的因素带
+`injected: true / pending_recompute: true`，**绝不伪造等级变化**）。
 
 其它只读数据：`work/twin/out/vehicles.json`（车辆）、`work/twin/out/assimilation_state.json`
 （同化状态）、`work/twin/site-ranges.json`（站点范围登记表）。
@@ -44,6 +60,7 @@ import argparse
 import asyncio
 import json
 import math
+import re
 import sys
 import traceback
 from datetime import datetime, timedelta
@@ -71,7 +88,11 @@ TWIN_LATEST = ROOT / "work" / "twin" / "out" / "latest" / "segments_twin.json"
 TWIN_SNAPSHOT = ROOT / "work" / "twin" / "out" / "segments.json"
 TWIN_VEHICLES = ROOT / "work" / "twin" / "out" / "vehicles.json"
 TWIN_ASSIMILATION = ROOT / "work" / "twin" / "out" / "assimilation_state.json"
-ENGINE_ROUTES = ROOT / "work" / "engine" / "out" / "routes.json"
+# 引擎路线：真网产物（IKMS11，SZ-###）优先，回退样例产物（SEG-###）。两者都只读、不混算。
+ENGINE_ROUTES_REAL = ROOT / "work" / "engine" / "out" / "real" / "routes.json"
+ENGINE_ROUTES_SAMPLE = ROOT / "work" / "engine" / "out" / "routes.json"
+#: 兼容旧名（自检 / 文档里按「引擎路线」引用的是样例产物路径，保留指向低优先级层）
+ENGINE_ROUTES = ENGINE_ROUTES_SAMPLE
 SITE_RANGES = ROOT / "work" / "twin" / "site-ranges.json"
 STATIONS_DIR = ROOT / "stations"
 
@@ -100,6 +121,9 @@ CODE_NO_DATA = "NO_DATA"
 CODE_SEGMENT_NOT_FOUND = "SEGMENT_NOT_FOUND"
 CODE_ALERT_NOT_FOUND = "ALERT_NOT_FOUND"
 CODE_ROUTE_UNAVAILABLE = "ROUTE_UNAVAILABLE"
+#: 写端点参数不合法（人工置位 / 场景注入）
+CODE_FACTOR_INVALID = "FACTOR_INVALID"
+CODE_SCENARIO_INVALID = "SCENARIO_INVALID"
 
 # 告警派生：接口层没有告警产物，按既有口径从 segments 快照派生（work/frontend/README.md §告警）
 ALERT_LEVEL_FLOOR = 3
@@ -109,6 +133,42 @@ TERMINAL_ALERT_STATUS = ("已闭环", "误报")
 
 #: 写端点（下发 / 回写）的演示态内存：接口层只读快照，重启即复位；正式落库留痕见 README §二
 _ALERT_RUNTIME: dict[str, dict[str, Any]] = {}
+
+# ---------------------------------------------------------------- 写端点内存态（一期）
+#
+# 两个口子、一条口径（与 mock 同语义，写端点只在**进程内存**里留演示态，重启复位）：
+#   · **人工置位**（手册第 19 章）：只有 F07 / F08 / F11（事故 / 管制 / 大型活动），
+#     `POST /api/traffic/factors` 逐路段登记；`POST /api/traffic/factors/reset` 清空。
+#   · **环境上下文 / 场景注入**（F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历）：
+#     `POST /api/traffic/scenario` 只改环境状态（null = 清除、缺省 = 不改），
+#     `POST /api/traffic/scenario/reset` 复位；GET /context 的 derived_factors 随它折算。
+#
+# ⚠️ 口径红线：接口层**不重算 level / ci**（判级唯一实现是感知层 level.py）。
+# 写端点只更新 context / derived_factors / 因素状态；等级字段一律取当前快照原值透传，
+# 并在响应 `note` / `level_recomputed: false` 里写明「判级由感知层统一重算、接口层不重算」。
+
+#: 人工置位口子（手册 §:2222：只有这三类有人工置位权）
+MANUAL_FACTOR_IDS = ("F07", "F08", "F11")
+#: 契约 §19 的五个 target（只允许改这五样）
+FACTOR_TARGETS = ("c", "v_f", "demand", "lanes", "confidence")
+#: 环境侧因素编号（场景注入折算的只有这四个）
+ENV_FACTOR_IDS = ("F01", "F02", "F03", "F10")
+WEATHERS = ("晴", "多云", "小雨", "大雨", "大雾", "台风")
+SESSION_ORDER = ("早高峰", "平峰", "晚高峰", "夜间")
+#: 时段 → 需求倍率（F10，演示值【待标定】，与前端 mock 同源）
+SESSION_DEMAND_MULT = {"早高峰": 1.2, "平峰": 1.0, "晚高峰": 1.15, "夜间": 0.6}
+#: 天气 → 通行能力折减（F01，演示值；优先从 stations/factors.json 的 demo_multipliers 读，读不到用兜底）
+WEATHER_MULTIPLIER_FALLBACK = {"晴": 1.0, "多云": 1.0, "小雨": 0.9, "大雨": 0.75, "大雾": 0.7, "台风": 0.6}
+#: 场景注入时 F02 的置信度折减（演示值，与 mock 同源）
+F02_CONFIDENCE_MULTIPLIER = 0.8
+
+#: 人工置位内存态：[{segment_id, factor_id, name, target, multiplier, until, injected_at}]（重启复位）
+_MANUAL_FACTORS: list[dict[str, Any]] = []
+#: 场景注入内存态：None = 未注入 / 已清除（GET /context 回落「无数据源」的如实口径）
+_SCENARIO_STATE: dict[str, Any] = {"weather": None, "session": None, "demand_mult": None}
+#: 「请求体没带这个键」的哨兵（缺省 = 不改该项；显式 null = 清除该项）
+_UNSET = object()
+
 
 
 # ---------------------------------------------------------------- 基础工具
@@ -503,13 +563,13 @@ def build_segments_snapshot() -> dict[str, Any]:
             "is_simulated": True,
             "segments": list(merged.values()),
         }
-        return {
+        return _attach_runtime_state({
             "payload": payload,
             "source": "+".join(labels),
             "note": None,
             "channels": channels,
             "records": merged,
-        }
+        })
 
     segments, note = _station_baseline_segments()
     records = {segment["segment_id"]: segment for segment in segments}
@@ -520,13 +580,13 @@ def build_segments_snapshot() -> dict[str, Any]:
         "segments": segments,
         "note": note,
     }
-    return {
+    return _attach_runtime_state({
         "payload": payload,
         "source": "stations.baseline",
         "note": note,
         "channels": channels,
         "records": records,
-    }
+    })
 
 
 def _is_stale(record: dict[str, Any]) -> bool:
@@ -571,6 +631,20 @@ def build_meta(snapshot: dict[str, Any]) -> dict[str, Any]:
     }
     if snapshot["note"]:
         payload["note"] = snapshot["note"]
+    # 数据源角标（三页共用）：segments 来自哪条链路 / 路线来自真网还是样例 / 写端点内存态是否在生效
+    routes_layers = _routes_layers()
+    payload["data_sources"] = {
+        "segments": snapshot["source"],
+        "routes": f"engine.routes.{routes_layers[0][0]}" if routes_layers else None,
+        "routes_note": (
+            ROUTE_LAYER_NOTES.get(routes_layers[0][0]) if routes_layers
+            else "引擎路线产物缺失（route/recommend 与 locate 会如实 404）"
+        ),
+        "routes_fallback_layers": [f"engine.routes.{key}" for key, _payload in routes_layers],
+        "write_endpoints_memory_state": True,
+        "scenario_injected": _scenario_injected(),
+        "manual_factors": len(_MANUAL_FACTORS),
+    }
     return payload
 
 
@@ -860,6 +934,11 @@ def build_thresholds() -> dict[str, Any]:
 
 
 def build_factors(segment_id: str | None = None) -> dict[str, Any]:
+    """当前因素清单：上游快照 factors_applied + 写端点内存态（人工置位 / 场景注入折算）。
+
+    写端点登记的因素带 `injected: true, pending_recompute: true`：只表示**已登记**、
+    判级待感知层统一重算 —— 接口层不改 level / ci（口径红线）。
+    """
     snapshot = build_segments_snapshot()
     factors: list[dict[str, Any]] = []
     for record in snapshot["payload"]["segments"]:
@@ -867,12 +946,42 @@ def build_factors(segment_id: str | None = None) -> dict[str, Any]:
             continue
         for factor in record.get("factors_applied") or []:
             if isinstance(factor, dict):
-                factors.append({**factor, "segment_id": record.get("segment_id")})
-    return {
+                factors.append({**factor, "segment_id": record.get("segment_id"), "source": "snapshot"})
+    manual = _manual_factor_rows(segment_id)
+    for factor in manual:
+        factors.append({**factor, "source": "manual"})
+    env = _derived_env_factors()
+    if env:
+        targets = (
+            [segment_id] if segment_id
+            else [str(record.get("segment_id")) for record in snapshot["payload"]["segments"]]
+        )
+        for target in targets:
+            for factor in env:
+                factors.append({**factor, "segment_id": target, "source": "scenario"})
+    counts = {
+        "snapshot": sum(1 for item in factors if item.get("source") == "snapshot"),
+        "manual": len(manual),
+        "scenario": len(factors) - sum(1 for item in factors if item.get("source") == "snapshot") - len(manual),
+    }
+    payload: dict[str, Any] = {
         "ts": snapshot["payload"]["ts"],
         "is_simulated": True,
         "factors": factors,
+        "counts": counts,
+        "injected": {
+            "manual_factors": len(_MANUAL_FACTORS),
+            "scenario": _scenario_public_state(),
+        },
     }
+    if counts["manual"] or counts["scenario"]:
+        payload["note"] = (
+            "factors 里 injected=true 的是写端点登记的演示态（接口层内存态，重启复位）："
+            "source=manual 为人工置位（F07/F08/F11）、source=scenario 为场景注入折算（F01/F02/F03/F10）；"
+            "pending_recompute=true 表示判级待感知层统一重算 —— 接口层不重算 level / ci。"
+            "source=snapshot 的是上游快照里已生效的因素。"
+        )
+    return payload
 
 
 def build_assimilation() -> dict[str, Any]:
@@ -1146,24 +1255,176 @@ def _next_train(clock: str) -> str | None:
     return later[0] if later else None
 
 
+# ---------------------------------------------------------------- 写端点内存态（人工置位 / 场景注入）
+#
+# 与 mock 同语义的**演示态**：只存在进程内存里，重启复位；不落库、不写快照、不重算判级。
+# 写端点只做三件事：校验入参 → 更新内存态 → 把「已登记 / 待感知层重算」如实说清楚。
+
+
+def _manual_factor_rows(segment_id: str | None = None) -> list[dict[str, Any]]:
+    """人工置位内存态（可按路段过滤）；返回副本，调用方改不坏内存态。"""
+    rows = [
+        dict(factor) for factor in _MANUAL_FACTORS
+        if segment_id is None or factor.get("segment_id") == segment_id
+    ]
+    for row in rows:
+        row["injected"] = True
+        row["pending_recompute"] = True
+    return rows
+
+
+def _manual_factors_by_segment() -> dict[str, list[dict[str, Any]]]:
+    out: dict[str, list[dict[str, Any]]] = {}
+    for factor in _manual_factor_rows():
+        out.setdefault(str(factor.get("segment_id")), []).append(factor)
+    return out
+
+
+def _scenario_injected() -> bool:
+    return any(_SCENARIO_STATE.get(key) is not None for key in ("weather", "session", "demand_mult"))
+
+
+def _scenario_public_state() -> dict[str, Any]:
+    return {
+        "weather": _SCENARIO_STATE.get("weather"),
+        "session": _SCENARIO_STATE.get("session"),
+        "demand_mult": _SCENARIO_STATE.get("demand_mult"),
+        "injected": _scenario_injected(),
+    }
+
+
+def _factor_until() -> str:
+    """写端点演示态有效期：与 mock 同口径 60 分钟（展示字段；接口层不自动清理内存态）。"""
+    return (_now() + timedelta(hours=1)).isoformat(timespec="seconds")
+
+
+def _weather_multiplier(weather: str) -> float:
+    """F01 天气折减倍率：优先站点包 factors.json 的 demo_multipliers（换站只换数据）。"""
+    factors_payload = station_json("factors.json") or {}
+    for factor in factors_payload.get("factors") or []:
+        if not isinstance(factor, dict) or factor.get("factor_id") != "F01":
+            continue
+        for demo in factor.get("demo_multipliers") or []:
+            if isinstance(demo, dict) and demo.get("label") == weather:
+                multiplier = _num(demo.get("multiplier"))
+                if multiplier is not None:
+                    return multiplier
+    return WEATHER_MULTIPLIER_FALLBACK.get(weather, 1.0)
+
+
+def _env_factor(factor_id: str, name: str, target: str, multiplier: float, until: str) -> dict[str, Any]:
+    return {
+        "factor_id": factor_id,
+        "name": name,
+        "target": target,
+        "multiplier": round(float(multiplier), 3),
+        "until": until,
+        "injected": True,
+        "pending_recompute": True,
+    }
+
+
+def _derived_env_factors(moment: datetime | None = None) -> list[dict[str, Any]]:
+    """当前环境状态折算出的因素（F01 / F02 / F03 / F10，只做环境侧折算、不判级）。
+
+    演示口径（与前端 mock 同语义，实测对齐过，别改错）：
+      · 天气：F01 折减通行能力（倍率 < 1 才产生因素）；大雾额外产生 F02 置信度折减；
+      · 时段：仅注入「夜间」时产生 F02 置信度折减 —— **时段本身不抬需求**；
+      · 需求倍率：> 1 拆成 F03 + F10（平方根拆分，乘积 = 总倍率，避免同 target 乘两次）；
+        < 1 只产生 F10。未注入（全 null）时如实返回空清单。
+    """
+    if not _scenario_injected():
+        return []
+    now = moment or _now()
+    session = _SCENARIO_STATE.get("session") or _session_of_clock(now.hour)
+    demand = _SCENARIO_STATE.get("demand_mult")
+    until = _factor_until()
+    factors: list[dict[str, Any]] = []
+    weather = _SCENARIO_STATE.get("weather")
+    if isinstance(weather, str):
+        multiplier = _weather_multiplier(weather)
+        if multiplier < 1:
+            factors.append(_env_factor("F01", f"天气·{weather}", "c", multiplier, until))
+        if weather == "大雾":
+            factors.append(_env_factor("F02", "昼夜 / 能见度", "confidence", F02_CONFIDENCE_MULTIPLIER, until))
+    if session == "夜间" and not any(item["factor_id"] == "F02" for item in factors):
+        factors.append(_env_factor("F02", "昼夜 / 能见度", "confidence", F02_CONFIDENCE_MULTIPLIER, until))
+    if isinstance(demand, (int, float)) and not isinstance(demand, bool):
+        if demand > 1:
+            total = min(1.6, float(demand))
+            half = round(math.sqrt(total), 3)
+            factors.append(_env_factor("F03", "列车到发·需求上浮", "demand", half, until))
+            factors.append(_env_factor("F10", f"时段·{session}", "demand", round(total / half, 3), until))
+        elif demand < 1:
+            factors.append(_env_factor("F10", f"时段·{session}", "demand", max(0.4, float(demand)), until))
+    return factors
+
+
+_ENV_FACTOR_NOTE = (
+    "场景注入为演示口径（模拟）：接口层只更新环境上下文与 derived_factors（F01/F02/F03/F10），"
+    "不重算 level / ci —— 判级由感知层统一重算、接口层不重算；接口层内存态，重启复位。"
+)
+
+
+def _attach_runtime_state(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """把写端点内存态挂到 segments 快照上（只加字段，不改任何上游数值 / 判级）。"""
+    by_segment = _manual_factors_by_segment()
+    for record in snapshot["payload"]["segments"]:
+        mine = by_segment.get(str(record.get("segment_id")))
+        if not mine:
+            continue
+        record["factors_injected"] = [dict(factor) for factor in mine]
+        record["pending_recompute"] = True
+        record["injected_note"] = "人工置位已登记（接口层内存态）；level / ci 未重算，由感知层统一重算。"
+    if by_segment or _scenario_injected():
+        snapshot["payload"]["injected_state"] = {
+            "manual_factors": len(_MANUAL_FACTORS),
+            "scenario": _scenario_public_state(),
+        }
+        note = snapshot["payload"].get("note")
+        extra = "写端点内存态：人工置位 / 场景注入只改因素状态与环境上下文，接口层不重算 level / ci。"
+        snapshot["payload"]["note"] = (note + "；" if isinstance(note, str) and note else "") + extra
+    return snapshot
+
+
 def build_context() -> dict[str, Any]:
     snapshot = build_segments_snapshot()
     moment = _parse_iso(snapshot["payload"].get("ts")) or _now()
     clock = _format_clock(moment)
-    session = _session_of_clock(moment.hour)
+    session = _SCENARIO_STATE.get("session") or _session_of_clock(moment.hour)
     calendar = "工作日" if moment.weekday() < 5 else "周末"
     factors_payload = station_json("factors.json") or {}
     active_factors = [
         factor for factor in (factors_payload.get("factors") or [])
         if isinstance(factor, dict) and factor.get("active") is True
     ]
+    scenario = _scenario_public_state()
+    injected = _scenario_injected()
+    derived = _derived_env_factors(moment)
+    weather = _SCENARIO_STATE.get("weather")
+    weather_condition = weather if isinstance(weather, str) else None
+    if injected:
+        factor_ids = " / ".join(str(item.get("factor_id")) for item in derived) or "无环境因素"
+        summary = (
+            f"环境已注入（演示数据（模拟））：{weather_condition or '天气未注入'} · {session} · "
+            f"折算环境因素 {factor_ids}（待感知层重算，接口层不重算判级）"
+        )
+        source = "接口层内存态（POST /api/traffic/scenario，重启复位）· 演示数据（模拟）"
+    else:
+        summary = (
+            f"天气源未接入 · {session} · "
+            + ("站点包无已激活因素（基准）" if not active_factors
+               else f"站点包已激活因素 {len(active_factors)} 项")
+        )
+        source = "stations/factors.json + stations/demand.json（演示数据（模拟））"
     payload: dict[str, Any] = {
         "ts": snapshot["payload"]["ts"],
         "is_simulated": True,
         "station_id": (_site_meta().get("site_id") or "demo-station"),
-        # 天气 / 气温 / 能见度没有数据源：字段留 null，不编造演示天气冒充现场
+        # 天气 / 气温 / 能见度没有数据源：未注入时字段留 null，不编造演示天气冒充现场；
+        # 场景注入后 `condition` 只是**注入的演示值**（响应 is_simulated + 页面角标），其余观测量仍不编。
         "weather": {
-            "condition": None,
+            "condition": weather_condition,
             "temp_c": None,
             "humidity_pct": None,
             "visibility_km": None,
@@ -1176,19 +1437,20 @@ def build_context() -> dict[str, Any]:
             "calendar": calendar,
             "next_train": _next_train(clock),
         },
-        "derived_factors": [],
-        "injected": False,
-        "summary": (
-            f"天气源未接入 · {session} · "
-            + ("站点包无已激活因素（基准）" if not active_factors
-               else f"站点包已激活因素 {len(active_factors)} 项")
-        ),
-        "source": "stations/factors.json + stations/demand.json（演示数据（模拟））",
+        "derived_factors": derived,
+        "injected": injected,
+        "scenario": scenario,
+        "station_active_factors": len(active_factors),
+        "summary": summary,
+        "source": source,
         "note": (
             "环境上下文的一期口径是演示数据（模拟）：接口层拿不到真实天气 / 列车实时数据，"
-            "不编造天气与时段注入；derived_factors 只反映站点包 factors.json 的 active 项（当前全部未激活）。"
+            "derived_factors 只反映**场景注入**折算出的 F01/F02/F03/F10（或站点包 active 项，当前全部未激活）；"
+            "**接口层不重算 level / ci** —— 场景注入只更新环境上下文与因素状态，判级由感知层统一重算。"
         ),
     }
+    if injected:
+        payload["note"] = payload["note"] + _ENV_FACTOR_NOTE
     if snapshot["note"]:
         payload["note"] = snapshot["note"] + payload["note"]
     return payload
@@ -1207,34 +1469,186 @@ def build_report_compare() -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- 引擎路线（route/recommend · locate）
+#
+# 数据源优先级（只读产物、不代算、不混算）：
+#   ① `work/engine/out/real/routes.json`  —— IKMS11 真网算路产物（段号 SZ-###），优先；
+#   ② `work/engine/out/routes.json`       —— 7 节点样例网产物（段号 SEG-###），①缺失时回退；
+# 响应体 `data_source` + 响应头 `X-Traffic-Data-Source` 标来源；两层的段号命名空间不同，
+# 绝不把两层请求 / 路线拼在一起，也不把路线 ETA 与当前路段快照的指标混算。
+
+#: 路线数据源层（优先级从高到低）
+ROUTE_LAYERS: tuple[tuple[str, Path], ...] = (
+    ("real", ENGINE_ROUTES_REAL),
+    ("sample", ENGINE_ROUTES_SAMPLE),
+)
+#: 层 → 人话来源（响应体 data_source_note）
+ROUTE_LAYER_NOTES = {
+    "real": "真网产物（work/engine/out/real/routes.json，IKMS11 真网算路）",
+    "sample": "样例产物（work/engine/out/routes.json，7 节点样例网，非本站真网）",
+}
+_SEGMENT_NAMESPACE_PATTERN = re.compile(r"^([A-Za-z]+)-")
+
+
+def _routes_layers() -> list[tuple[str, dict[str, Any]]]:
+    """在场的引擎路线层（real 优先，sample 回退）；顶层无 requests 的按缺失处理。"""
+    layers: list[tuple[str, dict[str, Any]]] = []
+    for key, path in ROUTE_LAYERS:
+        payload = read_json(path)
+        if payload and isinstance(payload.get("requests"), list) and payload["requests"]:
+            layers.append((key, payload))
+    return layers
+
+
+def _route_request_segment_ids(request: dict[str, Any]) -> set[str]:
+    """一条引擎请求里引用到的全部路段号（location / pickup / arrival / departure / alternatives）。"""
+    out: set[str] = set()
+    location = request.get("location")
+    if isinstance(location, dict) and isinstance(location.get("segment_id"), str):
+        out.add(location["segment_id"])
+    for key in ("pickup_route", "arrival_route", "departure_route"):
+        route = request.get(key)
+        if isinstance(route, dict):
+            for segment_id in route.get("segments") or []:
+                if isinstance(segment_id, str) and segment_id:
+                    out.add(segment_id)
+    for alternative in request.get("alternatives") or []:
+        if isinstance(alternative, dict):
+            for segment_id in alternative.get("segments") or []:
+                if isinstance(segment_id, str) and segment_id:
+                    out.add(segment_id)
+    return out
+
+
+def _routes_namespaces(payload: dict[str, Any]) -> list[str]:
+    """产物里出现的段号命名空间前缀（如 SZ / SEG）——只从数据推导，不写死段号。"""
+    prefixes: set[str] = set()
+    for request in payload.get("requests") or []:
+        if not isinstance(request, dict):
+            continue
+        for segment_id in _route_request_segment_ids(request):
+            match = _SEGMENT_NAMESPACE_PATTERN.match(segment_id)
+            if match:
+                prefixes.add(match.group(1))
+    return sorted(prefixes)
+
+
+def _select_route_request(
+    body: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str | None, dict[str, Any] | None, dict[str, Any]]:
+    """按数据源优先级选一条引擎请求。
+
+    返回 `(request, layer_key, payload, match_meta)`：
+      · 给了 session_id：**逐层严格匹配**（真网优先、样例回退），绝不拿别的车的请求冒充匹配；
+      · 全层都没有该 session：端出最高优先级产物的首条请求作**演示路线**，match_meta 标
+        `demonstration_fallback=true`（响应体 note 会写明「非该车会话」）；
+      · 没给 session_id：取最高优先级产物首条请求。
+    """
+    layers = _routes_layers()
+    raw_session = body.get("session_id")
+    requested = raw_session if isinstance(raw_session, str) and raw_session else None
+    if requested is not None:
+        for key, payload in layers:
+            for request in payload["requests"]:
+                if isinstance(request, dict) and request.get("session_id") == requested:
+                    return request, key, payload, {
+                        "session_matched": True,
+                        "requested_session_id": requested,
+                        "demonstration_fallback": False,
+                    }
+    if layers:
+        key, payload = layers[0]
+        requests = [request for request in payload["requests"] if isinstance(request, dict)]
+        if requests:
+            return requests[0], key, payload, {
+                "session_matched": requested is None,
+                "requested_session_id": requested,
+                "demonstration_fallback": requested is not None,
+            }
+    return None, None, None, {"session_matched": False, "requested_session_id": requested,
+                             "demonstration_fallback": False}
+
+
+def _route_response_meta(
+    layer_key: str,
+    payload: dict[str, Any],
+    match_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """路线响应的来源 / 段号口径说明（附加字段，不改引擎契约字段）。"""
+    snapshot = build_segments_snapshot()
+    snapshot_ids = set(snapshot["records"])
+    route_ids: set[str] = set()
+    for request in payload.get("requests") or []:
+        if isinstance(request, dict):
+            route_ids |= _route_request_segment_ids(request)
+    snapshotted = sorted(route_ids & snapshot_ids)
+    missing = sorted(route_ids - snapshot_ids)
+    namespaces = _routes_namespaces(payload)
+    snapshot_namespaces = sorted({
+        match.group(1)
+        for segment_id in snapshot_ids
+        if (match := _SEGMENT_NAMESPACE_PATTERN.match(str(segment_id)))
+    })
+    notes: list[str] = []
+    if match_meta.get("demonstration_fallback"):
+        notes.append(
+            f"请求的 session_id（{match_meta.get('requested_session_id')}）不在引擎产物里："
+            "端出产物首条请求作为演示路线（非该车行程），ETA / 路线字段原样透传、不代算"
+        )
+    if namespaces:
+        notes.append("路线段号命名空间：" + " / ".join(f"{prefix}-###" for prefix in namespaces))
+    if missing:
+        notes.append(
+            f"路线引用的 {len(missing)} 段不在当前路段快照里"
+            f"（快照数据源 {snapshot['source']}，命名空间 {' / '.join(snapshot_namespaces) or '未知'}）："
+            "不并入路段指标、不混算；地图只画站点包里存在的段"
+        )
+    return {
+        "ts": payload.get("ts") if isinstance(payload.get("ts"), str) else _latest_data_ts(),
+        "data_source": f"engine.routes.{layer_key}",
+        "data_source_note": ROUTE_LAYER_NOTES.get(layer_key, layer_key),
+        "session_matched": bool(match_meta.get("session_matched")),
+        "requested_session_id": match_meta.get("requested_session_id"),
+        "segment_namespaces": namespaces,
+        "segments_not_in_snapshot": missing,
+        "segments_in_snapshot": len(snapshotted),
+        "note": ("；".join(notes) + "。") if notes else None,
+    }
+
+
+def _decorate_route_response(
+    request: dict[str, Any],
+    layer_key: str,
+    payload: dict[str, Any],
+    match_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """契约请求体 + 来源/口径附加字段；note 与引擎自带 note 合并（不覆盖）。"""
+    body = dict(request)
+    meta = _route_response_meta(layer_key, payload, match_meta)
+    note = meta.pop("note", None)
+    body.update(meta)
+    existing = body.get("note")
+    if note:
+        body["note"] = (existing + "；" if isinstance(existing, str) and existing else "") + note
+    body["is_simulated"] = True
+    return body
 
 
 def _routes_payload() -> dict[str, Any] | None:
-    payload = read_json(ENGINE_ROUTES)
-    if not payload or not isinstance(payload.get("requests"), list):
-        return None
-    return payload
+    """兼容旧调用：返回最高优先级（真网优先）路线产物。"""
+    layers = _routes_layers()
+    return layers[0][1] if layers else None
 
-
-def _select_route_request(body: dict[str, Any]) -> tuple[dict[str, Any] | None, list[str]]:
-    payload = _routes_payload()
-    if payload is None:
-        return None, []
-    requests = [request for request in payload["requests"] if isinstance(request, dict)]
-    session_id = body.get("session_id")
-    if isinstance(session_id, str) and session_id:
-        matched = [request for request in requests if request.get("session_id") == session_id]
-        # 给了 session_id 但产物里没有 → 如实"找不到"，绝不拿 requests[0] 顶别人的路线
-        return (matched[0] if matched else None), requests
-    return (requests[0] if requests else None), requests
 
 
 # ---------------------------------------------------------------- FastAPI 应用
 
 app = FastAPI(
     title="hubflow 接口层 /api/traffic/*",
-    description="只读快照（契约 §七）；所有响应 is_simulated=true；数据源三层回落。",
-    version="1.0",
+    description=(
+        "只读快照（契约 §七）；所有响应 is_simulated=true；数据源三层回落；"
+        "写端点（人工置位 / 场景注入）一期为进程内存态、重启复位、不重算判级。"
+    ),
+    version="1.1",
 )
 
 
@@ -1403,42 +1817,55 @@ def api_report_compare() -> JSONResponse:
 @app.post("/api/traffic/route/recommend")
 async def api_route_recommend(request: Request) -> JSONResponse:
     body = await _read_body(request)
-    route_request, _ = _select_route_request(body)
-    if route_request is None:
+    route_request, layer_key, payload, match_meta = _select_route_request(body)
+    if route_request is None or layer_key is None or payload is None:
         return _error(
             404,
             CODE_ROUTE_UNAVAILABLE,
-            "推荐路线不可用: work/engine/out/routes.json 缺失或无 requests",
-            note="接口层只端引擎产物，不代算推荐路线与 ETA（编造数字违反口径红线）。",
-            source="engine.routes",
+            "推荐路线不可用：work/engine/out/real/routes.json 与 work/engine/out/routes.json 均缺失或无 requests",
+            note=(
+                "接口层只端引擎产物（真网产物优先、样例产物回退），不代算推荐路线与 ETA"
+                "（编造数字违反口径红线）。"
+            ),
+            source="engine.routes.none",
         )
-    payload = dict(route_request)
-    payload["is_simulated"] = True
-    return _json(payload, source="engine.routes")
+    return _json(
+        _decorate_route_response(route_request, layer_key, payload, match_meta),
+        source=f"engine.routes.{layer_key}",
+    )
 
 
 @app.post("/api/traffic/locate")
 async def api_locate(request: Request) -> JSONResponse:
     body = await _read_body(request)
-    route_request, _ = _select_route_request(body)
-    if route_request is None:
+    route_request, layer_key, payload, match_meta = _select_route_request(body)
+    if route_request is None or layer_key is None or payload is None:
         return _error(
             404,
             CODE_ROUTE_UNAVAILABLE,
-            "定位不可用: work/engine/out/routes.json 缺失或无 requests",
+            "定位不可用：work/engine/out/real/routes.json 与 work/engine/out/routes.json 均缺失或无 requests",
             note="一期定位取孪生真值（引擎产物 requests[].location）；缺产物时不编造定位结果。",
-            source="engine.routes",
+            source="engine.routes.none",
         )
     location = route_request.get("location") if isinstance(route_request.get("location"), dict) else {}
-    payload = {
+    meta = _route_response_meta(layer_key, payload, match_meta)
+    note = meta.pop("note", None)
+    result: dict[str, Any] = {
         "segment_id": location.get("segment_id"),
         "offset_m": _num(location.get("offset_m")),
         "match_confidence": _num(location.get("match_confidence")),
         "source": location.get("source") or "twin",
+        "data_source": meta["data_source"],
+        "data_source_note": meta["data_source_note"],
+        "session_matched": meta["session_matched"],
+        "requested_session_id": meta["requested_session_id"],
         "is_simulated": True,
-        "note": "一期定位取孪生真值（engine routes.json 的 requests[].location），接口层不做地图匹配。",
+        "note": "一期定位取孪生真值（引擎产物的 requests[].location），接口层不做地图匹配。",
     }
-    return _json(payload, source="engine.routes")
+    if note:
+        result["note"] = result["note"] + note
+    return _json(result, source=f"engine.routes.{layer_key}")
+
 
 
 @app.post("/api/traffic/plan/dispatch")
@@ -1538,44 +1965,199 @@ def api_alerts_reset() -> JSONResponse:
 
 @app.post("/api/traffic/factors/reset")
 def api_factors_reset() -> JSONResponse:
-    # 接口层只读快照，没有人工置位内存态；复位是幂等成功（与 mock 同口径的演示复位）
-    return _json({"reset": True, "is_simulated": True}, source="demo-runtime")
+    """清空人工置位内存态（演示复位；幂等）。"""
+    cleared = len(_MANUAL_FACTORS)
+    _MANUAL_FACTORS.clear()
+    return _json(
+        {
+            "reset": True,
+            "is_simulated": True,
+            "cleared": cleared,
+            "note": "已清空人工置位（接口层内存态，重启亦复位）；判级由感知层按重算结果更新，接口层不重算。",
+        },
+        source="demo-runtime.manual-factor",
+    )
 
 
 @app.post("/api/traffic/factors")
 async def api_factors_post(request: Request) -> JSONResponse:
-    return _error(
-        404,
-        CODE_NOT_IMPLEMENTED,
-        "POST /api/traffic/factors（人工置位）未实现：接口层只读快照，不写快照、不重算判级",
-        note=(
-            "人工置位属写端点，需落库留痕后由主循环重算（README §二）；本单只做形状层。"
-            "复位端点 POST /api/traffic/factors/reset 已实现。"
+    """人工置位（管理端口子 F07 / F08 / F11）：只登记因素状态，不重算判级。"""
+    body = await _read_body(request)
+    segment_id = body.get("segment_id")
+    factor_id = body.get("factor_id")
+    target = body.get("target")
+    multiplier = _num(body.get("multiplier"))
+    if not isinstance(segment_id, str) or not segment_id or not isinstance(factor_id, str) \
+            or not isinstance(target, str) or multiplier is None:
+        return _error(
+            400,
+            CODE_FACTOR_INVALID,
+            "置位参数不完整（需 segment_id / factor_id / target / multiplier）",
+            note="形状对齐 mock：{segment_id, factor_id, name?, target, multiplier}；未做任何写入。",
+        )
+    snapshot = build_segments_snapshot()
+    record = snapshot["records"].get(segment_id)
+    if record is None:
+        return _error(
+            404,
+            CODE_SEGMENT_NOT_FOUND,
+            f"路段不存在: {segment_id}",
+            note="接口层只接受当前路段快照里的段号；换站 / 换网后先看 GET /api/traffic/segments。",
+        )
+    if factor_id not in MANUAL_FACTOR_IDS:
+        return _error(
+            400,
+            CODE_FACTOR_INVALID,
+            f"人工置位口子只有 {' / '.join(MANUAL_FACTOR_IDS)}（事故 / 管制 / 大型活动）: {factor_id}",
+            note="天气 / 昼夜 / 列车到发 / 时段日历属环境侧，请用 POST /api/traffic/scenario（两个口子不混用）。",
+        )
+    if target not in FACTOR_TARGETS:
+        return _error(
+            400,
+            CODE_FACTOR_INVALID,
+            f"target 须为契约五选一（{' / '.join(FACTOR_TARGETS)}）: {target}",
+        )
+    if multiplier < 0 or multiplier > 2:
+        return _error(400, CODE_FACTOR_INVALID, f"multiplier 须在 [0, 2]: {multiplier:g}")
+    name = body.get("name") if isinstance(body.get("name"), str) and body.get("name") else factor_id
+    factor = {
+        "segment_id": segment_id,
+        "factor_id": factor_id,
+        "name": name,
+        "target": target,
+        "multiplier": round(multiplier, 3),
+        "until": _factor_until(),
+        "injected_at": _now_iso(),
+    }
+    # 同路段同因素重复置位 → 覆盖（同一请求重复可复现，不堆叠出两份）
+    _MANUAL_FACTORS[:] = [
+        existing for existing in _MANUAL_FACTORS
+        if not (existing.get("segment_id") == segment_id and existing.get("factor_id") == factor_id)
+    ]
+    _MANUAL_FACTORS.append(factor)
+    level = record.get("level") if _valid_level(record.get("level")) else 0
+    payload: dict[str, Any] = {
+        "applied": True,
+        "segment_id": segment_id,
+        "factor_id": factor_id,
+        "name": name,
+        "target": target,
+        "multiplier": factor["multiplier"],
+        "until": factor["until"],
+        # 形状对齐 mock 的 ManualFactorResult；数值是**当前快照原值**，不是注入后重算结果
+        "level": level,
+        "level_name": _level_name(level, record.get("level_name")),
+        "level_recomputed": False,
+        "factors_applied": [
+            factor_item for factor_item in (record.get("factors_applied") or [])
+            if isinstance(factor_item, dict)
+        ],
+        "injected_factors": _manual_factor_rows(segment_id),
+        "is_simulated": True,
+        "note": (
+            "人工置位已登记（接口层内存态，重启复位）：**只更新因素状态、不重算判级** —— "
+            "判级由感知层统一重算、接口层不重算；level / level_name 为当前快照原值（注入前），"
+            "不得当作注入后判级。已登记因素见 GET /api/traffic/factors?segment_id=；"
+            "复位 POST /api/traffic/factors/reset。"
         ),
-    )
+    }
+    return _json(payload, source="demo-runtime.manual-factor")
 
 
 @app.post("/api/traffic/scenario")
-async def api_scenario_post() -> JSONResponse:
-    return _error(
-        404,
-        CODE_NOT_IMPLEMENTED,
-        "POST /api/traffic/scenario（场景注入）未实现：接口层只读快照，不写快照",
-        note=(
-            "场景注入是演示态写端点（需落库留痕后由主循环重算），本单只做形状层；"
-            "环境上下文见 GET /api/traffic/context（天气源未接入，如实留 null）。"
-        ),
+async def api_scenario_post(request: Request) -> JSONResponse:
+    """场景注入（环境侧 F01 / F02 / F03 / F10）：只改环境状态与 derived_factors。"""
+    body = await _read_body(request)
+    snapshot = build_segments_snapshot()
+    segment_id = body.get("segment_id")
+    if segment_id is not None and (
+        not isinstance(segment_id, str) or segment_id not in snapshot["records"]
+    ):
+        return _error(
+            404,
+            CODE_SEGMENT_NOT_FOUND,
+            f"路段不存在: {segment_id}",
+            note="场景注入只接受当前路段快照里的段号（缺省 = 全路网）；未做任何写入。",
+        )
+    weather = body.get("weather", _UNSET)
+    if weather is not _UNSET and weather is not None and weather not in WEATHERS:
+        return _error(
+            400, CODE_SCENARIO_INVALID,
+            f"weather 须为 {' / '.join(WEATHERS)} 或 null: {weather!r}",
+        )
+    session = body.get("session", _UNSET)
+    if session is not _UNSET and session is not None and session not in SESSION_ORDER:
+        return _error(
+            400, CODE_SCENARIO_INVALID,
+            f"session 须为 {' / '.join(SESSION_ORDER)} 或 null: {session!r}",
+        )
+    demand_raw = body.get("demand_mult", _UNSET)
+    demand_mult: float | None = None
+    if demand_raw is not _UNSET and demand_raw is not None:
+        raw_value = _num(demand_raw)
+        if raw_value is None:
+            return _error(
+                400, CODE_SCENARIO_INVALID,
+                f"demand_mult 须为数值（0.4 ~ 2）或 null: {demand_raw!r}",
+            )
+        demand_mult = _clamp(raw_value, 0.4, 2.0)
+
+    # 字段语义（与 mock 同口径，别改错）：缺省 = 不改该项；显式 null = 清除该项。
+    if weather is not _UNSET:
+        _SCENARIO_STATE["weather"] = weather
+    if session is not _UNSET:
+        _SCENARIO_STATE["session"] = session
+        if demand_raw is _UNSET:
+            _SCENARIO_STATE["demand_mult"] = None if session is None else SESSION_DEMAND_MULT.get(session)
+    if demand_raw is not _UNSET:
+        _SCENARIO_STATE["demand_mult"] = demand_mult
+
+    moment = _parse_iso(snapshot["payload"].get("ts")) or _now()
+    factors = _derived_env_factors(moment)
+    target_ids = (
+        [segment_id] if isinstance(segment_id, str)
+        else [str(record.get("segment_id")) for record in snapshot["payload"]["segments"]]
     )
+    payload: dict[str, Any] = {
+        "applied": True,
+        "ts": snapshot["payload"]["ts"],
+        "is_simulated": True,
+        "factors": factors,
+        "segment_ids": target_ids,
+        # 契约 ScenarioResult 的 effects：注入前后判级对照必须由**感知层重算**后才存在，
+        # 接口层不重算 → 如实给空清单 + note，绝不伪造「等级变化」。
+        "effects": [],
+        "effects_note": "接口层不重算 level / ci：effects 如实为空（判级对照需感知层统一重算后从 /segments 读取）。",
+        "recomputed": False,
+        "scenario": _scenario_public_state(),
+        "note": _ENV_FACTOR_NOTE,
+    }
+    if not factors:
+        payload["note"] = (
+            "场景状态已更新，但按演示口径当前未产生 F01/F02/F03/F10 因素"
+            "（如天气未注入 / 时段非夜间 / 需求倍率 = 1.0）；" + payload["note"]
+        )
+    return _json(payload, source="demo-runtime.scenario")
 
 
 @app.post("/api/traffic/scenario/reset")
 def api_scenario_reset() -> JSONResponse:
-    return _error(
-        404,
-        CODE_NOT_IMPLEMENTED,
-        "POST /api/traffic/scenario/reset 未实现：没有可复位的场景注入态",
-        note="与 POST /api/traffic/scenario 同口径：写端点未实现，如实 404，不假装复位成功。",
+    """清空场景注入内存态（演示复位；幂等）。"""
+    was_injected = _scenario_injected()
+    _SCENARIO_STATE.update({"weather": None, "session": None, "demand_mult": None})
+    return _json(
+        {
+            "reset": True,
+            "is_simulated": True,
+            "was_injected": was_injected,
+            "note": (
+                "场景注入已复位到「未注入」（接口层内存态，重启亦复位）："
+                "环境上下文回落如实口径（天气无数据源），接口层不重算判级。"
+            ),
+        },
+        source="demo-runtime.scenario",
     )
+
 
 
 @app.get("/api/traffic/stream")
@@ -1614,7 +2196,8 @@ def print_data_check() -> int:
         ("孪生契约形状快照", TWIN_SNAPSHOT),
         ("孪生车辆", TWIN_VEHICLES),
         ("同化状态", TWIN_ASSIMILATION),
-        ("引擎路线", ENGINE_ROUTES),
+        ("引擎路线·真网优先", ENGINE_ROUTES_REAL),
+        ("引擎路线·样例回退", ENGINE_ROUTES_SAMPLE),
         ("站点范围登记", SITE_RANGES),
         ("站点包 network", STATIONS_DIR / "network.json"),
         ("站点包 points", STATIONS_DIR / "points.json"),
@@ -1625,7 +2208,7 @@ def print_data_check() -> int:
     ]
     for label, path in files:
         state = "存在" if path.is_file() else "缺失"
-        print(f"  [{state}] {label:<16} {path.relative_to(ROOT)}")
+        print(f"  [{state}] {label:<18} {path.relative_to(ROOT)}")
 
     snapshot = build_segments_snapshot()
     print()
@@ -1636,12 +2219,25 @@ def print_data_check() -> int:
     if snapshot["note"]:
         print(f"  降级说明：{snapshot['note']}")
 
-    routes = _routes_payload()
-    print(f"推荐路线：{'可用，requests ' + str(len(routes['requests'])) + ' 条' if routes else '缺失（route/recommend 与 locate 将如实 404）'}")
+    layers = _routes_layers()
+    if layers:
+        detail = "；".join(
+            f"{key}（{ROUTE_LAYER_NOTES.get(key, key)}）requests {len(payload['requests'])} 条"
+            f" · 段号命名空间 {' / '.join(f'{prefix}-###' for prefix in _routes_namespaces(payload)) or '未知'}"
+            for key, payload in layers
+        )
+        print(f"推荐路线数据源优先级：{detail}")
+        print(f"  实际使用层：engine.routes.{layers[0][0]}（真网优先，缺失时回退样例）")
+    else:
+        print("推荐路线数据源：缺失（route/recommend 与 locate 将如实 404，不代算 ETA）")
     print(f"车辆：{len(_vehicle_records())} 辆")
     assimilation = build_assimilation()
     print(f"同化断面：{len(assimilation['records'])} 条（boundary {assimilation['counts']['boundary']} / internal {assimilation['counts']['internal']}）")
     print(f"告警（从快照派生）：{len(build_alerts(snapshot)['alerts'])} 条")
+    print(
+        "写端点内存态（--check 是新进程，恒为空；起服务后重启即复位）："
+        f"人工置位 {len(_MANUAL_FACTORS)} 条 · 场景注入 {'已注入' if _scenario_injected() else '未注入'}"
+    )
     print()
     print("检查完成：缺失的数据源会按三层回落 / 空壳 + note 处理，不报 500。")
     return 0
@@ -1658,6 +2254,8 @@ def main() -> int:
         return print_data_check()
     print(f"接口层 traffic.py → http://{args.host}:{args.port}", flush=True)
     print("  口径：只读快照 / 所有响应 is_simulated=true / 数据源三层回落（缺文件不 500）", flush=True)
+    print("  路线：真网产物 out/real/routes.json 优先，缺失回退样例 out/routes.json", flush=True)
+    print("  写端点：人工置位 / 场景注入为进程内存态（重启复位），接口层不重算判级", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
     return 0
 

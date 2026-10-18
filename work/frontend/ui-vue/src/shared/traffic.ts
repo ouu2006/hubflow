@@ -42,13 +42,23 @@ export interface SegmentRecord {
   c_vph?: number
   factors_applied?: FactorApplied[]
   ci?: number
-  level: CongestionLevel
+  /**
+   * 判级。契约类型是四级；接口层在「上游未判级」时如实返回 0（level_name=数据不可用），
+   * 页面按 levelStyle()/LevelBadge 的灰档兜底处理，绝不落进通配色（TC-11）。
+   */
+  level: CongestionLevel | 0
   level_name?: string
   triggered_by?: string[]
   confidence?: number
   data_age_s?: number
   pred?: PredBlock
   is_simulated: true
+  /** 接口层写端点（人工置位）已登记、待感知层重算的因素（不参与判级，接口层不重算） */
+  factors_injected?: FactorApplied[]
+  pending_recompute?: boolean
+  injected_note?: string
+  /** 上游未判级时接口层标注的来源（如 upstream_missing） */
+  level_source?: string
 }
 
 export interface SegmentsSnapshot {
@@ -56,6 +66,17 @@ export interface SegmentsSnapshot {
   window_sec: number
   is_simulated: true
   segments: SegmentRecord[]
+  /** 接口层写端点内存态摘要（重启复位）：人工置位条数 / 场景注入状态 */
+  injected_state?: {
+    manual_factors: number
+    scenario: {
+      weather: string | null
+      session: string | null
+      demand_mult: number | null
+      injected: boolean
+    }
+  }
+  note?: string
 }
 
 export type DriverType = 'D1' | 'D2' | 'D3'
@@ -124,6 +145,19 @@ export interface RecommendResult {
   reservation: ReservationBlock
   why: string
   is_simulated: true
+  // ---- 接口层附加的来源 / 降级字段（mock 侧可缺省，页面按缺省口径显示）----
+  /** 真网算路产物 engine.routes.real / 样例产物 engine.routes.sample */
+  data_source?: string
+  data_source_note?: string
+  /** 请求的 session_id 是否真在产物里匹配上（false = 端出首条演示路线，非该车行程） */
+  session_matched?: boolean
+  requested_session_id?: string | null
+  /** 路线段号命名空间（如 ['SZ'] / ['SEG']） */
+  segment_namespaces?: string[]
+  /** 路线引用、但当前路段快照里没有的段号（不并入指标、不混算） */
+  segments_not_in_snapshot?: string[]
+  segments_in_snapshot?: number
+  note?: string
 }
 
 /**
@@ -190,8 +224,10 @@ export function isStale(seg: SegmentRecord): boolean {
   return (seg.data_age_s ?? 0) > STALE_AFTER_S
 }
 
+/** 等级色：数据陈旧 / 上游未判级(level=0) / 非法等级一律灰色「数据不可用」，绝不落进通配色(TC-11) */
 export function levelStyle(seg: SegmentRecord): LevelStyle {
-  return isStale(seg) ? UNAVAILABLE : LEVELS[seg.level]
+  const style = LEVELS[seg.level as CongestionLevel]
+  return isStale(seg) || !style ? UNAVAILABLE : style
 }
 
 /** 等级文字色(深一阶):用于浅底上的等级文字,与图形色同源但对比度更高 */
@@ -329,10 +365,21 @@ export interface ManualFactorInput {
 export interface ManualFactorResult {
   applied: true
   segment_id: string
-  level: CongestionLevel
+  /** 当前快照原值（注入前），不是注入后判级；0 = 数据不可用 */
+  level: CongestionLevel | 0
   level_name: string
   factors_applied: FactorApplied[]
   is_simulated: true
+  // ---- 接口层（真接口）附加字段；mock 侧可缺省 ----
+  factor_id?: string
+  name?: string
+  target?: string
+  multiplier?: number
+  until?: string
+  /** 接口层不重算判级：恒 false（level / level_name 只是快照原值） */
+  level_recomputed?: boolean
+  injected_factors?: FactorApplied[]
+  note?: string
 }
 
 // =====================================================================================
@@ -365,6 +412,19 @@ export interface TrafficMeta {
   demo_badge: string
   /** 路由 ↔ 页面标题(顶栏页签;当前页由前端高亮) */
   tabs: { key: string; name: string; route: string }[]
+  // ---- 接口层附加：数据源角标（真接口模式用于页脚如实标来源；mock 侧可缺省）----
+  data_sources?: {
+    /** 路段快照实际落到的数据源层（perception.video / twin.latest / stations.baseline 等） */
+    segments?: string
+    /** 路线数据源（engine.routes.real / engine.routes.sample / null） */
+    routes?: string | null
+    routes_note?: string
+    routes_fallback_layers?: string[]
+    /** 写端点内存态是否在生效（人工置位 / 场景注入，重启复位） */
+    write_endpoints_memory_state?: boolean
+    scenario_injected?: boolean
+    manual_factors?: number
+  }
 }
 
 // ---------- 全网 KPI(态势总览顶部 KPI 条) ----------
@@ -510,9 +570,10 @@ export interface AlertsSnapshot {
 // 收成一个函数 + `AlertList` 的**必需** `levelOf` 回调后,漏传会被 `vue-tsc` 当场拦下。
 export type SegmentLookup = (segmentId: string) => SegmentRecord | undefined
 
-/** 按当前路段快照重算告警等级(快照缺该路段退回告警记录值) */
+/** 按当前路段快照重算告警等级(快照缺该路段 / 上游未判级 level=0 时退回告警记录值) */
 export function alertLevelOf(a: TrafficAlert, findSegment: SegmentLookup): CongestionLevel {
-  return findSegment(a.segment_id)?.level ?? a.level
+  const segLevel = findSegment(a.segment_id)?.level
+  return typeof segLevel === 'number' && segLevel >= 1 && segLevel <= 4 ? (segLevel as CongestionLevel) : a.level
 }
 
 // ---------- 下发 / 回写(决策工作台) ----------
@@ -600,6 +661,16 @@ export interface ThresholdSnapshot {
   changelog: { time: string; operator: string; change: string }[]
 }
 
+// ---------- 效果对比报表(/api/traffic/report/compare) ----------
+// 接口层没有「同输入多跑对照」的报表产物时 rows 为空 + note（如实空壳，不编对比数字）。
+export interface ReportCompare {
+  ts: string
+  is_simulated: true
+  /** 报表行（接口层接入报表产物后才有内容；当前为空数组） */
+  rows: Record<string, unknown>[]
+  note?: string
+}
+
 // ---------- 热力矩阵(路段 × 时间) ----------
 
 export interface HeatMatrixRow {
@@ -679,13 +750,17 @@ export type WeatherCondition = '晴' | '多云' | '小雨' | '大雨' | '大雾'
 export type TimeSession = '早高峰' | '平峰' | '晚高峰' | '夜间'
 
 export interface WeatherContext {
-  condition: WeatherCondition
-  temp_c: number
-  humidity_pct: number
-  visibility_km: number
-  precip_mm: number
+  /**
+   * 天气状况。mock 侧恒有值；**真接口模式接口层拿不到气象数据源时为 null**（如实缺数，不编造）。
+   * 页面一律按「null → —」渲染，不得显示成 "null" 或空单位。
+   */
+  condition: WeatherCondition | null
+  temp_c: number | null
+  humidity_pct: number | null
+  visibility_km: number | null
+  precip_mm: number | null
   /** 风向 / 风力(展示口径一句话) */
-  wind: string
+  wind: string | null
 }
 
 export interface TimeContext {
@@ -713,13 +788,22 @@ export interface TrafficContext {
   station_id: string
   weather: WeatherContext
   time: TimeContext
-  /** 当前环境折算出的因素(F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历),**已在判级里生效** */
+  /** 当前环境折算出的因素(F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历) */
   derived_factors: FactorApplied[]
-  /** 环境是否已被场景注入改过(false = 站点包默认环境) */
+  /** 环境是否已被场景注入改过(false = 站点包默认环境 / 无数据源) */
   injected: boolean
   /** 环境结论一句话(展示口径,如「大雨 · 晚高峰,通行能力折减 ×0.75」) */
   summary: string
   source: string
+  /** 接口层附加：写端点场景注入内存态（重启复位） */
+  scenario?: {
+    weather: string | null
+    session: string | null
+    demand_mult: number | null
+    injected: boolean
+  }
+  station_active_factors?: number
+  note?: string
 }
 
 /**
@@ -747,7 +831,17 @@ export interface ScenarioResult {
   factors: FactorApplied[]
   /** 受影响路段(缺省全路网) */
   segment_ids: string[]
-  /** 受影响路段的判级变化(注入前 → 注入后) */
-  effects: { segment_id: string; name: string; level_before: CongestionLevel; level_after: CongestionLevel; x_before: number; x_after: number }[]
+  /** 受影响路段的判级变化(注入前 → 注入后)；0 = 上游未判级（数据不可用） */
+  effects: { segment_id: string; name: string; level_before: CongestionLevel | 0; level_after: CongestionLevel | 0; x_before: number; x_after: number }[]
   note: string
+  // ---- 接口层（真接口）附加字段：判级不下发则 effects 如实为空，不伪造等级变化 ----
+  /** 接口层不重算 level / ci：恒为 false（effects 为空） */
+  recomputed?: boolean
+  effects_note?: string
+  scenario?: {
+    weather: string | null
+    session: string | null
+    demand_mult: number | null
+    injected: boolean
+  }
 }

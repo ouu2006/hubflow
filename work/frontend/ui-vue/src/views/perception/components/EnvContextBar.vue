@@ -29,6 +29,11 @@ const TARGET_LABEL: Record<string, string> = {
 function multText(m: number): string {
   return `×${Number.isFinite(m) ? Number(m.toFixed(2)) : '—'}`
 }
+
+/** 观测值缺失 → 「—」（不显示成 "null" / 空单位；真接口模式天气观测量本就没有数据源） */
+function unitText(value: number | null | undefined, unit: string): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value} ${unit}` : '—'
+}
 </script>
 
 <template>
@@ -46,22 +51,22 @@ function multText(m: number): string {
         <div class="env-block">
           <div class="env-title">天气</div>
           <div class="env-kv">
-            <span class="k">状况</span><span class="v">{{ ctx.weather.condition }}</span>
+            <span class="k">状况</span><span class="v">{{ ctx.weather.condition ?? '—' }}</span>
           </div>
           <div class="env-kv">
-            <span class="k">气温</span><span class="v td-num">{{ ctx.weather.temp_c }} ℃</span>
+            <span class="k">气温</span><span class="v td-num">{{ unitText(ctx.weather.temp_c, '℃') }}</span>
           </div>
           <div class="env-kv">
-            <span class="k">湿度</span><span class="v td-num">{{ ctx.weather.humidity_pct }} %</span>
+            <span class="k">湿度</span><span class="v td-num">{{ unitText(ctx.weather.humidity_pct, '%') }}</span>
           </div>
           <div class="env-kv">
-            <span class="k">能见度</span><span class="v td-num">{{ ctx.weather.visibility_km }} km</span>
+            <span class="k">能见度</span><span class="v td-num">{{ unitText(ctx.weather.visibility_km, 'km') }}</span>
           </div>
           <div class="env-kv">
-            <span class="k">降水</span><span class="v td-num">{{ ctx.weather.precip_mm }} mm</span>
+            <span class="k">降水</span><span class="v td-num">{{ unitText(ctx.weather.precip_mm, 'mm') }}</span>
           </div>
           <div class="env-kv">
-            <span class="k">风</span><span class="v">{{ ctx.weather.wind }}</span>
+            <span class="k">风</span><span class="v">{{ ctx.weather.wind ?? '—' }}</span>
           </div>
         </div>
 
@@ -99,6 +104,9 @@ function multText(m: number): string {
             </span>
           </div>
           <p v-else class="env-none">当前环境无折算因素(基准)</p>
+          <p v-if="ctx.injected" class="env-none">
+            注入的是环境上下文与折算因素；<b>接口层不重算判级 / CI</b>，等级以感知层统一重算结果为准。
+          </p>
           <p class="env-sum">{{ ctx.summary }}</p>
         </div>
       </template>

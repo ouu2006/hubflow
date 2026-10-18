@@ -510,7 +510,10 @@ npm run dev:z            # 同一个包 Z,起在 http://localhost:6895(同包不
 | 决策层 | `/decision` | 决策层 | 页头三段切换：**决策可视化**（单栏四段：输入 / 处理过程 / 可调控 / 输出）· **处置队列**（原三栏）· **效果对比**（整幅） |
 | 监控大屏 | `/dashboard` | 监控大屏 | KPI 条 → 三栏（选择监控 / 全路段状态 / 路段信息）→ 底部热力带（档位分布 \| 热力矩阵 \| CI 色阶）→ 告警条 → 页脚 |
 
-### 13.3 新增接口面（前端已接、mock 已实现、**后端待实现**）
+### 13.3 新增接口面（前端已接、mock 已实现、**后端已实现**：IKMF1T / IKMS17）
+
+> 2026-10-18（IKMS17）：`traffic.py` 已实现本节端点，前端在 `npm run dev:remote`（`VITE_USE_MOCK=0`）
+> 下三页全部走真接口；mock 模式（`npm run dev`）保留，见第十五节。
 
 | 端点 | 方法 | 用途 | 前端调用点 |
 |---|---|---|---|
@@ -531,8 +534,9 @@ npm run dev:z            # 同一个包 Z,起在 http://localhost:6895(同包不
 
 ```bash
 cd work/frontend/ui-vue
-npm run dev     # http://localhost:5173/  → 三页:/#/perception · /#/decision · /#/dashboard(/#/heat 重定向到大屏)
-npm run build   # vue-tsc 类型检查 + vite 构建(本单交付前自检)
+npm run dev         # http://localhost:5173/  → 三页:/#/perception · /#/decision · /#/dashboard(/#/heat 重定向到大屏)
+npm run dev:remote  # 同上,但关 mock、/api 代理到 traffic.py:8000(先起接口层,见第十五节)
+npm run build       # vue-tsc 类型检查 + vite 构建(本单交付前自检)
 python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一门禁)
 ```
 
@@ -723,3 +727,93 @@ python scripts/doc_gate.py
 python scripts/frontend_gate.py
 # DevEco 侧：打开工程 → Build → Build Hap(s)（或直接在模拟器上 Run）
 ```
+
+## 十五、前端切真后端：三页接 `traffic.py`（Issue IKMS17，2026-10-18）
+
+> 背景：C-1 接口层（IKMF1T）已建、三页此前 100% 吃 vite mock，`traffic.py` 没有页面消费方（C-2「管理端接通数据」未达成）。
+> 本单把三页在 `VITE_USE_MOCK=0` 下接到真接口，保留 mock 模式；补 `traffic.py` 的 mock-only 写端点；
+> 路线改成「真网产物优先、样例产物回退」；断流降级（TC-06/TC-11）保留并实测。
+
+### 15.1 两种模式（**都要能跑**，完成判定二）
+
+| | `npm run dev`（默认 mock） | `npm run dev:remote`（真接口） |
+|---|---|---|
+| 模式 / 开关 | development；`VITE_USE_MOCK !== '0'` → 挂 mock 中间件 | `--mode remote` → `.env.remote`：`VITE_USE_MOCK=0`、`VITE_API_BASE=http://127.0.0.1:8000` |
+| `/api/traffic/*` | vite mock 中间件（`src/mock/traffic.ts`，无后端也能演示） | vite 代理 → `traffic.py`（`VITE_API_BASE` 只是代理目标，**浏览器端不读它**） |
+| `/perception-api/*` | 代理 → 感知服务 :8101（两种模式相同） | 同左 |
+| 用途 | 离线演示 / 评审无后端 | 联调 / 验收「管理端接通数据」 |
+
+启动顺序（remote 模式）：
+
+```bash
+# 终端 1：接口层（仓库根）
+python work/assembly/traffic.py --port 8000
+# 终端 2（可选，感知页 2 路样本视频需要）：
+python work/perception/server.py --port 8101
+# 终端 3：
+cd work/frontend/ui-vue && npm run dev:remote
+# 三页：http://localhost:5173/#/perception · /#/decision · /#/dashboard（/#/heat 重定向到大屏）
+```
+
+### 15.2 `src/api/` 收敛（本单改动）
+
+- `src/api/http.ts`：**统一请求封装**——同源相对路径（页面不再各自拼 URL / 不读 `VITE_API_BASE`）、
+  默认 **10 s 超时**、错误分三类可读：网络不可达 / 请求超时 / 后端错误（带接口层 `code` + `note`）；
+  vite 代理回 502/503/504（后端没起 / 断开）时给「后端不可用（网关 502）：…traffic.py 是否启动」
+  的提示，不再把 `Bad Gateway` 直接抛给页面。
+- `src/api/perception.ts`：改走同一 `request()`（不再自己 `fetch` + 拼路径），检测载荷放宽到 20 s。
+- `src/api/traffic.ts`：新增 `getTrafficReportCompare()`（效果对比报表，空壳时页面如实标注）。
+- `src/shared/env.ts`（新增）：`USE_MOCK` / `MEMORY_STATE_LABEL`，页面文案据此区分
+  「mock 侧生效」与「接口层内存态（重启复位）」。
+
+### 15.3 三页在 remote 模式的接线与“如实”口径
+
+| 页面 | 真接口消费 | 本单处理 |
+|---|---|---|
+| 监控大屏 | meta / overview / segments / vehicles / network / alerts / factors / heat-matrix / thresholds / segments/{id}/sources / ci-history / route/recommend + SSE | KPI / 路段 / 热力 / 告警 / 路线 / 摄像头图钉全部走接口；页脚「数据来源」改为接口 `meta.data_sources`（路段快照源 / 路线真网或样例 / 写端点内存态），不再写死“mock 示例快照”；路线卡按响应 `data_source` 标「真网算路产物（IKMS11）」/「样例产物」，`session_matched:false` 时显式提示“非该车行程” |
+| 决策层 | alerts / segments / context / thresholds / assimilation / segments/{id}/sources + factors、plan、scenario 写端点 | 处置队列四态、下发回执、回写流转可用；因素面板标「接口层内存态（重启复位）」且成功文案写明**不重算判级**；场景注入只显示「已注入 + 折算环境因素」，接口 `effects` 为空时显示其 `effects_note`，不伪造等级变化；效果对比先读 `/report/compare`（rows 0 条 + note 如实展示），A/B/C 三组改标「前端演示脚本」 |
+| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | 6 路摄像头（登记表）中 **2 路样本视频**（road2 / track1）+ **4 路「未接入视频源」如实空窗**，不伪造视频；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
+
+**数据源口径**：所有响应 `is_simulated=true`；页面角标「演示数据(模拟)· 双数据源」保留；
+写端点响应另带 `level_recomputed:false` / `recomputed:false` / `note` ——
+**接口层不重算 level / ci**，判级由感知层统一重算，页面不呈现“注入后等级变化”。
+
+**路线数据源优先级**（前端只消费、不代算）：
+① `work/engine/out/real/routes.json`（IKMS11 真网算路，SZ-###）→ 响应 `data_source: engine.routes.real`；
+② 样例 `work/engine/out/routes.json`（SEG-###）回退 → `data_source: engine.routes.sample`。
+`out/` 已 gitignore，真网产物由 IKMS11 生成；未合入 / 未跑时自动回退样例并按来源标注，页面不混算两层段号。
+
+### 15.4 断流降级（TC-06 / TC-11）实测记录
+
+**停 `traffic.py`**：
+
+- 大屏：页头两条黄色提示——「本次刷新未取到：KPI / 路段监测 / 车辆 / 路网 / 告警 / 因素 / 热力矩阵 / 阈值与 CI 权重，
+  显示的是上一版数据或空态」+「实时刷新通道(SSE)未连接，正在自动重连」，并给「立即重试 / 立即刷新」按钮；
+  KPI 全部「—」、路段列表「快照为空(接口层未起?)」、地图只画站点包几何灰轮廓（**不出现蓝/绿等级色**）、
+  路线卡「推荐接口不可达（后端不可用(网关 502)）…不编造演示路线」——不白屏、不崩溃。
+- 决策层：页头「快照拉取失败:后端不可用(网关 502)…」+ SSE 未连接提示，保留空态与灰档。
+- 恢复：接口层重启后 SSE 自动重连并补拉一次，两条提示消失、数据恢复（无需刷新页面）。
+
+**停感知服务**：
+
+- 感知页：显式「感知演示服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)」+「重试」；
+  2 路视频台账变「未导出」、4 路「未接入视频源」空窗保持、监控墙 0 张画面；不伪造视频。
+- 恢复：服务起回后每 5 s 自动重试并恢复「已导出 2 / 未接入视频源 4」与画面（也可点「重试」立即恢复）。
+
+### 15.5 自检（本单真跑）
+
+```bash
+# 接口层
+python work/assembly/traffic.py --port 8000     # 终端 1
+python work/assembly/traffic.py --check         # 数据源 / 路线优先级 / 写端点内存态
+# 前端
+cd work/frontend/ui-vue && npm run build        # exit 0
+npm run dev:remote                              # 浏览器验证三页（记录见 15.4）
+```
+
+实测（2026-10-18，Chromium，1440×900，Tabbit 浏览器）：三页均无 console / page error；
+大屏页脚显示「路段快照数据源 perception.video+twin.latest · 路线 真网产物（…IKMS11 真网算路）」；
+决策页下发回执「情报板已确认 · 分流 20%」、回写后队列「已闭环 1」；场景注入「大雨 · 晚高峰」后显示
+「折算环境因素 F01 ×0.75 / F03 ×1.072 / F10 ×1.073」+「接口层不重算 level / ci」；
+感知页 2 路视频有检测框、4 路如实空窗。
+

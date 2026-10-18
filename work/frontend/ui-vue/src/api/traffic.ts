@@ -16,6 +16,7 @@ import type {
   ManualFactorResult,
   PredictResponse,
   RecommendResult,
+  ReportCompare,
   ScenarioInput,
   ScenarioResult,
   SegmentRecord,
@@ -183,6 +184,11 @@ export function getTrafficAssimilationFull(): Promise<AssimilationSnapshotFull> 
 // GET /api/traffic/context → 环境上下文(天气 / 时间 + 折算出的因素 F01/F02/F03/F10)
 export function getTrafficContext(): Promise<TrafficContext> {
   return request<TrafficContext>('GET', '/api/traffic/context')
+}
+
+// GET /api/traffic/report/compare → 效果对比报表(接口层无报表产物时 rows 为空 + note,页面如实降级)
+export function getTrafficReportCompare(): Promise<ReportCompare> {
+  return request<ReportCompare>('GET', '/api/traffic/report/compare')
 }
 
 // POST /api/traffic/scenario → 场景注入(天气 / 时段 / 需求倍率 → 因素),返回判级前后对照

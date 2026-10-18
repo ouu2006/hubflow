@@ -1,20 +1,24 @@
 <script setup lang="ts">
-// 四级徽章 = 三重编码的"图标 + 文字"(颜色由使用处的 currentColor / 边框承担):
-// 竖条数图标照手册 §6.2(单/双/三/四竖条);数据陈旧显示灰色问号(非等级状态)。
+// 等级徽章 = 三重编码的"图标 + 文字"(颜色由使用处的 currentColor / 边框承担):
+// 竖条数图标照手册 §6.2(单/双/三/四竖条);数据陈旧 / 上游未判级(level=0,接口层不兜底成畅通)
+// 一律显示灰色问号(非等级状态)——TC-11:没数据绝不显示成蓝/绿。
 // 2026-10-12 TDesign Light 切换:图形(竖条/问号)用标准阶 color,文字用深一阶 text,
 // 保证浅底上文字对比度达标(手册 §6.2 表的「图形色值 / 文字色值」两列)。
 import { computed } from 'vue'
 import { LEVELS, UNAVAILABLE, type CongestionLevel } from '../../../shared/traffic'
 
 const props = defineProps<{
-  level: CongestionLevel
+  level: CongestionLevel | 0
   stale?: boolean
   name?: string
   /** 反色:用于深色底/实心色块上(视频画面区) */
   anti?: boolean
 }>()
 
-const style = computed(() => (props.stale === true ? UNAVAILABLE : LEVELS[props.level]))
+const style = computed<typeof UNAVAILABLE>(() => {
+  const known = LEVELS[props.level as CongestionLevel]
+  return props.stale === true || !known ? UNAVAILABLE : known
+})
 const text = computed(() => props.name ?? style.value.name)
 const textColor = computed(() => (props.anti === true ? '#FFFFFF' : style.value.text))
 </script>

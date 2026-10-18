@@ -5,6 +5,10 @@
 // 检测框/轨迹是一期接口面新增形状,非契约 v2.0 字段;
 // meta/health 响应带 is_simulated=true 信封(detections/frames 为原始载荷不含信封),
 // 页面显著标注"样本视频回放 · 演示数据(模拟)"。
+//
+// 请求统一走 `api/http.ts` 的 request()(超时 / 可读错误 / 相对路径同一套),不各自拼路径。
+
+import { request } from './http'
 
 export interface PerceptionStreamMeta {
   stream_id: string
@@ -43,11 +47,9 @@ export interface PerceptionDetections {
   frames: DetectionFrame[]
 }
 
+// 检测载荷可能数 MB:放宽到 20s(服务未起时也会在超时后给出可读错误,不无限转圈)
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(path)
-  if (!res.ok) throw new Error(`GET ${path} → ${res.status}`)
-  const body = (await res.json()) as T & { is_simulated?: boolean }
-  return body
+  return request<T>('GET', path, { timeoutMs: 20_000 })
 }
 
 // GET /perception-api/streams → 全部检测通道 meta(服务端路径 /api/perception/streams)
