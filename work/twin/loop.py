@@ -796,7 +796,7 @@ def _write_twin_artifacts(
         "kind": "twin_timeseries",
         "source": "twin",
         "note": (
-            "每段 65 点时序（演示数据（模拟））：由真孪生主循环每 60 s 快照累积，"
+            f"每段 {len(result['segment_ts'])} 点时序（演示数据（模拟））：由真孪生主循环每 60 s 快照累积，"
             "供 M1-2 孪生侧举证；视频侧 ≥60 点不在本产物内"
         ),
         "points": len(result["segment_ts"]),

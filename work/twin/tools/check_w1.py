@@ -460,7 +460,7 @@ def check_determinism(checker: Checker, run_a: Path, run_b: Path) -> None:
         sha_a = sha256_file(run_a / "latest" / name)
         sha_b = sha256_file(run_b / "latest" / name)
         print(f"  {name}: A={sha_a} B={sha_b} same={sha_a == sha_b}", flush=True)
-    for name in ("segments_twin.json", "twin_timeseries.json"):
+    for name in ("segments_twin.json", "twin_timeseries.json", "vehicles.json"):
         if sha256_file(run_a / "latest" / name) == sha256_file(run_b / "latest" / name):
             checker.pass_(f"DETERMINISM[{name}]", "两遍逐字节一致")
         else:
