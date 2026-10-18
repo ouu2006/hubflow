@@ -11,8 +11,8 @@
 | | 内容 |
 |---|---|
 | **输入文件** | 真孪生：`stations/{network,points,demand,factors,scenarios,signal_plan}.json` + `stations/sumo/*.net.xml`；样例链路：`samples/*_sample.json`（`--sample` 时无上游数据也能跑）；真网断面/同化：`netpack/network_junction.json` + `site-ranges.json` + 视频快照 `<仓库根>/work/perception/out/latest/segments_video.json`（见第九节、第十二节） |
-| **输出文件** | `out/{segments,vehicles,assimilation_state}.json` + `out/run_log.json`；IKMS19 新增 `out/latest/{sections_candidate,assimilation_state,assimilation_log,factors_report,segments_before,segments_after,run_log}.json`（机制示例另放 `out/latest/mechanism_demo/`）；路网侧另有 `stations/sumo/*.net.xml`（`network.json` **不是**本模块产物，归开发B 的 `map_ingest.py`） |
-| **关键口径** | **只有一个时钟**：孪生仿真时钟，不读系统时间；同一场景跑两遍**逐字段一致**（M1-1 可复现）；只有 `role="boundary"` 的断面允许同化回灌，`internal` **永远** `assimilating:false`。**断面清单是候选（待签字冻结）**、**同化/因素在真孪生缺失时用明示的演示基线**、**空载基线/机制示例都不得当实测或本站结论**（第十二~十六节） |
+| **输出文件** | `out/{segments,vehicles,assimilation_state}.json` + `out/run_log.json`（`--no-sumo` 样例链路）；IKMS19 新增 `out/latest/{sections_candidate,assimilation_state,assimilation_log,factors_report,segments_before,segments_after,run_log}.json`（机制示例另放 `out/latest/mechanism_demo/`）；**IKNAER（W1）真孪生**：`out/latest/{segments_twin,vehicles,run_log,twin_timeseries}.json`（默认 `--out work/twin/out`；另按接口层路径兼容发布 `<out>/vehicles.json`）+ 可重建路网 `out/sumo/station.net.xml`；`stations/sumo/*.net.xml` 的 OSM 管线归 `netbuild.py`，`network.json` **不是**本模块产物（归开发B 的 `map_ingest.py`） |
+| **关键口径** | **只有一个时钟**：孪生仿真时钟，不读系统时间；同一场景跑两遍**逐字段一致**（M1-1 可复现）；只有 `role="boundary"` 的断面允许同化回灌，`internal` **永远** `assimilating:false`。**断面清单是候选（待签字冻结）**、**同化/因素在真孪生缺失时用明示的演示基线**、**空载基线/机制示例都不得当实测或本站结论**（第十二~十六节）。**IKNAER 的真孪生主循环**（第十七节）已产出真网 SUMO 快照与 65 点时序，但需求是站点包样例/演示值（真实需求归 IKMHMX），视频侧 60 点仍归感知侧 |
 
 ## 一、负责什么
 
@@ -54,19 +54,20 @@ work/twin/
 ├─ README.md              # 本文件
 ├─ loop.py                # 主循环入口：--scenario / --seed / --duration
 ├─ netbuild.py            # OSM → netconvert → stations/sumo/*.net.xml（network.json 不在这里，见下）
+├─ sumonet.py             # 真网 network_junction.json → plain nod/edg → netconvert → out/sumo/station.net.xml（IKNAER / W1，可一键重建）
 ├─ scenario.py            # 读 stations/scenarios.json，组装场景（开关 / 注入事件 / 种子）
 ├─ driver.py              # 三类司机行为体（跟驰交给 SUMO，决策走 TraCI）
 ├─ detector.py            # 虚拟检测器：按检测断面聚合流量 / 车速 / 排队
 ├─ calibrate.py           # 数据同化：边界断面实测 → traci.calibrator.setFlow（每 60 s、带门控）
 ├─ factors.py             # 因素注入接口（读 stations/factors.json）
-├─ demand.py              # 读 stations/demand.json 生成车流（列车到达 → 放量）
+├─ demand.py              # 读 stations/demand.json 生成车流（T3 列车到达 × T4 比例 → 60 s 到达流率；IKNAER 真路径）
 ├─ sections.py            # 真网断面角色候选自动推导（IKMS19）：network_junction.json → boundary/internal
 ├─ baseline.py            # 孪生基线构造（IKMS19）：视频观测段照抄 + 空载网络基线（明示演示）
 ├─ run_assimilation.py    # 同化 + 多因素一键入口（IKMS19）：候选清单/同化状态/日志/因素报告/before-after
-├─ tools/                 # 自检脚本（IKMS19）：check_assimilation.py（TC-20）/ check_factors.py（TC-16）
+├─ tools/                 # 自检脚本：IKMS19 的 check_assimilation.py（TC-20）/ check_factors.py（TC-16）；IKNAER 的 check_w1.py（M1-1 / M1-2 孪生侧 / TC-13）
 ├─ samples/               # 样例输入（无 SUMO 也能跑通判级/引擎链路）
 ├─ demo_y/                # Y 型**示意**路网 + 场景（SUMO 全链路可一键重建；与 OSM 真路网管线并列，见该目录 README）
-└─ out/                   # 运行输出（已 gitignore；**脚本必须先建目录**）
+└─ out/                   # 运行输出（已 gitignore；**脚本必须先建目录**）：latest/ 契约快照、sumo/ 可重建 SUMO 路网、check_w1/ 自检运行目录
 ```
 
 > **`demo_y/` 与 `netbuild.py` 的区别**：`netbuild.py` 是「**OSM 真路网**」管线（转真实切片）；
@@ -160,8 +161,20 @@ python work/twin/loop.py --scenario scenario_2
 | `--scenario` | 场景名（`scenario_1` 常态 / `scenario_2` 峰值 / `scenario_3` 突发 / `scenario_4` 多因素） | `scenario_1` |
 | `--seed` | 随机种子，**固定才能复现** | 写进 `scenarios.json` |
 | `--duration` | 仿真时长（秒 / 分钟） | 满足 M1-2 的 ≥ 60 个统计点 |
-| `--out` | 输出目录 | `work/twin/out/` |
+| `--out` | 输出根目录（真孪生写 `<out>/latest/`，路网写 `<out>/sumo/`） | `work/twin/out/` |
 | `--no-sumo` | 用 `samples/` 样例数据跳过 SUMO，仅串链路 | 关 |
+
+**真孪生主循环（IKNAER / W1，已实现）**：
+
+```text
+python work/twin/loop.py --duration 3900 --seed 42                 # 默认输出 out/latest/（65 个统计点）
+python work/twin/loop.py --duration 3900 --seed 42 --out work/twin/out/run_b   # 第二遍对照
+```
+
+它会先调 [`sumonet.py`](sumonet.py) 从 `netpack/network_junction.json` 建 `out/sumo/station.net.xml`，再用 TraCI
+**1 s 步进、每 60 s 快照**；需求读 `stations/demand.json`（样例/演示值），三类虚拟司机 D1/D2/D3 都真实跑在 SUMO 中；
+产物为 `out/latest/{segments_twin,vehicles,run_log,twin_timeseries}.json`。**`--no-sumo` 样例路径保留**，
+四产物与改造前**逐字节一致**（回归基线）。命令 / 产物 / 实跑证据 / 边界见第十七节。
 
 **每一步做什么**：
 
@@ -506,15 +519,125 @@ python scripts/doc_gate.py
 |---|---|---|---|
 | 1 | **断面清单未签字冻结** | 不得宣称 M1-10 / TC-20① 通过 | 业主/队长签字冻结 `sections_candidate.json`（含 mock 5/6 与拓扑 11/50 的逐条裁定）→ IKMHMX |
 | 2 | **视频只覆盖 2 段且都是 internal**（`SZ-005`/`SZ-024`） | 真网 boundary 无观测 → 回灌 0 条；TC-20① 偏差不可核 | 上游给 **boundary 段**的视频实测或断面计数（或补摄像头到 boundary 段） |
-| 3 | **真孪生基线缺失**：`stations/sumo/*.net.xml` 未构建、`loop.run_with_sumo` 仍是骨架 | 只能用**空载网络基线**（明示演示）；同化偏差口径不可核 | W1 真孪生主循环（SUMO 路网 + 司机行为体）跑起来后换真基线 |
-| 4 | **calibrator 未实际下发** | 本单只落 `calibrator_plan`，没有 `traci.calibrator.setFlow` 实灌 | 同 #3（有真 SUMO 网 + 主循环；SUMO/traci 本机已装，缺的是站点 Z 的 `.net.xml` 与主循环） |
+| 3 | **同化侧未接真孪生基线**：IKNAER 已交 `sumonet.py` + `loop.py run_with_sumo`（第十七节，真网 SUMO 快照 / 65 点时序已产出）；但 `baseline.py` 仍只构造空载网络基线、`run_assimilation.py` **没有 `--twin` 参数**（集成验证见 17.5） | 同化仍用空载基线（明示演示）；同化偏差口径不可核 | 同化侧小改（IKMS19 范围，另单）：`run_assimilation.py --twin <segments_twin.json>` + `baseline.py` 优先读真孪生快照 |
+| 4 | **calibrator 未实际下发** | 本单只落 `calibrator_plan`，没有 `traci.calibrator.setFlow` 实灌 | IKNAER 已具备真 SUMO 网与主循环（第十七节）；缺的是主循环内调用 `calibrator.setFlow` 的回灌实现（IKMS19 范围） |
 | 5 | **站点包 `assimilation.edges` 仍是占位 `E-001`**（7 节点样例网命名空间） | 真网解析不到 → `config_unresolved`；即使有观测也不会被开白名单 | 人工把 `stations/scenarios.json` 的 `edges` 换成 boundary 候选的 `SZ-###`（本单不改 `stations/`） |
-| 6 | **demand 类因素（6 类）无需求生成器** | 只登记注入事件，方向/等级效果不可验 | W1 的 SUMO 需求生成器 / 真孪生 |
+| 6 | **demand 类因素（6 类）尚未接入主循环**：IKNAER 已交 `demand.py` 真路径（T3 列车到达 × T4 比例 → 60 s 到达流率，见 17.3） | F03/F10 等因素的**需求倍率**还没注入主循环（factors 注入归 IKMS19），方向/等级效果不可验 | 同化/因素侧把 `factors_applied` 接入真孪生主循环（IKMS19） |
 | 7 | **本工作树无视频快照**（`work/perception/out/` 是 gitignore 运行产物） | 只读引用**同级 git checkout** 的产物；换机器验收要先跑感知链路 | 验收机上先跑 `work/perception/run_chain.py` 生成 `segments_video.json` |
-| 8 | **TC-14 / TC-13（场景三跑 / 两遍一致）** | 本单只证明"同输入两遍逐字节一致"；"同一场景三跑（只切推荐）"要真孪生主循环 | W1 真孪生 + 引擎真网（IKMS11）联调 |
+| 8 | **TC-14 / TC-13（场景三跑 / 两遍一致）** | IKNAER 已举证 **TC-13 孪生侧两遍逐字节一致**（17.4）；TC-14「同一场景三跑、只切推荐」仍需真孪生 + 引擎真网（IKMS11）联调 | W1 真孪生（已具备）+ 引擎真网联调（另单） |
 
 > **与 `stations/network.json` 占位件的关系**：本单所有真网产物（断面 / 同化 / 因素）**只读**
 > `netpack/network_junction.json`（61 段真网）；`stations/network.json` 仍是 IKLLX2 的 7 节点
 > / 17 边占位件（`SEG-###`），**不参与真网链路**，也不手改它（归 `map_ingest.py` / 契约收口）。
 > 机制示例模式才用 `stations/*.json` 的样例占位件（`E-001 ↔ SEG-001`），并且全程标「机制示例·非本站真网」。
 
+
+---
+
+## 十七、W1 真孪生主循环（IKNAER：SUMO 站点 Z 路网 + D1/D2/D3 + 65 点时序）
+
+> **一句话**：在真网 61 段上把 SUMO 真正跑起来——1 s 步进、每 60 s 一帧快照、`--duration 3900` 出 **65 个统计点**，
+> 三类虚拟司机 D1 送客 / D2 接客 / D3 往返都真实运行在 SUMO 中；同一命令两遍 `segments_twin.json` /
+> `twin_timeseries.json` **逐字节一致**；`--no-sumo` 样例链路四产物**逐字节不变**。
+> 所有数值仍是**演示数据（模拟）**：需求来自样例站点包（真实需求归 IKMHMX），不是实测。
+
+### 17.1 一键命令
+
+```powershell
+# 0) 环境：SUMO 1.28（sumo / netconvert / traci；本机 $env:SUMO_HOME=D:\app\SUMO）
+sumo --version; netconvert --version; python -c "import traci"
+
+# 1) 建/重建 SUMO 路网（可一键重建；.net.xml 在 out/，不提交）
+python work/twin/sumonet.py                        # -> work/twin/out/sumo/station.net.xml
+
+# 2) 真孪生主循环（第 1 遍，默认 --out work/twin/out -> 产物在 out/latest/）
+python work/twin/loop.py --duration 3900 --seed 42
+
+# 3) 第 2 遍（不同 out 目录）-> 逐字节比对
+python work/twin/loop.py --duration 3900 --seed 42 --out work/twin/out/run_b
+certutil -hashfile work\twin\out\latest\segments_twin.json SHA256
+certutil -hashfile work\twin\out\run_b\latest\segments_twin.json SHA256
+
+# 4) 自检（实跑两遍 + 产物断言，输出 PASS/FAIL/BLOCKED）
+python work/twin/tools/check_w1.py
+
+# 5) 样例链路回归（四产物必须与改造前逐字节一致）
+python work/twin/loop.py --no-sumo --out work/twin/out/sample_check
+```
+
+### 17.2 真网 -> SUMO 路网（`sumonet.py`）
+
+| 项 | 口径 |
+|---|---|
+| 输入 | 只有 `netpack/network_junction.json`（44 节点 / 61 段，几何真值来自 OSM 切片）；站名/段数/路径读 `site-ranges.json` 登记表，脚本不写死站名/段号/坐标 |
+| 边 id | **直接用 `SZ-###`**（与站点包 / 感知 / 引擎同一命名空间）；反向补边 `SZ-###_rev` 只参与仿真、**不新增段号**，检测器并回原段统计 |
+| 双向补边 | 61 段里 `oneway=yes` 的保持单向；其余 33 条补反向边——OSM 缺 `oneway` 标记按双向理解，这是 SUMO 路网能连通（`boundary -> boundary` 可通行路线 43 条）的前提 |
+| 缺值回落 | `lanes` 缺 -> 默认 2 道（标 `default:demo_lanes=2`）；`speed_limit` 61 段全为 null -> 站点包 `thresholds.grading.defaults.v_f_kmh`（标来源）；**逐条来源写进 `out/sumo/station_netmeta.json`**，汇总进 `run_log.net_build` |
+| 坐标 | 真网只给 WGS-84 `lon/lat` -> 局部切平面投影成米制 `x/y`（锚点 = 全部节点均值，从数据派生，不写死坐标）；`xy_to_lonlat` 严格互逆，供 `vehicles.json` 反算 WGS-84 |
+| 可重建 / 确定性 | 抹掉 netconvert 生成时间戳与本机路径回显后，**同一输入两次建网 sha256 一致**（2026-10-18 本机：`d1bb71b4ea7cea61...`，180790 B，44 节点 / 61 正向 / 33 反向） |
+| 命令 | `python work/twin/sumonet.py`；换输出目录 `--out-dir`；只校验已有网 `--sumo-net` |
+
+> `.net.xml` **不提交**（`out/` 已 gitignore，换机用 `sumonet.py` 重建；SUMO 版本差异可能影响轨迹细节，两遍一致性在本机同版本内判）。
+
+### 17.3 主循环：需求、司机、快照口径
+
+- **单一仿真时钟**：`ts = DEMO_BASE_TS(2026-01-01T00:00:00+08:00) + 仿真秒数`，不读系统时间；SUMO 种子 `--seed 42` 固定。
+- **需求（`demand.py` 真路径）**：读 `stations/demand.json`（**样例/演示假设值**，真实需求归 IKMHMX）——
+  T3 `trains[].arrivals` 按到达后 300 s（演示假设）内均匀疏散，T4 `mix.driver_type_ratio` 拆 D1/D2/D3，
+  `od[].demand_vph` 只取数值作网络级背景流率。**OD 端点 `N-01` 是 7 节点样例网命名空间、与真网 `N-001` 不一致 -> 不猜映射**，
+  路线改由真网 boundary 断面 + SUMO `findRoute` 生成（`demand_source` / `od_rejected` 都写进 `run_log`）。
+- **三类虚拟司机**：每类都在 SUMO 里真实运行（vType 只差 `speedFactor`：D1 1.0 / D2 0.95 / D3 0.9；跟驰/排队交给 SUMO）；
+  `vehicles.json` 的 `driver_type` 与 `vehicle_id` 前缀（`twin-D1-####` 等）一一对应；`guided` 恒 `false`（未接决策引擎，不伪造采纳）。
+- **1 s 步进 / 60 s 快照**：TraCI 逐秒订阅各边 `LAST_STEP_VEHICLE_ID_LIST`（统计进车流量）、`LAST_STEP_MEAN_SPEED`、
+  `LAST_STEP_VEHICLE_HALTING_NUMBER`；每 60 s 聚合一次，`--duration 3900` -> **65 个统计点**。
+- **字段口径**（`segments_twin.json` 与契约第一节对齐；同一份公式也写进产物 `metric_formulas`）：
+
+| 字段 | 真孪生侧口径 |
+|---|---|
+| `q_vph` | 60 s 窗口内进入该段（含反向补边）的车辆数 / `window_sec` x 3600 |
+| `v_kmh` | 快照时刻该段车辆平均车速（双向按车辆数加权）；**无车 -> null**（不写 0 冒充畅通） |
+| `k_vpk` | 快照时刻车辆数 / (L_seg_m / 1000)（双向合计密度） |
+| `L_q_m` | `min(L_seg_m, (halting 车辆数 / 车道数) x queue_headway_m)`，双向取较大方向（`queue_headway_m` 读站点包） |
+| `T_d_min` | 排队车辆数 / (饱和流率 x 车道数) x 60（**估计量**；L_q=0 -> 0.0） |
+| `x` / `c_base_vph` | `x = q/c`；`c_base_vph` = 车道数 x 2 方向 x `grading.saturation_flow_vph_per_lane`（无因素注入，`factors_applied=[]`） |
+| `confidence` / `data_age_s` | `grading.defaults.confidence`（仿真无检测置信度，取基准值并标明） / 0（同一仿真步算出） |
+| `level` / `level_name` / `triggered_by` / `ci` | **调 `work/perception/level.py` 的 `grade()`**（唯一判级实现，不复制逻辑）；缺指标 -> `level=0` + `available=false` + `gate_reason`，不判「畅通」 |
+
+- **四产物**（`<out>/latest/`）：`segments_twin.json`（最后一帧 61 段契约快照）、`vehicles.json`（当期活动车辆清单，契约第四节）、
+  `run_log.json`（命令/种子/需求来源/车辆计数/路网 sha/阻塞边界/逐点车队计数）、`twin_timeseries.json`
+  （**每段 65 点的 `q_vph` / `v_kmh` / `k_vpk` / `L_q_m` / `T_d_min` / `level` 数组** + `point_ts` + 公式，供 M1-2 孪生侧举证）。
+- 默认输出目录下另按接口层路径**兼容发布** `<out>/vehicles.json`（`traffic.py` 的 `TWIN_VEHICLES` 读它，不改接口层代码）。
+
+### 17.4 实跑证据（2026-10-18，本机 SUMO 1.28）
+
+| 项 | 结果 |
+|---|---|
+| 建网两遍 | `python work/twin/sumonet.py`（两次不同 `--out-dir`）-> `.net.xml` sha256 **均为 `d1bb71b4ea7cea612a06a9cb165cc0b4f2d704fdcd4b4481792547117c0f0456`**（180790 B，44 节点 / 61 正向段 / 33 反向补边） |
+| 真跑 A | `python work/twin/loop.py --duration 3900 --seed 42` -> **exit 0**，约 17.7 s，**65 个快照**，车辆插入 **D1 1275 / D2 765 / D3 510**（实际=计划），可通行 boundary->boundary 路线 43 条 |
+| 真跑 B | 同上 `--out work/twin/out/run_b` -> **exit 0**，约 17.5 s，计数一致 |
+| 两遍 sha256（A = B） | `segments_twin.json` `ae9685dbbeb5d32d9ef5acd6408a52f60721afa3add0379e1096ad250687ca80`；`twin_timeseries.json` `4f2cf78683e49767fbb85510fc665a2f01fb620d9eb20e03814b35ef4c697850`；`vehicles.json` `e1903b3284da2a6995ab5b337d36a120d06b0b2279ed5d33ade817624f3979e4`（**逐字节一致**） |
+| 产物体积 | `segments_twin.json` 35039 B / `vehicles.json` 41530 B / `twin_timeseries.json` 363013 B / `run_log.json` 约 20469 B（`run_log` 含运行目录路径，两遍不同目录故不要求同字节） |
+| 最后一帧 | 61 段全 `source="twin"` / `is_simulated:true`；活动车辆 154 辆（D1 78 / D2 44 / D3 32）；无车段 `v_kmh=null` + `level=0`（数据不可用） |
+| **M1-1** | 三类司机均在 SUMO 中运行（计划/插入/峰值在场均 >=1：D1 1275/1275/108、D2 765/765/65、D3 510/510/49）；同一场景两遍**各段等级序列 diff 0、时序 diff 0、文件 sha256 相同** |
+| **M1-2（仅孪生侧）** | 65 点 >=60；`SZ-002` 平均车速有效点 **63/65**、排队长度有效点 **65/65**；共 6 段平均车速有效点 >=60。**视频侧 >=60 点不在本单，不宣称 M1-2 整体通过**（台账状态待池·Q 复核） |
+| 自检 `check_w1.py` | **PASS 19 / FAIL 0 / BLOCKED 0**，约 36 s（实跑两遍 + 两次建网 + 逐产物断言） |
+| `--no-sumo` 回归 | 四产物 sha256 与改造前基线**完全一致**：`segments.json` `4effc723...` / `vehicles.json` `17bf4ba3...` / `assimilation_state.json` `8108980f...` / `run_log.json` `39a7341b...` |
+
+### 17.5 下游集成验证（只读；接口层代码不改）
+
+| 下游 | 结果 |
+|---|---|
+| `python work/assembly/traffic.py --check` | **能读到**：`路段快照数据源：twin.latest`、`路段数 61`、`twin 链路记录 61 条`、`车辆 154 辆`（`<out>/vehicles.json` 兼容发布后）；缺失的 video / 引擎层按三层回落照旧 |
+| `python work/twin/run_assimilation.py --twin ...` | 本工作树**无 `--twin` 参数**（`--help` 无该项；带 `--twin` 跑 -> exit 2），且 `baseline.py` 仍只构造空载网络基线 -> **同化侧尚未消费 `segments_twin.json`**（遗留，见 17.6） |
+| 同化产物路径冲突（实测发现） | `run_assimilation.py` 默认也写 `out/latest/run_log.json`，与主循环同名 -> 跑同化会覆盖主循环 `run_log`；本次验证用 `--out work/twin/out/integration_check` 隔离（**建议后续统一产物命名 / 分目录**） |
+
+### 17.6 边界与遗留（如实登记）
+
+1. **M1-2 只证孪生侧**：视频链路 >=60 点时序归感知侧（另单）；本单不宣称 M1-2 整体通过。
+2. **需求是样例/演示假设值**（1 人 1 车、列车到达后 300 s 疏散、OD 只取数值做背景流率），产物 `demand_source` 明示；真实需求归 **IKMHMX**。
+3. **OD 端点不落地**：`N-01` 形式属 7 节点样例网，不猜映射；路线由真网 boundary 断面 + `findRoute` 生成。
+4. **未接同化回灌 / 决策引擎**：主循环里没有 `calibrator.setFlow`，`vehicles[].guided` 恒 `false`，`factors_applied` 恒空数组。
+5. **`T_d_min` / `L_q_m` 是估计量**（公式见 17.3），不是采集值；判级用 `level.py` 唯一实现。
+6. **`.net.xml` 不提交**：`out/` gitignore；换机/验收先 `python work/twin/sumonet.py` 重建。两遍一致性在**本机同一 SUMO 版本**内判，验收机按同样命令复跑。
+7. **`run_assimilation.py --twin` 缺失**：属 IKMS19 同化侧小改（加参数 + `baseline.py` 优先读 `segments_twin.json`），本单不越界改，建议另单 / 由同化侧承接。
+8. `check_w1.py --duration <3600` 时统计点 <60 -> 如实打 **BLOCKED**（不当 PASS），需按缺省 3900 s 复跑。
