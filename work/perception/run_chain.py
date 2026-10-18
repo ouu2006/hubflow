@@ -74,7 +74,7 @@ METRIC_FORMULAS = {
     "v_kmh": "km/h · 窗口内有效标定带内轨迹点瞬时速度均值 × 3.6（带外不计；无样本为 null）",
     "k_vpk": "辆/km · 窗口内在测车辆数 ÷ 路段长度 × 1000",
     "L_q_m": "m · 窗口内排队车辆沿车行方向跨度（落客服务 / 候客 / 违停不计）",
-    "T_d_min": "min · 排队消散时间（L_q ÷ 消散速度 ÷ 60；消散速度取畅通速度 60%）",
+    "T_d_min": "min · 排队消散时间（L_q ÷ 消散速度 ÷ 60；消散速度 = 畅通速度 60% × lanes_factor(1+min(1,q/1800))，演示口径）",
     "point_ts": "ISO 时间 · base_ts + (k × step_sec + window_sec)，k 从 0 起；回放时钟，不是采集时间",
     "video_reuse": "true = 同一段短样本视频被循环回放多次（演示复用），非实时流、非本站现场实测",
 }
@@ -369,6 +369,10 @@ def build_timeseries(th: dict, window_s: float, step_s: float, points: int) -> t
         "is_simulated": True,
         "kind": "video_timeseries",
         "source": "video",
+        "valid_note": {
+            "L_q_m": "0.0 = metrics 判定的空排队（不是缺测，不算 null）；因此 L_q 有效点数恒等于统计点数，不能把 65/65 读成‘排队动态强证据’",
+            "v_kmh": "仅有效标定带内、有速度样本的窗口计入；无样本窗口为 null",
+        },
         "video_reuse": True,
         "points": points,
         "point_ts": point_ts,
@@ -463,6 +467,11 @@ def main() -> int:
             else:
                 print(f"✅ 一致：{path}")
         return 1 if (bad or not gate_ok) else 0
+
+    if not gate_ok:
+        # 点数门槛未达成：不写盘，避免把既有 65 点证据覆盖成失败版（审查发现）
+        print("❌ 视频侧时序点数门槛未达成，未写盘（避免覆盖既有产物）", flush=True)
+        return 1
 
     for path, want in targets:
         path.parent.mkdir(parents=True, exist_ok=True)
