@@ -17,6 +17,7 @@ import type {
   PredictResponse,
   RecommendResult,
   ReportCompare,
+  RouteOptionsSnapshot,
   ScenarioInput,
   ScenarioResult,
   SegmentRecord,
@@ -52,6 +53,12 @@ export function getTrafficVehicles(): Promise<VehiclesSnapshot> {
 // POST /api/traffic/route/recommend → 推荐路线快照(引擎写入 routes.json,接口层只端出来)
 export function postRouteRecommend(body: { session_id: string; location: { segment_id: string; offset_m: number } }): Promise<RecommendResult> {
   return request<RecommendResult>('POST', '/api/traffic/route/recommend', { body })
+}
+
+// GET /api/traffic/route/options → 引擎路线产物的 OD/session 摘要列表（Issue IKNAUI，非契约辅助端点）
+// 供大屏「整条路线规划」选择器；缺产物时接口层如实 404，页面按空窗 + note 降级（不编 ETA）。
+export function getTrafficRouteOptions(): Promise<RouteOptionsSnapshot> {
+  return request<RouteOptionsSnapshot>('GET', '/api/traffic/route/options')
 }
 
 // GET /api/traffic/stream(SSE,事件 traffic_snapshot)→ 轻量刷新事件;页面收到后重新拉快照。

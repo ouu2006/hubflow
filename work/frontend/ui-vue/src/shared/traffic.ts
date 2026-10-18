@@ -171,6 +171,54 @@ export interface RouteHighlight {
   segments: string[]
 }
 
+// ---------- 整条路线规划选项（Issue IKNAUI；非契约辅助端点 /route/options） ----------
+// 接口层只把引擎产物 requests 的 OD / session / 路径摘要端出来（ETA / 段号原样透传），
+// 页面选中后用 session_id 调 POST /route/recommend 画完整路线，不在前端重算。
+
+export interface RoutePathSummary {
+  path_id: string | null
+  segments: string[]
+  segment_count: number
+  eta_min: number | null
+  length_m?: number | null
+  dropoff_point?: string | null
+  walk_min?: number | null
+  /** 仅备选路径带：引擎给的 reason（原样） */
+  reason?: string | null
+}
+
+export interface RouteOptionLocation {
+  segment_id: string | null
+  offset_m: number | null
+  source: string | null
+}
+
+export interface RouteOption {
+  od_id: string | null
+  session_id: string | null
+  request_id: string | null
+  driver_type: string | null
+  parking_mode: string | null
+  location: RouteOptionLocation
+  arrival_route: RoutePathSummary | null
+  alternatives: RoutePathSummary[]
+  departure_route: RoutePathSummary | null
+  why: string | null
+  is_simulated: true
+}
+
+export interface RouteOptionsSnapshot {
+  ts: string
+  is_simulated: true
+  /** engine.routes.real（真网优先）/ engine.routes.sample（回退） */
+  data_source: string
+  data_source_note: string
+  segment_namespaces: string[]
+  count: number
+  options: RouteOption[]
+  note?: string
+}
+
 // ---------- 四级编码(手册 §6.2,照抄) ----------
 
 export interface LevelStyle {

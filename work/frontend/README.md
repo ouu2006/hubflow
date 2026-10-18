@@ -869,4 +869,75 @@ cd work/frontend/ui-vue && npm run dev:remote
 cd work/frontend/ui-vue && npm run dev
 ```
 
+## 十七、全路段视频复用 + 整条路线规划展示（Issue IKNAUI，2026-10-18）
+
+> 业主 2026-10-18 口径：**全部 61 段都要有视频显示**（视频重复利用，不要求每路独立拍摄）；
+> 同时要能看见**整条路线的路线规划**。本单不新增真实摄像头、不改登记表，也不在前端重算路线 / ETA。
+
+### 17.1 全路段视频复用（`SegmentCameraCard.vue`）
+
+- **仅对没有登记摄像头的路段**启用（`camerasOfSegment(segmentId).length === 0`；本站登记表 6 路，
+  其余段走复用）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
+  （字符串 hash 取模，同一段永远同一路，不用随机），显示该通道**真实抽帧**
+  （`/perception-api/streams/{source}/frames/{n}.jpg`，与感知页同一路径、可暂停）。
+- 角标与文案按业主口径固定：
+  - 角标「**演示复用视频 · 同一份样本视频用于多路演示 · 非本站现场**」；
+  - 标题「无独立摄像头 · 演示复用样本视频（按段号确定性映射）」；
+  - 说明「该路段无独立摄像头：画面为从现有 2 路样本视频（road2 / track1）中按段号确定性复用的演示帧，
+    同一份样本视频用于多路演示，非本站现场、非实时流；不新增 / 不伪造摄像头登记（感知页台账仍按登记表 6 路）」。
+- 有登记摄像头的段**保持 IKMS18 行为**（有视频源显示样本视频回放；无视频源显示「未接入视频源」空窗）；
+  感知页台账仍按 `camera-segments.json` 的 6 路，不出现 61 路“真实摄像头”；真实接入边界见 IKMHMX。
+- 降级：感知服务不可用 → 可读错误 + 8s 自动重试；复用通道未导出 → 「复用样本视频未导出」空窗；
+  抽帧 404 → 「帧加载失败 + 重试本帧」；均不伪造画面。
+
+### 17.2 整条路线规划（大屏路线卡）
+
+- 接口层新增**只读辅助端点（非契约 §七）** `GET /api/traffic/route/options`：
+  端出 `work/engine/out/real/routes.json`（真网优先、样例回退）`requests` 的
+  OD / session / location / 进场路线 / 备选 / 离站路线**摘要**；缺产物如实 404 + note；
+  响应 `is_simulated:true` / `data_source` / `segment_namespaces`。
+- 大屏路线卡新增「**整条路线规划**」选择器：列出引擎全部真实 OD（本站 12 条，至少展示 3 条），
+  默认选第一条并自动调 `POST /api/traffic/route/recommend`（真实 `session_id` + 该 OD 的起点 location）；
+  地图用同一份 recommend 数据经 `RouteHighlight` 画「推荐 / 备选 / 离站」三态；
+  切换 OD 重新请求并重画。
+- 同卡显示**全程摘要**：
+  - 进场：起点段号 · 推荐路径段数 · ETA（含完整段号序列）；
+  - 落客：落客点（引擎未给则如实「引擎产物未给落客点（如实空窗）」）· 备选条数；
+  - 离站：段数 · ETA（含段号序列；引擎未给则如实空窗）；
+  - 来源：`engine.routes.real` / `engine.routes.sample` + 段号命名空间 + 「ETA / 路径原样透传，
+    接口层与前端均不代算」。
+- 口径：ETA / 段号 / OD 全部原样透传，**前端不重算路线**；无产物 / 无选项 / 不匹配时如实空窗 + note，
+  不编 ETA；页面常驻「演示数据（模拟）」，不出现实测 / 实时 / 现场表述。
+- mock 模式：mock 中间件没有 `/route/options` 端点 → 页面如实提示「mock 模式无整条路线选项端点」，
+  回退演示会话路线（不冒充引擎 OD），页面不崩。
+
+### 17.3 实测与自检（2026-10-18）
+
+- `GET /api/traffic/route/options`（remote）：HTTP 200、`x-traffic-data-source: engine.routes.real`、
+  `count: 12`、`segment_namespaces: ["SZ"]`；`OD-R-001 / S-real-OD-R-001 / 起点 SZ-003 /
+  进场 5 段 ETA 0.82 / 备选 1 / 离站 3 段 ETA 0.36`（完整样本见
+  `D:\hubflow\_scratch\iknaui\route-options.json`）。
+- 浏览器（Tabbit/Chromium，1590 宽）：
+  - `#/dashboard?segment=SZ-001`（无摄像头段）→ 关联摄像头卡显示「演示复用视频」+ 真实抽帧
+    （复用通道 track1）+ 固定角标；`SZ-002` 复用 road2、`SZ-003` 复用 track1（确定性映射）；
+    `SZ-005`（登记 C-02）保持样本视频回放；`SZ-019`（登记 C-04 无视频源）保持「未接入视频源」。
+  - 路线卡选择器：默认 OD-R-001 → 全程摘要「进场 SZ-003 · 5 段 · 0.82 min；落客点未给 · 备选 1 条；
+    离站 3 段 · 0.36 min；来源 engine.routes.real」；切到 OD-R-004 → 摘要与地图路线同步变为
+    「起点 SZ-055 · 3 段 · 0.69 min」（route/recommend 返回该 session 的完整路线）。
+  - 截图（不入库）：`D:\hubflow\_scratch\iknaui\`
+    `final-video-reuse-SZ-001.png`、`final-route-plan-default.png`、`final-route-plan-OD-R-004.png`、
+    `route-options.json`、`route-options-headers.txt`。
+- 门禁：`npm run build` exit 0；`git add -A` 后 `python scripts/doc_gate.py` 8/8。
+
+```bash
+# remote 自检（仓库根）
+python work/engine/run.py --network real            # 生成真网 routes（out/ 不入库）
+python work/assembly/traffic.py --port 8000
+python work/perception/server.py --port 8101 --data <perception 导出数据目录>
+cd work/frontend/ui-vue && npm run dev:remote
+# 浏览器：#/dashboard?segment=SZ-001 看复用视频；路线卡选 OD → 地图三态路线 + 全程摘要
+# mock 兼容：npm run dev（无 /route/options，回退演示会话路线 + 如实提示）
+```
+
+
 
