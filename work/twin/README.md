@@ -343,11 +343,11 @@ bidirectional 5）。产物固定 `status: "候选·待业主/队长签字冻结
 ```text
 断面候选清单（sections.py，61 段 role）
    + 视频快照 <仓库根>/work/perception/out/latest/segments_video.json（SZ-005 / SZ-024）
-   + 孪生基线（baseline.py：视频观测段照抄视频链路 + 其余段空载网络基线，均明示演示）
+   + 孪生基线（baseline.py：真孪生快照 `out/latest/segments_twin.json` 优先；缺失时才退到视频观测段照抄 + 空载网络基线，均明示演示）
    + 场景开关 stations/scenarios.json 的 assimilation（enabled / edges / period_s / gate）
         → 逐段判定：internal 永久拒绝 → 场景开关/白名单 → 有没有观测 → 门控 → 偏差
-        → out/latest/assimilation_state.json（契约第三节信封 + edges）
-        → out/latest/assimilation_log.json（逐段 gate 求值 / 停灌原因 / 回灌值 / calibrator 计划）
+        → out/latest/assimilation/assimilation_state.json（契约第三节信封 + edges；IKNAUN 后同化产物统一分目录）
+        → out/latest/assimilation/assimilation_log.json（逐段 gate 求值 / 停灌原因 / 回灌值 / calibrator 计划）
 ```
 
 **门控与停灌原因码**（`gate.reason`；门控拒绝再加 `gate.cause` 说明是哪个门）：
@@ -413,7 +413,7 @@ bidirectional 5）。产物固定 `status: "候选·待业主/队长签字冻结
 `未落地（不猜映射、不混命名空间）`，不注入（例如 S3 的 F07）；机制示例模式（`--mode sample`）
 才按样例站点包 `points.json` 把它桥到 `SEG-###`。
 
-**产物**：`out/latest/factors_report.json`（catalogue + 四个场景各自的生效/未落地因素 +
+**产物**：`out/latest/assimilation/factors_report.json`（catalogue + 四个场景各自的生效/未落地因素 +
 `segments_before.json` / `segments_after.json` 的逐因素方向校验）+ 两份 segments 快照
 （before = 基线、after = 注入后，均 `is_simulated:true` + note）。
 
@@ -504,7 +504,7 @@ python scripts/doc_gate.py
 3. **不混命名空间**：真网只用 `SZ-###`（61 段），旧 7 节点样例网 `SEG-###` 只出现在
    `samples/` + 机制示例模式；两套产物分目录、`run_log.mode` 区分；`assimilation.edges` 里写
    `internal` 段号 → **报错退出**（契约 §6.2）；
-4. **不宣称 M1-10 通过**：清单未签字冻结 + 真网无 boundary 观测 + 真孪生基线缺失 →
+4. **不宣称 M1-10 通过**：清单未签字冻结 + 真网无 boundary 观测 + 场景 `assimilation.edges` 仍是占位 →
    `assimilation_state` 只有**机制级**证据，M1-10 / TC-20① 记 **BLOCKED**（`check_assimilation.py`
    打印 BLOCKED，不当 PASS）；
 5. **不编造需求效果**：`target=demand` 的 6 类因素只登记注入事件与 `factors_applied`，
@@ -653,7 +653,7 @@ python work/twin/loop.py --no-sumo --out work/twin/out/sample_check
 | `GET /api/traffic/overview`（临时起接口层只读验证） | `segment_total=61`、**`unavailable_count=0`**、`level_distribution` = L1 55 / L2 1 / L3 3 / L4 2 / **L0 0**、`vehicles_inbound=149` |
 | `GET /api/traffic/segments` | **61 段**；`level=0（数据不可用）` **0 段**；`v_kmh` 非空 **61/61**；`ts` 取孪生快照 `2026-01-01T01:05:00+08:00`（不读墙钟） |
 | `python work/twin/run_assimilation.py --twin work/twin/out/latest/segments_twin.json` | **IKNAUN 已接**：`baseline_source=twin.latest`、`twin_snapshot_sha` 可核、61 段 `baseline_used=twin.latest`；同化回灌仍 0 条（boundary 无观测 + 场景 edges 仍是占位）→ 不宣称 M1-10，见第十八节 |
-| 同化产物路径冲突 | **IKNAUN 已修**：默认产物写 `out/latest/assimilation/`（主循环 `out/latest/run_log.json` 不再被覆盖）；`--out` 显式优先；实测两套产物并存 |
+| 同化产物路径冲突 | **IKNAUN 已修**：默认产物写 `out/latest/assimilation/`（主循环 `out/latest/run_log.json` 不再被覆盖）；`--out` 显式优先；实跑两套产物并存 |
 
 ### 17.6 边界与遗留（如实登记）
 
@@ -735,7 +735,7 @@ python scripts/doc_gate.py
 - 真网同化产物默认写 **`work/twin/out/latest/assimilation/`**（7 份，见第十五节）；
   机制示例写 `out/latest/assimilation/mechanism_demo/`；`--out` 显式优先；
 - **与主循环共存**：W1 的 `out/latest/{segments_twin,vehicles,run_log,twin_timeseries}.json`
-  不再被同化覆盖——实测同化跑两遍前后，主循环 `out/latest/run_log.json` sha256
+  不再被同化覆盖——实跑同化跑两遍前后，主循环 `out/latest/run_log.json` sha256
   `87EE9566…` **不变**；
 - 接口层兼容发布不变：默认目录跑时仍写 `work/twin/out/assimilation_state.json`（`traffic.py` 读它），
   只是**同化的其余产物换了目录**。
