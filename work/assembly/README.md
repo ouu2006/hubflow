@@ -36,9 +36,10 @@
 | `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | **已实现**（IKMF1T；IKMS17 起带 `data_sources` 角标） |
 | `/api/traffic/overview` | GET | 全网 KPI（均速 + 环比 / 最堵路段 / 在途·已引导·采纳率 / 生效因素数 / 等级分布） | **已实现**（IKMF1T） |
 | `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点 | **已实现**（IKMF1T） |
-| `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **已实现**（IKMF1T；由快照派生） |
-| `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | 已实现（**内存态**；正式落库留痕待二期） |
-| `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | 已实现（**内存态**；正式落库留痕待二期） |
+| `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **已实现**（IKMF1T 由快照派生；**IKMS1H 起读持久化后的运行态**） |
+| `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
+| `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
+| `/api/traffic/plan/audit` | GET | 处置闭环审计（只读**辅助端点**，非契约端点） | **已实现**（IKMS1H；按 seq 返回 dispatch / ack / reset 记录） |
 | `/api/traffic/predict` | GET | 预测：`?segment_id=&h=15`。一期 **L0**，不报精度数字 | **已实现**（IKMF1T；无 pred 产物时空点 + note） |
 | `/api/traffic/thresholds` | GET | 判级阈值 + CI 四项加权构成 + 变更留痕（只读，P1） | **已实现**（IKMF1T；读 `stations/thresholds.json`） |
 | `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵（`?window=&bucket=`） | **已实现**（IKMF1T；只回当前快照桶，其余 null 灰格） |
@@ -60,9 +61,10 @@
 
 **约定**：`is_simulated` 字段在**每一个**响应里出现；事件流复用现有 SSE 形状，**新增**事件名，**不改既有事件名**；**一期是非视频端点驱动的页面**——**视频感知链路**（YOLO 跑样本视频，`source: "video"`）**一期就在跑**，但它的结果以 `segments` 快照的形式进接口层（**不新增视频流 / 画面端点**）。`/api/traffic/segments` 与 `/segments/{id}` 必须能按 `source` **并排返回 `video` / `twin` 两个来源**（**TC-19 的展示侧**，页面用 `/segments/{id}/sources` 取并排对）。
 
-**写接口的留痕要求（新增，后端实现时照此）**：`plan/dispatch` 与 `plan/ack` 是本次接口面里**仅有的两个状态写入**，
-前端已按「回执 + 回写留痕」展示（渠道、比例、认领人、动作、结果四选一、时间）。mock 里是内存态（刷新复位，页面已标「演示态」），
-**后端实现必须落库**，否则决策层的「处置闭环」无法举证。
+**写接口的留痕要求（已落地，见 §2.2）**：`plan/dispatch` 与 `plan/ack` 是接口面里**仅有的两个处置状态写入**，
+前端已按「回执 + 回写留痕」展示（渠道、比例、认领人、动作、结果四选一、时间）。**IKMS1H 起**这两个端点与
+`GET /alerts` / `POST /alerts/reset` 共用一份**持久化运行态**（JSON 文件仓，重启不复位）并追加式写审计，
+决策层的「处置闭环」可跨页面 / 跨重启举证；仍是**演示态、无真实下发通道**。
 
 **前端当前降级说明**（后端未实现前的如实表现，不要当成 bug）：
 ① 六路样本视频只有 `road2` / `track1` 已导出，其余显示「未导出」；② 越线计数 / 平均 Q / SVR / 标定 RANGE-RMSE
@@ -82,7 +84,9 @@ python work/perception/server.py --port 8101
 cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashboard
 ```
 
-**写端点（一期：进程内存态，重启复位；不落库、不写快照、不重算判级）**：
+**写端点（factors / scenario 一期：进程内存态，重启复位；不落库、不写快照、不重算判级）**：
+
+> 处置闭环写端点（`plan/dispatch` / `plan/ack` / `alerts/reset`）自 **IKMS1H** 起已改为持久化，见 [§2.2 处置闭环持久化](#22-处置闭环持久化ikms1h2026-10-18下发--回执--回写落盘重启不丢)。
 
 | 端点 | 入参（与 mock 同形） | 行为 | 响应口径 |
 |---|---|---|---|
@@ -94,7 +98,9 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 - **两个口子不混用**：人工置位只有 F07/F08/F11；F01/F02/F03/F10 属环境侧，只走 `/scenario`。
 - **接口层不重算 level / ci**（判级唯一实现是感知层 `level.py`）：写端点只更新 `context` /
   `derived_factors` / 因素状态；`GET /factors`、`GET /segments` 里登记的因素带
-  `injected:true, pending_recompute:true`，**不伪造等级变化**。复位方式：三个 `POST *reset`，或重启进程。
+  `injected:true, pending_recompute:true`，**不伪造等级变化**。复位方式：factors / scenario 走三个
+  `POST *reset` 或重启进程（内存态）；处置闭环运行态见 §2.2（持久化，重启不丢，复位走
+  `POST /alerts/reset` 或 `--reset-state`）。
 - 所有响应恒带 `is_simulated:true`；参数不合法 400（`FACTOR_INVALID` / `SCENARIO_INVALID`）、
   路段不存在 404、未注册路径/方法 404（统一信封）——不静默吞路径。
 
@@ -114,19 +120,145 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 **自检（真跑命令）**：
 
 ```bash
-python work/assembly/traffic.py --check            # 数据源 / 路线优先级 / 写端点内存态(新进程恒空)
+python work/assembly/traffic.py --check            # 数据源 / 路线优先级 / 处置运行态(持久化)摘要
+python work/assembly/selfcheck_ikms1h.py           # IKMS1H 自检：重启持久化 / 幂等 / 顺序 / 终态 / 复位 / 审计 / 跨页
 curl -s http://127.0.0.1:8000/api/traffic/meta     # 响应头 X-Traffic-Data-Source
-curl -s -X POST http://127.0.0.1:8000/api/traffic/factors -H "Content-Type: application/json" \
-     -d '{"segment_id":"SZ-005","factor_id":"F07","name":"交通事故 / 故障车","target":"c","multiplier":0.5}'
-curl -s -X POST http://127.0.0.1:8000/api/traffic/scenario -H "Content-Type: application/json" \
-     -d '{"weather":"大雨","session":"晚高峰"}'
-curl -s -X POST http://127.0.0.1:8000/api/traffic/scenario/reset
+curl -s http://127.0.0.1:8000/api/traffic/alerts   # 读持久化后的告警四态
+curl -s -X POST http://127.0.0.1:8000/api/traffic/plan/dispatch -H "Content-Type: application/json" \
+     -d '{"alert_id":"<GET /alerts 里的一条>","channel":"情报板","ratio_pct":30,"operator":"值班员A"}'
+curl -s -X POST http://127.0.0.1:8000/api/traffic/plan/ack -H "Content-Type: application/json" \
+     -d '{"alert_id":"<同一条>","operator":"值班员A","action":"分流","result":"已缓解"}'
+curl -s "http://127.0.0.1:8000/api/traffic/plan/audit?limit=10"   # 审计留痕
+curl -s -X POST http://127.0.0.1:8000/api/traffic/alerts/reset    # 演示复位（留痕）
 ```
 
 > 注：本单不改 `selfcheck_ikmf1t.py`。该脚本仍按 IKMF1T 当时的口径断言
 > `POST /factors`、`/scenario`、`/scenario/reset` 是 404（"unimplemented"）；IKMS17 已把它们实现为
-> 内存态端点，**这三条断言已过时**，脚本其余检查仍可作回归参考（跑该脚本会覆写 `对照快照.*` /
-> `自检记录.md`，这三份是 IKMF1T 的交付物，本单不重写）。
+> 内存态端点，**这三条断言已过时**；IKMS1H 又给 `/alerts` 信封加了 note、写端点加了持久化字段，
+> 该脚本的对照结果会如实记差异但不作为本单证据。IKMS1H 的自检走 `selfcheck_ikms1h.py`（**独立运行态文件，
+> 不污染演示态**），证据见 `自检记录-IKMS1H.md`。
+
+### 2.2 处置闭环持久化（IKMS1H，2026-10-18）：下发 / 回执 / 回写落盘、重启不丢
+
+**一句话**：`plan/dispatch` → `plan/ack` → `GET /alerts` 的运行时状态不再只活在进程内存里，而是落盘到
+`work/assembly/data/dispatch.json`；停服务 / 重启后状态、回执、回写留痕、审计都还在，大屏与决策页读到**同一份状态**。
+
+**选型：JSON 文件仓（不是 SQLite）**：
+
+| 判据 | 取舍 |
+|---|---|
+| 进程模型 | 一期是单进程演示后端（uvicorn 单 worker），没有并发写库 / 多进程事务需求 |
+| 依赖 | `json` / `os.replace` / `fsync` 都是 stdlib，零新依赖；文件人能直接读 / diff / 备份（演示前删一个文件即回初始态） |
+| 数据量 | 几条告警 + 审计上限 1000 条，一次全量读写 < 1 ms，不需要索引 / 事务 |
+| 崩溃安全 | 写临时文件 + `os.replace` 原子替换 + `fsync`，不会留半截 JSON；坏文件 / 旧 schema 改名留证（`*.corrupt-<时间>`）后按初始态启动 |
+| 迁移 | 二期换 SQLite / openGauss 只替换 `DispatchStore` 一类，端点形状与审计字段不变 |
+
+**位置与拦截**：`work/assembly/data/dispatch.json`（**不入库**）。同目录 [`data/.gitignore`](data/.gitignore)
+只放行它自己，`dispatch.json` 被忽略；`.db` / `out/` 运行态与自检测试数据同样不提交。
+
+**schema（`schema_version: 1`）**：
+
+```json
+{
+  "schema_version": 1,
+  "is_simulated": true,
+  "note": "演示态、无真实下发通道；运行态随本文件持久化（重启不复位）",
+  "updated_at": "2026-10-18T13:46:41+08:00",
+  "alerts": {
+    "<alert_id>": {
+      "status": "已闭环",
+      "segment_id": "SZ-005",
+      "channels": ["情报板"],
+      "dispatch_at": "2026-10-18 13:46:38",
+      "dispatch_ratio_pct": 30,
+      "dispatch_operator": "值班员A",
+      "dispatch_audit_seq": 1,
+      "writeback": {
+        "operator": "值班员A",
+        "action": "分流",
+        "result": "已缓解",
+        "at": "2026-10-18 13:46:41",
+        "audit_seq": 2
+      }
+    }
+  },
+  "seed_dispatch": {},
+  "audit": [
+    {
+      "seq": 1,
+      "at": "2026-10-18 13:46:38",
+      "action": "dispatch",
+      "alert_id": "AL-...",
+      "segment_id": "SZ-005",
+      "channel": "情报板",
+      "ratio_pct": 30,
+      "operator": "值班员A",
+      "result": null,
+      "status_after": "处置中"
+    }
+  ],
+  "audit_seq": 2,
+  "audit_total": 2,
+  "reset_count": 0
+}
+```
+
+**写操作语义（与 mock 同一套状态机，差异只在持久化 / 审计）**：
+
+| 场景 | 行为 |
+|---|---|
+| 首次下发 | 200 回执（渠道 / 比例 / 时间 / 操作者）+ 状态「处置中」；追加 `dispatch` 审计 |
+| 同告警 + 同渠道 + 同比例重复下发（回写前） | 200 `idempotent:true`，沿用首次回执时间；**不重复写审计** |
+| 无下发回执直接回写 | 409 `ACK_NO_DISPATCH`（TC-07 闭环顺序） |
+| 回写四选一 | 已消除 / 已缓解 → 已闭环；未改善 → 处置中；误报 → 误报；追加 `ack` 审计 |
+| 同人 + 同动作 + 同结果重复回写 | 200 `idempotent:true` 回放既有回执；不重复写审计 |
+| 终态（已闭环 / 误报）再下发或换结果回写 | 409 `ALERT_TERMINAL`，不可翻转 |
+| 复位 `POST /alerts/reset` | 清运行态 → 重放 `seed_dispatch`（接口层默认空 → 全部回「待认领」）+ 写一条 `reset` 审计 |
+| 落盘失败 | 500 `PERSIST_FAILED` + note；内存与磁盘都保持旧状态（不假成功） |
+
+**审计（TC-07 / 效果对比可引用）**：`GET /api/traffic/plan/audit?limit=&alert_id=`（只读**辅助端点**，非契约端点）
+按 `seq` 返回 dispatch / ack / reset 记录；`audit_total` 单调累计（文件保留最近 1000 条）。字段：
+`seq / at / action / alert_id / segment_id / channel / ratio_pct / operator / operator_action(ack) / result / status_after`。
+
+**seed 与复位**：接口层没有站点包预置下发剧本（mock 的 `seedDispatch` 在前端站点包 TS 里，搬到后端等于伪造回执），
+所以默认 `seed_dispatch = {}`；需要预置演示态时在运行态文件的 `seed_dispatch` 里声明，再 `POST /alerts/reset`
+或 `python work/assembly/traffic.py --reset-state` 重放（复位本身留一条 `reset` 审计）。
+
+**迁移 / 清理**：
+
+- 回初始态（留审计）：`POST /api/traffic/alerts/reset` 或 `python work/assembly/traffic.py --reset-state`；
+- 全清（含审计）：停服务 → 删 `work/assembly/data/dispatch.json` → 重启（首次写入时重建，含 `seed_dispatch`）；
+- 换 schema：升 `schema_version` 并在本节写迁移说明；旧版本 / 坏文件会改名留证（`*.corrupt-<时间>`）后按初始态启动；
+- 换路径：`--state-path work/assembly/out/xxx.json`（相对路径按仓库根解析；自检用它做隔离）。
+
+**与前端同源 / 演示态边界**：
+
+- 决策页与大屏都调同一套 `src/api/traffic.ts` 函数（`getTrafficAlerts` / `postPlanDispatch` / `postPlanAck`），
+  所以同一后端状态在页面切换 / 刷新后一致；**本单不改前端**。
+- **演示态、无真实下发通道**：渠道只是展示枚举（情报板 / 导航软件推送 / 现场调度 / 广播），回执只是
+  「已确认」的演示回执，**不得**说成已通知司机 / 情报板；所有写端点响应 `is_simulated:true` + note。
+- 一期范围：**一进程一 JSON 文件仓**；多 worker / 真实落库（openGauss）归二期。
+
+**完成判定对照（TC-07 等）**：
+
+| 条目 | 怎么验 | 证据 |
+|---|---|---|
+| TC-07 | 下发 → 回执 → 回写状态可推进；四项留痕；停服务重启后仍在 | `selfcheck_ikms1h.py` 第 3~7 步真跑重启 |
+| 开发规范 §7（幂等） | 同操作重复提交幂等（回执时间不变、审计不重复） | 第 3 / 6 步断言 |
+| 本单专属一（前置校验） | 无回执回写 409；终态不可翻转 | 第 2 / 6 步断言 |
+| 本单专属二（跨页共享） | 大屏 / 决策页同一后端状态（API 层两次读一致 + 源码同源引用） | 第 9 步 + 前端源码引用 |
+| 本单专属三（可复位） | reset / `--reset-state` 回明确初始态并留痕 | 第 8 步断言 + 审计 |
+
+**自检（真跑命令）**：
+
+```bash
+python work/assembly/selfcheck_ikms1h.py       # 一键：重启持久化 / 幂等 / 顺序 / 终态 / 复位 / 审计 / 跨页 / doc_gate
+python work/assembly/traffic.py --check        # 看运行态文件与审计摘要
+python work/assembly/traffic.py --reset-state  # 复位运行态（留审计；不起服务）
+```
+
+> 证据：`work/assembly/自检记录-IKMS1H.md`（真跑断言表 + 重启前后 JSON + 审计全量）；运行态文件与 `out/`
+> 测试数据均被 gitignore，不入库。
 
 ## 三、一键演示脚本
 
