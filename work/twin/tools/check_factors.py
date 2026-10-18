@@ -16,7 +16,7 @@
 | 可重复 | 同一注入连跑两遍，产物 sha256 一致 |
 
 **如实标阻塞**：`target=demand` 的 6 类因素（F03/F10/F11/F12/F13/F14）文件级不改假测量
-（需要 SUMO 需求生成器 / 真孪生），只验"注入事件 + factors_applied 出现"，
+（需要主循环需求生成器接入；真实需求归 IKMHMX），只验"注入事件 + factors_applied 出现"，
 方向与等级效果记 **BLOCKED**，不编造。
 
 退出码：0 = 无 FAIL（有 BLOCKED 也返回 0，但会打印提示）；1 = 有 FAIL。
@@ -50,7 +50,7 @@ EVAL_TS = "2026-01-01T09:00:00+08:00"
 #: 因素表没给 demo 倍率时的**自检夹具值**（不是因素表真值；只验机制与方向）
 FIXTURE_MULTIPLIER = 0.5
 
-#: 文件级可模拟的 target（demand 需 SUMO 需求生成器 → 阻塞）
+#: 文件级可模拟的 target（demand 需主循环需求生成器接入 → 阻塞）
 SIMULATABLE_TARGETS = ("c", "v_f", "lanes", "confidence")
 
 
@@ -351,7 +351,8 @@ def verify_one(
         )
     elif demand_targets and not simulatable:
         result["blockers"].append(
-            "target=demand：文件级只登记注入事件、不改假测量；需求/等级效果需 SUMO 需求生成器（真孪生缺失）"
+            "target=demand：文件级只登记注入事件、不改假测量；需求/等级效果需主循环需求生成器接入"
+            "（当前主循环需求仍是样例/演示假设，真实需求归 IKMHMX）"
         )
 
     # ---- ⑦ 无 multiplier=1.0 占位 + 失效窗口不写 ----
@@ -410,9 +411,15 @@ def main() -> int:
         segment["segment_id"] for segment in before["segments"] if segment.get("confidence") is not None
     }
     print("多因素自检（IKMS19 · TC-16 逐因素注入）")
+    baseline_info = before.get("baseline_source") or "unknown"
+    observed_text = (
+        "、".join(sorted(observed_ids))
+        if 0 < len(observed_ids) <= 10
+        else (f"{len(observed_ids)} 段" if observed_ids else "无")
+    )
     print(
-        f"  基线：真网 {len(before['segments'])} 段（有指标数据的 {len(observed_ids)} 段："
-        f"{'、'.join(sorted(observed_ids)) or '无'}）· 判级阈值读 stations/thresholds.json"
+        f"  基线：真网 {len(before['segments'])} 段（baseline_source={baseline_info}；"
+        f"有指标数据的 {len(observed_ids)} 段：{observed_text}）· 判级阈值读 stations/thresholds.json"
     )
     print(f"  硬触发因素：{grading.get('hard_trigger_factor_ids')} → level={grading.get('hard_trigger_level')}")
     print()
@@ -447,7 +454,7 @@ def main() -> int:
         print(
             "  BLOCKED 因素："
             + "、".join(result["factor_id"] for result in blocked)
-            + "（需 SUMO 需求生成器 / 真孪生，文件级不编造需求效果）"
+            + "（需主循环需求生成器接入，文件级不编造需求效果；真实需求归 IKMHMX）"
         )
     if failed:
         print("  FAIL 因素：" + "、".join(result["factor_id"] for result in failed))

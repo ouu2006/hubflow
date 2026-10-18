@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""同化自检（Issue IKMS19 · TC-20 四项 + 本单专属一/二）：**真跑**，输出 PASS / FAIL / BLOCKED。
+"""同化自检（Issue IKMS19 · TC-20 四项 + 本单专属一/二 + IKNAUN 真基线前置）：**真跑**，输出 PASS / FAIL / BLOCKED。
 
 跑什么（全部调 `work/twin/run_assimilation.py` 的 `run()`，不是空口断言）：
 
 | 项 | 判据 | 数据 |
 |---|---|---|
 | **TC-20①** | 被同化的边界断面确实回灌（有 `last_apply` + 偏差） | **机制示例**（旧 `SEG-###` 样例）可验 → PASS；**真网**当前无 boundary 观测 → BLOCKED（如实标，不编数） |
+| **TC-20① 前置（IKNAUN）** | 有真孪生快照时 `baseline_source=twin.latest`、`twin_snapshot_sha` 三处一致、61 段 `baseline_used=twin.latest`；`--no-twin` 强制降级为 `empty_load_demo` + 阻塞可见；快照不在场 → BLOCKED（仍不宣称 M1-10） | 真网默认用例 + `--no-twin` 用例 |
 | **TC-20②** | `internal` 断面**永远** `assimilating=false` 且 reason=`internal_not_allowed`（硬断言） | 真网 + 机制示例两套产物都查；另查日志里 internal 观测被拒 |
 | **TC-20③** | 关闭同化（场景 S3 `enabled=false`）→ 回灌 0 条、boundary 全部停灌、reason 可见 | 两个模式各跑一遍 S3 |
 | **TC-20④** | 压 `confidence` / 抬 `data_age` → 门控拒绝，`gate.reason=gate_rejected` + `cause` 可见，日志留痕 | 机制示例跑 `--obs-confidence 0.2` / `--obs-data-age-s 999` |
@@ -29,6 +30,7 @@ HERE = Path(__file__).resolve().parent
 TWIN_DIR = HERE.parent
 sys.path.insert(0, str(TWIN_DIR))
 
+import baseline  # noqa: E402
 import calibrate  # noqa: E402
 import run_assimilation as ra  # noqa: E402
 
@@ -249,7 +251,7 @@ def tc20_network_item(state: dict[str, Any], run_log: dict[str, Any]) -> Item:
     """TC-20①（真网）判定：按实际回灌/门控/数据状态给 PASS / BLOCKED，不写死数据。
 
     - 有 boundary 观测且回灌成功 → **PASS**（补齐 boundary 观测后自动转 PASS，不翻 FAIL）；
-    - 无回灌但有 boundary 候选 → **BLOCKED**（按实际 enabled/reason/观测动态归因）；
+    - 无回灌但有 boundary 候选 → **BLOCKED**（按实际 enabled/reason/观测/基线动态归因）；
     - boundary 候选为 0 → FAIL（清单异常）。
     """
     boundary_edges = [edge for edge in state["edges"] if edge.get("role") == "boundary"]
@@ -266,6 +268,14 @@ def tc20_network_item(state: dict[str, Any], run_log: dict[str, Any]) -> Item:
     reason_text = (
         "；".join(f"{reason} {count} 条" for reason, count in stopped_reasons.items()) or "无"
     )
+    baseline_info = run_log.get("baseline") or {}
+    twin_info = run_log.get("twin_snapshot") or {}
+    baseline_source = baseline_info.get("baseline_source")
+    twin_sha = baseline_info.get("twin_snapshot_sha")
+    baseline_text = (
+        f"基线={baseline_source}"
+        + (f"（twin sha={str(twin_sha)[:16]}…，ts={baseline_info.get('ts')}）" if twin_sha else "（空载演示）")
+    )
     dynamic_facts = (
         f"boundary 候选 {len(boundary_edges)} 条；观测段 "
         f"{ {segment_id: observed_roles.get(segment_id) for segment_id in observed_segments} }；"
@@ -273,7 +283,8 @@ def tc20_network_item(state: dict[str, Any], run_log: dict[str, Any]) -> Item:
         f"{'（' + '、'.join(applied_ids) + '）' if applied_ids else ''}；"
         f"boundary 停灌原因 {reason_text}；"
         f"internal 观测被拒 {len(internal_obs_rejected)} 条"
-        f"{'（' + '、'.join(internal_obs_rejected) + '）' if internal_obs_rejected else ''}"
+        f"{'（' + '、'.join(internal_obs_rejected) + '）' if internal_obs_rejected else ''}；"
+        f"{baseline_text}"
     )
     if applied_ids:
         deviations = [
@@ -299,8 +310,13 @@ def tc20_network_item(state: dict[str, Any], run_log: dict[str, Any]) -> Item:
         "TC-20①（真网，SZ-###）M1-10 boundary 回灌",
         "BLOCKED",
         (
-            f"{dynamic_facts}；真孪生基线缺失 + 断面清单未签字（见 run_log.blockers）。"
-            "补齐 boundary 观测（或放开场景 edges）后本项按实际结果转 PASS/门控判定，不翻 FAIL"
+            f"{dynamic_facts}；断面清单未签字（见 run_log.blockers）。"
+            + (
+                "真孪生基线在场（仅解开偏差分母前置），但 boundary 观测缺失/edges 未落地 "
+                "→ 仍不宣称 M1-10 通过；补齐后本项按实际结果转 PASS，不翻 FAIL"
+                if twin_info.get("present")
+                else "真孪生基线也缺失 → 退回空载演示基线；补齐快照与 boundary 观测后本项转 PASS，不翻 FAIL"
+            )
         ),
     )
 
@@ -370,6 +386,103 @@ def tc20_network_logic_probe() -> Item:
     )
 
 
+def tc20_precond_item(
+    network: dict[str, Any],
+    no_twin: dict[str, Any],
+    twin_path: Path,
+) -> Item:
+    """TC-20① **前置断言**（IKNAUN）：真孪生基线到底有没有、是不是这份快照、每段用了没。
+
+    - 真孪生快照在场：`baseline_source=twin.latest` + `twin_snapshot_sha` 与文件 sha256 三处一致
+      （`segments_before` / `assimilation_state.baseline` / `run_log.twin_snapshot`）+ 61 段
+      `baseline_used=twin.latest` → **PASS**；
+    - `--no-twin` 强制降级：`baseline_source=empty_load_demo` + `no_twin_baseline` 阻塞可见
+      + 每段 `baseline_used ∈ {empty_load_demo, video_observation}` → PASS（降级诚实）；
+    - 快照不在场：主用例应为 `empty_load_demo` + 阻塞可见 → **BLOCKED**（前置未满足，
+      **不宣称 M1-10 通过**）。
+    """
+    problems: list[str] = []
+    before = network["segments_before.json"]
+    state = network["assimilation_state.json"]
+    run_log = network["run_log.json"]
+    blocker_codes = {blocker.get("code") for blocker in run_log.get("blockers") or []}
+    if twin_path.is_file():
+        expected_sha = sha256(twin_path)
+        twin_sha_state = (state.get("baseline") or {}).get("twin_snapshot_sha")
+        twin_sha_log = (run_log.get("baseline") or {}).get("twin_snapshot_sha")
+        twin_sha_before = (before.get("twin_snapshot") or {}).get("sha256")
+        if before.get("baseline_source") != baseline.BASELINE_TWIN:
+            problems.append(f"segments_before.baseline_source={before.get('baseline_source')!r}")
+        if (state.get("baseline") or {}).get("baseline_source") != baseline.BASELINE_TWIN:
+            problems.append("assimilation_state.baseline.baseline_source 不是 twin.latest")
+        if not (twin_sha_state == twin_sha_log == twin_sha_before == expected_sha):
+            problems.append(
+                "twin_snapshot_sha 三处不一致："
+                f"state={str(twin_sha_state)[:12]}… / log={str(twin_sha_log)[:12]}… / "
+                f"before={str(twin_sha_before)[:12]}… / 文件={expected_sha[:12]}…"
+            )
+        twin_rows = [
+            segment for segment in before["segments"] if segment.get("baseline_used") == baseline.BASELINE_TWIN
+        ]
+        if len(twin_rows) != len(before["segments"]):
+            problems.append(
+                f"baseline_used=twin.latest 的段 {len(twin_rows)}/{len(before['segments'])}（应全部）"
+            )
+        counts = before.get("counts") or {}
+        if counts.get("from_twin") != len(before["segments"]):
+            problems.append(f"counts.from_twin={counts.get('from_twin')}（应 {len(before['segments'])}）")
+        if "no_twin_baseline" in blocker_codes:
+            problems.append("真基线在场却仍出现 no_twin_baseline 阻塞")
+        status = "PASS" if not problems else "FAIL"
+        detail = (
+            f"真孪生快照 {twin_path.name} 在场：baseline_source=twin.latest，"
+            f"sha256={expected_sha[:16]}…，61 段 baseline_used=twin.latest"
+            if not problems
+            else "；".join(problems)
+        )
+    else:
+        if before.get("baseline_source") != baseline.BASELINE_EMPTY_LOAD:
+            problems.append(f"快照不在场但 baseline_source={before.get('baseline_source')!r}")
+        if "no_twin_baseline" not in blocker_codes:
+            problems.append("快照不在场却没有 no_twin_baseline 阻塞（降级不可见）")
+        status = "BLOCKED" if not problems else "FAIL"
+        detail = (
+            "真孪生快照不在场（先跑 loop.py --duration 3900 --seed 42）→ 主用例按空载演示基线 + "
+            "no_twin_baseline 阻塞如实降级；**不宣称 M1-10 通过**"
+            if not problems
+            else "；".join(problems)
+        )
+    # 负向：--no-twin 强制降级必须诚实且可见（与快照在不在场无关）
+    degrade_problems: list[str] = []
+    degrade_before = no_twin["segments_before.json"]
+    degrade_log = no_twin["run_log.json"]
+    degrade_codes = {blocker.get("code") for blocker in degrade_log.get("blockers") or []}
+    if degrade_before.get("baseline_source") != baseline.BASELINE_EMPTY_LOAD:
+        degrade_problems.append(
+            f"--no-twin 的 baseline_source={degrade_before.get('baseline_source')!r}"
+        )
+    if "no_twin_baseline" not in degrade_codes:
+        degrade_problems.append("--no-twin 没有 no_twin_baseline 阻塞")
+    if (no_twin["assimilation_state.json"].get("baseline") or {}).get("twin_snapshot_sha") is not None:
+        degrade_problems.append("--no-twin 却记了 twin_snapshot_sha")
+    degrade_used = {
+        segment.get("baseline_used") for segment in degrade_before["segments"]
+    } - {baseline.BASELINE_EMPTY_LOAD, baseline.BASELINE_VIDEO}
+    if degrade_used:
+        degrade_problems.append(f"--no-twin 出现非空载/视频基线：{sorted(degrade_used)}")
+    if degrade_problems:
+        status = "FAIL"
+        detail = f"{detail}；--no-twin 降级：{'；'.join(degrade_problems)}"
+    else:
+        detail = f"{detail}；--no-twin 强制降级：empty_load_demo + 阻塞可见（诚实）"
+    return Item(
+        "TC20-1-precond",
+        "TC-20① 前置：真孪生基线来源/快照 sha/每段 baseline_used 可核（无观测仍不宣称 M1-10）",
+        status,
+        detail,
+    )
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -380,6 +493,8 @@ def main() -> int:
     # ---- 真网模式：断面候选 + 同化状态（默认场景 S4） ----
     network_out = run_case("network_s4", ["--mode", "network"])
     network = load_artifacts(network_out)
+    no_twin_out = run_case("network_no_twin", ["--mode", "network", "--no-twin"])
+    no_twin = load_artifacts(no_twin_out)
     sections_payload = network["sections_candidate.json"]
     state = network["assimilation_state.json"]
     log = network["assimilation_log.json"]
@@ -518,6 +633,7 @@ def main() -> int:
     # ---- TC-20① 真网：按实际回灌/门控/数据状态判定（补上 boundary 观测后应转 PASS，不能翻 FAIL） ----
     items.append(tc20_network_item(state, network["run_log.json"]))
     items.append(tc20_network_logic_probe())
+    items.append(tc20_precond_item(network, no_twin, ra.DEFAULT_TWIN))
 
     # ---- 本单专属一：只灌 boundary + 清单一致性 + 配置错误报错 ----
     net_sub_ok, net_sub_detail = _applied_subset_boundary(state, sections_payload, log)
@@ -560,8 +676,8 @@ def main() -> int:
         f" · {len(blocked)} 项 BLOCKED · {len(fails)} 项 FAIL"
     )
     if blocked:
-        print("  ⚠️ 真网 M1-10 / TC-20① 记 BLOCKED：**不得宣称 M1-10 通过**（缺 boundary 观测 + 真孪生基线 + 签字冻结）")
-    print("  M1-10 阻塞清单见 work/twin/out/latest/run_log.json 的 blockers 与 README 第十六节。")
+        print("  ⚠️ 真网 M1-10 / TC-20① 记 BLOCKED：**不得宣称 M1-10 通过**（原因看上方 BLOCKED 项：boundary 观测 / 门控 / edges / 清单签字）")
+    print("  M1-10 阻塞清单见 work/twin/out/latest/assimilation/run_log.json 的 blockers 与 README 第十六/十八节。")
     return 0 if not fails else 1
 
 
