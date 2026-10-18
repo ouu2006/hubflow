@@ -172,7 +172,7 @@ python work/twin/loop.py --duration 3900 --seed 42 --out work/twin/out/run_b   #
 ```
 
 它会先调 [`sumonet.py`](sumonet.py) 从 `netpack/network_junction.json` 建 `out/sumo/station.net.xml`，再用 TraCI
-**1 s 步进、每 60 s 快照**；需求读 `stations/demand.json`（样例/演示值），三类虚拟司机 D1/D2/D3 都真实跑在 SUMO 中；
+**1 s 步进、每 60 s 快照**；需求读 `stations/demand.json`（样例/演示值），三类虚拟司机 D1/D2/D3 都真实跑在 SUMO 中；IKNAUH 起再加**全路段背景车流**（`background_source=demo_uniform`，每 60 s 每段 1 辆，演示假设），61 段全部有指标（大屏不再灰档）；
 产物为 `out/latest/{segments_twin,vehicles,run_log,twin_timeseries}.json`。**`--no-sumo` 样例路径保留**，
 四产物与改造前**逐字节一致**（回归基线）。命令 / 产物 / 实跑证据 / 边界见第十七节。
 
@@ -534,12 +534,13 @@ python scripts/doc_gate.py
 
 ---
 
-## 十七、W1 真孪生主循环（IKNAER：SUMO 站点 Z 路网 + D1/D2/D3 + 65 点时序）
+## 十七、W1 真孪生主循环（IKNAER + IKNAUH：站点 Z 全 61 段 + D1/D2/D3 + 65 点时序）
 
 > **一句话**：在真网 61 段上把 SUMO 真正跑起来——1 s 步进、每 60 s 一帧快照、`--duration 3900` 出 **65 个统计点**，
 > 三类虚拟司机 D1 送客 / D2 接客 / D3 往返都真实运行在 SUMO 中；同一命令两遍 `segments_twin.json` /
 > `twin_timeseries.json` **逐字节一致**；`--no-sumo` 样例链路四产物**逐字节不变**。
-> 所有数值仍是**演示数据（模拟）**：需求来自样例站点包（真实需求归 IKMHMX），不是实测。
+> **IKNAUH 起再加全路段背景车流**（background_source=demo_uniform，演示假设）：每 60 s 每段 1 辆，61 段全部有指标（大屏不再灰档）。
+> 所有数值仍是**演示数据（模拟）**：需求/背景车流来自样例与演示假设（真实需求归 IKMHMX），不是实测。
 
 ### 17.1 一键命令
 
@@ -579,7 +580,7 @@ python work/twin/loop.py --no-sumo --out work/twin/out/sample_check
 
 > `.net.xml` **不提交**（`out/` 已 gitignore，换机用 `sumonet.py` 重建；SUMO 版本差异可能影响轨迹细节，两遍一致性在本机同版本内判）。
 
-### 17.3 主循环：需求、司机、快照口径
+### 17.3 主循环：需求、司机、全路段背景车流、快照口径
 
 - **单一仿真时钟**：`ts = DEMO_BASE_TS(2026-01-01T00:00:00+08:00) + 仿真秒数`，不读系统时间；SUMO 种子 `--seed 42` 固定。
 - **需求（`demand.py` 真路径）**：读 `stations/demand.json`（**样例/演示假设值**，真实需求归 IKMHMX）——
@@ -588,46 +589,59 @@ python work/twin/loop.py --no-sumo --out work/twin/out/sample_check
   路线改由真网 boundary 断面 + SUMO `findRoute` 生成（`demand_source` / `od_rejected` 都写进 `run_log`）。
 - **三类虚拟司机**：每类都在 SUMO 里真实运行（vType 只差 `speedFactor`：D1 1.0 / D2 0.95 / D3 0.9；跟驰/排队交给 SUMO）；
   `vehicles.json` 的 `driver_type` 与 `vehicle_id` 前缀（`twin-D1-####` 等）一一对应；`guided` 恒 `false`（未接决策引擎，不伪造采纳）。
+- **全路段背景车流（IKNAUH，`background_source="demo_uniform"`，演示假设）**：在 D1/D2/D3 之外，**每 60 s 窗口在每条
+  `SZ-###` 段上放 1 辆背景车**（61 段 × 65 窗口 = 3965 辆），每段一条**单段直行**路线（从本段起点驶过本段后离场）；
+  窗口内偏移 = `(段序号 × 17) % 45` 错开，末窗口提前到前 10 s，入口被占满时按「覆盖补投」再补投（最多 2 次，只补仍无数据的段）。
+  **确定性**：固定偏移 / 固定路线 / 固定 seed，不随机、不读系统时钟；补投只看当前仿真状态，同样可复现。
+  **口径**：背景车是**环境车流、不是实际需求**（真实需求归 IKMHMX）；**不进 `vehicles.json`**（契约第四节只收 D1/D2/D3），
+  `run_log.background` 记录 planned / inserted / topups / pending，`segments_twin.json` / `twin_timeseries.json` 顶层带
+  `background_source="demo_uniform"`。
 - **1 s 步进 / 60 s 快照**：TraCI 逐秒订阅各边 `LAST_STEP_VEHICLE_ID_LIST`（统计进车流量）、`LAST_STEP_MEAN_SPEED`、
   `LAST_STEP_VEHICLE_HALTING_NUMBER`；每 60 s 聚合一次，`--duration 3900` -> **65 个统计点**。
-- **字段口径**（`segments_twin.json` 与契约第一节对齐；同一份公式也写进产物 `metric_formulas`）：
+- **指标是 60 s 窗口统计**（与契约 `window_sec` 语义一致，不是瞬时值）：窗口内确实无车时才 `v_kmh=null` 并降级；
+  背景车流把每段每窗口都铺上车辆后，**61 段全部能聚合出 q/v/k/L_q/level**（大屏不再灰档）。
 
-| 字段 | 真孪生侧口径 |
+| 字段 | 真孪生侧口径（IKNAUH 起改为 60 s 窗口统计） |
 |---|---|
 | `q_vph` | 60 s 窗口内进入该段（含反向补边）的车辆数 / `window_sec` x 3600 |
-| `v_kmh` | 快照时刻该段车辆平均车速（双向按车辆数加权）；**无车 -> null**（不写 0 冒充畅通） |
-| `k_vpk` | 快照时刻车辆数 / (L_seg_m / 1000)（双向合计密度） |
-| `L_q_m` | `min(L_seg_m, (halting 车辆数 / 车道数) x queue_headway_m)`，双向取较大方向（`queue_headway_m` 读站点包） |
+| `v_kmh` | 60 s 窗口内该段车辆-时间加权平均车速（逐秒 lastStepMeanSpeed x 该步车辆数累加 / 车辆-步数）。窗口内无车 -> null（不写 0 冒充畅通） |
+| `k_vpk` | 60 s 窗口内平均车辆数（逐秒车辆数累加 / 窗口秒数）/ (L_seg_m / 1000)（双向合计密度） |
+| `L_q_m` | `min(L_seg_m, (窗口内逐秒 halting 车辆数最大值 / 车道数) x queue_headway_m)`，双向取较大方向（`queue_headway_m` 读站点包） |
 | `T_d_min` | 排队车辆数 / (饱和流率 x 车道数) x 60（**估计量**；L_q=0 -> 0.0） |
 | `x` / `c_base_vph` | `x = q/c`；`c_base_vph` = 车道数 x 2 方向 x `grading.saturation_flow_vph_per_lane`（无因素注入，`factors_applied=[]`） |
 | `confidence` / `data_age_s` | `grading.defaults.confidence`（仿真无检测置信度，取基准值并标明） / 0（同一仿真步算出） |
 | `level` / `level_name` / `triggered_by` / `ci` | **调 `work/perception/level.py` 的 `grade()`**（唯一判级实现，不复制逻辑）；缺指标 -> `level=0` + `available=false` + `gate_reason`，不判「畅通」 |
 
-- **四产物**（`<out>/latest/`）：`segments_twin.json`（最后一帧 61 段契约快照）、`vehicles.json`（当期活动车辆清单，契约第四节）、
-  `run_log.json`（命令/种子/需求来源/车辆计数/路网 sha/阻塞边界/逐点车队计数）、`twin_timeseries.json`
-  （**每段 65 点的 `q_vph` / `v_kmh` / `k_vpk` / `L_q_m` / `T_d_min` / `level` 数组** + `point_ts` + 公式，供 M1-2 孪生侧举证）。
+- **四产物**（`<out>/latest/`）：`segments_twin.json`（最后一帧 61 段契约快照 + `background_source`）、
+  `vehicles.json`（当期活动车辆清单，契约第四节；只含 D1/D2/D3）、`run_log.json`（命令/种子/需求来源/车辆计数/
+  背景车流/覆盖统计/路网 sha/阻塞边界/逐点车队计数）、`twin_timeseries.json`（**每段 65 点的
+  `q_vph` / `v_kmh` / `k_vpk` / `L_q_m` / `T_d_min` / `level` 数组** + `point_ts` + `coverage` 覆盖率汇总 + 公式）。
 - 默认输出目录下另按接口层路径**兼容发布** `<out>/vehicles.json`（`traffic.py` 的 `TWIN_VEHICLES` 读它，不改接口层代码）。
 
-### 17.4 实跑证据（2026-10-18，本机 SUMO 1.28）
+### 17.4 实跑证据（2026-10-18，本机 SUMO 1.28；IKNAER + IKNAUH）
 
 | 项 | 结果 |
 |---|---|
 | 建网两遍 | `python work/twin/sumonet.py`（两次不同 `--out-dir`）-> `.net.xml` sha256 **均为 `d1bb71b4ea7cea612a06a9cb165cc0b4f2d704fdcd4b4481792547117c0f0456`**（180790 B，44 节点 / 61 正向段 / 33 反向补边） |
-| 真跑 A | `python work/twin/loop.py --duration 3900 --seed 42` -> **exit 0**，约 17.7 s，**65 个快照**，车辆插入 **D1 1275 / D2 765 / D3 510**（实际=计划），可通行 boundary->boundary 路线 43 条 |
-| 真跑 B | 同上 `--out work/twin/out/run_b` -> **exit 0**，约 17.5 s，计数一致 |
-| 两遍 sha256（A = B） | `segments_twin.json` `ae9685dbbeb5d32d9ef5acd6408a52f60721afa3add0379e1096ad250687ca80`；`twin_timeseries.json` `4f2cf78683e49767fbb85510fc665a2f01fb620d9eb20e03814b35ef4c697850`；`vehicles.json` `e1903b3284da2a6995ab5b337d36a120d06b0b2279ed5d33ade817624f3979e4`（**逐字节一致**） |
-| 产物体积 | `segments_twin.json` 35039 B / `vehicles.json` 41530 B / `twin_timeseries.json` 363013 B / `run_log.json` 约 20469 B（`run_log` 含运行目录路径，两遍不同目录故不要求同字节） |
-| 最后一帧 | 61 段全 `source="twin"` / `is_simulated:true`；活动车辆 154 辆（D1 78 / D2 44 / D3 32）；无车段 `v_kmh=null` + `level=0`（数据不可用） |
-| **M1-1** | 三类司机均在 SUMO 中运行（计划/插入/峰值在场均 >=1：D1 1275/1275/108、D2 765/765/65、D3 510/510/49）；同一场景两遍**各段等级序列 diff 0、时序 diff 0、文件 sha256 相同** |
-| **M1-2（仅孪生侧）** | 65 点 >=60；`SZ-002` 平均车速有效点 **63/65**、排队长度有效点 **65/65**；共 6 段平均车速有效点 >=60。**视频侧 >=60 点不在本单，不宣称 M1-2 整体通过**（台账状态待池·Q 复核） |
-| 自检 `check_w1.py` | **PASS 19 / FAIL 0 / BLOCKED 0**，约 36 s（实跑两遍 + 两次建网 + 逐产物断言） |
+| 真跑 A | `python work/twin/loop.py --duration 3900 --seed 42` -> **exit 0**，约 19.4 s，**65 个快照**，D1/D2/D3 插入 **1275 / 765 / 510**（实际=计划）；**背景车流 3965/3965**（61 段 × 65 窗口），覆盖补投 24 次 |
+| 真跑 B | 同上 `--out work/twin/out/run_b` -> **exit 0**，约 19.2 s，计数一致 |
+| 两遍 sha256（A = B） | `segments_twin.json` `8157b9b0d447c9fbbf5cffe8854e5df1e44b0981e6c984d60322a2cddfea33c7`；`twin_timeseries.json` `af5ea1e6471ce78d1fc1076eebf3886879fb99e9a0df00e820293bedd95ded7e`；`vehicles.json` `e791674348d8ea093ba166802a2a865635a7b3d588b91ee40fff4dede803767a`（**逐字节一致**） |
+| 产物体积 | `segments_twin.json` 37084 B / `vehicles.json` 40182 B / `twin_timeseries.json` 380399 B / `run_log.json` 约 26120 B（`run_log` 含运行目录路径，两遍不同目录故不要求同字节） |
+| **61/61 全路段** | 最后一帧 **available 61/61、level>0 61/61、v_kmh 非空 61/61**；等级分布 **L1 55 / L2 1 / L3 3 / L4 2**（无 L0 灰档）；活动车辆 149 辆（D1 74 / D2 45 / D3 30） |
+| 时序覆盖 | 每段 **65 点**；**每段最少有效点 61/65**（`SZ-061`，22.8 m 短段受路口排队影响有 4 个窗口确实无车）；**其余 60 段 65/65 全有效**；最低/最高有效点 = 61/65 与 65/65 |
+| **M1-1** | 三类司机均在 SUMO 中运行（计划/插入/峰值在场：D1 1275/1275/112、D2 765/765/63、D3 510/510/51）；同一场景两遍**各段等级序列 diff 0、时序 diff 0、文件 sha256 相同** |
+| **M1-2（仅孪生侧）** | 65 点 >=60；`SZ-001` 平均车速有效点 **65/65**、排队长度 **65/65**。**视频侧 >=60 点不在本单，不宣称 M1-2 整体通过**（台账状态待池·Q 复核） |
+| 自检 `check_w1.py` | **PASS 22 / FAIL 0 / BLOCKED 0**，约 40 s（实跑两遍 + 两次建网 + 逐产物断言 + 61/61 覆盖断言） |
 | `--no-sumo` 回归 | 四产物 sha256 与改造前基线**完全一致**：`segments.json` `4effc723...` / `vehicles.json` `17bf4ba3...` / `assimilation_state.json` `8108980f...` / `run_log.json` `39a7341b...` |
+| 确定性 | 不读系统时钟；固定 seed 42；两遍关键产物逐字节一致（见上 sha）；`run_log` 仅运行目录路径不同 |
 
 ### 17.5 下游集成验证（只读；接口层代码不改）
 
 | 下游 | 结果 |
 |---|---|
-| `python work/assembly/traffic.py --check` | **能读到**：`路段快照数据源：twin.latest`、`路段数 61`、`twin 链路记录 61 条`、`车辆 154 辆`（`<out>/vehicles.json` 兼容发布后）；缺失的 video / 引擎层按三层回落照旧 |
+| `python work/assembly/traffic.py --check` | **能读到**：`路段快照数据源：twin.latest`、`路段数 61`、`twin 链路记录 61 条`、`车辆 149 辆`（`<out>/vehicles.json` 兼容发布后）；缺失的 video / 引擎层按三层回落照旧 |
+| `GET /api/traffic/overview`（临时起接口层只读验证） | `segment_total=61`、**`unavailable_count=0`**、`level_distribution` = L1 55 / L2 1 / L3 3 / L4 2 / **L0 0**、`vehicles_inbound=149` |
+| `GET /api/traffic/segments` | **61 段**；`level=0（数据不可用）` **0 段**；`v_kmh` 非空 **61/61**；`ts` 取孪生快照 `2026-01-01T01:05:00+08:00`（不读墙钟） |
 | `python work/twin/run_assimilation.py --twin ...` | 本工作树**无 `--twin` 参数**（`--help` 无该项；带 `--twin` 跑 -> exit 2），且 `baseline.py` 仍只构造空载网络基线 -> **同化侧尚未消费 `segments_twin.json`**（遗留，见 17.6） |
 | 同化产物路径冲突（实测发现） | `run_assimilation.py` 默认也写 `out/latest/run_log.json`，与主循环同名 -> 跑同化会覆盖主循环 `run_log`；本次验证用 `--out work/twin/out/integration_check` 隔离（**建议后续统一产物命名 / 分目录**） |
 
@@ -641,3 +655,7 @@ python work/twin/loop.py --no-sumo --out work/twin/out/sample_check
 6. **`.net.xml` 不提交**：`out/` gitignore；换机/验收先 `python work/twin/sumonet.py` 重建。两遍一致性在**本机同一 SUMO 版本**内判，验收机按同样命令复跑。
 7. **`run_assimilation.py --twin` 缺失**：属 IKMS19 同化侧小改（加参数 + `baseline.py` 优先读 `segments_twin.json`），本单不越界改，建议另单 / 由同化侧承接。
 8. `check_w1.py --duration <3600` 时统计点 <60 -> 如实打 **BLOCKED**（不当 PASS），需按缺省 3900 s 复跑。
+9. **IKNAUH 背景车流是演示假设（`demo_uniform`）**：每 60 s 每段 1 辆 + 覆盖补投，只为把 61 段铺满指标，**不是实际需求/实际车辆**；
+   `SZ-061`（22.8 m 短段）受路口排队影响，65 点中 4 个窗口内确实无车 -> 如实保留 `null` / 降级，**不拿别的段数据补**；
+   最后一帧 61/61 有数据（`available=true`、`level>0`）。
+10. **背景车流不进 `vehicles.json`**：契约第四节 `driver_type` 取值封闭为 D1/D2/D3，背景车是环境车流，只进指标聚合与 `run_log.background`。
