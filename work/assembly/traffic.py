@@ -14,12 +14,16 @@
 | ① 视频链路 | `work/perception/out/latest/segments_video.json` | 路段指标（source=video） |
 | ② 孪生链路 | `work/twin/out/latest/segments_twin.json` | 路段指标（source=twin） |
 | ②' 孪生快照 | `work/twin/out/segments.json` | ② 缺失时的契约形状兜底 |
-| ③ 引擎路线·真网 | `work/engine/out/real/routes.json` | `route/recommend` / `locate`（**优先**，IKMS11 真网 SZ-###） |
+| ③ 引擎路线·真网 | `work/engine/out/real/routes.json` | `route/recommend` / `locate`/`route/options`（**优先**，IKMS11 真网 SZ-###） |
 | ③' 引擎路线·样例 | `work/engine/out/routes.json` | 真网产物缺失时回退（样例网 SEG-###） |
 | ④ 站点包 | `stations/*.json` | 静态基线（路网 / 点位 / 阈值 / 场景 / 列车） |
 
 路线响应的 `data_source` 与响应头 `X-Traffic-Data-Source` 标来源；两层段号命名空间不同，
 不把两层请求拼在一起、不把路线 ETA 与路段快照指标混算（`segments_not_in_snapshot` 如实列出差异段）。
+
+**非契约只读辅助端点**：`GET /api/traffic/route/options`（Issue IKNAUI）——端出引擎产物
+`requests` 的 OD / session / 路径摘要列表（供大屏「整条路线规划」选择器），数据源优先级同上；
+只做摘要、不代算 ETA，缺产物如实 404 + note。契约 §七 未定义该端点，接入方按辅助端点消费。
 
 ## 写端点
 
@@ -1901,6 +1905,59 @@ def _route_request_segment_ids(request: dict[str, Any]) -> set[str]:
     return out
 
 
+def _route_path_summary(route: Any) -> dict[str, Any] | None:
+    """路线摘要：只取契约字段（path_id / segments / eta_min / length_m / dropoff_point / walk_min）。"""
+    if not isinstance(route, dict):
+        return None
+    segments = [str(item) for item in (route.get("segments") or []) if isinstance(item, str) and item]
+    return {
+        "path_id": route.get("path_id") if isinstance(route.get("path_id"), str) else None,
+        "segments": segments,
+        "segment_count": len(segments),
+        "eta_min": _num(route.get("eta_min")),
+        "length_m": _num(route.get("length_m")),
+        "dropoff_point": route.get("dropoff_point") if isinstance(route.get("dropoff_point"), str) else None,
+        "walk_min": _num(route.get("walk_min")),
+    }
+
+
+def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
+    """`route/options` 的单条摘要：OD / session / 定位 / 进场路线 / 备选 / 离站路线。
+
+    只做**摘要**（原样透传引擎字段），不重排路线、不代算 ETA；缺的字段如实 null。
+    """
+    location = request.get("location") if isinstance(request.get("location"), dict) else {}
+    alternatives: list[dict[str, Any]] = []
+    for item in request.get("alternatives") or []:
+        if not isinstance(item, dict):
+            continue
+        summary = _route_path_summary(item)
+        if summary is None:
+            continue
+        reason = item.get("reason")
+        summary["reason"] = reason if isinstance(reason, str) else None
+        alternatives.append(summary)
+    arrival_summary = _route_path_summary(request.get("arrival_route"))
+    departure_summary = _route_path_summary(request.get("departure_route"))
+    return {
+        "od_id": request.get("od_id") if isinstance(request.get("od_id"), str) else None,
+        "session_id": request.get("session_id") if isinstance(request.get("session_id"), str) else None,
+        "request_id": request.get("request_id") if isinstance(request.get("request_id"), str) else None,
+        "driver_type": request.get("driver_type") if isinstance(request.get("driver_type"), str) else None,
+        "parking_mode": request.get("parking_mode") if isinstance(request.get("parking_mode"), str) else None,
+        "location": {
+            "segment_id": location.get("segment_id") if isinstance(location.get("segment_id"), str) else None,
+            "offset_m": _num(location.get("offset_m")),
+            "source": location.get("source") if isinstance(location.get("source"), str) else None,
+        },
+        "arrival_route": arrival_summary,
+        "alternatives": alternatives,
+        "departure_route": departure_summary,
+        "why": request.get("why") if isinstance(request.get("why"), str) else None,
+        "is_simulated": True,
+    }
+
+
 def _routes_namespaces(payload: dict[str, Any]) -> list[str]:
     """产物里出现的段号命名空间前缀（如 SZ / SEG）——只从数据推导，不写死段号。"""
     prefixes: set[str] = set()
@@ -2214,6 +2271,56 @@ async def api_route_recommend(request: Request) -> JSONResponse:
         )
     return _json(
         _decorate_route_response(route_request, layer_key, payload, match_meta),
+        source=f"engine.routes.{layer_key}",
+    )
+
+
+@app.get("/api/traffic/route/options")
+def api_route_options() -> JSONResponse:
+    """**只读辅助端点（非契约 §七）**：引擎路线产物的 OD / session 摘要列表（Issue IKNAUI）。
+
+    用途：大屏「整条路线规划」选择器（至少 3 个真实引擎 OD）→ 用选中 `session_id` 调
+    `POST /api/traffic/route/recommend` 画完整路线。
+    口径：数据源优先级与 route/recommend 完全一致（真网优先、样例回退）；只做摘要，ETA / 路径
+    原样透传，接口层**不代算**；缺产物如实 404 + note。
+    """
+    layers = _routes_layers()
+    if not layers:
+        return _error(
+            404,
+            CODE_ROUTE_UNAVAILABLE,
+            "路线选项不可用：work/engine/out/real/routes.json 与 work/engine/out/routes.json 均缺失或无 requests",
+            note=(
+                "route/options 是只读辅助端点（非契约 §七），缺引擎产物时如实 404，"
+                "不编造 OD / session / ETA。"
+            ),
+            source="engine.routes.none",
+        )
+    layer_key, payload = layers[0]
+    options: list[dict[str, Any]] = []
+    seen: set[tuple[Any, Any]] = set()
+    for request in payload["requests"]:
+        if not isinstance(request, dict):
+            continue
+        identity = (request.get("od_id"), request.get("session_id"))
+        if identity in seen:
+            continue
+        seen.add(identity)
+        options.append(_route_option_summary(request))
+    return _json(
+        {
+            "ts": payload.get("ts") if isinstance(payload.get("ts"), str) else _latest_data_ts(),
+            "is_simulated": True,
+            "data_source": f"engine.routes.{layer_key}",
+            "data_source_note": ROUTE_LAYER_NOTES.get(layer_key, layer_key),
+            "segment_namespaces": _routes_namespaces(payload),
+            "count": len(options),
+            "options": options,
+            "note": (
+                "只读辅助端点（非契约 §七）：端出引擎产物 requests 的 OD / session / 路径摘要，"
+                "供大屏选择整条路线；ETA / 路径原样透传、接口层不代算（真网优先、样例回退）。"
+            ),
+        },
         source=f"engine.routes.{layer_key}",
     )
 
@@ -2739,8 +2846,13 @@ def print_data_check() -> int:
         )
         print(f"推荐路线数据源优先级：{detail}")
         print(f"  实际使用层：engine.routes.{layers[0][0]}（真网优先，缺失时回退样例）")
+        option_count = len({
+            (request.get("od_id"), request.get("session_id"))
+            for request in layers[0][1]["requests"] if isinstance(request, dict)
+        })
+        print(f"  整条路线规划选项（GET /api/traffic/route/options）：{option_count} 个 OD/session")
     else:
-        print("推荐路线数据源：缺失（route/recommend 与 locate 将如实 404，不代算 ETA）")
+        print("推荐路线数据源：缺失（route/recommend、locate、route/options 均如实 404，不代算 ETA）")
     print(f"车辆：{len(_vehicle_records())} 辆")
     assimilation = build_assimilation()
     print(f"同化断面：{len(assimilation['records'])} 条（boundary {assimilation['counts']['boundary']} / internal {assimilation['counts']['internal']}）")

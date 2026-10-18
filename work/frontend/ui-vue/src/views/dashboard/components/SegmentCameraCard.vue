@@ -8,7 +8,8 @@
 //   · 有视频源、服务在、但该通道没导出：「未导出（样本视频未处理）」；
 //   · 无视频源：「未接入视频源 · 本期留空」；
 //   · 感知服务整体不可用：可读错误 + 重试（8 s 自动重试），**绝不伪造画面**；
-//   · 该段登记摄像头 0 路：「该路段无摄像头」。
+//   · 该段 0 路摄像头 / 登记摄像头均无视频源：按业主口径显示「演示复用样本视频」
+//     （从 road2/track1 确定性复用，明确标注非真实摄像头，详见 IKNAUI）。
 //
 // 唯一真值来源 = 站点包 `channels`（由 work/perception/mapping/camera-segments.json 生成），
 // 与感知页 / 地图摄像头图钉同一个 `source` / `hasVideo` 键，不另造第二份。
@@ -41,7 +42,40 @@ const views = computed(() =>
 )
 const hasPlayable = computed(() => views.value.some((v) => v.hasVideo && v.meta !== null))
 const videoCount = computed(() => views.value.filter((v) => v.hasVideo).length)
-const playLabel = computed(() => (!hasPlayable.value ? '—' : playing.value ? '暂停' : '播放'))
+/** 该段是否有任何“有视频源”的登记摄像头；false 时（含 0 路）走演示复用视频 */
+const hasAnyVideo = computed(() => cameras.value.some((c) => c.hasVideo !== false))
+/** 登记了但无视频源的摄像头 cid 列表（用于说明“登记摄像头均无视频源”） */
+const noVideoCids = computed(() =>
+  cameras.value.filter((c) => c.hasVideo === false).map((c) => c.cid).join(' / '),
+)
+
+// ---------- 全路段视频复用（Issue IKNAUI 业主口径：全部 61 段都要有视频显示）----------
+//
+// **对没有登记摄像头、或登记摄像头均无视频源的段启用**：从现有 2 路样本视频 road2 / track1 中
+// 按 segment_id **确定性**挑一路（同一段永远同一路，不用随机），复用它真实的抽帧画面。
+// 不新增 / 不伪造摄像头登记——感知页台账仍是登记表里的 6 路；这里只是「演示复用视频」。
+const REUSE_SOURCES = ['road2', 'track1'] as const
+function reuseSourceOf(segmentId: string): string {
+  let hash = 0
+  for (const ch of segmentId) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0
+  return REUSE_SOURCES[hash % REUSE_SOURCES.length]!
+}
+const reuseStream = computed<string>(() =>
+  !hasAnyVideo.value ? reuseSourceOf(props.segmentId) : '',
+)
+const reuseMeta = computed<PerceptionStreamMeta | null>(() => {
+  if (!reuseStream.value) return null
+  return streams.value?.find((item) => item.stream_id === reuseStream.value) ?? null
+})
+const reuseFrameFailed = computed<boolean>(() =>
+  Boolean(reuseStream.value && frameFailed.value[`reuse:${reuseStream.value}`]),
+)
+const reuseFrameNo = computed<number>(() => {
+  const total = Math.max(1, reuseMeta.value?.total_frames ?? 1)
+  return ((tick.value * FRAME_STEP) % total) + 1
+})
+const hasAnyPlayable = computed<boolean>(() => hasPlayable.value || reuseMeta.value !== null)
+const playLabel = computed(() => (!hasAnyPlayable.value ? '—' : playing.value ? '暂停' : '播放'))
 
 /** 第 1 帧起的抽帧序号（各通道帧数不同，各自取模） */
 function frameOf(view: { meta: PerceptionStreamMeta | null }): number {
@@ -90,8 +124,8 @@ async function loadStreams(): Promise<void> {
   } catch (e) {
     streams.value = null
     error.value = `感知服务未连接 / 不可用：${e instanceof Error ? e.message : String(e)}`
-    // 有视频源的摄像头才需要重试；无视频源的段不因服务没起而报错
-    if (cameras.value.some((c) => c.hasVideo !== false)) scheduleRetry()
+    // 服务错误总与卡片画面相关（有视频源→原视频；无视频源/0 路→演示复用视频），统一 8s 重试
+    scheduleRetry()
   } finally {
     loading.value = false
   }
@@ -123,10 +157,11 @@ watch(
   <section class="cam-card">
     <div class="sec-head">
       关联摄像头
-      <span class="sub-tag">{{ cameras.length }} 路</span>
-      <span v-if="hasPlayable" class="td-chip warn">样本视频回放 · 非本站现场</span>
+      <span class="sub-tag">{{ cameras.length }} 路{{ cameras.length > 0 && !hasAnyVideo ? ' · 均无视频源' : '' }}</span>
+      <span v-if="!hasAnyVideo && reuseMeta" class="td-chip warn">演示复用视频 · 非本站现场</span>
+      <span v-else-if="hasPlayable" class="td-chip warn">样本视频回放 · 非本站现场</span>
       <a
-        v-if="hasPlayable"
+        v-if="hasAnyPlayable"
         class="cam-play"
         role="button"
         :aria-pressed="playing"
@@ -136,10 +171,80 @@ watch(
       </a>
     </div>
 
-    <!-- 0 路摄像头：如实说"该路段无摄像头"，不画占位画面 -->
-    <p v-if="cameras.length === 0" class="empty sm">
-      该路段无摄像头（登记表 0 路）—— 路网上不显示摄像头图钉，也不提供画面。
-    </p>
+    <!-- 0 路登记摄像头 / 登记摄像头均无视频源：按业主口径显示「演示复用视频」（确定性复用 2 路样本视频之一，真实抽帧） -->
+    <template v-if="!hasAnyVideo">
+      <div class="cam-row">
+        <div class="cam-head">
+          <span class="cam-id td-mono">{{ cameras.length === 0 ? '无独立摄像头' : '登记摄像头均无视频源' }}</span>
+          <span class="cam-name">演示复用样本视频（按段号确定性映射）</span>
+          <span class="td-chip" :class="{ ok: reuseMeta, err: Boolean(error) || reuseFrameFailed }">
+            {{
+              reuseFrameFailed
+                ? '帧加载失败'
+                : reuseMeta
+                  ? '演示复用视频'
+                  : error
+                    ? '服务不可用'
+                    : '未导出'
+            }}
+          </span>
+        </div>
+
+        <template v-if="reuseMeta && !error">
+          <div class="cam-media">
+            <img
+              v-if="!reuseFrameFailed"
+              class="cam-img"
+              :src="perceptionFrameUrl(reuseStream, reuseFrameNo)"
+              :alt="`${segmentId} 演示复用样本视频抽帧`"
+              loading="lazy"
+              @error="onFrameError(`reuse:${reuseStream}`)"
+            />
+            <div v-else class="cam-media cam-nosource">
+              <span class="ns-l1">帧加载失败</span>
+              <span class="ns-l2">不保留破图、不伪造画面</span>
+              <button class="td-btn sm" type="button" @click="retryFrame(`reuse:${reuseStream}`)">重试本帧</button>
+            </div>
+            <span v-if="!reuseFrameFailed" class="cam-badge">
+              演示复用视频 · 同一份样本视频用于多路演示 · 非本站现场
+            </span>
+          </div>
+          <div class="cam-meta td-mono">
+            复用样本通道 {{ reuseStream }} · {{ reuseMeta.width }}×{{ reuseMeta.height }} ·
+            {{ reuseMeta.fps }} fps · 共 {{ reuseMeta.total_frames }} 帧
+            <span class="sep">|</span>
+            <a class="cam-link" :href="perceptionHref(reuseStream)">打开感知画面 ›</a>
+          </div>
+        </template>
+
+        <template v-else-if="error">
+          <div class="cam-media cam-nosource">
+            <span class="ns-l1">感知服务不可用</span>
+            <span class="ns-l2">复用样本视频不可用（不伪造画面）</span>
+          </div>
+          <div class="cam-meta">
+            <button class="td-btn sm" type="button" @click="loadStreams">重试</button>
+          </div>
+        </template>
+
+        <p v-else-if="loading && streams === null" class="empty sm">正在读取感知服务通道…</p>
+
+        <template v-else>
+          <div class="cam-media cam-nosource">
+            <span class="ns-l1">复用样本视频未导出</span>
+            <span class="ns-l2">感知服务未提供 {{ reuseStream }} 画面（如实空窗）</span>
+          </div>
+          <div class="cam-meta">
+            <a class="cam-link" :href="perceptionHref(reuseStream)">打开感知页查看 ›</a>
+          </div>
+        </template>
+      </div>
+      <p class="cam-note">
+        该路段<b>{{ cameras.length === 0 ? '无独立摄像头' : `登记摄像头（${noVideoCids}）均无视频源` }}</b>：画面为从现有 2 路样本视频（road2 / track1）中按段号<b>确定性复用</b>的演示帧，
+        同一份样本视频用于多路演示，<b>非本站现场、非实时流</b>；
+        不新增 / 不伪造摄像头登记（感知页台账仍按登记表 6 路）。
+      </p>
+    </template>
 
     <template v-else>
       <p v-if="error && videoCount > 0" class="cam-warn">

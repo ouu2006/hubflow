@@ -28,6 +28,7 @@ import {
   getTrafficMeta,
   getTrafficNetwork,
   getTrafficOverview,
+  getTrafficRouteOptions,
   getTrafficSegmentSources,
   getTrafficSegments,
   getTrafficThresholds,
@@ -60,6 +61,8 @@ import {
   type HeatMatrix,
   type RecommendResult,
   type RouteHighlight,
+  type RouteOption,
+  type RouteOptionsSnapshot,
   type SegmentRecord,
   type SegmentSourcePair,
   type ThresholdSnapshot,
@@ -481,17 +484,62 @@ const packSegmentCount = computed(() => activePack().segments.length)
 /** 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线 */
 const packSegmentIds = new Set(activePack().segments.map((s) => s.segment_id))
 
-async function loadRecommend(): Promise<void> {
+// ---------- 整条路线规划（Issue IKNAUI）----------
+//
+// 入口：`GET /api/traffic/route/options`（只读辅助端点、非契约 §七）端出引擎产物的
+// OD / session / 进场路线 / 备选 / 离站路线**摘要**；选中后用真实 `session_id` 调
+// `POST /route/recommend`，地图用同一份 recommend 数据画三态路线（RouteHighlight）。
+// 口径：ETA / 段号原样透传，**前端不重算路线**；无产物 / 无选项 / 不匹配 → 如实空窗 + note。
+const routeOptions = ref<RouteOptionsSnapshot | null>(null)
+const routeOptionsLoading = ref(false)
+const routeOptionsError = ref('')
+/** 当前选中的引擎 session（空 = 回退演示会话路线） */
+const selectedSession = ref('')
+const selectedOption = computed<RouteOption | null>(() => {
+  const options = routeOptions.value?.options ?? []
+  return options.find((item) => item.session_id === selectedSession.value) ?? null
+})
+
+function fmtEta(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '—'
+}
+
+/** 全程摘要（进场 → 落客 → 离站）：字段全部原样来自引擎摘要，不重算。 */
+const tripSummary = computed(() => {
+  const option = selectedOption.value
+  if (!option) return null
+  const arrival = option.arrival_route
+  const departure = option.departure_route
+  return {
+    od: option.od_id ?? '—',
+    session: option.session_id ?? '—',
+    start: option.location.segment_id ?? '—',
+    arrivalSegments: arrival?.segments.length ?? 0,
+    arrivalEta: fmtEta(arrival?.eta_min),
+    arrivalPath: arrival?.segments.join(' → ') ?? '',
+    dropoff: arrival?.dropoff_point ?? null,
+    alternatives: option.alternatives.length,
+    departureSegments: departure?.segments.length ?? 0,
+    departureEta: fmtEta(departure?.eta_min),
+    departurePath: departure?.segments.join(' → ') ?? '',
+    source: routeOptions.value?.data_source ?? 'engine.routes.real',
+    sourceNote: routeOptions.value?.data_source_note ?? '',
+  }
+})
+
+async function loadRecommend(sessionId?: string): Promise<void> {
   recommendLoading.value = true
   recommendError.value = ''
   try {
     const pack = activePack()
+    const session = sessionId || `demo-${pack.key}`
+    const option = sessionId ? selectedOption.value : null
     recommend.value = await postRouteRecommend({
-      // 演示车固定用站点包的定位锚点（与 App 绑定演示车同一口径）；一期不是真实行程
-      session_id: `demo-${pack.key}`,
+      // 有引擎选项时用该 OD 的起点（引擎产物里的 location），否则沿用站点包演示锚点
+      session_id: session,
       location: {
-        segment_id: pack.recommend.location_segment_id,
-        offset_m: pack.recommend.location_offset_m,
+        segment_id: option?.location.segment_id ?? pack.recommend.location_segment_id,
+        offset_m: option?.location.offset_m ?? pack.recommend.location_offset_m,
       },
     })
   } catch (e) {
@@ -501,6 +549,43 @@ async function loadRecommend(): Promise<void> {
   } finally {
     recommendLoading.value = false
   }
+}
+
+/** 载入引擎 OD 选项 → 默认选第一条并画其完整路线；无选项 / mock 无该端点 → 回退演示会话路线 */
+async function loadRouteOptions(): Promise<void> {
+  routeOptionsLoading.value = true
+  routeOptionsError.value = ''
+  // mock 中间件没有 /route/options（未匹配路径一律 404）：不去打一条注定 404 的请求，
+  // 直接按「mock 无该辅助端点」如实提示并回退演示会话路线（页面不崩、控制台不刷 404）。
+  if (USE_MOCK) {
+    routeOptions.value = null
+    routeOptionsError.value = 'mock 模式无 /api/traffic/route/options 端点（辅助端点仅真接口提供）'
+    await loadRecommend()
+    routeOptionsLoading.value = false
+    return
+  }
+  try {
+    const res = await getTrafficRouteOptions()
+    const options = (Array.isArray(res.options) ? res.options : []).filter((item) => Boolean(item.session_id))
+    routeOptions.value = options.length > 0 ? { ...res, options } : null
+    if (options.length > 0) {
+      selectedSession.value = options[0]!.session_id as string
+      await loadRecommend(selectedSession.value)
+    } else {
+      await loadRecommend()
+    }
+  } catch (e) {
+    routeOptions.value = null
+    routeOptionsError.value = e instanceof Error ? e.message : String(e)
+    await loadRecommend()
+  } finally {
+    routeOptionsLoading.value = false
+  }
+}
+
+function onRouteSessionChange(): void {
+  if (!selectedSession.value) return
+  void loadRecommend(selectedSession.value)
 }
 
 /** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
@@ -617,7 +702,8 @@ const routeDegradedNote = computed<string>(() => {
 
 onMounted(() => {
   void refresh()
-  void loadRecommend()
+  // Issue IKNAUI：先载入引擎 OD 选项（有则默认画第一条完整路线；无则回退演示会话）
+  void loadRouteOptions()
   unsubscribe = subscribeTrafficSnapshot(
     () => {
       void refresh()
@@ -1166,6 +1252,65 @@ function onCommandChanged(): void {
             <span class="td-head-tag">{{ routeSourceTag }}</span>
           </div>
           <div class="td-card-body">
+            <!-- 整条路线规划（Issue IKNAUI）：引擎产物 OD/session 选择 → 完整路线 + 进场/落客/离站全程摘要 -->
+            <div class="route-plan">
+              <div class="route-plan-head">
+                整条路线规划
+                <span class="td-head-tag">引擎路线产物</span>
+                <span class="route-badge">演示数据（模拟）</span>
+              </div>
+              <p v-if="routeOptionsLoading" class="route-hint">正在读取引擎路线选项…</p>
+              <template v-else-if="routeOptions && routeOptions.options.length > 0">
+                <select
+                  v-model="selectedSession"
+                  class="route-select"
+                  aria-label="选择引擎 OD / 行程"
+                  @change="onRouteSessionChange"
+                >
+                  <option
+                    v-for="option in routeOptions.options"
+                    :key="option.session_id || option.request_id || ''"
+                    :value="option.session_id || ''"
+                  >
+                    {{ option.od_id ?? 'OD' }} · {{ option.session_id }} · 到达
+                    {{ fmtEta(option.arrival_route?.eta_min) }} min
+                  </option>
+                </select>
+                <div v-if="tripSummary" class="trip-summary">
+                  <div class="trip-line">
+                    <b>进场</b>：起点 {{ tripSummary.start }} · 推荐路径 {{ tripSummary.arrivalSegments }} 段 ·
+                    ETA {{ tripSummary.arrivalEta }} min
+                  </div>
+                  <div class="trip-segs td-mono">{{ tripSummary.arrivalPath || '—' }}</div>
+                  <div class="trip-line">
+                    <b>落客</b>：{{ tripSummary.dropoff ?? '引擎产物未给落客点（如实空窗）' }} · 备选
+                    {{ tripSummary.alternatives }} 条
+                  </div>
+                  <div class="trip-line">
+                    <b>离站</b>：
+                    <template v-if="tripSummary.departureSegments > 0">
+                      {{ tripSummary.departureSegments }} 段 · ETA {{ tripSummary.departureEta }} min
+                    </template>
+                    <template v-else>引擎产物未给离站路线（如实空窗）</template>
+                  </div>
+                  <div v-if="tripSummary.departurePath" class="trip-segs td-mono">
+                    {{ tripSummary.departurePath }}
+                  </div>
+                  <p class="route-source">
+                    来源 {{ tripSummary.source }} · 段号命名空间
+                    {{ (routeOptions.segment_namespaces || []).join(' / ') || '—' }} ·
+                    ETA / 路径原样透传，接口层与前端均不代算
+                  </p>
+                </div>
+              </template>
+              <p v-else-if="routeOptionsError" class="route-hint">
+                <template v-if="USE_MOCK">
+                  mock 模式无整条路线选项端点（/route/options）：下方为演示会话路线，不冒充引擎 OD。
+                </template>
+                <template v-else>引擎路线选项不可用：{{ routeOptionsError }}</template>
+              </p>
+              <p v-else class="route-hint">引擎产物无 OD / session 选项：不编造路线选择。</p>
+            </div>
             <p v-if="recommendLoading" class="route-hint">正在读取推荐快照…</p>
             <p v-else-if="recommendError" class="route-hint warn">{{ recommendError }}</p>
             <template v-else-if="recommend">
@@ -2045,6 +2190,59 @@ function onCommandChanged(): void {
   font-size: 11px;
   line-height: 1.6;
   color: var(--td-text-color-placeholder);
+}
+
+/* ---------- 整条路线规划（Issue IKNAUI） ---------- */
+.route-plan {
+  margin-bottom: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
+}
+.route-plan-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.route-select {
+  width: 100%;
+  height: 26px;
+  margin-bottom: 5px;
+  padding: 0 6px;
+  font-size: 11px;
+  color: var(--td-text-color-primary);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-sm);
+}
+.trip-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.trip-line {
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+}
+.trip-line b {
+  display: inline-block;
+  min-width: 32px;
+  margin-right: 4px;
+  color: var(--td-brand-color);
+}
+.trip-segs {
+  margin: 0 0 3px 36px;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-secondary);
+  word-break: break-all;
 }
 
 /* 右栏顺序（Issue IKMS18）：点路段后**先看路段信息**（关联摄像头 / 决策计算摘要 / 直接下令），

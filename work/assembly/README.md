@@ -28,6 +28,7 @@
 | `/api/traffic/segments/{id}/sources` | GET | **同一路段 `video` / `twin` 并排 + 差值（TC-19 展示侧）** | **已实现**（IKMF1T） |
 | `/api/traffic/vehicles` | GET | 一期演示：孪生车辆位置（读 `vehicles.json`）。**二期下线** | 沿用（已实现；缺产物时空列表 + note） |
 | `/api/traffic/route/recommend` | POST | 请求推荐（请求体含 `session_id` / `location`） | **已实现**（IKMF1T；IKMS17 起真网产物优先） |
+| `/api/traffic/route/options` | GET | **非契约辅助端点**：引擎路线产物 OD/session/路径摘要（大屏「整条路线规划」选择器，IKNAUI） | **已实现**（IKNAUI；真网优先、缺产物如实 404 + note） |
 | `/api/traffic/locate` | POST | 定位 → 路段。一期由孪生真值调用，二期由 App 调用 | 已实现（读引擎产物 `requests[].location`，不做地图匹配） |
 | `/api/traffic/factors` | GET | 当前生效因素清单（`?segment_id=` 过滤） | 沿用 + 扩参（已实现；IKMS17 起含写端点内存态） |
 | `/api/traffic/factors` | POST | 人工置位（F07 / F08 / F11，手册第 19 章） | **已实现**（IKMS17；内存态、重启复位、**不重算判级**） |
@@ -104,7 +105,7 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 - 所有响应恒带 `is_simulated:true`；参数不合法 400（`FACTOR_INVALID` / `SCENARIO_INVALID`）、
   路段不存在 404、未注册路径/方法 404（统一信封）——不静默吞路径。
 
-**路线数据源优先级（`route/recommend` / `locate`）**：
+**路线数据源优先级（`route/recommend` / `locate` / `route/options`）**：
 
 | 优先级 | 产物 | 段号命名空间 | 响应角标 |
 |---|---|---|---|
@@ -116,6 +117,28 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 - 两层的段号命名空间不同：响应给 `segment_namespaces` / `segments_not_in_snapshot`，
   **不把路线 ETA 与路段快照指标混算**；地图只画站点包几何里存在的段。
 - 两层产物都缺失 → 如实 404 `ROUTE_UNAVAILABLE` + note（不代算 ETA）。
+- **非契约辅助端点（Issue IKNAUI）**：`GET /api/traffic/route/options` 端出最高优先级产物 `requests` 的
+  OD / session / 进场路线 / 备选 / 离站路线**摘要**（`count` + `options[]`），供大屏「整条路线规划」
+  选择器；同样真网优先、缺产物如实 404 + note。契约 §七 未定义该端点，接入方按辅助端点消费，
+  **不得**把它当契约字段写回契约。响应示例（节选）：
+
+```json
+{
+  "is_simulated": true,
+  "data_source": "engine.routes.real",
+  "count": 12,
+  "options": [
+    {
+      "od_id": "OD-R-001",
+      "session_id": "S-real-OD-R-001",
+      "location": { "segment_id": "SZ-003", "offset_m": 0, "source": "twin" },
+      "arrival_route": { "path_id": "OD-R-001-P1", "segments": ["SZ-003", "..."], "segment_count": 5, "eta_min": 0.82 },
+      "alternatives": [{ "path_id": "OD-R-001-P2", "eta_min": 1.25, "reason": "比推荐多 0.43 分钟" }],
+      "departure_route": { "path_id": "OD-R-001-D1", "segment_count": 3, "eta_min": 0.36 }
+    }
+  ]
+}
+```
 
 **自检（真跑命令）**：
 
@@ -123,6 +146,9 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 python work/assembly/traffic.py --check            # 数据源 / 路线优先级 / 处置运行态(持久化)摘要
 python work/assembly/selfcheck_ikms1h.py           # IKMS1H 自检：重启持久化 / 幂等 / 顺序 / 终态 / 复位 / 审计 / 跨页
 curl -s http://127.0.0.1:8000/api/traffic/meta     # 响应头 X-Traffic-Data-Source
+curl -s http://127.0.0.1:8000/api/traffic/route/options   # 非契约辅助端点：OD/session 摘要（IKNAUI）
+curl -s -X POST http://127.0.0.1:8000/api/traffic/route/recommend -H "Content-Type: application/json" \
+     -d '{"session_id":"<route/options 里的一条 session_id>","location":{"segment_id":"SZ-003","offset_m":0}}'
 curl -s http://127.0.0.1:8000/api/traffic/alerts   # 读持久化后的告警四态
 curl -s -X POST http://127.0.0.1:8000/api/traffic/plan/dispatch -H "Content-Type: application/json" \
      -d '{"alert_id":"<GET /alerts 里的一条>","channel":"情报板","ratio_pct":30,"operator":"值班员A"}'
