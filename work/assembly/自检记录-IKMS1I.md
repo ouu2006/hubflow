@@ -1,0 +1,234 @@
+# IKMS1I 自检记录：交付包 C-4~C-7（真跑输出）
+
+> **演示数据（模拟）**：本记录是**本机真跑**的原始输出摘要，不是性能验收。
+> **M1-6 两种环境如实并列**：① 干净 worktree（无感知样本数据）→ 感知链路阻塞、**M1-6 不声明通过**（§一 1.1）；
+> ② 数据在场（本机主 checkout / 目标机按 README §三 放好 `work/perception/data/monitor/`）→ `--rounds 3`
+> **实测通过、M1-6 通过**（§一 1.2）。缺前置的步骤一律如实标阻塞，不写「通过」。
+
+- 生成时间：2026-10-18（Asia/Shanghai）
+- 被测代码：`work/assembly/`（运行于 `origin/main` 2bb66e5 + 本单未提交改动；提交后 sha 见提交记录）
+- 环境（实测）：Windows 11（10.0.26300）· AMD Ryzen 9 8945HX（16C/32T）· 15.8 GiB · Python 3.12.10 · psutil 7.2.2
+- 交付文件：[`demo_all.py`](demo_all.py) / [`demo_all.ps1`](demo_all.ps1)（C-4）· [`stress_test.py`](stress_test.py) + [`压测报告.md`](压测报告.md)（C-5）· [`对外接口.md`](对外接口.md)（C-6）· [`部署与监控.md`](部署与监控.md) + [`monitor_check.py`](monitor_check.py)（C-7）· [`README.md`](README.md) §2.3 交付索引
+
+---
+
+## 一、C-4 一键演示（M1-6：数据在场时通过；无数据时如实标阻塞）
+
+### 1.1 环境 A · 干净 worktree（无 `work/perception/data/monitor/`）→ 感知链路阻塞，M1-6 不声明通过
+
+命令与退出码：
+
+```text
+python work/assembly/demo_all.py --rounds 3
+[demo exit=2]   # 0=全成功；2=跑完但有阻塞（如实记录，不算 M1-6 通过）；1=有失败
+```
+
+三轮结果（来自 `work/assembly/out/demo_all_report.json`，gitignored）：
+
+| 轮次 | 状态 | 总耗时 (s) | 真网算路 | 感知链路 | 接口层 | 端点自检 | 内存（起→止 MB，采样点） |
+|---|---|---|---|---|---|---|---|
+| 1 | blocked | 3.54 | ✅ ok | ⛔ blocked | ✅ ok | ✅ ok（18 项 + SSE） | 55.02 → 55.88（3 点，峰值 55.88） |
+| 2 | blocked | 3.44 | ✅ ok | ⛔ blocked | ✅ ok | ✅ ok | 55.22 → 56.02（3 点，峰值 56.02） |
+| 3 | blocked | 3.49 | ✅ ok | ⛔ blocked | ✅ ok | ✅ ok | 55.11 → 55.92（3 点，峰值 55.92） |
+
+**M1-6 结论：阻塞/未通过（`passed: false`）**——不是「全成功」：
+
+- 阻塞项（每轮同一原因）：`perception-chain` = 缺 `work/perception/data/monitor/` 样本导出（gitignored，上游未提供），
+  感知链路 **0 通道产出**；脚本把「命令退出码 0 但产物 0 段」判为**阻塞**（不是成功）。
+- 已验证通过的部分：真网算路（`routes.json` 12 条 requests，真网 61 段 / 44 节点）、接口层启动、
+  18 个关键端点 + SSE 全部 200、每轮日志/产物留存。
+- 内存（仅本机 3 轮实测，**不是性能验收**）：末轮起始 55.88→56.02→55.92 MB，growth=-0.12 MB，自定阈值内 `not_continuously_growing=true`。
+
+真网算路（每轮都重跑，产物新鲜）：`work/engine/out/real/routes.json`，`requests=12`，真网 61 段 / 44 节点（`run_log.json`）。
+
+端点自检（每轮 18 项，均 200；节选失败表格无——全部通过）：
+
+| 端点（第 1 轮实测） | 方法 / 路径 | 状态 | 耗时 (ms) | 数据源（响应头） |
+|---|---|---|---|---|
+| meta | GET /api/traffic/meta | 200 | 10.8 | stations.baseline |
+| overview | GET /api/traffic/overview | 200 | 8.76 | stations.baseline |
+| segments | GET /api/traffic/segments | 200 | 23.72 | stations.baseline |
+| network | GET /api/traffic/network | 200 | 8.16 | stations.network |
+| thresholds | GET /api/traffic/thresholds | 200 | 5.38 | stations.thresholds |
+| context | GET /api/traffic/context | 200 | 12.53 | stations.baseline |
+| factors | GET /api/traffic/factors | 200 | 11.23 | stations.baseline |
+| assimilation | GET /api/traffic/assimilation | 200 | 7.38 | twin.assimilation |
+| alerts | GET /api/traffic/alerts | 200 | 10.08 | stations.baseline |
+| vehicles | GET /api/traffic/vehicles | 200 | 5.05 | twin.vehicles |
+| heat-matrix | GET /api/traffic/heat-matrix | 200 | 12.27 | stations.baseline |
+| plan-audit | GET /api/traffic/plan/audit | 200 | 5.41 | dispatch-store |
+| segment-detail | GET /api/traffic/segments/SEG-001 | 200 | 25.02 | stations.baseline |
+| segment-sources | GET /api/traffic/segments/SEG-001/sources | 200 | 11.42 | stations.baseline |
+| predict | GET /api/traffic/predict | 200 | 11.42 | stations.baseline |
+| ci-history | GET /api/traffic/ci-history | 200 | 10.27 | stations.baseline |
+| route-recommend | POST /api/traffic/route/recommend | 200 | 30.23 | engine.routes.real |
+| locate | POST /api/traffic/locate | 200 | 29.91 | engine.routes.real |
+| stream(SSE) | GET /api/traffic/stream | 200 | — | event=traffic_snapshot |
+
+**阻塞后的正确口径**：M1-6 要求「无人干预连跑 3 轮**全成功** + 日志/产物留存 + 内存不持续增长」——
+感知样本导出缺失导致第一项不成立，故本记录只写「三轮真跑完成、逐轮如实记录、**M1-6 未通过**」。
+补前置后可复跑：`python work/assembly/demo_all.py --rounds 3`（脚本会自己起停接口层，无需人工干预）。
+
+
+### 1.2 环境 B · 数据在场（本机放好 `work/perception/data/monitor/`）→ `--rounds 3` 通过，M1-6 通过
+
+> **数据前置**：`work/perception/data/monitor/<stream>/{meta.json,detections.json}` 是**上游样本视频导出产物**，
+> 属 gitignored 数据（视频 / 导出数据不进仓库）。本机复核时由主 checkout 的同名目录以 junction 提供
+> （junction 本身 gitignored、**未提交**）；目标机按 [`README.md`](README.md) §三「C-4 前置数据」放好即可。
+> 以下两次独立运行都**不是**用别处的 mock 数据顶替，而是走真实感知链路 `run_chain.py`。
+
+**（a）Lead 在本工作树（数据在场）实测**（原文摘要）：
+
+```text
+python work/assembly/demo_all.py --rounds 3
+→ exit 0；第 1/2/3 轮 ok（5.1s / 4.39s / 4.37s）
+→ 真网算路 ok、感知链路 ok、接口层 ok、18 端点 + SSE ok
+→ 内存 55.76 / 55.64 / 55.75 MB，growth -0.01 MB，not_continuously_growing=True
+→ "M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功"
+```
+
+**（b）本复核在同一 junction 下复跑**（独立审查修复后的同环境复跑样本，脚本真实输出）：
+
+| 轮次 | 状态 | 总耗时 (s) | 真网算路 | 感知链路 | 接口层 | 端点自检 | 内存（起→止 MB，采样点） |
+|---|---|---|---|---|---|---|---|
+| 1 | ✅ ok | 4.48 | ✅ ok（12 requests / 61 段 / 44 节点） | ✅ ok（2 段：SZ-005 / SZ-024） | ✅ ok | ✅ ok（21 项含写端点 + SSE） | 55.06 → 55.88（3 点） |
+| 2 | ✅ ok | 4.56 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 54.83 → 55.64（3 点） |
+| 3 | ✅ ok | 4.61 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 54.92 → 55.82（4 点） |
+
+```text
+内存趋势：[55.88, 55.64, 55.82]，growth=-0.06 MB，allowed_growth_mb=20.0，not_continuously_growing=True
+M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功；内存未持续增长
+[demo exit=0]
+```
+
+（另：产物新鲜度在本轮有实测字段：如第 1 轮 `before_mtime_ns=1792306385057247400`、
+`artifact_mtime_ns=1792306562426158200`、`stage_started_ns=1792306562079565800` —— 产物 mtime **严格大于**
+运行前且不早于阶段开始，证明 routes.json 由本轮重写，见 §七 第 2 条。）
+
+- 数据在场时端点数据源变为 `perception.video`（视频感知链路），处置闭环写端点也真跑了一遍：
+  `plan-dispatch 200 → plan-ack 200 → alerts-reset 200（演示后复位）`；SSE `event=traffic_snapshot` 200。
+- 两次运行（Lead 5.1/4.39/4.37s、growth −0.01MB；本复核 4.48/4.56/4.61s、growth −0.06MB）**结论一致**：
+  三轮全 ok、内存未持续增长；耗时/内存的少量差异属机器负载正常波动，**不是两次不同口径**。
+- 每轮日志：`work/assembly/out/demo/round-0N/`；汇总：`work/assembly/out/demo_all_report.json`（gitignored）。
+
+**两种环境的关系（不混淆）**：M1-6 的判定对象是「**数据齐备的演示环境**」——1.2 满足即 **M1-6 通过**；
+1.1 是无上游数据的干净 worktree 的**如实降级记录**（脚本正确地把「0 通道产出」判为阻塞而不是成功），
+两条都保留，避免把「缺数据的 blocked」误读成 M1-6 失败、也避免把「数据在场的通过」误读成任何环境都通过。
+
+---
+
+## 二、C-5 压测：`python work/assembly/stress_test.py`（真跑）
+
+> 本节压测在**环境 A（无感知样本数据）**下真跑：路段数据源为 `stations.baseline`。
+> 数据在场时端点数据源会变为 `perception.video`，压测方法 / 口径不变、数字随环境与机器负载变化；
+> 压测报告只陈述实测数字，不判定达标。
+
+```text
+就绪：2326.4 ms
+端点 14 个；每轮每端点 20 次 × 8 并发
+第 1 轮：280 请求 · 1.031 s · 271.6 RPS · 错误 0 · RSS 54.89→61.72 MB
+第 2 轮：280 请求 · 0.966 s · 289.9 RPS · 错误 0 · RSS 59.15→65.21 MB
+第 3 轮：280 请求 · 1.068 s · 262.2 RPS · 错误 0 · RSS 60.26→62.12 MB
+总请求 840 · 错误 0 · P50 27.65 ms · P95 53.03 ms   ← 单请求超时 = --timeout 默认 15 s（真下传，见 §七 第 6 条）
+[stress exit=0]
+```
+
+- 完整报告（不可变快照）：[`压测报告.md`](压测报告.md)（每次运行会重写；本节数字与之一致）；
+- 实测口径：单机回环、只读 GET 端点、客户端计时、nearest-rank 百分位；**未压写端点**（会改持久化运行态）；
+- **不判定「性能达标」**：报告只陈述实测数字；手册 demo 目标值（如 route/recommend P95 ≤ 3000 ms）仅作参照，由验收方判定；
+- 内存：`psutil` 采接口层进程 RSS，逐轮起止/峰值见表（**报告不对「是否持续增长」下结论**，M1-6 判定在 C-4）。
+
+---
+
+## 三、C-6 对外接口文档：与 `traffic.py` 逐条对照（脚本核对）
+
+| 核对项 | 结果 |
+|---|---|
+| `traffic.py` 实际路由 vs [`对外接口.md`](对外接口.md) 端点表 | **27/27 条逐条出现**（`GET /plan/audit` 已标注「辅助端点，非契约」） |
+| `_error(...)` 实际返回的行为错误码 vs 文档错误码表 | **16/16 条逐条出现**；`NOT_IMPLEMENTED` / `NO_DATA` 为代码预留常量、当前无端点返回，文档已注明 |
+| 信封 `is_simulated` | 文档写清「**每一个**响应（含 4xx/5xx）顶层都带 `is_simulated: true`」 |
+| 鉴权形状 | 文档写清「**一期无鉴权**、只绑 127.0.0.1；二期 `Authorization: Bearer <platform-key>` 形状预留、不发放真实密钥」 |
+| 围栏衔接（手册第 13 章） | 文档含「围栏外导航算 / 围栏内本引擎算 / 衔接点=围栏入口 / 一期孪生边界车流代替 / 后台不代理高德」+ 进站前 `locate`、离站后 `departure_route` |
+| 演示环境声明（M1-7） | 文档开头与第 9 节均有「演示数据（模拟）· 无真实用户数据 / 无真实下发通道」声明 |
+
+核对命令（可复跑）：解析 `traffic.py` 的 `@app.get/post` 与 `对外接口.md` 文本逐条比对，结果如上（原始输出见本次会话记录）。
+
+---
+
+## 四、C-7 监控自检：`python work/assembly/monitor_check.py`（真跑，接口层运行中）
+
+```text
+C-7 监控自检（演示数据（模拟））· 2026-10-18T14:33:50+08:00
+层    状态    监控项                   实测 / 说明
+服务   ✅    接口层进程                 traffic.py 进程数=1（pid=[34560]）
+服务   ✅    端口 8000               LISTEN
+服务   ✅    接口可用性与时延              GET /api/traffic/meta -> 200 · 74.5 ms（本机回环，单次采样；P95 需压测脚本）
+数据   ✅    数据新鲜度                 路段 17 段 · 数据源 stations.baseline · 数据年龄最大值 Nones · 陈旧(> 120s) 0 段 · 不可用 17 段
+服务   ✅    端点 alerts             GET /api/traffic/alerts -> 200 · 9.4 ms
+服务   ✅    告警列表                  0 条（四态见 GET /alerts）
+服务   ✅    端点 plan/audit         GET /api/traffic/plan/audit?limit=5 -> 200 · 4.8 ms
+服务   ✅    端点 overview           GET /api/traffic/overview -> 200 · 7.9 ms
+服务   ✅    接口 5xx                本次巡检 0 次 5xx
+服务   ✅    处置闭环持久化文件             work/assembly/data/dispatch.json 不存在（尚未发生下发/回写，属正常初始态；首次写入时创建）
+服务   ✅    磁盘使用率                 69.5%（阈值 85%）
+服务   ✅    日志体积                  out/ 下 *.log 合计 0.07 MiB（一期不自动轮转，演示前可清 out/）
+范围   ✅    二期监控项（一期不做）           判级一致率 / 预测误差 / 采纳率（效果层）、备份任务、会话数据留存（合规层）、openGauss/Atlas —— 按手册 §21.2 属二期，本脚本不采集、不编造
+总体：全部正常 · 结果 JSON：work/assembly/out/monitor_check.json
+[monitor exit=0]
+```
+
+- 监控项按手册 §21.2 分层：**数据层**（数据新鲜度 / 置信度 / 因素缺失 / 参数版本）+ **服务层**（进程 / 端口 / 5xx / 时延 / 磁盘 / 持久化文件 / 备份）+ **效果层**（一致率 / 预测误差 / 采纳率）+ **合规层**（会话留存）；
+  **一期只落地可实测的数据/服务项**，效果 / 备份 / 合规 / openGauss / Atlas 如实标「二期」，见 [`部署与监控.md`](部署与监控.md) §6。
+- 部署步骤 / 端口 / 进程守护 / 日志位置 / 回滚：见 [`部署与监控.md`](部署与监控.md)（单机：8000 接口层、8101 感知可选；不含 openGauss/Atlas）。
+
+---
+
+## 五、仓库门禁 doc_gate
+
+```text
+门禁根目录：<repo>
+受管文件：331 个（已跟踪 331 个，内容取自 git 索引）
+
+[通过] 1/8 编码与换行（UTF-8 无 BOM / LF）（检查 261 个目标）
+[通过] 2/8 大文件与禁入类型（检查 331 个目标）
+[通过] 3/8 Markdown 相对链接（检查 58 个目标）
+[通过] 4/8 JSON 可解析（含数据契约示例）（检查 41 个目标）
+[通过] 5/8 密钥扫描（检查 261 个目标）
+[通过] 6/8 契约字段命名（snake_case）（检查 15 个目标）
+[通过] 7/8 填表报告台账（格式 / 产物覆盖 / 结果语义）（检查 15 个目标）
+[注意] docs/填表报告.md:123  `结果` 是「占位」（**T1~T9** → `stations/network.json` / `stations/points.json` / `stations/signal_plan.json` / `stations/demand.json` / `stations/factors.json` / `stations/scenarios.json` / `stations/thresholds.json` / `stations/calibration.json` / `stations/map_source.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
+[注意] docs/填表报告.md:125  `结果` 是「占位」（T1~T9 → `stations/calibration.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
+[注意] docs/填表报告.md:126  `结果` 是「占位」（T1~T9 → `stations/thresholds.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
+[通过] 8/8 任务记录台账（格式 / 结果枚举 / 日期）（检查 122 个目标）
+
+门禁全部通过。
+```
+
+---
+
+## 六、遗留 / 阻塞（如实记录）
+
+1. **感知样本数据是 gitignored 前置**：`work/perception/data/monitor/` 不随仓库分发（视频 / 导出数据不进仓库）——
+   干净 worktree 里感知链路如实标阻塞、M1-6 不声明通过（§一 1.1）；数据在场（本机主 checkout / 目标机按 README §三 放好）
+   时 `demo_all.py --rounds 3` **实测通过、M1-6 通过**（§一 1.2，两次独立运行一致）。
+2. 本机未起前端 `npm run dev:remote`：C-4 的「前端截图/录屏素材」不在脚本内（演示脚本只做链路与接口自检），
+   前端联调需另行起 dev server；不影响 C-4/C-5 数字。
+3. C-5 未压写端点（会改持久化运行态）与多进程/真实网络链路，报告中已写明覆盖范围；属专项/二期压测。
+4. `docs/任务记录.md` 按协作约定由 Lead 统一收口留行，本单不改。
+5. 所有运行产物 / 日志 / 报告 JSON 在 `work/assembly/out/`（gitignored），**未提交**；`压测报告.md` 是仓库内的实测快照。
+
+---
+
+## 七、独立审查 6 条修复验证（全部真跑/负向测试）
+
+| # | 审查发现 | 修复 | 修复后证据 |
+|---|---|---|---|
+| 1 | `--skip-engine --skip-perception` 仍判 M1-6 通过（假通过） | `m1_6` 增加 `evaluated` / `skipped` / `skipped_stages`；跳过任一 M1-6 必需步骤 → `passed=false`、`evaluated=false`，verdict「未评估（不适用）」；README §三 同步 | 真跑 `demo_all.py --rounds 3 --skip-engine --skip-perception` → **exit 0**，三轮 ok，报告 `m1_6={"passed": false, "evaluated": false, "skipped": true, "skipped_stages": ["engine-real","perception-chain"], "verdict": "未评估（不适用）"}`；正常数据在场复跑仍 `passed=true`（§一 1.2） |
+| 2 | 产物新鲜度用 `mtime >= before`：命令退出 0 但没重写时旧产物被当新鲜 | 改为 **`mtime` 严格大于运行前 且 不早于阶段开始**；感知产物同样加严；成功阶段也记录 before/artifact mtime 作为证据 | 负向测试（monkeypatch `run_command` 返回 ok 但不写产物）：`stage status=failed`、`reason="命令退出码 0 但产物未由本轮重写…"`；正常复跑三阶段新鲜度字段见 §一 1.2（mtime 严格前进） |
+| 3 | 数据新鲜度只看 `stale_count`：17/17 不可用仍报 ✅；`stations.baseline` 降级无告警 | `monitor_check.py` 按 `data_age_s` + `level=0` / `available=false` 统计**不可用**：全不可用 → **fail**、部分 → warn；`stations.baseline` 回落 → **显式 warn「数据源降级」**；部署与监控 §6.1 补「路段数据可用性」行 | 真跑两路：数据在场 → `数据新鲜度与可用性 ✅（2 段 / perception.video / 不可用 0 段）`、`数据源 ✅`、exit 0；临时移开 `work/*/out` 后 → `数据新鲜度与可用性 ❌（17 段 / stations.baseline / 不可用 17 段）` + `数据源降级 ⚠`、**exit 2**（finally 已还原产物目录） |
+| 4 | meta 的 5xx 未计入 `status_5xx`：meta 500 仍可能报「0 次 5xx」 | 所有探测端点统一 `note_status()` 计数（含 meta）；非 2xx 另计（warn），报告写明「探测 5 个端点，含 meta」 | 负向测试（monkeypatch `http_call` 让 meta 返回 500）：巡检结果出现 `接口 5xx ❌ fail —— 本次巡检 5 个探测中出现 1 次 5xx`，不再报 0 次 |
+| 5 | `部署与监控.md` 把 `demo_all.ps1` 列为登录守护命令（错误：它跑完会停接口层） | 守护方案 B 改为**直接守护** `python work/assembly/traffic.py --port 8000`；守护纪律新增 ⑤「`demo_all.py/.ps1` 是演示编排脚本，跑完会自己停掉接口层，**不能当守护命令**」 | 文档已更新（见 [`部署与监控.md`](部署与监控.md) §3） |
+| 6 | `stress_test.py` 的 `--timeout` 未传给请求（固定 15 s，报告却写该值） | `--timeout` 真正下传到 `http_call` / `resolve_segment_id` / 每轮请求；报告「单请求超时」与实际一致 | 真跑 `stress_test.py --rounds 1 --concurrency 2 --requests-per-endpoint 2 --timeout 0.001` → **exit 1**、`method.timeout_s=0.001`、24 请求 9 错误、error_samples 为 `"timed out"`（证明生效）；随后正常复跑 `--timeout 15` → 840 请求 0 错误、P50 27.65/P95 53.03 ms |
+
+> 门禁：`python scripts/doc_gate.py` 8/8 通过（见 §五）；以上修复全部有真实输出/负向测试，不是「改完即认为过了」。
+
