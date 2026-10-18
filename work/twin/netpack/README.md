@@ -129,3 +129,84 @@ python work/twin/netpack/check_site_ranges.py
 **图必须建在折线顶点级**：干道是一条长折线，场区通道挂在它的**中间顶点**上。
 只用首尾点建边会把场区判成不连通 —— 本项目已经因此踩过三次。
 第二代的口径是「**路口顶点处切**」，天生就在顶点级，不会再踩；但**不要**改成「只按首尾点建边」。
+
+---
+
+## 五、方向 / 车道 / 贯通性 + 自动拓扑校验（Issue IKNB9H）
+
+> **业主 2026-10-18**：道路是**有来有回的双向车道**、还有左右车道；单向车道必须**贯通**
+> （有头有尾，不能到头只能原地掉头/消失）；路线方向不能只靠人看，要**自动判别**。
+
+### 5.1 为什么是「后处理」而不是改构建脚本
+
+`network_junction.json` 由 `build_junction_pack.py`（IKMERX / 多站单 IKNB9F）产出，正在被别的单改。
+本单**不重写构建脚本**：`topology.py` 读原产物 → 补方向/车道/贯通字段 → **另写**
+`network_junction.enriched.json`，**原文件保持不变**（W1/SUMO 仍读原文件）。
+
+### 5.2 产物与命令
+
+```bash
+# 1) 方向/车道/贯通性后处理（默认站；换站加 --site-id）
+python work/twin/netpack/topology.py
+python work/twin/netpack/topology.py --check        # 重算与既有 enriched 逐字节比对，不写盘
+
+# 2) 自动拓扑校验（不靠人看图；失败 non-zero，报告 topology_report.json）
+python work/twin/netpack/tools/check_topology.py
+python work/twin/netpack/tools/check_topology.py --routes work/engine/out/real/routes.json   # 复核引擎路线
+python work/twin/netpack/tools/check_topology.py --self-test   # 正常 PASS / 人为断头 FAIL / 非法掉头 FAIL
+
+# 3) 全链路自检（真跑，证据写 topology_selftest.json）
+python work/twin/netpack/tools/selftest_topology.py
+```
+
+| 产物 | 内容 |
+|---|---|
+| `network_junction.enriched.json` | 61 段全量方向/车道/贯通性 + `field_sources`；**不覆盖原 JSON** |
+| `topology_report.json` | schema / 边界角色 / 单向贯通 / 双向配对 / 主干道截断 / 有向可达性 / U-turn 逐项判据与失败明细 |
+| `topology_selftest.json` | 自检证据：Z 站全量、两个反例 FAIL、引擎两遍一致、样例/W1/接口只读不退化、doc_gate 8/8 |
+
+### 5.3 新增字段（每个 `edge` 至少这些；全部标 `field_sources`）
+
+| 字段 | 取值 / 来源 |
+|---|---|
+| `direction` | `forward`（`oneway=yes`）/ `reverse`（`oneway=-1`）/ `bidirectional`（`oneway=no`；**未标注按 OSM 缺省双向**，标 `default`） |
+| `lanes_forward` / `lanes_backward` / `lanes_total` | 只认原产物 OSM `lanes` 总数：单向段按方向落位、另一向 0（derived）；**双向段没有 `lanes:forward/backward` → 前/后向留 `null`，不拆分、不编造** |
+| `opposite_segment_id` | 端点完全互逆的**显式段号**；双向单几何段不虚构配对，反向走 `_rev` 语义 |
+| `u_turn_allowed` | 仅**双向段 + 端点无向度数 1（断头）**允许；其余 false（OSM 切片没有掉头限制数据，derived） |
+| `left_turn_allowed` / `left_turn_allowed_reverse` | 按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；没有坐标 → false + `default` |
+| `continuity` | `head_connected` / `tail_connected` / `chain_id` / `chain_name` / `is_main_road` / `gap_to_next_m` / 最近候选连接点 |
+| `field_sources` | 每个字段来源只能是 `osm` / `derived` / `default`；另有 `notes` 写清推导口径 |
+
+**一条重要修正：边界不能只按无向度数 1 判。** 肇庆东的 `N-006`（鼎湖大道南向起点 + 连接匝道，
+两条边都朝外）无向度数 2 → 原 `nodes[].boundary=false`，但有向**入度为 0**，实际是进场边界。
+只按原 boundary 判可达性会把 `SZ-014` / `SZ-059` 误判为不可达。`topology.py` 因此按**有向出入度**
+补 `nodes[].boundary_role`（entry / exit / both / through / dead_end），并单独登记派生边界
+（`enrichment.findings.derived_boundaries`，含距锚点距离）；**原文件不改**，人工可复核。
+
+### 5.4 校验判据（`check_topology.py`）
+
+- **单向段贯通**：非边界单向段的**行车末端必须有可通行后继**，否则 `oneway_tail_without_successor` → **FAIL**；
+- **双向配对**：双向段必须有 `_rev` 反向遍历；有 `opposite_segment_id` 的段必须端点互逆；
+- **主干道截断**：同名主干道按共享节点串链，非边界端点报 `main_road_gap`——孤立断头 FAIL，
+  落在路口（可能真实终点/命名截断）WARN + 最近同名候选；
+- **有向可达性**：每个进场边界至少 1 条完整路径到离场边界、每个离场边界至少被 1 个进场到达；
+  所有节点/段必须在某条「入→出」路径上；不可达段可列白名单（须给理由）；
+- **非法掉头**：每段做「正→反」探针，`u_turn_allowed=false` 必须判非法；`--routes` 复核真实路线；
+- **连接候选**：断头/主干道端点按 ≤200 m 找最近候选，**只进报告，绝不自动写图、不手改 JSON**。
+
+### 5.5 本轮 Z 站结果（2026-10-18 真跑）
+
+- 61 段（33 双向 / 28 单向）+ 44 节点；`lanes` 总数已知 10 段 / 缺 51 段（缺的保持 `null`）；
+- 9 个进场边界 / 8 个离场边界（含派生边界 `N-006`）；所有 44 节点、61 段都在有向「入→出」路径上；
+- `topology_report.json`：**FAIL 0 / WARN 2**（鼎湖大道两处路口终止，待人工核对，不作为 FAIL）；
+- 反例：人为把 `SZ-010` 改反向 → `oneway_tail_without_successor` FAIL；构造 `SZ-021 → SZ-021_rev`
+  非法掉头路线 → `illegal_u_turn` FAIL；
+- 桥梁：`selftest_topology.py` 同时锁住引擎两遍一致、`--sample` 逐字节基线、`sumonet` 只读输入链。
+
+### 5.6 范围与遗留
+
+- **广州南站（IKNB9F）**：等多站单生成 `network_junction.json` 后，用同一套命令
+  `topology.py --site-id <gz>` + `check_topology.py --site-id <gz>` 跑；本轮**不碰 station pack / 多站单**。
+- `left_turn_allowed` 目前只做**字段与报告**，不参与算路（OSM 切片没有 turn restriction 数据，
+  强行禁左会引入无依据的断连）；U-turn 已真正参与引擎算路。
+- 本目录所有 JSON 都是**脚本产物**，不许手改；改规则就改 `topology.py` 再重跑。

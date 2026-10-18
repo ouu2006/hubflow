@@ -780,3 +780,67 @@ python scripts/doc_gate.py
 > **一句话收口**：真孪生基线**已接入并全程可核**（`twin.latest` + sha + 每段 `baseline_used`），
 > 同化产物**不再覆盖主循环**；但 **M1-10 / TC-20① 仍然 BLOCKED**——缺的是 boundary 观测与
 > 签字冻结，不是基线。基线接入只解决"偏差分母"，不等于通过。
+
+---
+
+## 十九、路段方向 / 车道 / 贯通性 + 自动拓扑校验（IKNB9H）
+
+> **业主 2026-10-18**：道路有来有回、有左右车道；单向车道必须贯通（不能到头原地掉头/消失）；
+> 路线方向不能只靠人看，要自动判别。**本单的"AI 判别"= 自动算法校验/路线计算，不是 ML 训练、
+> 不是实测、不碰实时数据。**
+
+### 19.1 做了什么
+
+| 层 | 文件 | 说明 |
+|---|---|---|
+| 数据后处理 | [`netpack/topology.py`](netpack/topology.py) | 读 `network_junction.json` → 补 `direction` / 车道三件套 / `opposite_segment_id` / `u_turn_allowed` / `left_turn_allowed` / `continuity` / `field_sources` → 另写 `network_junction.enriched.json`（**不覆盖原文件**） |
+| 自动校验 | [`netpack/tools/check_topology.py`](netpack/tools/check_topology.py) | schema / 边界角色 / 单向贯通 / 双向配对 / 主干道截断 / 有向可达性 / 非法掉头；失败 non-zero，报告 `topology_report.json` |
+| 全链路自检 | [`netpack/tools/selftest_topology.py`](netpack/tools/selftest_topology.py) | Z 站全量 + 反例 FAIL + 引擎两遍一致 + 样例/W1 不退化 + doc_gate 8/8，证据 `topology_selftest.json` |
+| 引擎消费 | [`../engine/realnet.py`](../engine/realnet.py) / [`realnet_topology.py`](../engine/realnet_topology.py) / [`run.py`](../engine/run.py) | 双向段展开 `_rev`、单向段只走一个方向、U-turn 按允许处、路线带 `legs[]`（方向/车道） |
+| 全 OD | [`../engine/topology_check.py`](../engine/topology_check.py) | 全边界 OD + 全节点对可达性 + 单点算路（节点或段号），报告 `work/engine/route_matrix.json` |
+
+**W1 / SUMO 零改动**：`sumonet.py` 仍读原 `network_junction.json`；enriched 是旁路产物。
+`stations/` / `work/assembly/` / 前端 / `traffic.py` **本单一律不碰**。
+
+### 19.2 一键命令
+
+```bash
+# 数据层（默认站；换站 --site-id）
+python work/twin/netpack/topology.py
+python work/twin/netpack/topology.py --check
+
+# 自动拓扑校验 + 反例自检
+python work/twin/netpack/tools/check_topology.py
+python work/twin/netpack/tools/check_topology.py --self-test
+
+# 引擎真网算路（带方向/车道 legs）
+python work/engine/run.py --network real
+python work/engine/topology_check.py
+python work/engine/topology_check.py --from N-001 --to N-005
+
+# 全链路自检（真跑，写 topology_selftest.json）
+python work/twin/netpack/tools/selftest_topology.py
+```
+
+### 19.3 本轮 Z 站结果（2026-10-18，真跑）
+
+| 项 | 结果 |
+|---|---|
+| 方向 | 61 段：**33 双向 / 28 单向**（`oneway=yes` 22 + 显式反向对里未标 oneway 的 6） |
+| 车道 | `lanes` 总数已知 10 段 / 缺 51 段；缺的保持 `null`，**不编真实车道数**；双向段不拆分前/后向 |
+| 贯通 | 9 个进场边界 / 8 个离场边界；44/44 节点、61/61 段都在有向「入→出」路径上 |
+| 校验 | `topology_report.json` **FAIL 0 / WARN 2**（鼎湖大道两处路口终止，待人工核对；不作为 FAIL） |
+| 反例 | 人为断头 → `oneway_tail_without_successor` **FAIL**；非法掉头 `SZ-021→SZ-021_rev` → `illegal_u_turn` **FAIL** |
+| 引擎 | 27 个 OD、80 条路线带 `legs`、17 条路线含反向遍历段；两遍 `routes.json` / `run_log.json` sha256 一致；M1-4 通过 |
+| 全 OD | 边界 OD 67 对里 48 对可达、19 对如实 `unreachable`；节点对 1127/1892 可达（有向图 + 禁掉头的合法不可达）；61/61 段覆盖、0 条非法路线 |
+| 不退化 | `--sample` 产物 sha256 与改动前基线一致；`sumonet.build_plain_inputs` 仍建 61 正向边 + 反向补边；doc_gate 8/8 |
+
+### 19.4 边界与遗留
+
+| # | 项 | 处理 |
+|---|---|---|
+| 1 | **N-006 是派生边界**：原 `boundary=false`（无向度数 2），有向入度 0，距锚点约 507 m（范围 500 m） | 按有向出入度标 `boundary_role=entry` 并登记派生边界；**原文件不改**，人工可复核 |
+| 2 | **主干道"路口终止"两处**（鼎湖大道 N-005 / N-008） | 报 `main_road_gap` WARN + 最近同名候选（57.3 m / 63.6 m）；可能是真实终点或切片/命名截断，**不自动写图**，不硬判 FAIL |
+| 3 | **广州南站（IKNB9F）** | 等其生成 `network_junction.json` 后，用同一套命令 `--site-id <gz>` 跑；本轮不碰多站单/station pack |
+| 4 | **`left_turn_allowed` 不参与算路** | OSM 切片没有 turn restriction 数据；强行禁左会引入无依据的断连，只做字段/报告 |
+| 5 | **双向段两向共用同一容量** | OSM 没有 `lanes:forward/backward`；不拆车道、不编数，引擎 meta 已写明 |

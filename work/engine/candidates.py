@@ -22,6 +22,23 @@ from typing import Callable
 from network import Graph, path_length_m
 
 
+def _u_turn_blocked(graph: Graph, previous_edge_id: str, edge_id: str) -> bool:
+    """连续两条边是否构成**被禁止的**原地掉头。
+
+    判定只看图上的拓扑字段（真网 enriched 图带）：
+    - 同 `section`、方向相反 → 掉头；
+    - 前一条边的 `u_turn_allowed=false` → 禁止。
+    样例网边没有 direction 字段，两条边的 direction 都是 None，不会误判。
+    """
+    previous = graph.edge(previous_edge_id)
+    current = graph.edge(edge_id)
+    if str(previous.get("section")) != str(current.get("section")):
+        return False
+    if previous.get("direction") == current.get("direction"):
+        return False
+    return not bool(previous.get("u_turn_allowed"))
+
+
 def dijkstra(
     graph: Graph,
     src: str,
@@ -29,35 +46,62 @@ def dijkstra(
     weight: Callable[[str], float],
     banned_edges: set[str] | None = None,
     banned_nodes: set[str] | None = None,
+    forbid_u_turn: bool = False,
 ) -> list[str] | None:
     """单源最短路,返回**边 id 序列**(找不到返回 None)。
 
     比较键是 `(累计代价, 路径元组)`,保证同一输入结果可复现。
+    `forbid_u_turn=True` 时用**边状态** Dijkstra：状态 = (节点, 上一条边)，
+    从而能真正执行"同段反向立即掉头且 u_turn_allowed=false 则禁止"。
     """
     banned_edges = banned_edges or set()
     banned_nodes = banned_nodes or set()
     if src in banned_nodes or dst in banned_nodes:
         return None
 
-    best: dict[str, float] = {src: 0.0}
-    heap: list[tuple[float, tuple[str, ...], str]] = [(0.0, (), src)]
+    if not forbid_u_turn:
+        best: dict[str, float] = {src: 0.0}
+        heap: list[tuple[float, tuple[str, ...], str]] = [(0.0, (), src)]
+        while heap:
+            cost, path, node = heapq.heappop(heap)
+            if node == dst:
+                return list(path)
+            if cost > best.get(node, float("inf")):
+                continue
+            for edge_id in graph.out_edges(node):
+                if edge_id in banned_edges:
+                    continue
+                nxt = str(graph.edge(edge_id)["to"])
+                if nxt in banned_nodes:
+                    continue
+                new_cost = cost + weight(edge_id)
+                if new_cost < best.get(nxt, float("inf")):
+                    best[nxt] = new_cost
+                    heapq.heappush(heap, (new_cost, path + (edge_id,), nxt))
+        return None
 
-    while heap:
-        cost, path, node = heapq.heappop(heap)
+    # 边状态版本（只在真网这类有 U-turn 约束的图上启用；样例网走上面的旧路径）
+    best_state: dict[tuple[str, str | None], float] = {(src, None): 0.0}
+    state_heap: list[tuple[float, tuple[str, ...], str, str | None]] = [(0.0, (), src, None)]
+    while state_heap:
+        cost, path, node, previous = heapq.heappop(state_heap)
         if node == dst:
             return list(path)
-        if cost > best.get(node, float("inf")):
+        if cost > best_state.get((node, previous), float("inf")):
             continue
         for edge_id in graph.out_edges(node):
             if edge_id in banned_edges:
+                continue
+            if previous is not None and _u_turn_blocked(graph, previous, edge_id):
                 continue
             nxt = str(graph.edge(edge_id)["to"])
             if nxt in banned_nodes:
                 continue
             new_cost = cost + weight(edge_id)
-            if new_cost < best.get(nxt, float("inf")):
-                best[nxt] = new_cost
-                heapq.heappush(heap, (new_cost, path + (edge_id,), nxt))
+            key = (nxt, edge_id)
+            if new_cost < best_state.get(key, float("inf")):
+                best_state[key] = new_cost
+                heapq.heappush(state_heap, (new_cost, path + (edge_id,), nxt, edge_id))
     return None
 
 
@@ -68,17 +112,19 @@ def k_shortest_paths(
     k: int,
     weight: Callable[[str], float],
     weight_override: Callable[[list[str]], float] | None = None,
+    forbid_u_turn: bool = False,
 ) -> list[list[str]]:
     """Yen 的 K 最短路,返回按代价升序的边 id 序列(可能少于 k 条)。
 
     `weight_override` 给"整条路径的代价"用;不给就按边权重累加。
+    `forbid_u_turn` 透传给 dijkstra（真网禁非法掉头）。
     """
     def path_cost(path: list[str]) -> float:
         if weight_override is not None:
             return weight_override(path)
         return sum(weight(eid) for eid in path)
 
-    first = dijkstra(graph, src, dst, weight)
+    first = dijkstra(graph, src, dst, weight, forbid_u_turn=forbid_u_turn)
     if first is None:
         return []
 
@@ -101,7 +147,15 @@ def k_shortest_paths(
                     banned_edges.add(path[i + 1])
             banned_nodes = {str(graph.edge(eid)["from"]) for eid in root_path}
 
-            spur = dijkstra(graph, spur_node, dst, weight, banned_edges, banned_nodes)
+            spur = dijkstra(
+                graph,
+                spur_node,
+                dst,
+                weight,
+                banned_edges,
+                banned_nodes,
+                forbid_u_turn=forbid_u_turn,
+            )
             if spur is None:
                 continue
             total = root_path + spur
@@ -137,13 +191,18 @@ def select_candidates(
     k: int,
     max_overlap: float,
     weight: Callable[[str], float],
+    forbid_u_turn: bool | None = None,
 ) -> list[list[str]]:
     """按 Yen 取候选,再按重叠度筛掉"等价路径"。
 
     贪心:按代价升序逐个看,与**已选中**的任一条重叠度超过 `max_overlap` 就丢弃。
+    `forbid_u_turn=None` 时读图属性 `attributes.forbid_u_turn`（真网 enriched 图为 true；
+    样例图没有该属性 → 保持旧行为逐字节不变）。
     """
+    if forbid_u_turn is None:
+        forbid_u_turn = bool(graph.attributes.get("forbid_u_turn"))
     picked: list[list[str]] = []
-    for path in k_shortest_paths(graph, src, dst, k, weight):
+    for path in k_shortest_paths(graph, src, dst, k, weight, forbid_u_turn=forbid_u_turn):
         if all(path_overlap(graph, path, kept) <= max_overlap for kept in picked):
             picked.append(path)
         if len(picked) >= k:
