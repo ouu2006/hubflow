@@ -179,6 +179,13 @@ const suggestion = computed<DiversionSuggestion | null>(() =>
     : null,
 )
 
+/** 站点包是否给该路段预置了分流建议(base_pct > 0)。
+ *  未预置时(remote 模式常见:告警路段与站点包预置段号不一定重合)**分流比例仍可人工设置**,
+ *  页面如实标「无系统预置建议」,不把兜底的 0% 说成系统建议。 */
+const hasSuggestion = computed<boolean>(() => (suggestion.value?.base_pct ?? 0) > 0)
+const suggestionMin = computed<number>(() => (hasSuggestion.value ? (suggestion.value?.min_pct ?? 0) : 5))
+const suggestionMax = computed<number>(() => (hasSuggestion.value ? (suggestion.value?.max_pct ?? 100) : 100))
+
 const receipt = computed<DispatchReceipt | null>(() => {
   const a = selected.value
   if (!a) return null
@@ -263,6 +270,8 @@ let unsubscribe: (() => void) | null = null
 let refreshSeq = 0
 /** 接口层未起时的降级提示(空 = 正常) */
 const dataError = ref('')
+/** SSE 刷新通道连接状态:断开时页面不会自动刷新,必须显式提示(TC-06 断流降级) */
+const sseConnected = ref(true)
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
@@ -404,11 +413,12 @@ async function doAck(): Promise<void> {
 watch(selectedId, () => {
   const a = selected.value
   const s = suggestion.value
-  pct.value = s ? s.base_pct : 20
+  // 有系统预置建议 → 用建议基准比例;没有(兜底 0%)→ 给人工默认 20%,不把 0% 当建议
+  pct.value = s && s.base_pct > 0 ? s.base_pct : 20
   channel.value = DISPATCH_CHANNELS[0]
   wbResult.value = '已缓解'
   wbOperator.value = '张工(监控)'
-  wbAction.value = s ? `情报板诱导 · 分流至${s.target_name} ${s.base_pct}%` : ''
+  wbAction.value = s && s.base_pct > 0 ? `情报板诱导 · 分流至${s.target_name} ${s.base_pct}%` : '情报板诱导 · 分流(人工设置比例)'
   queueRatio.value = '—'
   actionError.value = ''
   if (a) void loadQueueRatio(a.segment_id)
@@ -430,9 +440,15 @@ onMounted(() => {
       /* 保持默认站点名 */
     }
   })()
-  unsubscribe = subscribeTrafficSnapshot(() => {
-    void refresh()
-  })
+  unsubscribe = subscribeTrafficSnapshot(
+    () => {
+      void refresh()
+    },
+    (connected) => {
+      sseConnected.value = connected
+      if (connected) void refresh()
+    },
+  )
 })
 
 onUnmounted(() => {
@@ -521,6 +537,10 @@ function onFlowChanged(): void {
 
     <template #headExtra>
       <div v-if="dataError" class="head-err">{{ dataError }}</div>
+      <div v-if="!sseConnected" class="head-err">
+        ⚠ 实时刷新通道(SSE)未连接 —— 页面不会自动刷新,正在自动重连;请勿把当前显示当作最新快照。
+        <button class="td-btn sm" type="button" @click="refresh">立即刷新</button>
+      </div>
     </template>
 
     <div class="td-body">
@@ -608,16 +628,23 @@ function onFlowChanged(): void {
                     v-model.number="pct"
                     class="range"
                     type="range"
-                    :min="suggestion.min_pct"
-                    :max="suggestion.max_pct"
+                    :min="suggestionMin"
+                    :max="suggestionMax"
                     step="5"
                   />
-                  <span class="sl-label">分流上限 {{ suggestion.max_pct }}%</span>
+                  <span class="sl-label">
+                    {{ hasSuggestion ? `分流上限 ${suggestionMax}%` : '无系统预置建议 · 人工设置比例' }}
+                  </span>
                 </div>
                 <p class="hint">
-                  保留直行 {{ 100 - pct }}% · 承接路段 {{ suggestion.target_name }}（{{
-                    suggestion.target_segment_id
-                  }}）· 预期 {{ suggestion.expect }}
+                  <template v-if="hasSuggestion">
+                    保留直行 {{ 100 - pct }}% · 承接路段 {{ suggestion.target_name }}（{{
+                      suggestion.target_segment_id
+                    }}）· 预期 {{ suggestion.expect }}
+                  </template>
+                  <template v-else>
+                    保留直行 {{ 100 - pct }}% · 系统无预置承接段（站点包未覆盖该路段）；渠道为展示枚举，下发仍会留回执
+                  </template>
                 </p>
               </section>
 

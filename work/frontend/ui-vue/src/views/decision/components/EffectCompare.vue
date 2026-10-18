@@ -2,12 +2,32 @@
 // 效果对比报表(设计稿 03 底部「效果对比 · 场景切换 (A/B/C)」)。
 // 口径(硬性口径 1):三组对照全部是**仿真对照**,不得称实测;数据 is_simulated = true;
 //   ② ③ 的差 = 本项目核心机制的举证口("不给每个人此刻最快的那条路",README §9.2)。
-// 数据:shared/demoDecision.ts 的 EFFECT_SCENARIOS(三场景)+ ACK_COMPARISON(处置前后三项)。
-import { computed, ref } from 'vue'
+// 数据来源分两层,页面分开标注:
+//   · 接口层 `GET /api/traffic/report/compare` —— 一期没有「同输入多跑对照」的报表产物,
+//     响应 rows 如实为空 + note;页面把接口 note 显式展示(不静默当没有);
+//   · 下方 A/B/C 三组与处置前后对比来自 `shared/demoDecision.ts` 的**前端演示脚本**,
+//     在接口无报表数据时兜底展示,常驻「仿真对照 · 前端演示脚本」标注(不冒充接口数据)。
+import { computed, onMounted, ref } from 'vue'
 import { ACK_COMPARISON, EFFECT_SCENARIOS } from '../../../shared/demoDecision'
+import { getTrafficReportCompare } from '../../../api/traffic'
+import type { ReportCompare } from '../../../shared/traffic'
 
 const picked = ref<string>(EFFECT_SCENARIOS[0]?.key ?? 'peak')
 const scenario = computed(() => EFFECT_SCENARIOS.find((s) => s.key === picked.value) ?? EFFECT_SCENARIOS[0]!)
+
+/** 接口报表(rows 为空 = 接口层无报表产物,页面如实标注) */
+const report = ref<ReportCompare | null>(null)
+const reportError = ref('')
+const reportRows = computed<Record<string, unknown>[]>(() => report.value?.rows ?? [])
+const reportColumns = computed<string[]>(() => Object.keys(reportRows.value[0] ?? {}))
+
+onMounted(async () => {
+  try {
+    report.value = await getTrafficReportCompare()
+  } catch (e) {
+    reportError.value = `效果对比报表接口未取到:${e instanceof Error ? e.message : String(e)}`
+  }
+})
 </script>
 
 <template>
@@ -29,6 +49,31 @@ const scenario = computed(() => EFFECT_SCENARIOS.find((s) => s.key === picked.va
       </span>
     </div>
     <div class="td-card-body">
+      <!-- 接口报表(真接口):一期无报表产物 → rows 空 + note,如实展示 -->
+      <p v-if="reportError" class="src warn">{{ reportError }}</p>
+      <template v-else-if="report">
+        <p class="src">
+          报表来源:接口 GET /api/traffic/report/compare · rows {{ reportRows.length }} 条 · is_simulated = true
+        </p>
+        <p v-if="report.note" class="src warn">{{ report.note }}</p>
+        <table v-if="reportRows.length > 0" class="td-table">
+          <thead>
+            <tr>
+              <th v-for="key in reportColumns" :key="key">{{ key }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(row, index) in reportRows" :key="index">
+              <td v-for="key in reportColumns" :key="key">{{ row[key] }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
+      <p v-else class="src">正在读取接口报表…</p>
+
+      <p class="src">
+        以下 A/B/C 三组与处置前后对比为<b>前端演示脚本</b>(仿真对照,非接口数据;接口报表未接入前的兜底展示)
+      </p>
       <p class="src">时间窗:{{ scenario.window }} · 来源:仿真对照 · is_simulated = true</p>
       <table class="td-table">
         <thead>
@@ -84,6 +129,13 @@ const scenario = computed(() => EFFECT_SCENARIOS.find((s) => s.key === picked.va
   margin: 0 0 8px;
   font-size: 11px;
   color: var(--td-text-color-placeholder);
+}
+.src.warn {
+  color: #a06a00;
+  background: var(--td-warning-color-1);
+  padding: 5px 8px;
+  border-radius: 3px;
+  line-height: 1.5;
 }
 .unit {
   margin-left: 2px;

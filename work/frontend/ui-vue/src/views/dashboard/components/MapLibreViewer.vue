@@ -982,7 +982,7 @@ onUnmounted(() => {
           <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
           <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
-          <div class="lg-note">演示路线：连通段序列拼接，不随时间重算</div>
+          <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
         <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
         <template v-if="cameraOnly">

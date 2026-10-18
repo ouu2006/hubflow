@@ -37,6 +37,7 @@ import {
 } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
 import { basemapEnabled } from '../../shared/settings'
+import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
 import { activePack, activePackKey, packItems, switchPack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
@@ -63,6 +64,7 @@ import {
   type SegmentSourcePair,
   type ThresholdSnapshot,
   type TrafficAlert,
+  type TrafficMeta,
   type TrafficNetwork,
   type TrafficOverview,
   type VehicleRecord,
@@ -210,6 +212,36 @@ const mapCaption = computed(() =>
 )
 /** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
 const stationName = ref(activePack().station.name)
+/** 接口层 meta(真接口模式:页脚数据来源 / 站点范围 / 快照段数如实取自响应;mock 侧字段可缺省) */
+const metaInfo = ref<TrafficMeta | null>(null)
+/**
+ * 页脚数据来源(真接口模式):不再是写死的「mock 示例快照」——
+ * 路段快照数据源 / 路线来自真网还是样例 / 写端点内存态，一律以接口响应为准。
+ */
+const footDataSource = computed<string>(() => {
+  const ds = metaInfo.value?.data_sources
+  if (!ds) {
+    // mock 模式 meta 没有 data_sources 角标(接口层字段)：如实说 mock 示例快照，不冒充真接口
+    return USE_MOCK
+      ? 'mock 示例快照（契约 v2.0）· is_simulated = true'
+      : '数据来源未取到（接口层未起?）· is_simulated = true'
+  }
+  const parts = [`路段快照数据源 ${ds.segments ?? '—'}`]
+  if (ds.routes) parts.push(`路线 ${ds.routes_note ?? ds.routes}`)
+  else parts.push('路线产物缺失（不画路线）')
+  if (ds.manual_factors) parts.push(`人工置位 ${ds.manual_factors} 条（内存态）`)
+  if (ds.scenario_injected) parts.push('场景已注入（内存态）')
+  return `${parts.join(' · ')} · is_simulated = true`
+})
+/** 页脚站点范围:接口 meta 优先(真接口) → 站点包兜底;站点包路网段数 与 本次快照段数分开说，不混算 */
+const footStationLine = computed<string>(() => {
+  const station = metaInfo.value?.station
+  const range = station?.range_m ?? siteMeta.value.range_m
+  const sourceKey = station?.range_source ?? siteMeta.value.range_source
+  const source = sourceKey ? (RANGE_SOURCE_LABEL[sourceKey] ?? sourceKey) : '来源未登记'
+  const snapshotCount = station?.segment_count ?? segments.value.length
+  return `本站范围 ${range ?? '—'} m（${source}）· 站点包路网 ${packSegmentCount.value} 段 · 本次快照 ${snapshotCount} 段`
+})
 
 // ---------- 本站范围与路段数（Issue IKM4B4）----------
 // 来源：`work/twin/site-ranges.json`（每站一份登记表）→ 站点包 station 字段 → 本页只展示。
@@ -220,10 +252,6 @@ const RANGE_SOURCE_LABEL: Record<string, string> = {
   script: '脚本推定',
   'ai-assisted': 'AI 辅助候选（已人工确认）',
 }
-const rangeSourceLabel = computed<string>(() => {
-  const src = siteMeta.value.range_source
-  return src ? (RANGE_SOURCE_LABEL[src] ?? src) : '来源未登记'
-})
 
 // 大屏工具条上的「路网版本」切换（IKMDKY 子单①）：Z = 61 段新几何 / Z21 = 旧 21 段对照。
 // 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
@@ -320,6 +348,8 @@ async function loadSelectedSide(segmentId: string | null): Promise<void> {
 let refreshSeq = 0
 /** 本次刷新中失败的接口(页头提示用;失败面板保留旧值但必须标"上一版",不得冒充当前) */
 const failedPanels = ref<string[]>([])
+/** SSE 刷新通道连接状态:断开时页面不会自动刷新,必须显式提示(TC-06 断流降级) */
+const sseConnected = ref(true)
 
 const PANEL_LABEL: Record<string, string> = {
   overview: 'KPI',
@@ -371,7 +401,10 @@ async function refresh(): Promise<void> {
   if (thr.status === 'fulfilled') thresholds.value = thr.value
   track('thresholds', thr.status === 'fulfilled')
   // 站名只用于顶栏 chip:取不到就保持站点包里的名字,不因此把整页标成"上一版数据"
-  if (meta.status === 'fulfilled') stationName.value = meta.value.station.name
+  if (meta.status === 'fulfilled') {
+    metaInfo.value = meta.value
+    stationName.value = meta.value.station.name
+  }
   failedPanels.value = failed
   await loadSelectedSide(selectedId.value)
 }
@@ -498,7 +531,7 @@ const routeCards = computed<RouteCard[]>(() => {
         pathId: r.departure_route.path_id,
         eta: r.departure_route.eta_min,
         segments: r.departure_route.segments,
-        note: '送完人之后的离站方向（契约 departure_route）；一期为演示路线',
+        note: '送完人之后的离站方向（契约 departure_route）',
       })
     }
   }
@@ -514,12 +547,46 @@ const routeMissing = computed<string[]>(() => {
   return [...missing]
 })
 
+/** 路线来源角标:真接口按响应 data_source 标（真网 / 样例），mock 侧沿用「演示骨架」口径 */
+const routeSourceTag = computed<string>(() => {
+  const source = recommend.value?.data_source
+  if (source === 'engine.routes.real') return '真网算路产物（IKMS11）'
+  if (source === 'engine.routes.sample') return '样例产物 · 非本站真网'
+  return '演示骨架 · 连通段拼接'
+})
+/** 路线来源人话（响应 data_source_note；mock 侧为空） */
+const routeSourceNote = computed<string>(() => recommend.value?.data_source_note ?? '')
+/** 路线说明：真接口只端引擎产物（不代算）；mock 侧保持原「演示骨架」文案 */
+const routeWhyLine = computed<string>(() => {
+  const source = recommend.value?.data_source
+  if (source === 'engine.routes.real' || source === 'engine.routes.sample') {
+    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。'
+  }
+  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。`
+})
+/** 路线降级说明（session 未匹配 / 段号命名空间不一致等，来自接口响应 note；无则空）。
+ *  session 未匹配已在下方单独用显式警示段落呈现，这里去掉重复的第一句。 */
+const routeDegradedNote = computed<string>(() => {
+  const note = recommend.value?.note ?? ''
+  return note
+    .split('；')
+    .filter((part) => part.trim() && !part.startsWith('请求的 session_id'))
+    .join('；')
+})
+
 onMounted(() => {
   void refresh()
   void loadRecommend()
-  unsubscribe = subscribeTrafficSnapshot(() => {
-    void refresh()
-  })
+  unsubscribe = subscribeTrafficSnapshot(
+    () => {
+      void refresh()
+    },
+    (connected) => {
+      sseConnected.value = connected
+      // 重连成功 → 立刻补拉一次,恢复后的数据不用等下一个心跳
+      if (connected) void refresh()
+    },
+  )
 })
 
 onUnmounted(() => {
@@ -838,7 +905,12 @@ function gotoDecision(): void {
     title=""
   >
     <div v-if="failedPanels.length > 0" class="stale-bar" role="status">
-      ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据,请勿据此判断当前态势。
+      ⚠ 本次刷新未取到:{{ failedPanels.join(' / ') }} —— 这些面板显示的是上一版数据或空态(灰色「数据不可用」),请勿据此判断当前态势。
+      <button class="td-btn sm" type="button" @click="refresh">立即重试</button>
+    </div>
+    <div v-if="!sseConnected" class="stale-bar" role="status">
+      ⚠ 实时刷新通道(SSE)未连接 —— 页面不会自动刷新,正在自动重连;数据可能已陈旧。
+      <button class="td-btn sm" type="button" @click="refresh">立即刷新</button>
     </div>
 
     <!-- KPI 条(取代页头) -->
@@ -1039,11 +1111,11 @@ function gotoDecision(): void {
         <el-splitter-panel v-model:size="colRight" :min="COL_MIN_RIGHT">
           <!-- 右栏 · 路段信息 -->
           <div class="td-col col-right td-scroll">
-        <!-- 推荐路线（Issue IKMF1W）：三态切换 + 演示骨架标注；接口不可达时不画路线、不编造假路线 -->
+        <!-- 推荐路线（Issue IKMF1W）：三态切换 + 来源标注；接口不可达时不画路线、不编造假路线 -->
         <section class="td-card route-card">
           <div class="td-card-head">
             推荐路线
-            <span class="td-head-tag">演示骨架 · 连通段拼接</span>
+            <span class="td-head-tag">{{ routeSourceTag }}</span>
           </div>
           <div class="td-card-body">
             <p v-if="recommendLoading" class="route-hint">正在读取推荐快照…</p>
@@ -1068,6 +1140,7 @@ function gotoDecision(): void {
                   {{ recommend.location.source === 'twin' ? '孪生真值' : 'App 定位' }}
                 </span>
               </div>
+              <p v-if="routeSourceNote" class="route-source">{{ routeSourceNote }}</p>
               <div v-for="c in routeCards" :key="c.key" class="route-item" :class="c.kind">
                 <div class="route-item-head">
                   <span class="route-kind">{{ c.kindName }}</span>
@@ -1079,10 +1152,12 @@ function gotoDecision(): void {
               <p v-if="routeMissing.length" class="route-hint warn">
                 路线里有 {{ routeMissing.length }} 段不在当前站点包（{{ routeMissing.join(', ') }}），这些段不会被画出；不补造数据。
               </p>
-              <p class="route-why">
-                演示路线：在 {{ packSegmentCount }} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，<b>不是</b>引擎 K 最短路 + 预约输出，也<b>不是</b>按当前路况重算出来的结果。
-                颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。
+              <p v-if="recommend.session_matched === false" class="route-hint warn">
+                请求的 session_id（{{ recommend.requested_session_id }}）不在引擎产物里：当前端出的是产物首条请求的演示路线，
+                <b>非该车行程</b>；不伪装成匹配结果。
               </p>
+              <p class="route-why">{{ routeWhyLine }}</p>
+              <p v-if="routeDegradedNote" class="route-hint">{{ routeDegradedNote }}</p>
             </template>
             <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
           </div>
@@ -1250,8 +1325,8 @@ function gotoDecision(): void {
 
     <template #foot>
       <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
-      <span>本站范围 {{ siteMeta.range_m ?? '—' }} m（{{ rangeSourceLabel }}）· 路段 {{ siteMeta.segment_count ?? segments.length }} 条</span>
-      <span>数据来源:mock 示例快照(契约 v2.0)· is_simulated = true · 底图:{{ sourceLabel }}</span>
+      <span>{{ footStationLine }}</span>
+      <span>数据来源:{{ footDataSource }} · 底图:{{ sourceLabel }}</span>
       <span class="right">
         口径:一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)· {{ CI_DISCLAIMER }}
       </span>
@@ -1817,6 +1892,12 @@ function gotoDecision(): void {
   margin-bottom: 8px;
   font-size: 11px;
   color: var(--td-text-color-secondary);
+}
+.route-source {
+  margin: 0 2px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
 }
 .route-badge {
   padding: 1px 6px;

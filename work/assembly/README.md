@@ -23,30 +23,31 @@
 
 | 端点 | 方法 | 用途 | 状态 |
 |---|---|---|---|
-| `/api/traffic/segments` | GET | 路段级指标与等级列表 | 沿用（mock 已实现） |
-| `/api/traffic/segments/{id}` | GET | 单路段详情（含 `factors_applied` / `pred`） | 沿用（mock 已实现） |
-| `/api/traffic/segments/{id}/sources` | GET | **同一路段 `video` / `twin` 并排 + 差值（TC-19 展示侧）** | **新增**（mock 已实现，后端待实现） |
-| `/api/traffic/vehicles` | GET | 一期演示：孪生车辆位置（读 `vehicles.json`）。**二期下线** | 沿用（mock 已实现） |
-| `/api/traffic/route/recommend` | POST | 请求推荐（请求体含 `session_id` / `location`） | 沿用（mock 已实现） |
-| `/api/traffic/locate` | POST | 定位 → 路段。一期由孪生真值调用，二期由 App 调用 | 保留（未接前端） |
-| `/api/traffic/factors` | GET | 当前生效因素清单（**新增 `?segment_id=` 过滤**） | 沿用 + 扩参（mock 已实现） |
-| `/api/traffic/factors` / `/factors/reset` | POST | 人工置位 / 复位（F07 / F08 / F11，手册第 19 章） | 沿用（mock 已实现） |
-| `/api/traffic/assimilation` | GET | 数据同化状态（**响应新增 `counts` 与每条记录的 `role` / `point_code` / `name` / `reason`**） | 沿用 + 扩字段（mock 已实现） |
-| `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | **新增**（后端待实现） |
-| `/api/traffic/overview` | GET | 全网 KPI（均速 + 环比 / 最堵路段 / 在途·已引导·采纳率 / 生效因素数 / 等级分布） | **新增**（后端待实现） |
-| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点 | **新增**（后端待实现） |
-| `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **新增**（后端待实现） |
-| `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | **新增**（后端待实现；**须落库留痕**） |
-| `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | **新增**（后端待实现；**须落库留痕**） |
-| `/api/traffic/predict` | GET | 预测：`?segment_id=&h=15`。一期 **L0**，不报精度数字 | **新增**（后端待实现） |
-| `/api/traffic/thresholds` | GET | 判级阈值 + CI 四项加权构成 + 变更留痕（只读，P1） | **新增**（后端待实现；真实来源 `stations/thresholds.json`） |
-| `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵（`?window=&bucket=`） | **新增**（后端待实现） |
-| `/api/traffic/ci-history` | GET | 单路段 CI 走势（`?segment_id=&points=`） | **新增**（后端待实现） |
-| `/api/traffic/context` | GET | **环境上下文**：天气 / 时间 + 折算出的因素（F01 天气 / F02 昼夜 / F03 列车到发 / F10 时段日历） | **新增**（Issue #77；mock 已实现，后端待实现） |
-| `/api/traffic/scenario` | POST | **场景注入**（天气 / 时段 / 需求倍率）→ 返回注入前后判级对照 | **新增**（Issue #77；mock 已实现，后端待实现；**属演示态写入，须落库留痕**） |
-| `/api/traffic/scenario/reset` | POST | 清场景注入（与 `factors/reset` 同口径） | **新增**（Issue #77；mock 已实现，后端待实现） |
-| `/api/traffic/report/compare` | GET | 效果对比报表 | 保留（本次前端用 `demoDecision.ts` 演示数据，未接端点） |
-| `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **新增**（属感知面，见 [`../perception/README.md`](../perception/README.md)） |
+| `/api/traffic/segments` | GET | 路段级指标与等级列表 | **已实现**（IKMF1T） |
+| `/api/traffic/segments/{id}` | GET | 单路段详情（含 `factors_applied` / `pred`） | **已实现**（IKMF1T） |
+| `/api/traffic/segments/{id}/sources` | GET | **同一路段 `video` / `twin` 并排 + 差值（TC-19 展示侧）** | **已实现**（IKMF1T） |
+| `/api/traffic/vehicles` | GET | 一期演示：孪生车辆位置（读 `vehicles.json`）。**二期下线** | 沿用（已实现；缺产物时空列表 + note） |
+| `/api/traffic/route/recommend` | POST | 请求推荐（请求体含 `session_id` / `location`） | **已实现**（IKMF1T；IKMS17 起真网产物优先） |
+| `/api/traffic/locate` | POST | 定位 → 路段。一期由孪生真值调用，二期由 App 调用 | 已实现（读引擎产物 `requests[].location`，不做地图匹配） |
+| `/api/traffic/factors` | GET | 当前生效因素清单（`?segment_id=` 过滤） | 沿用 + 扩参（已实现；IKMS17 起含写端点内存态） |
+| `/api/traffic/factors` | POST | 人工置位（F07 / F08 / F11，手册第 19 章） | **已实现**（IKMS17；内存态、重启复位、**不重算判级**） |
+| `/api/traffic/factors/reset` | POST | 清空人工置位 | **已实现**（IKMS17；内存态复位） |
+| `/api/traffic/assimilation` | GET | 数据同化状态（`counts` + 每条 `role` / `point_code` / `name` / `reason`） | 沿用 + 扩字段（已实现） |
+| `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | **已实现**（IKMF1T；IKMS17 起带 `data_sources` 角标） |
+| `/api/traffic/overview` | GET | 全网 KPI（均速 + 环比 / 最堵路段 / 在途·已引导·采纳率 / 生效因素数 / 等级分布） | **已实现**（IKMF1T） |
+| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点 | **已实现**（IKMF1T） |
+| `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **已实现**（IKMF1T；由快照派生） |
+| `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | 已实现（**内存态**；正式落库留痕待二期） |
+| `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | 已实现（**内存态**；正式落库留痕待二期） |
+| `/api/traffic/predict` | GET | 预测：`?segment_id=&h=15`。一期 **L0**，不报精度数字 | **已实现**（IKMF1T；无 pred 产物时空点 + note） |
+| `/api/traffic/thresholds` | GET | 判级阈值 + CI 四项加权构成 + 变更留痕（只读，P1） | **已实现**（IKMF1T；读 `stations/thresholds.json`） |
+| `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵（`?window=&bucket=`） | **已实现**（IKMF1T；只回当前快照桶，其余 null 灰格） |
+| `/api/traffic/ci-history` | GET | 单路段 CI 走势（`?segment_id=&points=`） | **已实现**（IKMF1T；无时序历史，只回单点） |
+| `/api/traffic/context` | GET | **环境上下文**：天气 / 时间 + 折算出的因素（F01 / F02 / F03 / F10） | **已实现**（IKMS17；含场景注入内存态） |
+| `/api/traffic/scenario` | POST | **场景注入**（天气 / 时段 / 需求倍率）→ 折算因素 | **已实现**（IKMS17；内存态、**effects 如实为空**、不重算判级） |
+| `/api/traffic/scenario/reset` | POST | 清场景注入（与 `factors/reset` 同口径） | **已实现**（IKMS17；内存态复位） |
+| `/api/traffic/report/compare` | GET | 效果对比报表 | 空壳 + note（接口层无报表产物；前端已接，rows 空时如实提示） |
+| `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **未实现**（属感知面，见 [`../perception/README.md`](../perception/README.md)；前端显示「—」并注明） |
 
 **2026-10-13 页面收敛（Issue #77）后的接口面变化**：管理端 Web 由四页收敛为**三层 3 页**（感知层 / 决策层 / 监控大屏，
 详见 [`../frontend/README.md`](../frontend/README.md) 第十三节）。接口面**只增不改**——上表三个 `context` / `scenario` 端点是本单新增，
@@ -66,6 +67,66 @@
 **前端当前降级说明**（后端未实现前的如实表现，不要当成 bug）：
 ① 六路样本视频只有 `road2` / `track1` 已导出，其余显示「未导出」；② 越线计数 / 平均 Q / SVR / 标定 RANGE-RMSE
 由感知服务提供，`/summary` 未实现时前端显示「—」并注明出处，**不用推算值冒充**。
+
+### 2.1 接真接口（IKMS17，2026-10-18）：三页已切 `traffic.py`、补写端点、真网路线优先
+
+**前端开关**：`npm run dev`（`VITE_USE_MOCK=1`）仍是 mock 演示；`npm run dev:remote`
+（`--mode remote` → `.env.remote` 的 `VITE_USE_MOCK=0`）三页全部走 vite 代理到本文件服务：
+
+```bash
+# 终端 1：接口层（本目录）
+python work/assembly/traffic.py --port 8000
+# 终端 2：感知服务（可选，感知页视频需要；数据目录用样本导出产物）
+python work/perception/server.py --port 8101
+# 终端 3：前端 remote 模式
+cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashboard
+```
+
+**写端点（一期：进程内存态，重启复位；不落库、不写快照、不重算判级）**：
+
+| 端点 | 入参（与 mock 同形） | 行为 | 响应口径 |
+|---|---|---|---|
+| `POST /api/traffic/factors` | `{segment_id, factor_id, name?, target, multiplier}`，`factor_id` 限 **F07 / F08 / F11** | 校验路段/因素/目标/倍率 → 覆盖式登记到内存 | `applied:true` + `level_recomputed:false` + `note`；`level/level_name` 是**当前快照原值（注入前）**，不是注入后判级 |
+| `POST /api/traffic/factors/reset` | — | 清空人工置位（幂等） | `{reset:true, cleared:N, note}` |
+| `POST /api/traffic/scenario` | `{weather?, session?, demand_mult?, segment_id?}`；**缺省 = 不改，显式 null = 清除** | 只更新环境状态 → 折算 F01/F02/F03/F10 | `applied:true` + `factors` + `effects:[]` + `recomputed:false` + `note`（接口层不伪造注入前后判级对照） |
+| `POST /api/traffic/scenario/reset` | — | 清空场景注入（幂等） | `{reset:true, was_injected:bool, note}` |
+
+- **两个口子不混用**：人工置位只有 F07/F08/F11；F01/F02/F03/F10 属环境侧，只走 `/scenario`。
+- **接口层不重算 level / ci**（判级唯一实现是感知层 `level.py`）：写端点只更新 `context` /
+  `derived_factors` / 因素状态；`GET /factors`、`GET /segments` 里登记的因素带
+  `injected:true, pending_recompute:true`，**不伪造等级变化**。复位方式：三个 `POST *reset`，或重启进程。
+- 所有响应恒带 `is_simulated:true`；参数不合法 400（`FACTOR_INVALID` / `SCENARIO_INVALID`）、
+  路段不存在 404、未注册路径/方法 404（统一信封）——不静默吞路径。
+
+**路线数据源优先级（`route/recommend` / `locate`）**：
+
+| 优先级 | 产物 | 段号命名空间 | 响应角标 |
+|---|---|---|---|
+| ① | `work/engine/out/real/routes.json`（IKMS11 真网算路） | `SZ-###` | `data_source: engine.routes.real`；响应头 `X-Traffic-Data-Source: engine.routes.real` |
+| ② | `work/engine/out/routes.json`（7 节点样例网，仅回退） | `SEG-###` | `data_source: engine.routes.sample` |
+
+- 给了 `session_id` 逐层严格匹配；**全层都没有该 session** 时端出最高优先级产物首条请求作演示路线，
+  响应带 `session_matched:false` + `note`（写明「非该车行程」），页面显式提示；不静默当匹配。
+- 两层的段号命名空间不同：响应给 `segment_namespaces` / `segments_not_in_snapshot`，
+  **不把路线 ETA 与路段快照指标混算**；地图只画站点包几何里存在的段。
+- 两层产物都缺失 → 如实 404 `ROUTE_UNAVAILABLE` + note（不代算 ETA）。
+
+**自检（真跑命令）**：
+
+```bash
+python work/assembly/traffic.py --check            # 数据源 / 路线优先级 / 写端点内存态(新进程恒空)
+curl -s http://127.0.0.1:8000/api/traffic/meta     # 响应头 X-Traffic-Data-Source
+curl -s -X POST http://127.0.0.1:8000/api/traffic/factors -H "Content-Type: application/json" \
+     -d '{"segment_id":"SZ-005","factor_id":"F07","name":"交通事故 / 故障车","target":"c","multiplier":0.5}'
+curl -s -X POST http://127.0.0.1:8000/api/traffic/scenario -H "Content-Type: application/json" \
+     -d '{"weather":"大雨","session":"晚高峰"}'
+curl -s -X POST http://127.0.0.1:8000/api/traffic/scenario/reset
+```
+
+> 注：本单不改 `selfcheck_ikmf1t.py`。该脚本仍按 IKMF1T 当时的口径断言
+> `POST /factors`、`/scenario`、`/scenario/reset` 是 404（"unimplemented"）；IKMS17 已把它们实现为
+> 内存态端点，**这三条断言已过时**，脚本其余检查仍可作回归参考（跑该脚本会覆写 `对照快照.*` /
+> `自检记录.md`，这三份是 IKMF1T 的交付物，本单不重写）。
 
 ## 三、一键演示脚本
 

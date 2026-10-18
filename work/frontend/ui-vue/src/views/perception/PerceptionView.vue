@@ -10,7 +10,7 @@
 //  · 深色(token)只出现在监控画面格内,页面壳层 / 卡片 / 表格一律浅色;
 //  · 车型框色(CLASS_COLORS)与等级四级色解耦,画面区不出现等级色;
 //  · 拿不到的字段(越线计数 / SVR / 标定 / 平均 Q)一律「—」并注明出处,绝不用推算值或设计稿示例值冒充。
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import AppShell from '../../components/AppShell.vue'
 import {
@@ -182,6 +182,7 @@ async function loadStreams(): Promise<void> {
     detMap.value = dets
     detFailedSet.value = failed
     pStatus.value = 'ready'
+    clearRetryTimer()
     // 当前通道:深链点名过就**不动**;否则若这一路不在服务端返回里,落第一路(既有行为)
     if (!linkedSource) {
       const first = list[0]
@@ -195,6 +196,8 @@ async function loadStreams(): Promise<void> {
     if (packHasVideo.value) {
       pStatus.value = 'error'
       pError.value = '感知演示服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)'
+      // 断流恢复后自动重连(TC-06):错误态下每 5 s 重试一次,成功后清掉;也可点「重试」立即重拉
+      scheduleRetry()
     } else {
       pStatus.value = 'ready'
       streams.value = []
@@ -202,6 +205,22 @@ async function loadStreams(): Promise<void> {
       detFailedSet.value = {}
     }
   }
+}
+
+/** 错误态自动重试定时器(断流恢复后无需手动刷新页面) */
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+function clearRetryTimer(): void {
+  if (retryTimer) {
+    clearTimeout(retryTimer)
+    retryTimer = null
+  }
+}
+function scheduleRetry(): void {
+  if (retryTimer) return
+  retryTimer = setTimeout(() => {
+    retryTimer = null
+    if (pStatus.value === 'error') void loadStreams()
+  }, 5000)
 }
 
 // 当前通道详情:汇总(感知服务,当前未实现 → 降级)+ 该映射路段的 video 槽位
@@ -260,6 +279,10 @@ watch(currentSource, (src) => void loadDetail(src), { immediate: true })
 onMounted(() => {
   void loadStreams()
   void loadTrafficBase()
+})
+
+onUnmounted(() => {
+  clearRetryTimer()
 })
 </script>
 

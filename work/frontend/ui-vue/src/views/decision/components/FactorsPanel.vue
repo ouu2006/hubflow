@@ -2,12 +2,15 @@
 // 右栏 ① · 因素与预测(人工置位段)。
 // 依据:手册第 19 章「管理端人工置位口子」= F07 事故/故障车、F08 施工/临时管制、F11 大型活动,
 //   与 shared/demoDecision.ts 的 MANUAL_FACTOR_PRESETS 同一份清单(三行)。
-// 口径:置位走 mock POST /api/traffic/factors(**mock 侧生效**,判级随之变化),必须在页面上标出来;
+// 口径:置位走 POST /api/traffic/factors;mock 模式在 mock 内存态里生效并重算判级(演示行为),
+//   真接口模式(traffic.py)只登记因素状态、**不重算判级**(判级由感知层统一重算)——
+//   两种模式的文案必须分开说,不能把"已登记"说成"判级已变";
 //   当前是否已置位以 GET /api/traffic/factors?segment_id= 为准(不靠纯本地态,免得刷新后说假话);
 //   "已置位"开关用**品牌蓝**(「当前生效」语义)——不用成功绿,避免与等级色(畅通绿 #2BA471)撞车(硬性口径 4)。
 import { onMounted, reactive, ref, watch } from 'vue'
 import { getTrafficFactors, postTrafficFactor, postTrafficFactorReset } from '../../../api/traffic'
 import { MANUAL_FACTOR_PRESETS } from '../../../shared/demoDecision'
+import { MEMORY_STATE_LABEL, USE_MOCK } from '../../../shared/env'
 
 const props = defineProps<{ segmentId: string }>()
 const emit = defineEmits<{ (e: 'changed'): void }>()
@@ -43,11 +46,14 @@ async function apply(factorId: string): Promise<void> {
       target: preset.target,
       multiplier: preset.multiplier,
     })
-    msg.value = `已置位 ${preset.factor_id} → ${props.segmentId} 判级「${r.level_name}」(mock 侧生效,60 分钟后自动过期)`
+    msg.value =
+      r.level_recomputed === false
+        ? `已置位 ${preset.factor_id} → ${props.segmentId}（接口层内存态，重启复位）；只登记因素状态，判级由感知层统一重算、接口层不重算`
+        : `已置位 ${preset.factor_id} → ${props.segmentId} 判级「${r.level_name}」(${MEMORY_STATE_LABEL},60 分钟后自动过期)`
     emit('changed')
     await load()
   } catch {
-    msg.value = '置位失败(接口层未起?)'
+    msg.value = USE_MOCK ? '置位失败(mock 中间件未起?)' : '置位失败(接口层未起? 先启动 traffic.py)'
   } finally {
     busy.value = false
   }
@@ -55,7 +61,7 @@ async function apply(factorId: string): Promise<void> {
 
 function toggle(factorId: string): void {
   if (placed[factorId]) {
-    msg.value = '单条撤销请用下方「复位」——mock 只提供整体复位口子'
+    msg.value = '单条撤销请用下方「复位」（当前只提供整体复位口子）'
     return
   }
   void apply(factorId)
@@ -117,7 +123,7 @@ watch(
       </div>
       <div class="foot-row">
         <button type="button" class="td-btn sm" :disabled="busy || !segmentId" @click="reset">复位</button>
-        <span class="dim">mock 侧生效</span>
+        <span class="dim">{{ MEMORY_STATE_LABEL }}</span>
       </div>
       <p v-if="msg" class="msg">{{ msg }}</p>
     </div>

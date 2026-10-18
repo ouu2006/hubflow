@@ -1,24 +1,48 @@
-// REST 访问面:fetch 封装。同源相对路径(浏览器端不读 VITE_API_BASE——
-// dev 走 vite 代理/mock 中间件,集成方式待新后端规划定稿)。
-// 鉴权方案未定(随接口面重新规划),当前所有端点公开访问。
+// REST 访问面:统一 fetch 封装(三页 + 感知页共用)。
+//
+// 路径一律**同源相对路径**(`/api/traffic/*` / `/perception-api/*`),由 vite 代理到真实服务:
+//   · `npm run dev`(VITE_USE_MOCK=1)→ `/api` 由 mock 中间件处理(无后端也能演示);
+//   · `npm run dev:remote`(VITE_USE_MOCK=0)→ `/api` 代理到 traffic.py(默认 127.0.0.1:8000),
+//     `/perception-api` 代理到感知演示服务(默认 127.0.0.1:8101);
+//   · build 产物由后端同源托管,仍是相对路径。
+// 浏览器端**不读** `VITE_API_BASE`(该变量只是 vite 的代理目标)——避免三页各自拼绝对地址 /
+// 绕开代理吃 CORS,也保证 mock / 真接口切换时页面形状不变。
+//
+// 失败必须可读:网络不可达 / 请求超时 / 后端错误码 三类分开报,页面据此显式降级(TC-06/TC-11)。
 
 import { activePackKey } from '../station-packs/index'
+import { USE_MOCK } from '../shared/env'
 
 export class ApiError extends Error {
   status: number
   code: string
+  /** 是否为客户端超时(区别于后端返回的错误) */
+  timeout: boolean
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, timeout = false) {
     super(message)
     this.name = 'ApiError'
     this.status = status
     this.code = code
+    this.timeout = timeout
   }
+}
+
+/** 默认超时(毫秒):接口层只读快照,正常 < 1s;10s 还没回按失败处理(不无限转圈) */
+export const REQUEST_TIMEOUT_MS = 10_000
+
+/** 网络不可达时的可读提示(按当前运行模式给排障指向,不笼统说"网络错误") */
+export function networkHint(): string {
+  return USE_MOCK
+    ? '后端不可达:mock 模式下请确认 vite dev server 在跑(不依赖 traffic.py)'
+    : '后端不可达:remote 模式请确认 traffic.py 已启动(python work/assembly/traffic.py --port 8000)且 vite 代理在跑'
 }
 
 export interface RequestOptions {
   body?: unknown
   signal?: AbortSignal
+  /** 覆盖默认超时(毫秒) */
+  timeoutMs?: number
 }
 
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
@@ -26,32 +50,62 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   // 顶栏「线路图切换器」选的是**浏览器侧**的包键,而 mock 中间件跑在 vite 的 Node 进程里,
   // 天生拿不到浏览器状态 —— 所以每个请求把当前包键带上,mock 按它现取包。
-  // (不这么做的话:切包只换几何(浏览器读包)、基线仍出默认包(mock 读包),两处对不上。)
+  // (真接口 traffic.py 忽略该头;读的是服务端 stations/*.json。)
   headers['X-Station-Pack'] = activePackKey()
+
+  const controller = new AbortController()
+  const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  let onOuterAbort: (() => void) | null = null
+  if (opts.signal) {
+    onOuterAbort = () => controller.abort()
+    if (opts.signal.aborted) controller.abort()
+    else opts.signal.addEventListener('abort', onOuterAbort, { once: true })
+  }
+
   let res: Response
   try {
     res = await fetch(path, {
       method,
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-      signal: opts.signal,
+      signal: controller.signal,
     })
   } catch (e) {
-    if (e instanceof DOMException && e.name === 'AbortError') throw e
-    throw new ApiError(0, 'NETWORK', '网络错误:后端不可达(mock 模式请确认 vite dev server 已启动)')
+    // 调用方主动取消(切页 / 丢弃过期响应):原样抛出,页面按 AbortError 处理
+    if (opts.signal?.aborted) throw e
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new ApiError(0, 'TIMEOUT', `请求超时(${timeoutMs}ms):${method} ${path} —— ${networkHint()}`, true)
+    }
+    throw new ApiError(0, 'NETWORK', `网络错误:${method} ${path} —— ${networkHint()}`)
+  } finally {
+    clearTimeout(timer)
+    if (opts.signal && onOuterAbort) opts.signal.removeEventListener('abort', onOuterAbort)
   }
 
   if (!res.ok) {
     let code = `HTTP_${res.status}`
     let message = res.statusText || `请求失败(${res.status})`
     try {
-      const data = (await res.json()) as { code?: unknown; message?: unknown; error?: { message?: unknown } }
+      const data = (await res.json()) as { code?: unknown; message?: unknown; note?: unknown; error?: { message?: unknown } }
       if (typeof data.code === 'string') code = data.code
       if (typeof data.message === 'string') message = data.message
       else if (typeof data.error?.message === 'string') message = data.error.message
+      // 接口层的 note 是"为什么没有 + 降级口径",带进错误里便于页面提示(不丢诊断信息)
+      if (typeof data.note === 'string' && data.note) message = `${message}（${data.note}）`
     } catch {
       /* 非 JSON 错误体:用状态文本 */
     }
+    // vite 代理在后端未起 / 断开时回 502(Bad Gateway):这是"数据不可用"的主场景,
+    // 给可读提示(而不是把 "Bad Gateway" 直接抛给页面)。
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new ApiError(
+        res.status,
+        'BACKEND_UNAVAILABLE',
+        `后端不可用(网关 ${res.status}):${networkHint()}`,
+      )
+    }
+    if (res.status === 404) message = `${message}(端点不存在或服务未就绪:${method} ${path})`
     throw new ApiError(res.status, code, message)
   }
 
