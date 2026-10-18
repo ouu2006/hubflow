@@ -12,6 +12,7 @@
 | **本单专属一** | `.net.xml` 从 `network_junction.json` 可重建、边 id = `SZ-###`、两次生成一致 | 调 `sumonet.build_station_net()` 连建两遍比 sha256；解析 `.net.xml` 断言 `SZ-###` 段号齐全、零 `SEG-###` |
 | **本单专属二** | 两遍 `segments_twin.json` / `twin_timeseries.json` 逐字节一致；`--no-sumo` 样例四产物逐字节不变 | 两遍产物 sha256 比对（样例回归由人工命令留证，本脚本只做真路径） |
 | **本单专属三（不造假）** | 缺数据 null/降级、所有产物 `is_simulated:true`、不出现「实测/实时/现场」、需求标 `demand_source` | 逐产物断言；无车段必须 `v_kmh=null` + `level=0`（不许当「畅通」）；禁止词扫描 |
+| **IKNAUH 全路段** | 61/61 段最后一帧 `available=true` 且 `level>0`（大屏不再灰档）；每段 65 点里至少 1 点 `q/v/k/L_q/level` 全有效 | `segments_twin.json` 逐段断言 + `twin_timeseries.json` 逐点统计，打印**每段最少有效点数**；背景车流 `background_source=demo_uniform` 写进产物 |
 
 ## 用法
 
@@ -529,6 +530,123 @@ def check_driver_counts(checker: Checker, run_a: Path, run_b: Path) -> None:
 # ---------------------------------------------------------------- 入口
 
 
+def check_all_segments_coverage(checker: Checker, run_a: Path, duration: int) -> dict[str, Any]:
+    """IKNAUH：61/61 段有有效数据/等级（大屏不再灰档），并打印每段最少有效点数。"""
+    segments_payload = read_json(run_a / "latest" / "segments_twin.json")
+    timeseries = read_json(run_a / "latest" / "twin_timeseries.json")
+    segments = segments_payload.get("segments") or []
+    expected = max(1, duration // 60)
+    problems: list[str] = []
+    if len(segments) != 61:
+        problems.append(f"最后一帧只有 {len(segments)} 段（应 61）")
+    unavailable = [record.get("segment_id") for record in segments if record.get("available") is not True]
+    if unavailable:
+        problems.append(f"{len(unavailable)} 段 available≠true：{unavailable[:5]}")
+    level_zero = [record.get("segment_id") for record in segments if int(record.get("level") or 0) < 1]
+    if level_zero:
+        problems.append(f"{len(level_zero)} 段 level=0（数据不可用）：{level_zero[:5]}")
+    v_null = [record.get("segment_id") for record in segments if record.get("v_kmh") is None]
+    if v_null:
+        problems.append(f"{len(v_null)} 段最后一帧无平均车速：{v_null[:5]}")
+
+    valid_counts: dict[str, int] = {}
+    for record in timeseries.get("segments") or []:
+        segment_id = str(record.get("segment_id"))
+        series = [record.get(field) or [] for field in ("q_vph", "v_kmh", "k_vpk", "L_q_m", "level")]
+        if any(len(values) != expected for values in series):
+            problems.append(f"{segment_id} 时序点数不等于 {expected}")
+            continue
+        valid = 0
+        for index in range(expected):
+            if (
+                series[0][index] is not None
+                and series[1][index] is not None
+                and series[2][index] is not None
+                and series[3][index] is not None
+                and int(series[4][index] or 0) > 0
+            ):
+                valid += 1
+        valid_counts[segment_id] = valid
+    if len(valid_counts) != 61:
+        problems.append(f"时序文件只有 {len(valid_counts)} 段（应 61）")
+    min_valid = min(valid_counts.values()) if valid_counts else 0
+    zero_valid = [segment_id for segment_id, count in valid_counts.items() if count < 1]
+    if zero_valid:
+        problems.append(f"{len(zero_valid)} 段没有任何有效点：{zero_valid[:5]}")
+    full_count = sum(1 for count in valid_counts.values() if count == expected)
+
+    level_dist = {level: 0 for level in (1, 2, 3, 4)}
+    for record in segments:
+        level = int(record.get("level") or 0)
+        if level in level_dist:
+            level_dist[level] += 1
+    summary = {
+        "segments": len(segments),
+        "available_final": len(segments) - len(unavailable),
+        "level_positive_final": len(segments) - len(level_zero),
+        "min_valid_points": min_valid,
+        "expected_points": expected,
+        "segments_full_points": full_count,
+        "level_distribution": level_dist,
+        "valid_counts": valid_counts,
+    }
+    # 与产物里自带的 coverage 汇总交叉核对（同一份数据两种口径必须一致）
+    reported = timeseries.get("coverage") or {}
+    for key, computed in (
+        ("segments_total", len(segments)),
+        ("available_final_true", summary["available_final"]),
+        ("level_positive_final", summary["level_positive_final"]),
+        ("min_valid_points_per_segment", min_valid),
+    ):
+        if key in reported and reported.get(key) != computed:
+            problems.append(f"coverage.{key} 产物说 {reported.get(key)}、自检算 {computed}")
+
+    detail = (
+        f"61/61 段 available 且 level>0；每段最少有效点 {min_valid}/{expected}"
+        f"（{full_count} 段 {expected}/{expected}）；level 分布 "
+        + "/".join(f"L{level}:{count}" for level, count in level_dist.items())
+    )
+    if problems:
+        checker.fail("ALL_SEGMENTS_COVERED（IKNAUH）", "；".join(problems[:8]))
+    else:
+        checker.pass_("ALL_SEGMENTS_COVERED（IKNAUH）", detail)
+    return summary
+
+
+def check_background_source(checker: Checker, run_a: Path) -> None:
+    """IKNAUH：背景车流来源/假设写进产物且为演示口径（不冒充实测/实际需求）。"""
+    log = read_json(run_a / "latest" / "run_log.json")
+    segments_payload = read_json(run_a / "latest" / "segments_twin.json")
+    timeseries = read_json(run_a / "latest" / "twin_timeseries.json")
+    background = log.get("background") or {}
+    problems: list[str] = []
+    if str(log.get("background_source") or "") != "demo_uniform":
+        problems.append(f"run_log.background_source={log.get('background_source')!r}（应 demo_uniform）")
+    if str(segments_payload.get("background_source") or "") != "demo_uniform":
+        problems.append("segments_twin.json 缺 background_source=demo_uniform")
+    if str(timeseries.get("background_source") or "") != "demo_uniform":
+        problems.append("twin_timeseries.json 缺 background_source=demo_uniform")
+    if int(background.get("inserted") or 0) < 61:
+        problems.append(f"背景车插入 {background.get('inserted')} 辆（应 >= 61）")
+    if int(background.get("segments") or 0) != 61:
+        problems.append(f"背景车覆盖段数 {background.get('segments')}（应 61）")
+    if int(background.get("per_segment_per_window") or 0) != 1:
+        problems.append("背景车口径不是每段每窗口 1 辆")
+    if "演示" not in str(background.get("note") or ""):
+        problems.append("背景车 note 未标演示假设")
+    if "背景" not in str(background.get("not_in_vehicles_json") or ""):
+        problems.append("未说明背景车不进 vehicles.json（契约第四节只收 D1/D2/D3）")
+    if problems:
+        checker.fail("BACKGROUND_SOURCE（IKNAUH）", "；".join(problems[:6]))
+    else:
+        checker.pass_(
+            "BACKGROUND_SOURCE（IKNAUH）",
+            f"background_source=demo_uniform；背景车插入 {background.get('inserted')}/"
+            f"{background.get('planned')} 辆（61 段 × {background.get('windows')} 窗口）；"
+            f"覆盖补投 {background.get('coverage_topups')} 次；演示假设已写进产物",
+        )
+
+
 def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
     parser = argparse.ArgumentParser(description="W1 真孪生主循环自检（实跑 + 读产物断言）")
     parser.add_argument("--duration", type=int, default=DEFAULT_DURATION, help="仿真时长（秒，缺省 3900）")
@@ -593,6 +711,8 @@ def main(argv: list[str] | None = None) -> int:
         check_segments_twin(checker, run_a)
         check_vehicles(checker, run_a)
         timeseries_a = check_timeseries(checker, run_a, duration)
+        check_all_segments_coverage(checker, run_a, duration)
+        check_background_source(checker, run_a)
         check_m1_1(checker, run_a, run_b, timeseries_a, duration)
         check_determinism(checker, run_a, run_b)
         check_driver_counts(checker, run_a, run_b)

@@ -63,6 +63,29 @@ DRIVER_SPEED_FACTORS = {"D1": 1.0, "D2": 0.95, "D3": 0.9}
 #: 站点包缺该字段时的兜底值(仍属演示值)
 FALLBACK_CONFIDENCE = 0.75
 
+#: 全路段背景车流（Issue IKNAUH，**演示假设**）：每 60 s 窗口在每条 `SZ-###` 段上放 1 辆背景车，
+#: 把 61 段全部铺上指标（大屏不再 46 段灰档）。
+#: **确定性**：固定偏移 / 固定路线 / 固定 seed，不随机、不读系统时钟。
+BACKGROUND_SOURCE = "demo_uniform"
+BACKGROUND_VEHICLE_PREFIX = "bg"
+BACKGROUND_PER_SEGMENT_PER_WINDOW = 1
+#: 背景车在窗口内的出发偏移 = (段序号 × 17) % 45（错开，避免同一秒集中插入；
+#: 末窗口除外——末窗口提前到前 10 s，保证收尾帧前有足够时间真正进入路网）
+BACKGROUND_OFFSET_STEP_S = 17
+BACKGROUND_OFFSET_MOD_S = SNAPSHOT_EVERY_S - 15
+BACKGROUND_FINAL_OFFSET_MOD_S = 10
+#: 覆盖补投（coverage top-up）：某段本窗口的排班车过了 15 s 还没进网（入口被占满），
+#: 最多补投 2 次；补投的也是真实 SUMO 车辆，只为保证该窗口能聚合出指标（演示口径）
+BACKGROUND_TOPUP_GRACE_S = 15
+BACKGROUND_TOPUP_MAX_ATTEMPTS = 2
+
+#: 背景车流口径说明（写进产物：segments_twin / twin_timeseries / run_log）
+BACKGROUND_NOTE = (
+    "全路段演示背景车流（background_source=demo_uniform，演示假设，不是实际需求）："
+    "每 60 s 在每个 SZ-### 段上放 1 辆背景车，用于把 61 段全铺上指标；"
+    "固定偏移/固定路线/固定 seed，不随机、不读系统时钟；背景车是环境车流，不进 D1/D2/D3 车辆清单"
+)
+
 #: 快照指标字段口径(写进 run_log / twin_timeseries,自描述、可复核)
 METRIC_FORMULAS = {
     "q_vph": (
@@ -70,13 +93,13 @@ METRIC_FORMULAS = {
         "逐秒订阅 TraCI 的 LAST_STEP_VEHICLE_ID_LIST，按车辆首次出现在该边的时刻计数"
     ),
     "v_kmh": (
-        "快照时刻该段上全部车辆的平均车速（SUMO edge lastStepMeanSpeed，双向按车辆数加权）× 3.6；"
-        "无车 → null（不写 0 冒充畅通）"
+        "60 s 窗口内该段的车辆-时间加权平均车速（逐秒 lastStepMeanSpeed × 该步车辆数累加 ÷ 车辆-步数）× 3.6；"
+        "窗口内无车 → null（不写 0 冒充畅通）"
     ),
-    "k_vpk": "快照时刻该段车辆数 / (L_seg_m / 1000)（双向合计密度）",
+    "k_vpk": "60 s 窗口内的平均车辆数（逐秒车辆数累加 ÷ 窗口秒数）/ (L_seg_m / 1000)（双向合计密度）",
     "L_q_m": (
-        "排队长度估计 = min(L_seg_m, (halting 车辆数 / 车道数) × queue_headway_m)，双向取较大方向；"
-        "queue_headway_m 来自站点包 thresholds.grading"
+        "排队长度估计 = min(L_seg_m, (窗口内逐秒 halting 车辆数最大值 / 车道数) × queue_headway_m)，"
+        "双向取较大方向；queue_headway_m 来自站点包 thresholds.grading"
     ),
     "T_d_min": (
         "排队消散时间估计 = 排队车辆数 ÷ (saturation_flow_vph_per_lane × 车道数) × 60；"
@@ -98,6 +121,7 @@ TWIN_BOUNDARIES = [
     "OD 端点（N-01 形式）属 7 节点样例网命名空间，与真网（N-001）不一致 → 不猜映射，路线由真网 boundary 断面生成",
     "未接数据同化 calibrator 回灌、未接决策引擎（vehicles[].guided 恒 false，不伪造采纳）",
     "T_d_min / L_q_m 是估计量，不是采集值；.net.xml 不提交（out/ 已 gitignore），换机用 sumonet.py 重建",
+    "全路段背景车流是 demo_uniform 演示假设（每 60 s 每段 1 辆），不是实际需求；真实需求归 IKMHMX",
 ]
 
 SAMPLE_FILES = {
@@ -462,6 +486,48 @@ def _run_twin_simulation(
         traci.route.add(route_id, list(route))
         route_ids.append(route_id)
 
+    # ---- 全路段背景车流（IKNAUH，demo_uniform）：每段一条**单段直行**路线
+    # 覆盖车流只从本段起点直行通过本段后离场（不做跨段路径）：这样 61 段每窗口都有进车、
+    # 又不会把额外流量灌到下游出口/瓶颈造成拥堵（背景车流是演示假设，不代表真实出行链）。
+    segment_index = {segment_id: index for index, segment_id in enumerate(segment_ids)}
+    background_route_ids: dict[str, str] = {}
+    background_route_edges: dict[str, list[str]] = {}
+    for index, segment_id in enumerate(segment_ids):
+        start_edge = str(seg_info[segment_id]["dirs"]["forward"]["edge_id"])
+        route_id = f"bg_route_{index:03d}"
+        traci.route.add(route_id, [start_edge])
+        background_route_ids[segment_id] = route_id
+        background_route_edges[segment_id] = [start_edge]
+
+    # ---- 背景车排班（确定性）：每个 60 s 窗口、每条段 1 辆，窗口内偏移按段序号错开
+    background_pending: list[tuple[int, str]] = []
+    background_window_depart: dict[tuple[int, str], int] = {}
+    window_total = (cfg.duration_s + SNAPSHOT_EVERY_S - 1) // SNAPSHOT_EVERY_S
+    for window_index in range(window_total):
+        window_start = window_index * SNAPSHOT_EVERY_S
+        is_final_window = window_index == window_total - 1 and window_total > 1
+        for index, segment_id in enumerate(segment_ids):
+            for seq in range(BACKGROUND_PER_SEGMENT_PER_WINDOW):
+                if is_final_window:
+                    # 收尾窗口：61 段背景车在窗口前 10 s 内放完，保证最后一帧 61/61 有数据
+                    offset = (index + seq) % BACKGROUND_FINAL_OFFSET_MOD_S
+                else:
+                    offset = (
+                        index * BACKGROUND_OFFSET_STEP_S
+                        + seq
+                        * (
+                            BACKGROUND_OFFSET_MOD_S
+                            // max(1, BACKGROUND_PER_SEGMENT_PER_WINDOW)
+                        )
+                    ) % BACKGROUND_OFFSET_MOD_S
+                depart_s = window_start + offset
+                if depart_s >= cfg.duration_s:
+                    continue
+                background_pending.append((depart_s, segment_id))
+                background_window_depart[(window_index, segment_id)] = depart_s
+    background_pending.sort()
+    background_planned = len(background_pending)
+
     # ---- 三类虚拟司机 vType（跟驰交给 SUMO，只有速度系数体现行为差异）
     driver_types = tuple(driver.DRIVER_TYPES)
     for driver_type in driver_types:
@@ -480,6 +546,10 @@ def _run_twin_simulation(
 
     prev_sets = {edge: frozenset() for edge in edges}
     entered = {edge: 0 for edge in edges}
+    # 60 s 窗口聚合累加器（IKNAUH：指标改为窗口统计，与契约 window_sec 语义一致）
+    window_vehicle_steps = {edge: 0 for edge in edges}
+    window_speed_weight = {edge: 0.0 for edge in edges}
+    window_halting_max = {edge: 0.0 for edge in edges}
     pending: list[tuple[int, str]] = []  # (depart_s, driver_type)
     planned = {driver_type: 0 for driver_type in driver_types}
     inserted = {driver_type: 0 for driver_type in driver_types}
@@ -492,6 +562,15 @@ def _run_twin_simulation(
         for index, driver_type in enumerate(driver_types)
     }
     route_use = {driver_type: 0 for driver_type in driver_types}
+    # ---- 背景车流状态（不计入 D1/D2/D3 车辆清单）
+    background_counters = {segment_id: 0 for segment_id in segment_ids}
+    background_inserted = 0
+    background_insert_errors: list[dict[str, Any]] = []
+    background_observed_max = 0
+    background_pending_observed_max = 0
+    background_topups = 0
+    background_topup_errors: list[dict[str, Any]] = []
+    background_topup_attempts: dict[tuple[int, str], int] = {}
 
     snapshots: list[dict[str, Any]] = []
     segment_ts: list[str] = []
@@ -514,39 +593,42 @@ def _run_twin_simulation(
                 pending.append((depart_s, driver_type))
 
     def take_snapshot(step_no: int, window_s: int, final: bool = False) -> None:
-        """聚合一次快照：61 段四项指标 + 判级 + 车辆清单（最后一帧写 vehicles.json）。"""
-        nonlocal vehicles_skipped_internal
+        """聚合一次快照：61 段四项指标 + 判级 + 车辆清单（最后一帧写 vehicles.json）。
+
+        指标是**60 s 窗口统计**（与契约 `window_sec` 语义一致）：`q` 数窗口进车数、`v` 车辆-时间加权
+        平均车速、`k` 窗口平均车辆数/长度、`L_q` 窗口内逐秒 halting 最大值折算。窗口内确实无车时
+        才给 `v=null` 并降级（不编数），这样背景车流铺满后 61 段都能聚合出指标。
+        """
+        nonlocal vehicles_skipped_internal, background_observed_max, background_pending_observed_max
         ts = _sim_iso(cfg.base_ts, step_no)
         records: list[dict[str, Any]] = []
         for segment_id in segment_ids:
             info = seg_info[segment_id]
-            vehicle_count = 0
+            vehicle_steps = 0
             speed_weight = 0.0
             flow_entries = 0
             queue_lengths: list[float] = []
             dissipation_minutes: list[float] = []
             for row in info["dirs"].values():
                 edge = row["edge_id"]
-                edge_result = results[edge]
-                ids = edge_result.get(tc.LAST_STEP_VEHICLE_ID_LIST) or ()
-                count = len(ids)
-                vehicle_count += count
-                mean_speed = edge_result.get(tc.LAST_STEP_MEAN_SPEED)
-                if count > 0 and isinstance(mean_speed, (int, float)) and mean_speed >= 0:
-                    speed_weight += float(mean_speed) * count
+                vehicle_steps += window_vehicle_steps[edge]
+                speed_weight += window_speed_weight[edge]
                 flow_entries += entered[edge]
-                halting = float(edge_result.get(tc.LAST_STEP_VEHICLE_HALTING_NUMBER) or 0)
                 lanes = max(1, int(row["num_lanes"]))
-                queue_m = min(float(row["length_m"]), (halting / lanes) * queue_headway_m)
+                queue_m = min(
+                    float(row["length_m"]),
+                    (window_halting_max[edge] / lanes) * queue_headway_m,
+                )
                 queue_lengths.append(queue_m)
                 queue_vehicles = queue_m / queue_headway_m
                 dissipation_minutes.append(
                     (queue_vehicles / (saturation_vph * lanes)) * 60.0 if queue_m > 0 else 0.0
                 )
-            v_kmh = round((speed_weight / vehicle_count) * 3.6, 2) if vehicle_count > 0 else None
+            v_kmh = round((speed_weight / vehicle_steps) * 3.6, 2) if vehicle_steps > 0 else None
             q_vph = round(flow_entries / max(1, window_s) * 3600.0, 2)
             length_km = info["length_m"] / 1000.0
-            k_vpk = round(vehicle_count / length_km, 3) if length_km > 0 else None
+            mean_vehicle_count = vehicle_steps / max(1, window_s)
+            k_vpk = round(mean_vehicle_count / length_km, 3) if length_km > 0 else None
             queue_m = round(max(queue_lengths), 1) if queue_lengths else 0.0
             t_d_min = round(max(dissipation_minutes), 2) if dissipation_minutes else 0.0
             c_base_vph = round(info["lanes"] * len(info["dirs"]) * saturation_vph, 1)
@@ -587,12 +669,27 @@ def _run_twin_simulation(
             meta = vehicles_meta.get(vehicle_id)
             if meta is not None:
                 fleet[meta["driver_type"]] += 1
+        background_active = len(active_ids) - sum(fleet[driver_type] for driver_type in driver_types)
+        fleet["background"] = background_active
         fleet["total"] = len(active_ids)
+        try:
+            pending_ids = list(traci.simulation.getPendingVehicles())
+        except Exception:  # noqa: BLE001 —— 查不到待插入队列不影响主结果
+            pending_ids = []
+        pending_background = sum(
+            1 for pending_id in pending_ids if str(pending_id).startswith(f"{BACKGROUND_VEHICLE_PREFIX}-")
+        )
+        fleet["pending_background"] = pending_background
+        background_pending_observed_max = max(background_pending_observed_max, pending_background)
+        background_observed_max = max(background_observed_max, background_active)
         for driver_type in driver_types:
             observed_max[driver_type] = max(observed_max[driver_type], fleet[driver_type])
 
         for edge in edges:
             entered[edge] = 0
+            window_vehicle_steps[edge] = 0
+            window_speed_weight[edge] = 0.0
+            window_halting_max[edge] = 0.0
         snapshots.append({"ts": ts, "step": step_no, "segments": records, "fleet": fleet})
         segment_ts.append(ts)
         if final:
@@ -636,12 +733,83 @@ def _run_twin_simulation(
                 vehicles_meta[vehicle_id] = {"driver_type": driver_type, "depart_s": current_s}
             except Exception as exc:  # noqa: BLE001 —— TraCI 插入失败如实记，不静默丢
                 insert_errors.append({"at_s": current_s, "vehicle_id": vehicle_id, "error": str(exc)})
+        while background_pending and background_pending[0][0] <= current_s:
+            _depart_s, segment_id = background_pending.pop(0)
+            background_vehicle_id = (
+                f"{BACKGROUND_VEHICLE_PREFIX}-{segment_index[segment_id]:02d}-"
+                f"{background_counters[segment_id]:03d}"
+            )
+            background_counters[segment_id] += 1
+            try:
+                traci.vehicle.add(
+                    background_vehicle_id,
+                    background_route_ids[segment_id],
+                    typeID="DEFAULT_VEHTYPE",
+                    depart="now",
+                    departLane="free",
+                    departSpeed="avg",
+                )
+                background_inserted += 1
+            except Exception as exc:  # noqa: BLE001 —— 背景车插入失败如实记，不静默丢
+                background_insert_errors.append(
+                    {"at_s": current_s, "vehicle_id": background_vehicle_id, "error": str(exc)}
+                )
+        # 覆盖补投：某段本窗口排班车过了宽限期还没进网（入口被占满/拥堵），最多补投 2 次。
+        # 补投同样是真实 SUMO 车辆，只用于保证该窗口能聚合出指标（演示口径，不编数据）。
+        if current_s % 5 == 0:
+            current_window = current_s // SNAPSHOT_EVERY_S
+            for segment_id in segment_ids:
+                scheduled = background_window_depart.get((current_window, segment_id))
+                if scheduled is None or current_s < scheduled + BACKGROUND_TOPUP_GRACE_S:
+                    continue
+                segment_steps = sum(
+                    window_vehicle_steps[row["edge_id"]]
+                    for row in seg_info[segment_id]["dirs"].values()
+                )
+                if segment_steps > 0:
+                    continue
+                topup_key = (current_window, segment_id)
+                attempts = background_topup_attempts.get(topup_key, 0)
+                if attempts >= BACKGROUND_TOPUP_MAX_ATTEMPTS:
+                    continue
+                background_topup_attempts[topup_key] = attempts + 1
+                topup_id = (
+                    f"{BACKGROUND_VEHICLE_PREFIX}-topup-{segment_index[segment_id]:02d}-"
+                    f"{current_window:03d}-{attempts}"
+                )
+                try:
+                    traci.vehicle.add(
+                        topup_id,
+                        background_route_ids[segment_id],
+                        typeID="DEFAULT_VEHTYPE",
+                        depart="now",
+                        departLane="free",
+                        departSpeed="avg",
+                    )
+                    background_topups += 1
+                except Exception as exc:  # noqa: BLE001 —— 补投失败如实记
+                    background_topup_errors.append(
+                        {"at_s": current_s, "vehicle_id": topup_id, "error": str(exc)}
+                    )
         traci.simulationStep()
         results = {edge: traci.edge.getSubscriptionResults(edge) for edge in edges}
         for edge in edges:
             current = frozenset(results[edge].get(tc.LAST_STEP_VEHICLE_ID_LIST) or ())
             entered[edge] += len(current - prev_sets[edge])
             prev_sets[edge] = current
+            # 60 s 窗口聚合累加：车辆-步数 / 速度加权 / 逐秒 halting 最大值
+            step_vehicle_count = len(current)
+            window_vehicle_steps[edge] += step_vehicle_count
+            mean_speed = results[edge].get(tc.LAST_STEP_MEAN_SPEED)
+            if (
+                step_vehicle_count > 0
+                and isinstance(mean_speed, (int, float))
+                and mean_speed >= 0
+            ):
+                window_speed_weight[edge] += float(mean_speed) * step_vehicle_count
+            halting = float(results[edge].get(tc.LAST_STEP_VEHICLE_HALTING_NUMBER) or 0)
+            if halting > window_halting_max[edge]:
+                window_halting_max[edge] = halting
         window_s = step - last_snapshot_step
         if window_s >= SNAPSHOT_EVERY_S or step == cfg.duration_s:
             take_snapshot(step, window_s, final=(step == cfg.duration_s))
@@ -672,12 +840,29 @@ def _run_twin_simulation(
             "observed_final": observed_final,
             "insert_errors": insert_errors,
             "vehicles_skipped_internal": vehicles_skipped_internal,
+            "background": {
+                "planned": background_planned,
+                "inserted": background_inserted,
+                "observed_max": background_observed_max,
+                "pending_max": background_pending_observed_max,
+                "insert_errors": background_insert_errors,
+                "topups": background_topups,
+                "topup_errors": background_topup_errors,
+            },
         },
         "routes": {
             "entry_edges": entry_edges,
             "exit_edges": exit_edges,
             "routable_pairs": len(route_pairs),
             "route_ids": len(route_ids),
+        },
+        "background": {
+            "source": BACKGROUND_SOURCE,
+            "route_mode": "single_edge_through",
+            "per_segment_per_window": BACKGROUND_PER_SEGMENT_PER_WINDOW,
+            "windows": window_total,
+            "segments": len(segment_ids),
+            "route_edges": {segment_id: background_route_edges[segment_id] for segment_id in segment_ids},
         },
         "sumo_version": sumo_version,
         "window_sec": SNAPSHOT_EVERY_S,
@@ -765,26 +950,69 @@ def _write_twin_artifacts(
     """写真孪生四产物 + 断言存在可解析，并打印可复核摘要。"""
     final_ts = result["final_ts"]
     snapshots = result["snapshots"]
+    points = len(result["segment_ts"])
+    # 61 段覆盖统计（IKNAUH）：每段 65 点里有多少点是 q/v/k/L_q/level 全有效的点
+    coverage: list[dict[str, Any]] = []
+    for segment_id in sorted(result["timeseries"]):
+        series = result["timeseries"][segment_id]
+        valid = 0
+        for index in range(points):
+            if (
+                series["v_kmh"][index] is not None
+                and series["k_vpk"][index] is not None
+                and series["L_q_m"][index] is not None
+                and series["q_vph"][index] is not None
+                and int(series["level"][index] or 0) > 0
+            ):
+                valid += 1
+        coverage.append({"segment_id": segment_id, "valid_points": valid})
+    valid_counts = [item["valid_points"] for item in coverage]
+    available_final = sum(
+        1 for record in result["final_segments"] if record.get("available") is True
+    )
+    level_positive_final = sum(
+        1 for record in result["final_segments"] if int(record.get("level") or 0) > 0
+    )
+    coverage_summary = {
+        "source": BACKGROUND_SOURCE,
+        "segments_total": len(coverage),
+        "segments_with_any_valid_point": sum(1 for value in valid_counts if value >= 1),
+        "segments_with_all_points_valid": sum(1 for value in valid_counts if value == points),
+        "min_valid_points_per_segment": min(valid_counts) if valid_counts else 0,
+        "max_valid_points_per_segment": max(valid_counts) if valid_counts else 0,
+        "points": points,
+        "available_final_true": available_final,
+        "level_positive_final": level_positive_final,
+        "note": (
+            "有效点 = q_vph/v_kmh/k_vpk/L_q_m 均为数值且 level>0；背景车流（demo_uniform）"
+            "把每段每个窗口都铺上车辆，故理论上 61 段 65/65 点有效（窗口内确实无车时才降级）"
+        ),
+    }
     segments_payload = {
         "ts": final_ts,
         "window_sec": result["window_sec"],
         "is_simulated": True,
         "source": "twin",
+        "background_source": BACKGROUND_SOURCE,
         "note": (
             "真孪生主循环最后一帧快照（演示数据（模拟），不是采集数据）："
-            "指标由 SUMO 仿真 + 虚拟检测器聚合而来；无车路段 v_kmh=null / level=0（数据不可用），不编数"
+            "指标是 60 s 窗口统计（q=窗口进车数折算、v=车辆-时间加权平均车速、k=窗口平均车辆数/长度、"
+            "L_q=窗口内最大排队）；全路段背景车流 background_source=demo_uniform（演示假设，不是实际需求），"
+            "使 61 段都有指标；窗口内确实无车的路段才 v_kmh=null / level=0（数据不可用），不编数"
         ),
         "segments": result["final_segments"],
     }
     timeseries_segments = []
     for segment_id in sorted(result["timeseries"]):
-        points = len(result["segment_ts"])
         series = result["timeseries"][segment_id]
         timeseries_segments.append(
             {
                 "segment_id": segment_id,
                 "source": "twin",
                 "points": points,
+                "valid_points": next(
+                    item["valid_points"] for item in coverage if item["segment_id"] == segment_id
+                ),
                 **{field: series[field] for field in TIMESERIES_FIELDS},
             }
         )
@@ -795,16 +1023,19 @@ def _write_twin_artifacts(
         "is_simulated": True,
         "kind": "twin_timeseries",
         "source": "twin",
+        "background_source": BACKGROUND_SOURCE,
         "note": (
-            f"每段 {len(result['segment_ts'])} 点时序（演示数据（模拟））：由真孪生主循环每 60 s 快照累积，"
-            "供 M1-2 孪生侧举证；视频侧 ≥60 点不在本产物内"
+            f"每段 {points} 点时序（演示数据（模拟））：由真孪生主循环每 60 s 快照累积（60 s 窗口统计），"
+            "供 M1-2 孪生侧举证；全路段背景车流为 demo_uniform 演示假设，不是实际需求；视频侧 ≥60 点不在本产物内"
         ),
-        "points": len(result["segment_ts"]),
+        "points": points,
         "point_ts": result["segment_ts"],
         "segments": timeseries_segments,
+        "coverage": coverage_summary,
         "fleet": {
             "driver_types": ["D1", "D2", "D3"],
             "counts_by_point": [entry["fleet"] for entry in result["fleet_history"]],
+            "note": "fleet 里 background 为背景车流在场数（demo_uniform），不进 vehicles.json 的 D1/D2/D3 清单",
         },
         "metric_formulas": METRIC_FORMULAS,
     }
@@ -890,6 +1121,28 @@ def _write_twin_artifacts(
         "demand_source": demand_meta["demand_source"],
         "demand": demand_meta,
         "demand_curve_buckets": result.get("demand_curve_buckets"),
+        "background_source": BACKGROUND_SOURCE,
+        "background": {
+            "source": BACKGROUND_SOURCE,
+            "is_demo_assumption": True,
+            "note": BACKGROUND_NOTE,
+            "route_mode": result["background"]["route_mode"],
+            "per_segment_per_window": result["background"]["per_segment_per_window"],
+            "windows": result["background"]["windows"],
+            "segments": result["background"]["segments"],
+            "planned": counts["background"]["planned"],
+            "inserted": counts["background"]["inserted"],
+            "observed_max": counts["background"]["observed_max"],
+            "pending_max": counts["background"]["pending_max"],
+            "insert_errors": counts["background"]["insert_errors"],
+            "coverage_topups": counts["background"]["topups"],
+            "coverage_topup_errors": counts["background"]["topup_errors"],
+            "not_in_vehicles_json": (
+                "背景车是环境车流，vehicles.json 只收 D1/D2/D3 三类虚拟司机（契约第四节）；"
+                "背景车流为 demo_uniform 演示假设，不是实际需求"
+            ),
+        },
+        "coverage": coverage_summary,
         "routes": result["routes"],
         "drivers": {
             "classes": {
@@ -933,7 +1186,15 @@ def _write_twin_artifacts(
             f"{driver_type} {counts['inserted'][driver_type]}/{counts['planned'][driver_type]}"
             for driver_type in result["driver_speed_factors"]
         )
-        + f"（实际/计划）；可通行 boundary→boundary 路线 {result['routes']['routable_pairs']} 条"
+        + f"（实际/计划）；背景车流 {counts['background']['inserted']}/{counts['background']['planned']}（demo_uniform）"
+        + f"；可通行 boundary→boundary 路线 {result['routes']['routable_pairs']} 条"
+    )
+    print(
+        f"[loop] 全路段覆盖：{coverage_summary['segments_with_any_valid_point']}/"
+        f"{coverage_summary['segments_total']} 段有有效点 · "
+        f"每段最少有效点 {coverage_summary['min_valid_points_per_segment']}/{points} · "
+        f"最后一帧 available {coverage_summary['available_final_true']}/{coverage_summary['segments_total']} · "
+        f"level>0 {coverage_summary['level_positive_final']}/{coverage_summary['segments_total']}"
     )
     print(
         f"[loop] 产物：{latest_dir.as_posix()} / "
