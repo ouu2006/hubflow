@@ -1,6 +1,6 @@
 # IKMS1H 自检记录：处置闭环持久化（真跑输出）
 
-- 生成时间：2026-10-18T13:53:05+0800
+- 生成时间：2026-10-18T14:12:39+0800
 - Python：3.12.10；服务端口：**8000**（默认 8000；被占才用 8010）
 - 运行态文件（默认）：`work/assembly/data/dispatch.json`（gitignored；见 [data/.gitignore](data/.gitignore)）
 - 代码：[traffic.py](traffic.py) · [README.md](README.md) · [selfcheck_ikms1h.py](selfcheck_ikms1h.py)
@@ -9,7 +9,7 @@
 
 ## 一、断言汇总
 
-**51/51 条断言通过** ✅
+**60/60 条断言通过** ✅
 
 | # | 场景 | 期望 | 实际 | 结果 |
 |---|---|---|---|---|
@@ -25,23 +25,23 @@
 | 10 | 首次下发 idempotent=false | False | False | ✅ |
 | 11 | 首次下发审计 seq=1 | 1 | 1 | ✅ |
 | 12 | 运行态文件：状态=处置中 | 处置中 | 处置中 | ✅ |
-| 13 | 运行态文件：渠道 / 比例 / 时间 / 操作者齐全 | channels/ratio/dispatch_at/operator 齐全 | {'channels': ['情报板'], 'dispatch_ratio_pct': 30.0, 'dispatch_at': '2026-10-18 13:51:12', 'dispatch_operator': '值班员A'} | ✅ |
+| 13 | 运行态文件：渠道 / 比例 / 时间 / 操作者齐全 | channels/ratio/dispatch_at/operator 齐全 | {'channels': ['情报板'], 'dispatch_ratio_pct': 30.0, 'dispatch_at': '2026-10-18 14:10:25', 'dispatch_operator': '值班员A'} | ✅ |
 | 14 | 重复下发返回 200 且 idempotent=true | 200 idempotent=true | 200 idempotent=True | ✅ |
-| 15 | 重复下发沿用首次回执时间（不重复落盘） | 2026-10-18 13:51:12 | 2026-10-18 13:51:12 | ✅ |
+| 15 | 重复下发沿用首次回执时间（不重复落盘） | 2026-10-18 14:10:25 | 2026-10-18 14:10:25 | ✅ |
 | 16 | 重复下发不重复写审计 | 1 | 1 | ✅ |
 | 17 | 重启后状态仍在=处置中 | 处置中 | 处置中 | ✅ |
-| 18 | 重启后渠道 / 比例 / 操作者 / 回执时间仍在 | 渠道=情报板 / 比例=30 / 操作者=值班员A / 时间不变 | {'channels': ['情报板'], 'dispatch_ratio_pct': 30.0, 'dispatch_operator': '值班员A', 'dispatch_at': '2026-10-18 13:51:12'} | ✅ |
+| 18 | 重启后渠道 / 比例 / 操作者 / 回执时间仍在 | 渠道=情报板 / 比例=30 / 操作者=值班员A / 时间不变 | {'channels': ['情报板'], 'dispatch_ratio_pct': 30.0, 'dispatch_operator': '值班员A', 'dispatch_at': '2026-10-18 14:10:25'} | ✅ |
 | 19 | 重启后审计仍在（audit_total=1） | 1 | 1 | ✅ |
 | 20 | 重启后运行态文件仍含该告警 | 运行态含 AL | ['AL-SZ-005'] | ✅ |
 | 21 | 回写返回 200 且状态=已闭环 | 200 已闭环 | 200 已闭环 | ✅ |
-| 22 | 回执四项留痕：谁 / 何时 / 做了什么 / 结果 | operator/action/result/at 齐全 | {'operator': '值班员A', 'operator_action': '分流', 'result': '已缓解', 'at': '2026-10-18 13:51:16'} | ✅ |
+| 22 | 回执四项留痕：谁 / 何时 / 做了什么 / 结果 | operator/action/result/at 齐全 | {'operator': '值班员A', 'operator_action': '分流', 'result': '已缓解', 'at': '2026-10-18 14:10:28'} | ✅ |
 | 23 | 回写后审计总数=2 | 2 | 2 | ✅ |
 | 24 | 终态告警不可再下发 | 409 ALERT_TERMINAL | 409 ALERT_TERMINAL | ✅ |
 | 25 | 终态告警不可翻转（换结果回写被拒） | 409 ALERT_TERMINAL | 409 ALERT_TERMINAL | ✅ |
 | 26 | 同内容重复回写按幂等回放（200） | 200 idempotent=true | 200 idempotent=True | ✅ |
 | 27 | 幂等回放不写新审计（仍为 2） | 2 | 2 | ✅ |
 | 28 | 重启后状态仍在=已闭环 | 已闭环 | 已闭环 | ✅ |
-| 29 | 重启后回写留痕仍在（谁/何时/动作/结果） | writeback 四项齐全 | {'operator': '值班员A', 'action': '分流', 'result': '已缓解', 'at': '2026-10-18 13:51:16', 'audit_seq': 2} | ✅ |
+| 29 | 重启后回写留痕仍在（谁/何时/动作/结果） | writeback 四项齐全 | {'operator': '值班员A', 'action': '分流', 'result': '已缓解', 'at': '2026-10-18 14:10:28', 'audit_seq': 2} | ✅ |
 | 30 | 重启后审计总数=2 | 2 | 2 | ✅ |
 | 31 | 重启后终态仍不可下发 | 409 ALERT_TERMINAL | 409 ALERT_TERMINAL | ✅ |
 | 32 | POST /alerts/reset 返回 200 reset=true | 200 reset=true | 200 reset=True | ✅ |
@@ -58,12 +58,21 @@
 | 43 | 审计按序可重建：dispatch → ack → reset → reset | ['dispatch','ack','reset','reset'] | ['dispatch', 'ack', 'reset', 'reset'] | ✅ |
 | 44 | 审计记录字段齐全（alert_id/动作/渠道/比例/操作者/时间/结果） | 每条都含必需字段 | [['action', 'alert_id', 'at', 'channel', 'operator', 'ratio_pct', 'result', 'segment_id', 'seq', 'status_after']] | ✅ |
 | 45 | 审计 store_path 指向默认运行态文件 | work/assembly/data/dispatch.json | work/assembly/data/dispatch.json | ✅ |
-| 46 | --state-path 自定义路径：下发写自定义文件 | store_path=work/assembly/out/ikms1h_selfcheck/custom_dispatch.json 且文件存在 | {'status': 200, 'store_path': 'work/assembly/out/ikms1h_selfcheck/custom_dispatch.json', 'file_exists': True} | ✅ |
-| 47 | 自定义路径测试不影响默认运行态文件（哈希不变） | 哈希不变 | 不变 | ✅ |
-| 48 | 跨页同源（API 层）：大屏 / 决策页两次 GET /alerts 完全一致 | 两次响应逐字段一致 | 一致 | ✅ |
-| 49 | 运行态文件被 gitignore 拦截 | git check-ignore 退出码 0 | 0 | ✅ |
-| 50 | 运行态文件不在 git 索引 | git ls-files 输出为空 | (空) | ✅ |
-| 51 | --check 能读出持久化运行态 | 输出含「处置闭环运行态（持久化）」+ 默认路径 | 输出已包含 | ✅ |
+| 46 | 审计 limit=1000：生效 limit=1000 且 total 为未截断总数 | limit=1000 / total=4 / returned=4 | {'limit': 1000, 'total': 4, 'returned': 4} | ✅ |
+| 47 | 审计 limit=2：returned=2 但 total 仍为未截断 4 | returned=2 / total=4 | {'limit': 2, 'total': 4, 'returned': 2} | ✅ |
+| 48 | 持久化层锁内不变量：并发 16 线程终态回写 / 下发全部 409 冲突 | 16/16 均为 ALERT_TERMINAL 冲突 | 16 条结果，exit=0 | ✅ |
+| 49 | 持久化层锁内不变量：并发后终态未被翻转（已闭环）且审计不增（=2） | 已闭环 / audit_total=2 | {'final_status': '已闭环', 'audit_total': 2} | ✅ |
+| 50 | 持久化层锁内不变量：终态同人同动作同结果仍可幂等回放 | ok=true idempotent=true | {'ok': True, 'idempotent': True} | ✅ |
+| 51 | 持久化层锁内不变量：无回执回写（锁内复查）→ ACK_NO_DISPATCH | ACK_NO_DISPATCH | ACK_NO_DISPATCH | ✅ |
+| 52 | --state-path 误传已跟踪文件 / 非 .json / 白名单外路径 → 退出码 2 | 5/5 退出码 2 | [2, 2, 2, 2, 2] | ✅ |
+| 53 | --state-path 拒绝时目标文件未被改动（README 哈希不变） | 哈希不变 | 不变 | ✅ |
+| 54 | --state-path 白名单内 .json 仍可用（--check 退出码 0） | 0 | 0 | ✅ |
+| 55 | --state-path 自定义路径：下发写自定义文件 | store_path=work/assembly/out/ikms1h_selfcheck/custom_dispatch.json 且文件存在 | {'status': 200, 'store_path': 'work/assembly/out/ikms1h_selfcheck/custom_dispatch.json', 'file_exists': True} | ✅ |
+| 56 | 自定义路径测试不影响默认运行态文件（哈希不变） | 哈希不变 | 不变 | ✅ |
+| 57 | 跨页同源（API 层）：大屏 / 决策页两次 GET /alerts 完全一致 | 两次响应逐字段一致 | 一致 | ✅ |
+| 58 | 运行态文件被 gitignore 拦截 | git check-ignore 退出码 0 | 0 | ✅ |
+| 59 | 运行态文件不在 git 索引 | git ls-files 输出为空 | (空) | ✅ |
+| 60 | --check 能读出持久化运行态 | 输出含「处置闭环运行态（持久化）」+ 默认路径 | 输出已包含 | ✅ |
 
 ## 二、重启持久化证据（停服务 → 重启 → 再读）
 
@@ -77,7 +86,7 @@
   "channel": "情报板",
   "ratio_pct": 30.0,
   "receipt": "情报板已确认",
-  "at": "2026-10-18 13:51:12",
+  "at": "2026-10-18 14:10:25",
   "is_simulated": true,
   "persisted": true,
   "idempotent": false,
@@ -105,7 +114,7 @@
   "channels": [
     "情报板"
   ],
-  "dispatch_at": "2026-10-18 13:51:12",
+  "dispatch_at": "2026-10-18 14:10:25",
   "dispatch_ratio_pct": 30.0,
   "dispatch_operator": "值班员A"
 }
@@ -128,14 +137,14 @@
   "channels": [
     "情报板"
   ],
-  "dispatch_at": "2026-10-18 13:51:12",
+  "dispatch_at": "2026-10-18 14:10:25",
   "dispatch_ratio_pct": 30.0,
   "dispatch_operator": "值班员A",
   "writeback": {
     "operator": "值班员A",
     "action": "分流",
     "result": "已缓解",
-    "at": "2026-10-18 13:51:16",
+    "at": "2026-10-18 14:10:28",
     "audit_seq": 2
   }
 }
@@ -183,13 +192,13 @@
   "schema_version": 1,
   "is_simulated": true,
   "note": "演示态、无真实下发通道；运行态随本文件持久化（重启不复位）",
-  "updated_at": "2026-10-18T13:51:18+08:00",
+  "updated_at": "2026-10-18T14:10:32+08:00",
   "alerts": {},
   "seed_dispatch": {},
   "audit": [
     {
       "seq": 1,
-      "at": "2026-10-18 13:51:12",
+      "at": "2026-10-18 14:10:25",
       "action": "dispatch",
       "alert_id": "AL-SZ-005",
       "segment_id": "SZ-005",
@@ -201,7 +210,7 @@
     },
     {
       "seq": 2,
-      "at": "2026-10-18 13:51:16",
+      "at": "2026-10-18 14:10:28",
       "action": "ack",
       "alert_id": "AL-SZ-005",
       "segment_id": "SZ-005",
@@ -214,7 +223,7 @@
     },
     {
       "seq": 3,
-      "at": "2026-10-18 13:51:18",
+      "at": "2026-10-18 14:10:32",
       "action": "reset",
       "alert_id": null,
       "segment_id": null,
@@ -253,12 +262,12 @@
 
 ```json
 {
-  "ts": "2026-10-18T13:51:26+08:00",
+  "ts": "2026-10-18T14:10:40+08:00",
   "is_simulated": true,
   "records": [
     {
       "seq": 1,
-      "at": "2026-10-18 13:51:12",
+      "at": "2026-10-18 14:10:25",
       "action": "dispatch",
       "alert_id": "AL-SZ-005",
       "segment_id": "SZ-005",
@@ -270,7 +279,7 @@
     },
     {
       "seq": 2,
-      "at": "2026-10-18 13:51:16",
+      "at": "2026-10-18 14:10:28",
       "action": "ack",
       "alert_id": "AL-SZ-005",
       "segment_id": "SZ-005",
@@ -283,7 +292,7 @@
     },
     {
       "seq": 3,
-      "at": "2026-10-18 13:51:18",
+      "at": "2026-10-18 14:10:32",
       "action": "reset",
       "alert_id": null,
       "segment_id": null,
@@ -297,7 +306,7 @@
     },
     {
       "seq": 4,
-      "at": "2026-10-18 13:51:24",
+      "at": "2026-10-18 14:10:37",
       "action": "reset",
       "alert_id": null,
       "segment_id": null,
@@ -311,14 +320,191 @@
     }
   ],
   "total": 4,
+  "returned": 4,
+  "limit": 50,
+  "limit_max": 1000,
   "audit_total": 4,
   "reset_count": 2,
   "store_path": "work/assembly/data/dispatch.json",
-  "note": "处置闭环审计（只读辅助端点，非契约端点）：每条记录含 alert_id / action / channel / ratio_pct / operator / result / at；演示态、无真实下发通道。"
+  "note": "处置闭环审计（只读辅助端点，非契约端点；limit 允许 1~1000，默认 50）：records 为最近 limit 条、total 为过滤后未截断总数、returned 为本次返回条数；每条记录含 alert_id / action / channel / ratio_pct / operator / result / at；演示态、无真实下发通道。"
 }
 ```
 
-## 四、跨页同源（大屏 / 决策页读同一后端状态）
+## 四、独立审查修复验证（锁内不变量 / 审计 limit / 路径安全）
+
+> 对应独立审查 3 条非阻断发现：终态并发不变量、`audit limit` 截断语义、`--state-path` 目标路径校验。
+
+### 4.1 持久化层锁内不变量（真线程：16 并发 × ack/dispatch）
+
+已闭环告警上并发 16 线程「未改善回写（会把状态改回处置中）」+「再下发」；锁内复查必须全部 409 冲突、终态不被翻转、审计不增：
+
+```json
+{
+  "outcomes": [
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    },
+    {
+      "ack": "ALERT_TERMINAL",
+      "dispatch": "ALERT_TERMINAL",
+      "ack_ok": false,
+      "dispatch_ok": false
+    }
+  ],
+  "final_status": "已闭环",
+  "audit_total": 2,
+  "idempotent_replay": {
+    "ok": true,
+    "idempotent": true
+  },
+  "fresh_conflict": "ACK_NO_DISPATCH",
+  "exit_code": 0
+}
+```
+
+### 4.2 审计 limit 语义（`total` = 过滤后未截断总数）
+
+```json
+{
+  "limit_1000": {
+    "limit": 1000,
+    "total": 4,
+    "returned": 4,
+    "audit_total": 4
+  },
+  "limit_2": {
+    "limit": 2,
+    "total": 4,
+    "returned": 2,
+    "audit_total": 4
+  }
+}
+```
+
+### 4.3 `--state-path` 安全校验（误传已跟踪文件不会改名覆盖）
+
+```json
+{
+  "invalid": [
+    {
+      "state_path": "work/assembly/README.md",
+      "exit_code": 2,
+      "output_first_line": "参数错误：--state-path 运行态文件必须是 .json（收到 'work/assembly/README.md'）"
+    },
+    {
+      "state_path": "work/assembly/traffic.py",
+      "exit_code": 2,
+      "output_first_line": "参数错误：--state-path 运行态文件必须是 .json（收到 'work/assembly/traffic.py'）"
+    },
+    {
+      "state_path": "work/assembly/out/state.txt",
+      "exit_code": 2,
+      "output_first_line": "参数错误：--state-path 运行态文件必须是 .json（收到 'work/assembly/out/state.txt'）"
+    },
+    {
+      "state_path": "work/assembly/not_allowed.json",
+      "exit_code": 2,
+      "output_first_line": "参数错误：--state-path 运行态文件只允许放在 work/assembly/data / work/assembly/out 下（收到 'work/assembly/not_allowed.json'）"
+    },
+    {
+      "state_path": "docs/数据契约.md",
+      "exit_code": 2,
+      "output_first_line": "参数错误：--state-path 运行态文件必须是 .json（收到 'docs/数据契约.md'）"
+    }
+  ],
+  "readme_unchanged": true,
+  "valid_out_json_exit": 0
+}
+```
+
+## 五、跨页同源（大屏 / 决策页读同一后端状态）
 
 - API 层：连续两次 `GET /api/traffic/alerts` 逐字段一致：**✅ 是**
 - 前端源码（只读引用）：两个页面调同一套 `src/api/traffic.ts` 函数（同一个后端状态，页面刷新 / 切换不丢）：
@@ -334,12 +520,12 @@
   - `work/frontend/ui-vue/src/views/decision/DecisionView.vue`：`postPlanDispatch,`
 - 说明：本机未起 `npm run dev:remote`（前端 dev server），故以同一后端接口的两次独立读取 + 源码同源引用证明「同一份状态」；重启持久化证据见第二节。
 
-## 五、运行态文件不提交（gitignore / git 索引）
+## 六、运行态文件不提交（gitignore / git 索引）
 
 - `git check-ignore -v`：`work/assembly/data/.gitignore:4:*	work/assembly/data/dispatch.json`
 - `git ls-files` 命中运行态文件：否 ✅
 
-## 六、`--check` 读持久化运行态（输出尾部）
+## 七、`--check` 读持久化运行态（输出尾部）
 
 ```text
 车辆：3 辆
@@ -352,7 +538,7 @@
 检查完成：缺失的数据源会按三层回落 / 空壳 + note 处理，不报 500。
 ```
 
-## 七、仓库门禁 doc_gate
+## 八、仓库门禁 doc_gate
 
 - 命令：`python scripts/doc_gate.py`（8 组）
 - 首次运行：退出码 **0**
@@ -360,7 +546,7 @@
 
 ```text
 门禁根目录：<repo>
-受管文件：318 个（已跟踪 315 个，内容取自 git 索引）
+受管文件：318 个（已跟踪 318 个，内容取自 git 索引）
 
 [通过] 1/8 编码与换行（UTF-8 无 BOM / LF）（检查 248 个目标）
 [通过] 2/8 大文件与禁入类型（检查 318 个目标）
@@ -372,12 +558,13 @@
 [注意] docs/填表报告.md:123  `结果` 是「占位」（**T1~T9** → `stations/network.json` / `stations/points.json` / `stations/signal_plan.json` / `stations/demand.json` / `stations/factors.json` / `stations/scenarios.json` / `stations/thresholds.json` / `stations/calibration.json` / `stations/map_source.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
 [注意] docs/填表报告.md:125  `结果` 是「占位」（T1~T9 → `stations/calibration.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
 [注意] docs/填表报告.md:126  `结果` 是「占位」（T1~T9 → `stations/thresholds.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
-[通过] 8/8 任务记录台账（格式 / 结果枚举 / 日期）（检查 119 个目标）
+[通过] 8/8 任务记录台账（格式 / 结果枚举 / 日期）（检查 120 个目标）
 
 门禁全部通过。
 ```
 
-## 八、结论与遗留
+## 九、结论与遗留
 
-- 本单完成判定：TC-07（状态可推进 + 四项留痕 + 重启仍在）/ 顺序校验 / 终态不可翻转 / 幂等 / 复位可留痕 / 审计可重建 / 跨页同源（API 层）—— 自检 **51/51** 通过。
+- 本单完成判定：TC-07（状态可推进 + 四项留痕 + 重启仍在）/ 顺序校验 / 终态不可翻转 / 幂等 / 复位可留痕 / 审计可重建 / 跨页同源（API 层）—— 自检 **60/60** 通过。
+- 独立审查 3 条非阻断发现（终态并发不变量 / 审计 limit 截断语义 / `--state-path` 目标路径校验）已修复并纳入断言（见第四节）。
 - 遗留：① 运行态是**一进程一文件仓**（JSON，单 worker），多 worker / 并发写库场景留给二期 openGauss；② 大屏 / 决策页真实浏览器联调未在本机跑（无前端 dev server），以 API 层同源 + 源码引用为证；③ `work/frontend/README.md` 的处置闭环章节按 Issue 原文应同步，但本单写入范围限定 `work/assembly/**`，留给前端 owner / 文档 owner 收口。

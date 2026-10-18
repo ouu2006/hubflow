@@ -154,6 +154,21 @@ DEMO_DISPATCH_NOTE = "演示态、无真实下发通道"
 _ALERT_RUNTIME_SEED: dict[str, dict[str, Any]] = {}
 _STATE_PATH: Path = DISPATCH_STORE_DEFAULT
 _DISPATCH_STORE: "DispatchStore | None" = None
+#: --state-path 允许目录：运行态文件会被写、坏文件会被改名留证，必须限定在接口层自己的数据目录内，
+#: 避免误传仓库里已跟踪的文件（如 README）时被「改名留证 + 覆盖成 JSON」。
+STATE_PATH_ALLOWED_DIRS = (
+    (ROOT / "work" / "assembly" / "data").resolve(),
+    (ROOT / "work" / "assembly" / "out").resolve(),
+)
+
+
+def _audit_limit(value: Any) -> int:
+    """审计查询的生效条数：1..DISPATCH_AUDIT_MAX（与文件保留上限一致；非法值回落 50）。"""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 50
+    return max(1, min(DISPATCH_AUDIT_MAX, number))
 
 # ---------------------------------------------------------------- 写端点内存态（一期）
 #
@@ -406,13 +421,16 @@ class DispatchStore:
         with self._lock:
             return int(self.state.get("reset_count") or 0)
 
-    def audit_records(self, limit: int = 50, alert_id: str | None = None) -> list[dict[str, Any]]:
+    def audit_records(self, limit: int = 50,
+                      alert_id: str | None = None) -> tuple[list[dict[str, Any]], int]:
+        """返回 (最近 limit 条, 过滤后**未截断**总数)。limit 允许 1..DISPATCH_AUDIT_MAX（=1000）。"""
         with self._lock:
             records = [record for record in (self.state.get("audit") or []) if isinstance(record, dict)]
         if alert_id:
             records = [record for record in records if record.get("alert_id") == alert_id]
-        limit = max(1, min(500, int(limit)))
-        return copy.deepcopy(records[-limit:])
+        matched_total = len(records)
+        effective = _audit_limit(limit)
+        return copy.deepcopy(records[-effective:]), matched_total
 
     # ---------- 写（全部走「拷贝 → 改 → 落盘 → 替换」）
 
@@ -426,12 +444,23 @@ class DispatchStore:
             state["audit"] = audit[-DISPATCH_AUDIT_MAX:]
         return seq
 
+    @staticmethod
+    def _conflict(code: str, message: str) -> dict[str, Any]:
+        """锁内不变量冲突：调用方转 409，且**不落盘、不改内存**（防端点锁外校验后的并发窗口）。"""
+        return {"ok": False, "conflict": code, "message": message}
+
     def record_dispatch(self, alert_id: str, segment_id: str | None, channel: str,
                         ratio_pct: float, operator: str | None) -> dict[str, Any]:
         with self._lock:
             state = copy.deepcopy(self.state)
             alerts = state.setdefault("alerts", {})
             runtime = alerts.get(alert_id) if isinstance(alerts.get(alert_id), dict) else {}
+            # 锁内不变量复查（端点的终态校验在锁外，这里防并发窗口）：终态一律不可再下发
+            if runtime.get("status") in TERMINAL_ALERT_STATUS:
+                return self._conflict(
+                    "ALERT_TERMINAL",
+                    f"终态告警不可再下发: {alert_id}({runtime.get('status')})",
+                )
             # 幂等窗口 = 下发后、回写前：同告警 + 同渠道 + 同比例重复下发 → 回首次回执，不重复审计
             same_dispatch = (
                 runtime.get("status") == "处置中"
@@ -493,6 +522,19 @@ class DispatchStore:
                     "runtime": copy.deepcopy(runtime),
                     "audit_seq": writeback.get("audit_seq"),
                 }
+            # 锁内不变量复查（端点的校验在锁外，这里防并发窗口）：
+            # ① 终态不可翻转（只允许上面的同人同动作同结果幂等回放）；
+            # ② 无下发回执不可回写（并发的 reset 可能已把运行态清空）。
+            if runtime.get("status") in TERMINAL_ALERT_STATUS:
+                return self._conflict(
+                    "ALERT_TERMINAL",
+                    f"终态告警不可再回写: {alert_id}({runtime.get('status')})",
+                )
+            if not runtime.get("dispatch_at") or not runtime.get("channels"):
+                return self._conflict(
+                    "ACK_NO_DISPATCH",
+                    f"告警尚未下发(无派发回执),不可回写: {alert_id}",
+                )
             seq = self._append_audit(state, {
                 "action": "ack",
                 "alert_id": alert_id,
@@ -550,6 +592,27 @@ class DispatchStore:
                 "reset_count": state["reset_count"],
                 "audit_seq": seq,
             }
+
+
+def resolve_state_path(raw: Path | str) -> Path:
+    """把 `--state-path` 解析成**安全路径**：只允许 work/assembly/{data,out} 下的 .json 文件。
+
+    运行态文件会被写、坏文件会被改名留证，所以必须拒绝仓库里其它位置（尤其已跟踪文件 /
+    非 .json 路径），否则误传 README 之类时会被改名覆盖。校验失败抛 ValueError，由 CLI 清晰退出。
+    """
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = ROOT / candidate
+    try:
+        resolved = candidate.resolve()
+    except OSError as exc:  # 路径不可解析（盘符不存在等）
+        raise ValueError(f"无法解析路径 {str(raw)!r}：{exc}") from exc
+    if resolved.suffix.lower() != ".json":
+        raise ValueError(f"运行态文件必须是 .json（收到 {str(raw)!r}）")
+    if not any(resolved.is_relative_to(directory) for directory in STATE_PATH_ALLOWED_DIRS):
+        allowed = " / ".join(directory.relative_to(ROOT).as_posix() for directory in STATE_PATH_ALLOWED_DIRS)
+        raise ValueError(f"运行态文件只允许放在 {allowed} 下（收到 {str(raw)!r}）")
+    return resolved
 
 
 def configure_dispatch_store(path: Path | str) -> None:
@@ -2223,6 +2286,12 @@ async def api_plan_dispatch(request: Request) -> JSONResponse:
     store = get_dispatch_store()
     result = store.record_dispatch(alert_id, alert.get("segment_id") or segment_id, channel, ratio_pct, operator)
     if not result.get("ok"):
+        if result.get("conflict"):
+            # 锁内不变量冲突（并发下状态已变）：如实 409，本次不落盘、不写审计
+            return _error(
+                409, str(result["conflict"]), str(result.get("message") or "并发状态冲突"),
+                note="并发下运行态已发生变化（终态 / 已复位），本次操作未生效。" + DEMO_DISPATCH_NOTE,
+            )
         return _error(
             500, "PERSIST_FAILED",
             "处置回执落盘失败：检查 work/assembly/data/ 是否可写",
@@ -2312,6 +2381,12 @@ async def api_plan_ack(request: Request) -> JSONResponse:
         alert_id, alert.get("segment_id") or segment_id, operator, action, result, new_status
     )
     if not store_result.get("ok"):
+        if store_result.get("conflict"):
+            # 锁内不变量冲突（并发下状态已变）：如实 409，本次不落盘、不写审计
+            return _error(
+                409, str(store_result["conflict"]), str(store_result.get("message") or "并发状态冲突"),
+                note="并发下运行态已发生变化（终态 / 已复位），本次回写未生效。" + DEMO_DISPATCH_NOTE,
+            )
         return _error(
             500, "PERSIST_FAILED",
             "回写留痕落盘失败：检查 work/assembly/data/ 是否可写",
@@ -2375,18 +2450,25 @@ def api_plan_audit(limit: int = Query(default=50),
                    alert_id: str | None = Query(default=None)) -> JSONResponse:
     """处置闭环审计（只读辅助端点，非契约端点）：每次 dispatch / ack / reset 追加一条。"""
     store = get_dispatch_store()
-    records = store.audit_records(limit=limit, alert_id=alert_id)
+    effective_limit = _audit_limit(limit)
+    records, matched_total = store.audit_records(limit=effective_limit, alert_id=alert_id)
     payload = {
         "ts": _now_iso(),
         "is_simulated": True,
         "records": records,
-        "total": len(records),
+        # limit 只截断 records：total 是过滤后**未截断**总数，returned 是本次返回条数
+        "total": matched_total,
+        "returned": len(records),
+        "limit": effective_limit,
+        "limit_max": DISPATCH_AUDIT_MAX,
         "audit_total": store.audit_total(),
         "reset_count": store.reset_count(),
         "store_path": store.relative_path(),
         "note": (
-            "处置闭环审计（只读辅助端点，非契约端点）：每条记录含 alert_id / action / channel / "
-            "ratio_pct / operator / result / at；" + DEMO_DISPATCH_NOTE + "。"
+            "处置闭环审计（只读辅助端点，非契约端点；limit 允许 1~"
+            f"{DISPATCH_AUDIT_MAX}，默认 50）：records 为最近 limit 条、total 为过滤后未截断总数、"
+            "returned 为本次返回条数；每条记录含 alert_id / action / channel / ratio_pct / operator / result / at；"
+            + DEMO_DISPATCH_NOTE + "。"
         ),
     }
     return _json(payload, source="dispatch-store")
@@ -2696,14 +2778,24 @@ def main() -> int:
     parser.add_argument(
         "--state-path",
         default=DISPATCH_STORE_DEFAULT.relative_to(ROOT).as_posix(),
-        help="处置闭环运行态 JSON 路径（默认 work/assembly/data/dispatch.json；相对路径按仓库根解析）",
+        help=(
+            "处置闭环运行态 JSON 路径（默认 work/assembly/data/dispatch.json；相对路径按仓库根解析）。"
+            "安全校验：只允许 work/assembly/data/ 或 work/assembly/out/ 下的 .json，"
+            "其它位置（尤其已跟踪文件）直接报错退出，不做改名 / 覆盖"
+        ),
     )
     parser.add_argument("--reset-state", action="store_true",
                         help="复位处置运行态（重放 seed_dispatch）并写一条 reset 审计后退出（不起服务）")
     args = parser.parse_args()
 
-    state_path = Path(args.state_path)
-    configure_dispatch_store(state_path if state_path.is_absolute() else ROOT / state_path)
+    try:
+        state_path = resolve_state_path(args.state_path)
+    except ValueError as exc:
+        allowed = " / ".join(directory.relative_to(ROOT).as_posix() for directory in STATE_PATH_ALLOWED_DIRS)
+        print(f"参数错误：--state-path {exc}", file=sys.stderr)
+        print(f"  允许目录：{allowed}（只接受 .json 文件；不会对其它路径做改名 / 覆盖）", file=sys.stderr)
+        return 2
+    configure_dispatch_store(state_path)
     store = get_dispatch_store()  # 启动时加载：坏文件改名留证、按初始态启动
 
     if args.reset_state:

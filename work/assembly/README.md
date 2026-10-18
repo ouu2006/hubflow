@@ -39,7 +39,7 @@
 | `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **已实现**（IKMF1T 由快照派生；**IKMS1H 起读持久化后的运行态**） |
 | `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
 | `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
-| `/api/traffic/plan/audit` | GET | 处置闭环审计（只读**辅助端点**，非契约端点） | **已实现**（IKMS1H；按 seq 返回 dispatch / ack / reset 记录） |
+| `/api/traffic/plan/audit` | GET | 处置闭环审计（只读**辅助端点**，非契约端点；`?limit=1..1000&alert_id=`，`total` 为未截断匹配总数） | **已实现**（IKMS1H；按 seq 返回 dispatch / ack / reset 记录） |
 | `/api/traffic/predict` | GET | 预测：`?segment_id=&h=15`。一期 **L0**，不报精度数字 | **已实现**（IKMF1T；无 pred 产物时空点 + note） |
 | `/api/traffic/thresholds` | GET | 判级阈值 + CI 四项加权构成 + 变更留痕（只读，P1） | **已实现**（IKMF1T；读 `stations/thresholds.json`） |
 | `/api/traffic/heat-matrix` | GET | 路段 × 时间热力矩阵（`?window=&bucket=`） | **已实现**（IKMF1T；只回当前快照桶，其余 null 灰格） |
@@ -215,10 +215,15 @@ curl -s -X POST http://127.0.0.1:8000/api/traffic/alerts/reset    # 演示复位
 | 终态（已闭环 / 误报）再下发或换结果回写 | 409 `ALERT_TERMINAL`，不可翻转 |
 | 复位 `POST /alerts/reset` | 清运行态 → 重放 `seed_dispatch`（接口层默认空 → 全部回「待认领」）+ 写一条 `reset` 审计 |
 | 落盘失败 | 500 `PERSIST_FAILED` + note；内存与磁盘都保持旧状态（不假成功） |
+| 并发状态变化 | 端点先在锁外校验，`DispatchStore` 在写锁内**再复查一次**终态 / 下发回执：并发下若状态已变（例如另一请求刚把告警改成终态、或刚 reset），返回 409 `ALERT_TERMINAL` / `ACK_NO_DISPATCH`，**不落盘、不写审计**、不改内存 |
 
 **审计（TC-07 / 效果对比可引用）**：`GET /api/traffic/plan/audit?limit=&alert_id=`（只读**辅助端点**，非契约端点）
-按 `seq` 返回 dispatch / ack / reset 记录；`audit_total` 单调累计（文件保留最近 1000 条）。字段：
-`seq / at / action / alert_id / segment_id / channel / ratio_pct / operator / operator_action(ack) / result / status_after`。
+按 `seq` 返回 dispatch / ack / reset 记录。语义：
+
+- `limit` 允许 **1..1000**（默认 50，与运行态文件保留上限 `DISPATCH_AUDIT_MAX=1000` 一致；超出按上限夹取）；
+- 响应里 `records` 是最近 `limit` 条；**`total` 是过滤后未截断总数**（`?limit=2` 时 `total` 仍可能是 4），
+  `returned` 是本次返回条数，`limit` 是生效上限，`audit_total` 是累计追加总数（单调递增，不受文件保留上限影响）；
+- 字段：`seq / at / action / alert_id / segment_id / channel / ratio_pct / operator / operator_action(ack) / result / status_after`。
 
 **seed 与复位**：接口层没有站点包预置下发剧本（mock 的 `seedDispatch` 在前端站点包 TS 里，搬到后端等于伪造回执），
 所以默认 `seed_dispatch = {}`；需要预置演示态时在运行态文件的 `seed_dispatch` 里声明，再 `POST /alerts/reset`
@@ -230,6 +235,9 @@ curl -s -X POST http://127.0.0.1:8000/api/traffic/alerts/reset    # 演示复位
 - 全清（含审计）：停服务 → 删 `work/assembly/data/dispatch.json` → 重启（首次写入时重建，含 `seed_dispatch`）；
 - 换 schema：升 `schema_version` 并在本节写迁移说明；旧版本 / 坏文件会改名留证（`*.corrupt-<时间>`）后按初始态启动；
 - 换路径：`--state-path work/assembly/out/xxx.json`（相对路径按仓库根解析；自检用它做隔离）。
+  **安全校验**：只允许 `work/assembly/data/` 或 `work/assembly/out/` 下的 `.json`——误传已跟踪文件
+  （如 `README.md`）、非 `.json`、或其它目录（如 `docs/`）会直接报错退出（退出码 2），
+  **不会对目标文件做改名 / 覆盖**。
 
 **与前端同源 / 演示态边界**：
 
@@ -248,6 +256,7 @@ curl -s -X POST http://127.0.0.1:8000/api/traffic/alerts/reset    # 演示复位
 | 本单专属一（前置校验） | 无回执回写 409；终态不可翻转 | 第 2 / 6 步断言 |
 | 本单专属二（跨页共享） | 大屏 / 决策页同一后端状态（API 层两次读一致 + 源码同源引用） | 第 9 步 + 前端源码引用 |
 | 本单专属三（可复位） | reset / `--reset-state` 回明确初始态并留痕 | 第 8 步断言 + 审计 |
+| 独立审查修复 | 终态并发不变量（锁内复查）/ 审计 `limit` 与 `total` 语义 / `--state-path` 路径安全 | `selfcheck_ikms1h.py` 审查修复断言 + 自检记录第四节 |
 
 **自检（真跑命令）**：
 

@@ -23,7 +23,11 @@
 12. **跨页同源（API 层）**：连续两次 `GET /alerts` 完全一致（大屏 / 决策页读同一后端状态），
     并引用前端两个页面调用同一套 `api/traffic.ts` 函数的源码行；
 13. **不提交运行态**：`git check-ignore` 证明 `work/assembly/data/dispatch.json` 被忽略、不在 git 索引；
-14. **仓库门禁**：`python scripts/doc_gate.py` 8/8。
+14. **锁内不变量（独立审查修复）**：子进程真线程打 `DispatchStore`——已闭环后并发「未改善回写（会把状态改回
+    处置中）」+「再下发」必须全部 409 冲突，终态不被翻转、审计不增；无回执回写在锁内被拒；
+15. **审计 limit 语义**：`?limit=1000` 生效上限 1000，`total` 是过滤后**未截断**总数（不是截断后的条数）；
+16. **`--state-path` 安全校验**：误传已跟踪文件 / 非 .json / 白名单外路径 → 退出码 2 且目标文件不被改动；
+17. **仓库门禁**：`python scripts/doc_gate.py` 8/8。
 
 隔离与可重复：脚本运行前把现有 `work/assembly/data/dispatch.json` 备份到 `out/`（gitignored），
 结束时还原；本机没有运行产物时，在 `work/perception/out/latest/`（gitignored）生成**最小 fixture**
@@ -62,6 +66,9 @@ EVIDENCE_MD = ASSEMBLY / "自检记录-IKMS1H.md"
 FIXTURE_VIDEO = ROOT / "work" / "perception" / "out" / "latest" / "segments_video.json"
 FIXTURE_TWIN = ROOT / "work" / "twin" / "out" / "latest" / "segments_twin.json"
 FIXTURE_CREATED: list[Path] = []
+#: 锁内不变量探针：跑在 out/（gitignored）下的独立状态文件，不污染演示运行态
+STORE_PROBE_SCRIPT = OUT_DIR / "ikms1h_selfcheck" / "store_invariant_probe.py"
+PROBE_STATE = OUT_DIR / "ikms1h_selfcheck" / "invariant_probe_state.json"
 
 STATE_DEFAULT_REL = DEFAULT_STATE.relative_to(ROOT).as_posix()
 
@@ -334,6 +341,99 @@ def frontend_same_source_lines() -> list[str]:
     return lines[:10]
 
 
+# ---------------------------------------------------------------- 独立审查修复验证（锁内不变量 / 路径安全）
+
+_STORE_PROBE_CODE = """# -*- coding: utf-8 -*-
+import json
+import sys
+import threading
+
+sys.path.insert(0, sys.argv[2])
+import traffic
+
+traffic.configure_dispatch_store(sys.argv[1])
+store = traffic.get_dispatch_store()
+store.record_dispatch("AL-INVARIANT", None, "情报板", 30, "值班员A")
+store.record_ack("AL-INVARIANT", None, "值班员A", "分流", "已缓解", "已闭环")
+
+outcomes = []
+lock = threading.Lock()
+
+
+def worker(index):
+    ack_result = store.record_ack("AL-INVARIANT", None, "审查员%d" % index, "清障", "未改善", "处置中")
+    dispatch_result = store.record_dispatch("AL-INVARIANT", None, "广播", 10, "审查员%d" % index)
+    with lock:
+        outcomes.append({
+            "ack": ack_result.get("conflict"),
+            "dispatch": dispatch_result.get("conflict"),
+            "ack_ok": ack_result.get("ok"),
+            "dispatch_ok": dispatch_result.get("ok"),
+        })
+
+
+threads = [threading.Thread(target=worker, args=(index,)) for index in range(16)]
+for thread in threads:
+    thread.start()
+for thread in threads:
+    thread.join()
+
+replay = store.record_ack("AL-INVARIANT", None, "值班员A", "分流", "已缓解", "已闭环")
+fresh = store.record_ack("AL-FRESH", None, "审查员", "分流", "已缓解", "已闭环")
+print(json.dumps({
+    "outcomes": outcomes,
+    "final_status": store.get_alert("AL-INVARIANT").get("status"),
+    "audit_total": store.audit_total(),
+    "idempotent_replay": {"ok": replay.get("ok"), "idempotent": replay.get("idempotent")},
+    "fresh_conflict": fresh.get("conflict"),
+}, ensure_ascii=False))
+"""
+
+
+def _run_store_invariant_probe() -> dict[str, Any]:
+    """子进程导入 traffic.py，用真线程打持久化层锁内不变量（绕过端点层锁外校验）。
+
+    已闭环告警上并发「未改善回写（会把状态改回处置中）」+「再下发」：锁内复查必须全部 409 冲突，
+    终态不被翻转、审计不增加；同时验证终态幂等回放与无回执回写的锁内拒绝。
+    """
+    STORE_PROBE_SCRIPT.parent.mkdir(parents=True, exist_ok=True)
+    STORE_PROBE_SCRIPT.write_text(_STORE_PROBE_CODE, encoding="utf-8", newline="\n")
+    PROBE_STATE.unlink(missing_ok=True)
+    environment = dict(os.environ)
+    environment["PYTHONIOENCODING"] = "utf-8"
+    process = subprocess.run(
+        [sys.executable, str(STORE_PROBE_SCRIPT), str(PROBE_STATE), str(ASSEMBLY)],
+        cwd=str(ROOT), capture_output=True, env=environment, timeout=120,
+    )
+    STORE_PROBE_SCRIPT.unlink(missing_ok=True)
+    PROBE_STATE.unlink(missing_ok=True)
+    stdout = process.stdout.decode("utf-8", "replace").strip()
+    stderr = process.stderr.decode("utf-8", "replace").strip()
+    payload: dict[str, Any] = {}
+    if stdout:
+        try:
+            payload = json.loads(stdout.splitlines()[-1])
+        except json.JSONDecodeError:
+            payload = {}
+    payload["exit_code"] = process.returncode
+    if process.returncode != 0 and stderr:
+        payload["stderr_tail"] = stderr[-400:]
+    return payload
+
+
+def _run_cli(args: list[str]) -> tuple[int, str]:
+    """跑一次 traffic.py CLI（--check / --reset-state ...），返回 (退出码, 输出首行合集)。"""
+    environment = dict(os.environ)
+    environment["PYTHONIOENCODING"] = "utf-8"
+    process = subprocess.run(
+        [sys.executable, str(TRAFFIC), *args],
+        cwd=str(ROOT), capture_output=True, env=environment, timeout=120,
+    )
+    stdout = process.stdout.decode("utf-8", "replace")
+    stderr = process.stderr.decode("utf-8", "replace")
+    return process.returncode, (stderr or stdout).strip()
+
+
 # ---------------------------------------------------------------- doc_gate
 
 
@@ -559,6 +659,78 @@ def run() -> None:
           STATE_DEFAULT_REL, audit.get("store_path"))
     EVIDENCE["audit"] = audit
 
+    print("\n  [审查修复] 审计 limit 语义 / 锁内不变量 / --state-path 安全校验 ...", flush=True)
+    limited_1000 = audit_payload(limit=1000)
+    check("审计 limit=1000：生效 limit=1000 且 total 为未截断总数",
+          limited_1000.get("limit") == 1000 and limited_1000.get("total") == 4
+          and limited_1000.get("returned") == 4,
+          "limit=1000 / total=4 / returned=4",
+          {key: limited_1000.get(key) for key in ("limit", "total", "returned")})
+    limited_2 = audit_payload(limit=2)
+    check("审计 limit=2：returned=2 但 total 仍为未截断 4",
+          limited_2.get("returned") == 2 and limited_2.get("total") == 4,
+          "returned=2 / total=4",
+          {key: limited_2.get(key) for key in ("limit", "total", "returned")})
+    EVIDENCE["audit_limit"] = {
+        "limit_1000": {key: limited_1000.get(key) for key in ("limit", "total", "returned", "audit_total")},
+        "limit_2": {key: limited_2.get(key) for key in ("limit", "total", "returned", "audit_total")},
+    }
+
+    probe = _run_store_invariant_probe()
+    EVIDENCE["store_invariant"] = probe
+    outcomes = probe.get("outcomes") or []
+    all_conflict = bool(outcomes) and all(
+        item.get("ack") == "ALERT_TERMINAL" and item.get("dispatch") == "ALERT_TERMINAL"
+        and item.get("ack_ok") is False and item.get("dispatch_ok") is False
+        for item in outcomes
+    )
+    check("持久化层锁内不变量：并发 16 线程终态回写 / 下发全部 409 冲突",
+          all_conflict and probe.get("exit_code") == 0,
+          "16/16 均为 ALERT_TERMINAL 冲突", f"{len(outcomes)} 条结果，exit={probe.get('exit_code')}")
+    check("持久化层锁内不变量：并发后终态未被翻转（已闭环）且审计不增（=2）",
+          probe.get("final_status") == "已闭环" and probe.get("audit_total") == 2,
+          "已闭环 / audit_total=2",
+          {"final_status": probe.get("final_status"), "audit_total": probe.get("audit_total")})
+    check("持久化层锁内不变量：终态同人同动作同结果仍可幂等回放",
+          (probe.get("idempotent_replay") or {}).get("ok") is True
+          and (probe.get("idempotent_replay") or {}).get("idempotent") is True,
+          "ok=true idempotent=true", probe.get("idempotent_replay"))
+    check("持久化层锁内不变量：无回执回写（锁内复查）→ ACK_NO_DISPATCH",
+          probe.get("fresh_conflict") == "ACK_NO_DISPATCH", "ACK_NO_DISPATCH", probe.get("fresh_conflict"))
+
+    readme_path = ASSEMBLY / "README.md"
+    readme_digest_before = state_digest(readme_path)
+    invalid_paths = [
+        "work/assembly/README.md",          # 已跟踪文件（非 .json）
+        "work/assembly/traffic.py",         # 已跟踪文件（非 .json）
+        "work/assembly/out/state.txt",      # 非 .json
+        "work/assembly/not_allowed.json",   # .json 但不在白名单目录
+        "docs/数据契约.md",                  # 其它目录（非 .json）
+    ]
+    invalid_records = []
+    for bad_path in invalid_paths:
+        code, output = _run_cli(["--check", "--state-path", bad_path])
+        invalid_records.append({
+            "state_path": bad_path,
+            "exit_code": code,
+            "output_first_line": output.splitlines()[0][:160] if output else "",
+        })
+    check("--state-path 误传已跟踪文件 / 非 .json / 白名单外路径 → 退出码 2",
+          all(record["exit_code"] == 2 for record in invalid_records),
+          "5/5 退出码 2", [record["exit_code"] for record in invalid_records])
+    check("--state-path 拒绝时目标文件未被改动（README 哈希不变）",
+          state_digest(readme_path) == readme_digest_before, "哈希不变",
+          "不变" if state_digest(readme_path) == readme_digest_before else "变化")
+    valid_code, _valid_output = _run_cli([
+        "--check", "--state-path", "work/assembly/out/ikms1h_selfcheck/ok_state.json",
+    ])
+    check("--state-path 白名单内 .json 仍可用（--check 退出码 0）", valid_code == 0, 0, valid_code)
+    EVIDENCE["state_path_safety"] = {
+        "invalid": invalid_records,
+        "readme_unchanged": state_digest(readme_path) == readme_digest_before,
+        "valid_out_json_exit": valid_code,
+    }
+
     default_digest_before = state_digest()
     stop_server()
     CUSTOM_STATE.parent.mkdir(parents=True, exist_ok=True)
@@ -696,7 +868,22 @@ def write_evidence(doc_gate: dict[str, Any], doc_gate_recheck: dict[str, Any] | 
     lines.append("")
     lines.append(_json_block(EVIDENCE.get("audit")))
     lines.append("")
-    lines.append("## 四、跨页同源（大屏 / 决策页读同一后端状态）\n")
+    lines.append("## 四、独立审查修复验证（锁内不变量 / 审计 limit / 路径安全）\n")
+    lines.append("> 对应独立审查 3 条非阻断发现：终态并发不变量、`audit limit` 截断语义、`--state-path` 目标路径校验。")
+    lines.append("")
+    lines.append("### 4.1 持久化层锁内不变量（真线程：16 并发 × ack/dispatch）\n")
+    lines.append("已闭环告警上并发 16 线程「未改善回写（会把状态改回处置中）」+「再下发」；"
+                 "锁内复查必须全部 409 冲突、终态不被翻转、审计不增：")
+    lines.append("")
+    lines.append(_json_block(EVIDENCE.get("store_invariant"), 2600))
+    lines.append("")
+    lines.append("### 4.2 审计 limit 语义（`total` = 过滤后未截断总数）\n")
+    lines.append(_json_block(EVIDENCE.get("audit_limit"), 1400))
+    lines.append("")
+    lines.append("### 4.3 `--state-path` 安全校验（误传已跟踪文件不会改名覆盖）\n")
+    lines.append(_json_block(EVIDENCE.get("state_path_safety"), 2200))
+    lines.append("")
+    lines.append("## 五、跨页同源（大屏 / 决策页读同一后端状态）\n")
     cross = EVIDENCE.get("cross_page") or {}
     lines.append(f"- API 层：连续两次 `GET /api/traffic/alerts` 逐字段一致："
                  f"**{'✅ 是' if cross.get('two_reads_identical') else '❌ 否'}**")
@@ -706,17 +893,17 @@ def write_evidence(doc_gate: dict[str, Any], doc_gate_recheck: dict[str, Any] | 
     lines.append("- 说明：本机未起 `npm run dev:remote`（前端 dev server），故以同一后端接口的两次独立读取 + 源码同源引用"
                  "证明「同一份状态」；重启持久化证据见第二节。")
     lines.append("")
-    lines.append("## 五、运行态文件不提交（gitignore / git 索引）\n")
+    lines.append("## 六、运行态文件不提交（gitignore / git 索引）\n")
     git_info = EVIDENCE.get("git_ignore") or {}
     lines.append(f"- `git check-ignore -v`：`{git_info.get('check_ignore')}`")
     lines.append(f"- `git ls-files` 命中运行态文件：{'否 ✅' if git_info.get('hidden') else '是 ❌'}")
     lines.append("")
-    lines.append("## 六、`--check` 读持久化运行态（输出尾部）\n")
+    lines.append("## 七、`--check` 读持久化运行态（输出尾部）\n")
     lines.append("```text")
     lines.append(str(EVIDENCE.get("check_output_tail", "")))
     lines.append("```")
     lines.append("")
-    lines.append("## 七、仓库门禁 doc_gate\n")
+    lines.append("## 八、仓库门禁 doc_gate\n")
     lines.append("- 命令：`python scripts/doc_gate.py`（8 组）")
     lines.append(f"- 首次运行：退出码 **{doc_gate['exit_code']}**")
     if doc_gate_recheck is not None:
@@ -730,9 +917,11 @@ def write_evidence(doc_gate: dict[str, Any], doc_gate_recheck: dict[str, Any] | 
     lines.append((shown["stdout"].strip() or "(无输出)")[-4000:])
     lines.append("```")
     lines.append("")
-    lines.append("## 八、结论与遗留\n")
+    lines.append("## 九、结论与遗留\n")
     lines.append(f"- 本单完成判定：TC-07（状态可推进 + 四项留痕 + 重启仍在）/ 顺序校验 / 终态不可翻转 / "
                  f"幂等 / 复位可留痕 / 审计可重建 / 跨页同源（API 层）—— 自检 **{passed}/{total}** 通过。")
+    lines.append("- 独立审查 3 条非阻断发现（终态并发不变量 / 审计 limit 截断语义 / `--state-path` 目标路径校验）"
+                 "已修复并纳入断言（见第四节）。")
     lines.append("- 遗留：① 运行态是**一进程一文件仓**（JSON，单 worker），多 worker / 并发写库场景留给二期 openGauss；"
                  "② 大屏 / 决策页真实浏览器联调未在本机跑（无前端 dev server），以 API 层同源 + 源码引用为证；"
                  "③ `work/frontend/README.md` 的处置闭环章节按 Issue 原文应同步，但本单写入范围限定 `work/assembly/**`，"
