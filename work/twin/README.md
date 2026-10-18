@@ -10,9 +10,9 @@
 
 | | 内容 |
 |---|---|
-| **输入文件** | 真孪生：`stations/{network,points,demand,factors,scenarios,signal_plan}.json` + `stations/sumo/*.net.xml`；样例链路：`samples/*_sample.json`（`--sample` 时无上游数据也能跑） |
-| **输出文件** | `out/{segments,vehicles,assimilation_state}.json` + `out/run_log.json`；路网侧另有 `stations/sumo/*.net.xml`（`network.json` **不是**本模块产物，归开发B 的 `map_ingest.py`） |
-| **关键口径** | **只有一个时钟**：孪生仿真时钟，不读系统时间；同一场景跑两遍**逐字段一致**（M1-1 可复现）；只有 `role="boundary"` 的断面允许同化回灌，`internal` **永远** `assimilating:false` |
+| **输入文件** | 真孪生：`stations/{network,points,demand,factors,scenarios,signal_plan}.json` + `stations/sumo/*.net.xml`；样例链路：`samples/*_sample.json`（`--sample` 时无上游数据也能跑）；真网断面/同化：`netpack/network_junction.json` + `site-ranges.json` + 视频快照 `<仓库根>/work/perception/out/latest/segments_video.json`（见第九节、第十二节） |
+| **输出文件** | `out/{segments,vehicles,assimilation_state}.json` + `out/run_log.json`；IKMS19 新增 `out/latest/{sections_candidate,assimilation_state,assimilation_log,factors_report,segments_before,segments_after,run_log}.json`（机制示例另放 `out/latest/mechanism_demo/`）；路网侧另有 `stations/sumo/*.net.xml`（`network.json` **不是**本模块产物，归开发B 的 `map_ingest.py`） |
+| **关键口径** | **只有一个时钟**：孪生仿真时钟，不读系统时间；同一场景跑两遍**逐字段一致**（M1-1 可复现）；只有 `role="boundary"` 的断面允许同化回灌，`internal` **永远** `assimilating:false`。**断面清单是候选（待签字冻结）**、**同化/因素在真孪生缺失时用明示的演示基线**、**空载基线/机制示例都不得当实测或本站结论**（第十二~十六节） |
 
 ## 一、负责什么
 
@@ -60,6 +60,10 @@ work/twin/
 ├─ calibrate.py           # 数据同化：边界断面实测 → traci.calibrator.setFlow（每 60 s、带门控）
 ├─ factors.py             # 因素注入接口（读 stations/factors.json）
 ├─ demand.py              # 读 stations/demand.json 生成车流（列车到达 → 放量）
+├─ sections.py            # 真网断面角色候选自动推导（IKMS19）：network_junction.json → boundary/internal
+├─ baseline.py            # 孪生基线构造（IKMS19）：视频观测段照抄 + 空载网络基线（明示演示）
+├─ run_assimilation.py    # 同化 + 多因素一键入口（IKMS19）：候选清单/同化状态/日志/因素报告/before-after
+├─ tools/                 # 自检脚本（IKMS19）：check_assimilation.py（TC-20）/ check_factors.py（TC-16）
 ├─ samples/               # 样例输入（无 SUMO 也能跑通判级/引擎链路）
 ├─ demo_y/                # Y 型**示意**路网 + 场景（SUMO 全链路可一键重建；与 OSM 真路网管线并列，见该目录 README）
 └─ out/                   # 运行输出（已 gitignore；**脚本必须先建目录**）
@@ -280,3 +284,227 @@ python work/twin/loop.py --scenario scenario_2
 
 - **能进仓库**：`stations/sumo/*.net.xml`（小文本、可重建）、`samples/` 里的最小样例；
 - **不能进**：OSM 原始大文件、地图瓦片、仿真录屏、`out/` 运行产物 —— 放共享盘或 `.gitignore`。
+
+---
+
+## 十二、真网断面角色候选：从 `network_junction.json` **自动推导**（IKMS19）
+
+> **为什么**：数据同化只能灌**边界断面**（第九节），而"哪 61 段里哪些是边界"此前只有前端 mock 候选
+> （`stationZ.ts` 的 `sections`，5 boundary / 6 internal，标「候选·待冻结」）。本单把它做成
+> **从真网拓扑自动推导**的清单，**不写死段号 / 坐标 / 站名** —— 换站只改 [`site-ranges.json`](site-ranges.json)。
+
+**推导规则**（[`sections.py`](sections.py)，与生产方、引擎同口径）：
+
+| 步 | 规则 | 依据 |
+|---|---|---|
+| 1 | 读站点范围登记表 → `out_json` 指向的真网产物（本站 [`netpack/network_junction.json`](netpack/network_junction.json)，61 段 / 44 节点） | 段数必须等于登记表 `seg_target`，否则**报错退出**（不在不完整路网上定断面） |
+| 2 | **boundary 节点** = `nodes[].boundary == true`；标记缺失时退化为**无向度数 1**（并写明来源） | 生产脚本 `build_junction_pack.py` 的标记口径就是"度数为 1" |
+| 3 | **boundary 断面** = 边两端**任一节点是 boundary 节点**；其余 **internal** | 即"围栏外 → 站前的上游边界断面"在拓扑上的落点；与 `edges[].boundary` 对账（不一致只留痕） |
+| 4 | 每段写 `role` + `basis`（哪个端点是边界节点 / 两端度数），并补 `flow_direction`（inbound / outbound / bidirectional）供人工裁定参考 | `sections_candidate.json` 的 `sections[]` |
+
+**本站推导结果**（2026-10-18 实跑）：**boundary 11 段 / internal 50 段**（boundary 段：
+`SZ-001、003、004、009、015、018、019、022、026、055、056`；方向分布 inbound 3 / outbound 3 /
+bidirectional 5）。产物固定 `status: "候选·待业主/队长签字冻结"`，**签字前不得宣称 M1-10 通过**
+（Issue IKMS19 第五节第 1 条）。**硬规则：internal 永远不许挂 calibrator / 回灌**，由
+[`tools/check_assimilation.py`](tools/check_assimilation.py) 硬断言（本单专属一）。
+
+**与已有产物的关系（不混命名空间）**：
+
+| 产物 | 关系 |
+|---|---|
+| [`netpack/network_junction.json`](netpack/network_junction.json) | 本清单**唯一数据源**（真网 `SZ-###`，几何/拓扑真值，只读） |
+| 站点包 `stationZ.ts` 的 `sections`（IKM4TE mock） | 前端 mock 候选：**5 boundary**（`SZ-001/003/004/009/015`，全部落在本自动推导的 11 条内）+ **6 internal**（`SZ-018/019/022/024/054/055`）。差异：mock 把 `SZ-018/019/022/055` 按「站前/停车场内部」语义标 internal，而拓扑口径判 boundary（这 4 段都有一端是度数 1 的边界节点）→ **签字冻结时必须逐条裁定**（语义围栏 vs 拓扑边界），本单不擅自改 mock、也不宣称冻结 |
+| [`../engine/realnet.py`](../engine/realnet.py) | 引擎侧同口径边界推导（OD 用）；两边都按 `nodes[].boundary` / 度数 1，**互不 import** |
+| `stations/network.json` | **7 节点 / 17 边占位件**（`SEG-###` 样例网）——**真网断面不读它**，也不与 `SZ-###` 混算 |
+| `stations/points.json` | `role` / `sumo_edge_id` 是**样例站点包**的占位映射（`DET-01` ↔ `E-001`），只给机制示例用（见下节） |
+
+单独跑：`python work/twin/sections.py`（只打印计数）／`python work/twin/sections.py --write`（写
+`out/latest/sections_candidate.json`）。正式入口仍是 `run_assimilation.py`（第十五节），它会把
+`ts` 从视频快照派生后写同一份清单。
+
+## 十三、运行时同化：只灌 boundary、门控 / 停灌日志 / 偏差（IKMS19）
+
+**数据流**（[`calibrate.py`](calibrate.py) 的 `build_assimilation()` 真路径；旧样例路径
+`build_state()` 保留，`loop.py --no-sumo` 的输出逐字节不变）：
+
+```text
+断面候选清单（sections.py，61 段 role）
+   + 视频快照 <仓库根>/work/perception/out/latest/segments_video.json（SZ-005 / SZ-024）
+   + 孪生基线（baseline.py：视频观测段照抄视频链路 + 其余段空载网络基线，均明示演示）
+   + 场景开关 stations/scenarios.json 的 assimilation（enabled / edges / period_s / gate）
+        → 逐段判定：internal 永久拒绝 → 场景开关/白名单 → 有没有观测 → 门控 → 偏差
+        → out/latest/assimilation_state.json（契约第三节信封 + edges）
+        → out/latest/assimilation_log.json（逐段 gate 求值 / 停灌原因 / 回灌值 / calibrator 计划）
+```
+
+**门控与停灌原因码**（`gate.reason`；门控拒绝再加 `gate.cause` 说明是哪个门）：
+
+| 情形 | `assimilating` | `gate.reason` | 备注 |
+|---|---|---|---|
+| 门控通过（`confidence ≥ confidence_min` 且 `data_age_s ≤ data_age_max_s`） | `true` | `null` | 有 `last_apply` + `deviation` |
+| 置信度不足 / 数据过期 | `false` | `gate_rejected` | `gate.cause = confidence_low` / `data_age`（两者都不过用 `+` 连接） |
+| internal 断面 | `false` | `internal_not_allowed` | **硬规则，永远**（代码写盘前再断言一遍） |
+| 场景 `enabled:false` | `false` | `assimilation_disabled` | 即"退回默认需求"（TC-20 第③项） |
+| 该段不在场景 `edges` 白名单 | `false` | `edge_not_enabled` | |
+| 场景 `edges` 未落到本站真网段号 | `false` | `config_unresolved` | 占位件（如 `E-001`）不猜映射 |
+| boundary 段没有视频/断面观测 | `false` | `no_observation` | 不编造回灌值 |
+
+**偏差口径**：`deviation.q_pct = |obs−base|/base×100`、`v_pct` 同理（2 位小数）。基线是**空载**（`q=0`、
+`v=null`）时相对偏差**未定义**，写 `null` + `note`，**不造分母**；真孪生基线接上后自动变成可比偏差。
+
+**契约与接口**：`assimilation_state.json` 保留契约第三节的 `ts / is_simulated / edges[]`（每段
+`segment_id / role / assimilating / gate / last_apply / deviation`），信封上**只增不删**地补
+`enabled / period_s / mode / gate / counts / applied_count / scenario_id / note`（Issue 要的
+`enabled` / 偏差 / `gate_reason` 都在里面；偏差与 `gate_reason` 用契约既有字段名
+`deviation.q_pct|v_pct` 与 `gate.reason` 表达，不另造第二套）。`run_assimilation.py` 在**默认输出目录**跑时
+还会把同一份状态发布到接口层读的 `work/twin/out/assimilation_state.json`（`work/assembly/traffic.py`
+的 `TWIN_ASSIMILATION`）。⚠️ **接口层已知小缺口**：`traffic.py` 目前只把
+`confidence_low / data_age / deviation_fuse` 映射成页面的 `gate_reason`，其余原因码会显示成「门控中」+
+`reason` 字符串——精确文案归接口层（IKMS12/IKMS17 那侧）补，本单不改别人的代码。
+
+**回灌纪律**：回灌值**先落盘**（`assimilation_log.json` 的 `applied[]`）再喂；本期只产出
+`calibrator_plan[]`（`calibrator.setFlow` 的 vehsPerHour + speed 计划），**没有实际下发 SUMO**
+（站点 Z 的 `stations/sumo/*.net.xml` 未构建、`loop.run_with_sumo` 仍是骨架——见第十六节阻塞），
+**不假装回灌到仿真**。二期熔断（M2-9「连续 N 次偏差超标自动关闭」）需要的逐周期偏差序列，
+等真孪生主循环跑起来才能累积；本单只把 `deviation` 与日志字段留好。
+
+## 十四、多因素闭环：F01~F14 → segments → factors_applied（IKMS19）
+
+**输入**（[`factors.py`](factors.py) + [`scenario.py`](scenario.py) 真路径）：
+
+| 数据 | 用法 |
+|---|---|
+| [`../../stations/factors.json`](../../stations/factors.json) | F01~F14 登记表：名称 / `targets` / `demo_multipliers` / 来源阶段 / 实现人。**因素值不写死在代码里**；登记表 14 类必须齐全，否则报错 |
+| [`../../stations/scenarios.json`](../../stations/scenarios.json) | S1~S4：`seed`、`switches`、`assimilation`（开关/edges/gate）、`factors` 注入事件（`factor_id/target/multiplier/from/until[/segment_id]`） |
+
+**注入规则**（"改世界，不改结论"）：
+
+| `target` | 注入到哪些段 | 改什么 | 备注 |
+|---|---|---|---|
+| `c` / `lanes` | 全段（带 `segment_id` 时只该段） | `c_vph = c_base_vph × ∏multiplier`（保底 `grading.factor_floor`），`x = q_vph/c_vph` | **同一因素多 target 时容量只乘一次**（防 `lanes+c` 重复折算） |
+| `v_f` | 全段（可带段号） | `v_f_kmh × multiplier`；实际车速不得超过新 `v_f`（`v = min(v, v_f新)`） | 方向：`v_f↓`、畅通耗时 `L/v_f`↑、实际行程时间不降 |
+| `demand` | **boundary 候选段** | 文件级**只登记注入事件**（`factors_applied` 出现），不改假的 q/v；需求效果需 SUMO 需求生成器 | 一期**如实标阻塞**，不编造需求效果 |
+| `confidence` | **有指标数据的段** | `confidence × multiplier`（只影响判级可用性门，不改物理世界） | 判级由 `level.py` 的可用性门处理 |
+
+**判级**：注入后**只调** [`../perception/level.py`](../perception/level.py) 的 `grade()`（唯一实现，
+本模块 import 只读，不复制阈值/判级逻辑）；硬触发因素 F07 / F08 命中
+`thresholds.grading.hard_trigger_factor_ids` → 直接跳 `hard_trigger_level=4`。
+
+**纪律**：未生效的因素**不写进 `factors_applied`**（不写 `multiplier: 1.0` 占位）；
+`factors_applied` 子字段保持契约形状（`factor_id / name / target / multiplier / until`）；
+每个因素的**来源（factors.json 的 source_stage1/2 + 场景 S1~S4）与生效区间（from~until）**
+写在 `factors_report.json` 的 `injections[]` 里，不往契约字段里硬塞新键。生效窗口按
+**场景因素 `from` 的最晚值**派生"演示评估时刻"（不读系统时钟）；不在窗口内的因素自动失效。
+
+**命名空间纪律**：场景里 `SEG-003` 这类**样例网段号**在真网模式下解析不到 → 记
+`未落地（不猜映射、不混命名空间）`，不注入（例如 S3 的 F07）；机制示例模式（`--mode sample`）
+才按样例站点包 `points.json` 把它桥到 `SEG-###`。
+
+**产物**：`out/latest/factors_report.json`（catalogue + 四个场景各自的生效/未落地因素 +
+`segments_before.json` / `segments_after.json` 的逐因素方向校验）+ 两份 segments 快照
+（before = 基线、after = 注入后，均 `is_simulated:true` + note）。
+
+## 十五、一键命令与产物（IKMS19）
+
+```powershell
+# 1) 真网模式（默认）：断面候选 + 同化状态/日志 + 因素报告 + before/after
+python work/twin/run_assimilation.py
+
+# 2) 机制示例（旧 SEG-### 样例，非本站真网）：把同化/门控/因素整条机制跑通
+python work/twin/run_assimilation.py --mode sample
+
+# 3) 自检（真跑，输出 PASS/FAIL/BLOCKED）
+python work/twin/tools/check_assimilation.py     # TC-20 四项 + 本单专属一/二
+python work/twin/tools/check_factors.py          # TC-16 逐因素注入
+
+# 4) 文档与契约门禁（先 git add）
+python scripts/doc_gate.py
+```
+
+| 参数 | 含义 | 默认 |
+|---|---|---|
+| `--mode network\|sample` | 真网 `SZ-###` / 机制示例 `SEG-###`（两套产物分目录，不混命名空间） | `network` |
+| `--scenario` | `S1~S4` / `scenario_1~4` / `常态~多因素`（读 `stations/scenarios.json`） | `S4` 多因素 |
+| `--out` | 输出目录 | `out/latest`（真网）/ `out/latest/mechanism_demo`（机制示例） |
+| `--video` | 显式指定视频快照 | 自动：本工作树 → 同级 git 主 checkout（只读参考） |
+| `--site` | 站点 id | `site-ranges.json` 的 `default_site` |
+| `--eval-ts` | 因素评估时刻（覆盖派生） | 从场景因素 `from` 派生 |
+| `--obs-confidence` / `--obs-data-age-s` | **自检注入**的门控测试值（TC-20④；只改本次内存，不改输入文件） | 不覆盖 |
+
+**真网模式实跑摘要**（2026-10-18，可复现）：
+
+```text
+断面候选：61 段（boundary 11 / internal 50）· 状态：候选·待业主/队长签字冻结
+视频快照：在场（sibling:hubflow 的 work/perception/out/latest/segments_video.json，SZ-005/SZ-024）
+同化：回灌 0 条 · boundary 11 / internal 50（两段视频都在 internal 拓扑 → 硬规则拒绝）
+因素：生效 3 条（S4：F01 c、F03 demand、F10 demand）· 未生效 0 条 · 受影响段 61
+阻塞：清单未签字 / 无 boundary 观测 / 真孪生基线缺失 / calibrator 未下发 /
+      站点包 edges 仍是占位 E-001 / 本工作树无视频快照（只读引用同级 checkout）
+```
+
+**机制示例实跑摘要**：断面 2 段（boundary 1 / internal 1）→ **回灌 1 条**（`SEG-001`，gate 通过，
+`deviation` 0%/0% 因样例基线==样例声明观测）；`SEG-002` internal 观测被拒
+（`internal_not_allowed`）；S3（关同化）→ 回灌 0 条。**结论只用于验机制，不是本站结果**。
+
+**产物**（均在 `out/latest/`，`out/` 已 gitignore，不进仓库）：
+
+| 文件 | 内容 |
+|---|---|
+| `sections_candidate.json` | 61 段 role + 依据 + `status=候选·待签字冻结` + 与生产方标记对账 |
+| `assimilation_state.json` | 契约第三节信封 + edges（接口层读；默认目录跑时同时发布到 `out/assimilation_state.json`） |
+| `assimilation_log.json` | 逐段观测/基线/门控/决定/偏差；`applied[]` 回灌值；`dropped[]` 停灌原因；`calibrator_plan[]`（未下发） |
+| `factors_report.json` | 因素登记表 + S1~S4 注入 + 未落地原因 + `injections[].direction_checks` |
+| `segments_before.json` / `segments_after.json` | 因素注入前后快照（before 含空载基线标注；after 含 `factors_applied` 与修正后的 `c/x/v_f/level`） |
+| `run_log.json` | 计数 / 产物字节数 / `blockers[]`（本次运行的**真实阻塞清单**） |
+
+**确定性**：不读系统时钟；`ts` 从视频快照 ts / 样例 ts / 场景因素 `from` 派生；所有集合按段号排序、
+不依赖 `set` 迭代顺序。**同输入两遍，7 个产物 sha256 全一致**（`check_assimilation.py` 的
+`DETERMINISM` 项实跑留证）。
+
+## 十六、本单口径、自检与遗留阻塞（IKMS19）
+
+### 16.1 口径（红线）
+
+1. **不冒充实测**：回灌值来自**样本视频**（非本站现场）；同化后的孪生数仍是"演示数据（模拟）"。
+   `is_simulated:true` 恒在，所有产物带 `note`；
+2. **空载基线 != 孪生模拟结果**：`baseline.py` 造的空载网络基线逐段标
+   `baseline_kind="empty_load_demo"`、`available:false / level:0（数据不可用）`，
+   **不许当"畅通"上色**（TC-11 同口径），更不许说成孪生仿真的结果；
+3. **不混命名空间**：真网只用 `SZ-###`（61 段），旧 7 节点样例网 `SEG-###` 只出现在
+   `samples/` + 机制示例模式；两套产物分目录、`run_log.mode` 区分；`assimilation.edges` 里写
+   `internal` 段号 → **报错退出**（契约 §6.2）；
+4. **不宣称 M1-10 通过**：清单未签字冻结 + 真网无 boundary 观测 + 真孪生基线缺失 →
+   `assimilation_state` 只有**机制级**证据，M1-10 / TC-20① 记 **BLOCKED**（`check_assimilation.py`
+   打印 BLOCKED，不当 PASS）；
+5. **不编造需求效果**：`target=demand` 的 6 类因素只登记注入事件与 `factors_applied`，
+   方向/等级效果记 BLOCKED（需 SUMO 需求生成器）。
+
+### 16.2 自检实跑（2026-10-18）
+
+| 命令 | 结果 |
+|---|---|
+| `python work/twin/run_assimilation.py` | exit 0；61 段候选 / 11 boundary / 回灌 0（诚实）/ 因素 3 条生效 |
+| `python work/twin/run_assimilation.py --mode sample` | exit 0；2 段 / 回灌 1 条（机制示例） |
+| `python work/twin/tools/check_assimilation.py` | **7 项 PASS · 1 项 BLOCKED · 0 项 FAIL**；TC-20②③④ + 本单专属一/二 + 机制示例① PASS；真网 TC-20① BLOCKED |
+| `python work/twin/tools/check_factors.py` | **8 项 PASS · 6 项 BLOCKED · 0 项 FAIL**；F01/F02/F04/F05/F06/F07/F08/F09 机制 PASS（F07/F08 硬触发跳 level=4）；F03/F10/F11/F12/F13/F14（demand 类）BLOCKED |
+| 旧样例链路回归 `python work/twin/run.py --sample` | 产物与改造前**逐字节一致**（`segments/vehicles/assimilation_state/run_log` 四个文件 sha256 相同） |
+| `python scripts/doc_gate.py` | 8/8 通过（八组门禁） |
+
+### 16.3 遗留阻塞（如实登记，不编数）
+
+| # | 阻塞 | 影响 | 解锁条件 |
+|---|---|---|---|
+| 1 | **断面清单未签字冻结** | 不得宣称 M1-10 / TC-20① 通过 | 业主/队长签字冻结 `sections_candidate.json`（含 mock 5/6 与拓扑 11/50 的逐条裁定）→ IKMHMX |
+| 2 | **视频只覆盖 2 段且都是 internal**（`SZ-005`/`SZ-024`） | 真网 boundary 无观测 → 回灌 0 条；TC-20① 偏差不可核 | 上游给 **boundary 段**的视频实测或断面计数（或补摄像头到 boundary 段） |
+| 3 | **真孪生基线缺失**：`stations/sumo/*.net.xml` 未构建、`loop.run_with_sumo` 仍是骨架 | 只能用**空载网络基线**（明示演示）；同化偏差口径不可核 | W1 真孪生主循环（SUMO 路网 + 司机行为体）跑起来后换真基线 |
+| 4 | **calibrator 未实际下发** | 本单只落 `calibrator_plan`，没有 `traci.calibrator.setFlow` 实灌 | 同 #3（有真 SUMO 网 + 主循环；SUMO/traci 本机已装，缺的是站点 Z 的 `.net.xml` 与主循环） |
+| 5 | **站点包 `assimilation.edges` 仍是占位 `E-001`**（7 节点样例网命名空间） | 真网解析不到 → `config_unresolved`；即使有观测也不会被开白名单 | 人工把 `stations/scenarios.json` 的 `edges` 换成 boundary 候选的 `SZ-###`（本单不改 `stations/`） |
+| 6 | **demand 类因素（6 类）无需求生成器** | 只登记注入事件，方向/等级效果不可验 | W1 的 SUMO 需求生成器 / 真孪生 |
+| 7 | **本工作树无视频快照**（`work/perception/out/` 是 gitignore 运行产物） | 只读引用**同级 git checkout** 的产物；换机器验收要先跑感知链路 | 验收机上先跑 `work/perception/run_chain.py` 生成 `segments_video.json` |
+| 8 | **TC-14 / TC-13（场景三跑 / 两遍一致）** | 本单只证明"同输入两遍逐字节一致"；"同一场景三跑（只切推荐）"要真孪生主循环 | W1 真孪生 + 引擎真网（IKMS11）联调 |
+
+> **与 `stations/network.json` 占位件的关系**：本单所有真网产物（断面 / 同化 / 因素）**只读**
+> `netpack/network_junction.json`（61 段真网）；`stations/network.json` 仍是 IKLLX2 的 7 节点
+> / 17 边占位件（`SEG-###`），**不参与真网链路**，也不手改它（归 `map_ingest.py` / 契约收口）。
+> 机制示例模式才用 `stations/*.json` 的样例占位件（`E-001 ↔ SEG-001`），并且全程标「机制示例·非本站真网」。
+
