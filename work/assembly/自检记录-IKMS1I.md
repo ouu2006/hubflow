@@ -87,23 +87,27 @@ python work/assembly/demo_all.py --rounds 3
 → "M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功"
 ```
 
-**（b）本复核在同一 junction 下复跑**（同环境第二组独立样本，脚本真实输出）：
+**（b）本复核在同一 junction 下复跑**（独立审查修复后的同环境复跑样本，脚本真实输出）：
 
 | 轮次 | 状态 | 总耗时 (s) | 真网算路 | 感知链路 | 接口层 | 端点自检 | 内存（起→止 MB，采样点） |
 |---|---|---|---|---|---|---|---|
-| 1 | ✅ ok | 4.59 | ✅ ok（12 requests / 61 段 / 44 节点） | ✅ ok（2 段：SZ-005 / SZ-024） | ✅ ok | ✅ ok（21 项含写端点 + SSE） | 54.77 → 55.60（3 点） |
-| 2 | ✅ ok | 4.52 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 54.88 → 55.81（4 点） |
-| 3 | ✅ ok | 4.35 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 55.05 → 55.80（3 点） |
+| 1 | ✅ ok | 4.48 | ✅ ok（12 requests / 61 段 / 44 节点） | ✅ ok（2 段：SZ-005 / SZ-024） | ✅ ok | ✅ ok（21 项含写端点 + SSE） | 55.06 → 55.88（3 点） |
+| 2 | ✅ ok | 4.56 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 54.83 → 55.64（3 点） |
+| 3 | ✅ ok | 4.61 | ✅ ok | ✅ ok（2 段） | ✅ ok | ✅ ok | 54.92 → 55.82（4 点） |
 
 ```text
-内存趋势：[55.6, 55.81, 55.8]，growth=0.2 MB，allowed_growth_mb=20.0，not_continuously_growing=True
+内存趋势：[55.88, 55.64, 55.82]，growth=-0.06 MB，allowed_growth_mb=20.0，not_continuously_growing=True
 M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功；内存未持续增长
 [demo exit=0]
 ```
 
+（另：产物新鲜度在本轮有实测字段：如第 1 轮 `before_mtime_ns=1792306385057247400`、
+`artifact_mtime_ns=1792306562426158200`、`stage_started_ns=1792306562079565800` —— 产物 mtime **严格大于**
+运行前且不早于阶段开始，证明 routes.json 由本轮重写，见 §七 第 2 条。）
+
 - 数据在场时端点数据源变为 `perception.video`（视频感知链路），处置闭环写端点也真跑了一遍：
   `plan-dispatch 200 → plan-ack 200 → alerts-reset 200（演示后复位）`；SSE `event=traffic_snapshot` 200。
-- 两次运行（Lead 5.1/4.39/4.37s、growth −0.01MB；本复核 4.59/4.52/4.35s、growth 0.20MB）**结论一致**：
+- 两次运行（Lead 5.1/4.39/4.37s、growth −0.01MB；本复核 4.48/4.56/4.61s、growth −0.06MB）**结论一致**：
   三轮全 ok、内存未持续增长；耗时/内存的少量差异属机器负载正常波动，**不是两次不同口径**。
 - 每轮日志：`work/assembly/out/demo/round-0N/`；汇总：`work/assembly/out/demo_all_report.json`（gitignored）。
 
@@ -120,12 +124,12 @@ M1-6 结论：通过 —— 无人干预连跑 3 轮全部必需步骤成功；�
 > 压测报告只陈述实测数字，不判定达标。
 
 ```text
-就绪：2337.3 ms
+就绪：2326.4 ms
 端点 14 个；每轮每端点 20 次 × 8 并发
-第 1 轮：280 请求 · 1.284 s · 218.1 RPS · 错误 0 · RSS 55.11→60.16 MB
-第 2 轮：280 请求 · 1.322 s · 211.8 RPS · 错误 0 · RSS 61.35→64.97 MB
-第 3 轮：280 请求 · 1.396 s · 200.6 RPS · 错误 0 · RSS 62.4→65.83 MB
-总请求 840 · 错误 0 · P50 36.38 ms · P95 64.41 ms
+第 1 轮：280 请求 · 1.031 s · 271.6 RPS · 错误 0 · RSS 54.89→61.72 MB
+第 2 轮：280 请求 · 0.966 s · 289.9 RPS · 错误 0 · RSS 59.15→65.21 MB
+第 3 轮：280 请求 · 1.068 s · 262.2 RPS · 错误 0 · RSS 60.26→62.12 MB
+总请求 840 · 错误 0 · P50 27.65 ms · P95 53.03 ms   ← 单请求超时 = --timeout 默认 15 s（真下传，见 §七 第 6 条）
 [stress exit=0]
 ```
 
@@ -183,19 +187,19 @@ C-7 监控自检（演示数据（模拟））· 2026-10-18T14:33:50+08:00
 
 ```text
 门禁根目录：<repo>
-受管文件：326 个（已跟踪 326 个，内容取自 git 索引）
+受管文件：331 个（已跟踪 331 个，内容取自 git 索引）
 
-[通过] 1/8 编码与换行（UTF-8 无 BOM / LF）（检查 256 个目标）
-[通过] 2/8 大文件与禁入类型（检查 326 个目标）
+[通过] 1/8 编码与换行（UTF-8 无 BOM / LF）（检查 261 个目标）
+[通过] 2/8 大文件与禁入类型（检查 331 个目标）
 [通过] 3/8 Markdown 相对链接（检查 58 个目标）
 [通过] 4/8 JSON 可解析（含数据契约示例）（检查 41 个目标）
-[通过] 5/8 密钥扫描（检查 256 个目标）
+[通过] 5/8 密钥扫描（检查 261 个目标）
 [通过] 6/8 契约字段命名（snake_case）（检查 15 个目标）
 [通过] 7/8 填表报告台账（格式 / 产物覆盖 / 结果语义）（检查 15 个目标）
 [注意] docs/填表报告.md:123  `结果` 是「占位」（**T1~T9** → `stations/network.json` / `stations/points.json` / `stations/signal_plan.json` / `stations/demand.json` / `stations/factors.json` / `stations/scenarios.json` / `stations/thresholds.json` / `stations/calibration.json` / `stations/map_source.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
 [注意] docs/填表报告.md:125  `结果` 是「占位」（T1~T9 → `stations/calibration.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
 [注意] docs/填表报告.md:126  `结果` 是「占位」（T1~T9 → `stations/thresholds.json`）—— 登记的是「还没有表格出处」的产物（结构骨架 / 运行产物 / 基线）；它只说明**在场**，**不代表数据可用**，不要拿它当「已转」的证据
-[通过] 8/8 任务记录台账（格式 / 结果枚举 / 日期）（检查 120 个目标）
+[通过] 8/8 任务记录台账（格式 / 结果枚举 / 日期）（检查 122 个目标）
 
 门禁全部通过。
 ```
@@ -212,3 +216,19 @@ C-7 监控自检（演示数据（模拟））· 2026-10-18T14:33:50+08:00
 3. C-5 未压写端点（会改持久化运行态）与多进程/真实网络链路，报告中已写明覆盖范围；属专项/二期压测。
 4. `docs/任务记录.md` 按协作约定由 Lead 统一收口留行，本单不改。
 5. 所有运行产物 / 日志 / 报告 JSON 在 `work/assembly/out/`（gitignored），**未提交**；`压测报告.md` 是仓库内的实测快照。
+
+---
+
+## 七、独立审查 6 条修复验证（全部真跑/负向测试）
+
+| # | 审查发现 | 修复 | 修复后证据 |
+|---|---|---|---|
+| 1 | `--skip-engine --skip-perception` 仍判 M1-6 通过（假通过） | `m1_6` 增加 `evaluated` / `skipped` / `skipped_stages`；跳过任一 M1-6 必需步骤 → `passed=false`、`evaluated=false`，verdict「未评估（不适用）」；README §三 同步 | 真跑 `demo_all.py --rounds 3 --skip-engine --skip-perception` → **exit 0**，三轮 ok，报告 `m1_6={"passed": false, "evaluated": false, "skipped": true, "skipped_stages": ["engine-real","perception-chain"], "verdict": "未评估（不适用）"}`；正常数据在场复跑仍 `passed=true`（§一 1.2） |
+| 2 | 产物新鲜度用 `mtime >= before`：命令退出 0 但没重写时旧产物被当新鲜 | 改为 **`mtime` 严格大于运行前 且 不早于阶段开始**；感知产物同样加严；成功阶段也记录 before/artifact mtime 作为证据 | 负向测试（monkeypatch `run_command` 返回 ok 但不写产物）：`stage status=failed`、`reason="命令退出码 0 但产物未由本轮重写…"`；正常复跑三阶段新鲜度字段见 §一 1.2（mtime 严格前进） |
+| 3 | 数据新鲜度只看 `stale_count`：17/17 不可用仍报 ✅；`stations.baseline` 降级无告警 | `monitor_check.py` 按 `data_age_s` + `level=0` / `available=false` 统计**不可用**：全不可用 → **fail**、部分 → warn；`stations.baseline` 回落 → **显式 warn「数据源降级」**；部署与监控 §6.1 补「路段数据可用性」行 | 真跑两路：数据在场 → `数据新鲜度与可用性 ✅（2 段 / perception.video / 不可用 0 段）`、`数据源 ✅`、exit 0；临时移开 `work/*/out` 后 → `数据新鲜度与可用性 ❌（17 段 / stations.baseline / 不可用 17 段）` + `数据源降级 ⚠`、**exit 2**（finally 已还原产物目录） |
+| 4 | meta 的 5xx 未计入 `status_5xx`：meta 500 仍可能报「0 次 5xx」 | 所有探测端点统一 `note_status()` 计数（含 meta）；非 2xx 另计（warn），报告写明「探测 5 个端点，含 meta」 | 负向测试（monkeypatch `http_call` 让 meta 返回 500）：巡检结果出现 `接口 5xx ❌ fail —— 本次巡检 5 个探测中出现 1 次 5xx`，不再报 0 次 |
+| 5 | `部署与监控.md` 把 `demo_all.ps1` 列为登录守护命令（错误：它跑完会停接口层） | 守护方案 B 改为**直接守护** `python work/assembly/traffic.py --port 8000`；守护纪律新增 ⑤「`demo_all.py/.ps1` 是演示编排脚本，跑完会自己停掉接口层，**不能当守护命令**」 | 文档已更新（见 [`部署与监控.md`](部署与监控.md) §3） |
+| 6 | `stress_test.py` 的 `--timeout` 未传给请求（固定 15 s，报告却写该值） | `--timeout` 真正下传到 `http_call` / `resolve_segment_id` / 每轮请求；报告「单请求超时」与实际一致 | 真跑 `stress_test.py --rounds 1 --concurrency 2 --requests-per-endpoint 2 --timeout 0.001` → **exit 1**、`method.timeout_s=0.001`、24 请求 9 错误、error_samples 为 `"timed out"`（证明生效）；随后正常复跑 `--timeout 15` → 840 请求 0 错误、P50 27.65/P95 53.03 ms |
+
+> 门禁：`python scripts/doc_gate.py` 8/8 通过（见 §五）；以上修复全部有真实输出/负向测试，不是「改完即认为过了」。
+

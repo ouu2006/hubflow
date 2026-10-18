@@ -219,13 +219,13 @@ def start_traffic(port: int, log_path: Path) -> tuple[subprocess.Popen, float]:
     raise RuntimeError(f"traffic.py 25s 内未就绪（日志 {relative(log_path)}）")
 
 
-def resolve_segment_id(base: str) -> str | None:
-    result = http_call(base, "/api/traffic/segments")
+def resolve_segment_id(base: str, timeout: float = 15.0) -> str | None:
+    result = http_call(base, "/api/traffic/segments", timeout=timeout)
     if result["status"] != 200:
         return None
     # 重新取一次 payload（http_call 只回状态摘要，这里单独读）
     try:
-        with urllib.request.urlopen(base + "/api/traffic/segments", timeout=15) as response:
+        with urllib.request.urlopen(base + "/api/traffic/segments", timeout=timeout) as response:
             payload = decode(response.read())
     except (urllib.error.URLError, OSError):
         return None
@@ -235,7 +235,7 @@ def resolve_segment_id(base: str) -> str | None:
 
 def run_round(round_index: int, base: str, paths: list[tuple[str, str]], concurrency: int,
               requests_per_endpoint: int, port: int, lock: threading.Lock,
-              pid: int) -> dict[str, Any]:
+              pid: int, timeout: float = 15.0) -> dict[str, Any]:
     sampler = MemorySampler(pid)
     sampler.start()
     lock.acquire()
@@ -247,7 +247,8 @@ def run_round(round_index: int, base: str, paths: list[tuple[str, str]], concurr
     records: list[dict[str, Any]] = []
     round_started = time.perf_counter()
     with ThreadPoolExecutor(max_workers=concurrency) as pool:
-        futures = {pool.submit(http_call, base, path): (name, path) for name, path in tasks}
+# 独立审查修复：--timeout 必须真正传给每个请求（此前固定 15s，报告却写该值）
+        futures = {pool.submit(http_call, base, path, timeout): (name, path) for name, path in tasks}
         for future in as_completed(futures):
             name, path = futures[future]
             try:
@@ -469,7 +470,7 @@ def main() -> int:
     log(f"  就绪：{startup_ms} ms")
     lock = threading.Lock()
     try:
-        segment_id = resolve_segment_id(base)
+        segment_id = resolve_segment_id(base, args.timeout)
         paths = [(name, path.replace("{sid}", segment_id or "")) for name, path in ENDPOINTS if
                  "{sid}" not in path or segment_id]
         if segment_id is None:
@@ -479,7 +480,7 @@ def main() -> int:
         all_records: list[dict[str, Any]] = []
         for index in range(1, args.rounds + 1):
             record = run_round(index, base, paths, args.concurrency, args.requests_per_endpoint,
-                               args.port, lock, process.pid)
+                               args.port, lock, process.pid, args.timeout)
             all_records.extend(record["records"])
             del record["records"]
             rounds.append(record)

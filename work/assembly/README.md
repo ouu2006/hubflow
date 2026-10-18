@@ -301,7 +301,7 @@ python work/assembly/demo_all.py --skip-engine --skip-perception
 |---|---|
 | `--rounds N` | 连跑轮数（默认 1；M1-6 用 3） |
 | `--with-perception-server` | 额外起感知服务 :8101（样本数据在场时） |
-| `--skip-engine` / `--skip-perception` | 跳过对应上游步骤（缺前置时如实标阻塞） |
+| `--skip-engine` / `--skip-perception` | 跳过对应上游步骤（缺前置时如实标阻塞）；**跳过任一 M1-6 必需步骤 → M1-6 判「未评估（不适用）」**（`m1_6.passed=false`、`m1_6.evaluated=false`），**不得当通过**（退出码仍可为 0，表示接口层自检成功） |
 | `--keep-going` | 某轮失败后仍跑完剩余轮次（默认失败即停） |
 | `--json-report <path>` | 汇总报告路径（默认 `work/assembly/out/demo_all_report.json`，gitignored） |
 
@@ -329,6 +329,7 @@ python work/assembly/stress_test.py
 - 报告：[`压测报告.md`](压测报告.md)（每次运行重写；写**本机实测**环境与数字，**不给「性能达标」结论**）；
 - 原始数据：`work/assembly/out/stress_test_report.json`（gitignored）；
 - 只压只读 GET 端点（写端点会改持久化运行态，另见 §2.2 与 `自检记录-IKMS1H.md`）。
+- `--timeout` **真正传给每个请求**（报告「单请求超时」即该值）；失败 / 超时如实计入错误数。
 
 **监控自检（C-7）**：
 

@@ -30,6 +30,10 @@
 数据不在场时本脚本把感知链路**如实标 blocked**、不声明 M1-6 通过；数据在场时 `--rounds 3` 可跑出
 **M1-6 通过**（实测见 work/assembly/自检记录-IKMS1I.md §一 1.2）。
 
+**M1-6 判定的必需步骤 = 真网算路 + 感知链路 + 接口层 + 端点自检**。用 `--skip-engine` / `--skip-perception`
+跳过任一必需步骤时，本次只算「接口层自检」，M1-6 判「**未评估（不适用）**」（`m1_6.passed=false`、
+`m1_6.evaluated=false`），**不得当通过**；退出码仍可为 0（接口层自检成功）。
+
 退出码：0 = 全部步骤成功；2 = 跑完但有阻塞项（如实记录，**不算 M1-6 通过**）；1 = 有失败 / 异常。
 """
 
@@ -422,6 +426,7 @@ class DemoRound:
         if not (NETWORK_JUNCTION.is_file() and SITE_RANGES.is_file()):
             return self.stage("engine-real", "blocked", "真网前置缺失（network_junction.json / site-ranges.json）")
         before = file_info(ENGINE_REAL_ROUTES)
+        started_ns = time.time_ns()
         result = self.run_command(
             "engine-real",
             [sys.executable, str(ENGINE_RUN), "--network", "real"],
@@ -431,10 +436,22 @@ class DemoRound:
         if result["status"] == "ok":
             run_log = read_json(ENGINE_REAL_LOG) or {}
             routes = read_json(ENGINE_REAL_ROUTES) or {}
-            fresh = bool(after["exists"]) and (after.get("mtime_ns") or 0) >= (before.get("mtime_ns") or 0)
+            # 严格新鲜度：mtime 必须**严格大于**运行前、且不早于本次阶段开始，产物才算「本轮生成」；
+            # 仅 >= 会把「命令退出 0 但根本没重写」的旧产物当新鲜（独立审查发现）。
+            before_ns = before.get("mtime_ns") or 0
+            after_ns = after.get("mtime_ns") or 0
+            fresh = bool(after["exists"]) and after_ns > before_ns and after_ns >= started_ns
             requests = routes.get("requests") if isinstance(routes.get("requests"), list) else []
-            if not fresh or not after["exists"]:
-                result.update(status="failed", reason="命令退出码 0 但产物未刷新（可能是旧产物）")
+            if not fresh:
+                result.update(
+                    status="failed",
+                    reason="命令退出码 0 但产物未由本轮重写（mtime 未前进 / 早于阶段开始，可能是旧产物）",
+                    detail={
+                        "before_mtime_ns": before_ns or None,
+                        "after_mtime_ns": after_ns or None,
+                        "stage_started_ns": started_ns,
+                    },
+                )
             elif not requests:
                 result.update(status="failed", reason="routes.json 无 requests")
             else:
@@ -448,6 +465,11 @@ class DemoRound:
                         "requests_with_reservation": run_log.get("requests_with_reservation"),
                         "segment_namespace": "SZ",
                         "routes_ts": routes.get("ts"),
+                        # 新鲜度证据：产物 mtime 由本轮生成（严格 > 运行前，且不早于阶段开始）
+                        "before_mtime_ns": before_ns or None,
+                        "artifact_mtime_ns": after_ns,
+                        "stage_started_ns": started_ns,
+                        "freshness_rule": "mtime 严格大于运行前且不早于阶段开始",
                     },
                 )
                 log(f"      真网产物：{relative(ENGINE_REAL_ROUTES)}（requests={len(requests)}）")
@@ -461,6 +483,8 @@ class DemoRound:
         status = perception_data_status()
         if not status["ready"]:
             blocked = status["reason"]
+        before_video = file_info(PERCEPTION_VIDEO)
+        started_ns = time.time_ns()
         result = self.run_command(
             "perception-chain",
             [sys.executable, str(PERCEPTION_CHAIN)],
@@ -473,6 +497,17 @@ class DemoRound:
         if result["status"] == "ok":
             if not artifact["exists"]:
                 result.update(status="failed", reason="感知链路退出码 0 但产物不存在")
+            elif not ((artifact.get("mtime_ns") or 0) > (before_video.get("mtime_ns") or 0)
+                      and (artifact.get("mtime_ns") or 0) >= started_ns):
+                result.update(
+                    status="failed",
+                    reason="感知链路退出码 0 但产物未由本轮重写（mtime 未前进 / 早于阶段开始，可能是旧产物）",
+                    detail={
+                        "before_mtime_ns": before_video.get("mtime_ns"),
+                        "after_mtime_ns": artifact.get("mtime_ns"),
+                        "stage_started_ns": started_ns,
+                    },
+                )
             elif len(segments) == 0:
                 # 关键：run_chain 在缺样本数据时也会以 0 退出并写空数组——这里必须判「阻塞」而不是「成功」
                 result.update(
@@ -754,12 +789,20 @@ class DemoRound:
 
 def summarize(rounds: list[dict[str, Any]], args: argparse.Namespace,
               environment: dict[str, Any], preflight_result: dict[str, Any]) -> dict[str, Any]:
+    # 本轮流程的必需步骤（跳过的不算失败；但 M1-6 判定另有完整清单，见下）
     required = []
     if not args.skip_engine:
         required.append("engine-real")
     if not args.skip_perception:
         required.append("perception-chain")
     required.extend(["traffic-start", "endpoint-check"])
+    # M1-6 的完整必需步骤：跳过任一 → 本次只算接口层自检，M1-6 判「未评估」而非通过
+    m1_6_steps = ["engine-real", "perception-chain", "traffic-start", "endpoint-check"]
+    skipped_required = [
+        name for name in m1_6_steps
+        if (name == "engine-real" and args.skip_engine)
+        or (name == "perception-chain" and args.skip_perception)
+    ]
 
     blockers: list[str] = []
     round_rows = []
@@ -800,27 +843,38 @@ def summarize(rounds: list[dict[str, Any]], args: argparse.Namespace,
         memory_trend.update(not_continuously_growing=None,
                             note="内存样本不足（psutil 不可用或轮数不足），不判断趋势")
 
-    all_rounds_ok = all(
+    all_m1_6_steps_ok = all(
         all(({stage["stage"]: stage for stage in record["stages"]}).get(name, {}).get("status") == "ok"
-            for name in required)
+            for name in m1_6_steps)
         for record in rounds
     ) if rounds else False
     completed = len(rounds) == args.rounds
     memory_ok = memory_trend.get("not_continuously_growing")
-    m1_6_passed = bool(completed and all_rounds_ok and memory_ok is True)
-    if m1_6_passed:
+    m1_6_evaluated = not skipped_required
+    if skipped_required:
+        # 独立审查修复：跳过 M1-6 必需步骤时只能判「未评估」，绝不能因为剩余步骤 ok 就 passed=true
+        m1_6_passed = False
+        verdict = "未评估（不适用）"
+        reason = ("本次用 --skip-* 跳过了 M1-6 必需步骤：" + "、".join(skipped_required)
+                  + "；这些参数只用于接口层自检，M1-6 要按完整链路（真网算路 + 感知链路 + 接口层 + 端点自检）判定")
+    elif completed and all_m1_6_steps_ok and memory_ok is True:
+        m1_6_passed = True
         verdict = "通过"
         reason = f"无人干预连跑 {len(rounds)} 轮全部必需步骤成功；内存未持续增长（实测见 memory_trend）"
     elif not completed:
+        m1_6_passed = False
         verdict = "失败"
         reason = f"只完成 {len(rounds)}/{args.rounds} 轮"
-    elif all_rounds_ok and memory_ok is None:
+    elif all_m1_6_steps_ok and memory_ok is None:
+        m1_6_passed = False
         verdict = "未判定"
         reason = "步骤全部成功但内存无法测量（psutil 不可用），M1-6 要求「内存不持续增长」缺实测记录"
-    elif all_rounds_ok:
+    elif all_m1_6_steps_ok:
+        m1_6_passed = False
         verdict = "未通过"
         reason = f"步骤全部成功但内存趋势超出自定阈值（实测 {memory_trend.get('growth_mb')} MB）"
     else:
+        m1_6_passed = False
         verdict = "阻塞/未通过"
         reason = "存在失败或阻塞步骤（见 blockers）"
 
@@ -844,7 +898,15 @@ def summarize(rounds: list[dict[str, Any]], args: argparse.Namespace,
         "required_stages": required,
         "memory_trend": memory_trend,
         "blockers": sorted(set(blockers)),
-        "m1_6": {"passed": m1_6_passed, "verdict": verdict, "reason": reason},
+        "m1_6": {
+            "passed": m1_6_passed,
+            "evaluated": m1_6_evaluated,
+            "skipped": bool(skipped_required),
+            "skipped_stages": skipped_required,
+            "required_stages": m1_6_steps,
+            "verdict": verdict,
+            "reason": reason,
+        },
         "exit_codes": {"0": "全部步骤成功", "2": "有阻塞项（如实记录，不算 M1-6 通过）",
                        "1": "有失败 / 异常"},
     }
@@ -901,8 +963,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--perception-port", type=int, default=8101, help="感知服务端口（默认 8101）")
     parser.add_argument("--with-perception-server", action="store_true",
                         help="额外起感知服务（work/perception/server.py，样本数据在场时）")
-    parser.add_argument("--skip-engine", action="store_true", help="跳过真网算路（只验接口层）")
-    parser.add_argument("--skip-perception", action="store_true", help="跳过感知链路")
+    parser.add_argument("--skip-engine", action="store_true",
+                        help="跳过真网算路（只验接口层；跳过 M1-6 必需步骤 → M1-6 判「未评估」）")
+    parser.add_argument("--skip-perception", action="store_true",
+                        help="跳过感知链路（跳过 M1-6 必需步骤 → M1-6 判「未评估」）")
     parser.add_argument("--timeout-engine", type=float, default=180.0, help="真网算路超时（秒）")
     parser.add_argument("--timeout-perception", type=float, default=300.0, help="感知链路超时（秒）")
     parser.add_argument("--timeout-startup", type=float, default=25.0, help="接口层启动等待（秒）")

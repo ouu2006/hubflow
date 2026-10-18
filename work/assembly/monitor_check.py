@@ -10,8 +10,9 @@
 
     服务  接口层进程是否在跑、端口 8000 是否 LISTEN
     服务  接口可用性与时延（GET /api/traffic/meta 等；记录 5xx 数、P 值不测）
-    数据  路段快照数据陈旧（data_age_s > 阈值的路段数）
-    数据  数据源与降级（响应头 X-Traffic-Data-Source、空壳 note）
+    数据  路段数据新鲜度 / 可用性（data_age_s 陈旧数 + level=0 / available=false 的不可用数；
+          全不可用 → fail；陈旧 / 部分不可用 → warn）
+    数据  数据源与降级（响应头 X-Traffic-Data-Source；stations.baseline 回落 → **显式 warn**）
     服务  处置闭环持久化文件（是否存在 / 可解析 / 审计条数 / 复位次数）
     服务  磁盘使用率（> 85% 警告）与日志目录体积
     服务  感知服务端口（可选，--with-perception）
@@ -155,7 +156,21 @@ def collect(port: int, perception_port: int | None, stale_threshold: float,
     monitor.add("服务", f"端口 {port}", "ok" if port_listening else "fail",
                 "LISTEN" if port_listening else "未监听", "" if port_listening else "启动接口层或检查端口冲突")
 
+    # ---- 服务：可用性 / 5xx（独立审查修复：**所有**探测端点计入 5xx，含 meta）
+    status_5xx = 0
+    non_2xx = 0
+    probe_count = 0
+
+    def note_status(code: int) -> None:
+        nonlocal status_5xx, non_2xx, probe_count
+        probe_count += 1
+        if code != 200:
+            non_2xx += 1
+            if code >= 500:
+                status_5xx += 1
+
     meta_status, meta_payload, meta_headers, meta_ms = http_call(base + "/api/traffic/meta")
+    note_status(meta_status)
     if meta_status != 200:
         monitor.add("服务", "接口可用性", "fail", f"GET /api/traffic/meta -> {meta_status}", "检查接口层日志")
     else:
@@ -165,11 +180,9 @@ def collect(port: int, perception_port: int | None, stale_threshold: float,
                     f"GET /api/traffic/meta -> 200 · {latency} ms（本机回环，单次采样；P95 需压测脚本）",
                     "" if status == "ok" else "看 stress_test.py 报告 / 排查机器负载")
 
-    # ---- 数据：路段陈旧 / 数据源
-    status_5xx = 0
+    # ---- 数据：路段新鲜度 / 可用性 / 数据源降级
     segments_status, segments_payload, segments_headers, segments_ms = http_call(base + "/api/traffic/segments")
-    if segments_status >= 500:
-        status_5xx += 1
+    note_status(segments_status)
     source = segments_headers.get("x-traffic-data-source") or "unknown"
     if segments_status != 200:
         monitor.add("数据", "路段快照", "fail", f"GET /api/traffic/segments -> {segments_status}", "检查数据源文件 / 接口日志")
@@ -186,23 +199,50 @@ def collect(port: int, perception_port: int | None, stale_threshold: float,
                 max_age = age if max_age is None else max(max_age, age)
                 if age > stale_threshold:
                     stale_count += 1
-            if not isinstance(record.get("level"), int) or record.get("level") == 0:
+            # 独立审查修复：不能只看 stale_count —— level=0 / available=false / 缺 age 都属「不可用」
+            level = record.get("level")
+            if (
+                not isinstance(level, int)
+                or isinstance(level, bool)
+                or level <= 0
+                or record.get("available") is False
+            ):
                 unavailable_count += 1
-        status = "ok" if stale_count == 0 else "warn"
+        if segment_total == 0:
+            status = "warn"
+            action = "路段快照为空：检查上游产物是否生成（work/*/out/）"
+        elif unavailable_count >= segment_total:
+            status = "fail"
+            action = "数据全部不可用：检查上游产物 / 数据源回落；页面必须标「数据不可用」，不得显示畅通"
+        elif stale_count > 0 or unavailable_count > 0:
+            status = "warn"
+            action = "按手册 §21.2：陈旧 / 不可用路段不进入推荐计算、只展示；检查上游是否停更"
+        else:
+            status = "ok"
+            action = ""
         detail = (f"路段 {segment_total} 段 · 数据源 {source} · 数据年龄最大值 {max_age}s · "
                   f"陈旧(> {stale_threshold:g}s) {stale_count} 段 · 不可用 {unavailable_count} 段")
-        action = "" if status == "ok" else "按手册 §21.2：标「陈旧」、不进入推荐计算，只展示；检查上游是否停更"
-        monitor.add("数据", "数据新鲜度", status, detail, action)
+        monitor.add("数据", "数据新鲜度与可用性", status, detail, action)
 
-    # ---- 服务：5xx 统计（继续打关键端点）
+    # 数据源降级必须显式告警（独立审查修复：stations.baseline 回落不能静默当正常）
+    if source == "unknown":
+        monitor.add("数据", "数据源", "warn", "未读到 X-Traffic-Data-Source 响应头",
+                    "检查接口层响应头 / 版本是否匹配")
+    elif source.startswith("stations.baseline"):
+        monitor.add("数据", "数据源降级", "warn",
+                    f"路段数据源 = {source}：运行产物缺失，已回落站点包静态基线（无运行指标，level=0）",
+                    "补跑 work/engine、work/perception、work/twin 产物；页面按「数据不可用」降级，不得显示畅通")
+    else:
+        monitor.add("数据", "数据源", "ok", f"路段数据源 = {source}", "")
+
+    # ---- 服务：其余关键端点（同样计入 5xx / 非 2xx）
     for name, path in (
         ("alerts", "/api/traffic/alerts"),
         ("plan/audit", "/api/traffic/plan/audit?limit=5"),
         ("overview", "/api/traffic/overview"),
     ):
         code, payload, headers, elapsed = http_call(base + path)
-        if code >= 500:
-            status_5xx += 1
+        note_status(code)
         level = "ok" if code == 200 else ("fail" if code >= 500 else "warn")
         monitor.add("服务", f"端点 {name}", level, f"GET {path} -> {code} · {elapsed} ms",
                     "" if code == 200 else "查看接口层日志与数据源")
@@ -211,9 +251,18 @@ def collect(port: int, perception_port: int | None, stale_threshold: float,
             monitor.add("服务", "告警列表", "ok", f"{len(alerts)} 条（四态见 GET /alerts）")
 
     if status_5xx:
-        monitor.add("服务", "接口 5xx", "fail", f"本次巡检出现 {status_5xx} 次 5xx", "立即看日志；按 §21.5 P1 处置")
+        monitor.add("服务", "接口 5xx", "fail",
+                    f"本次巡检 {probe_count} 个探测中出现 {status_5xx} 次 5xx",
+                    "立即看日志；按 §21.5 P1 处置")
     else:
-        monitor.add("服务", "接口 5xx", "ok", "本次巡检 0 次 5xx")
+        detail = f"本次巡检 0 次 5xx（探测 {probe_count} 个端点，含 meta）"
+        if non_2xx:
+            detail += f"；另有 {non_2xx} 次非 5xx 的非 2xx（见上）"
+        monitor.add("服务", "接口 5xx", "ok", detail)
+    if non_2xx and not status_5xx:
+        monitor.add("服务", "接口非 2xx", "warn",
+                    f"本次巡检 {non_2xx} 次非 2xx（非 5xx）",
+                    "按返回 code 排查（404 检查路径 / 4xx 检查参数；不计入 5xx）")
 
     # ---- 服务：处置闭环持久化文件
     if DISPATCH_STATE.is_file():
