@@ -117,6 +117,84 @@ def repo_rel(path: Path) -> str:
         return str(path)
 
 
+#: 停灌原因码 → 人读文案（归因用；不参与契约字段）
+REASON_LABELS = {
+    calibrate.REASON_INTERNAL: "internal 永不回灌（硬规则）",
+    calibrate.REASON_GATE_REJECTED: "门控拒绝",
+    calibrate.REASON_DISABLED: "场景关闭同化（退回默认需求）",
+    calibrate.REASON_CONFIG_UNRESOLVED: "场景 edges 未落地",
+    calibrate.REASON_EDGE_NOT_ENABLED: "不在场景 edges 白名单",
+    calibrate.REASON_NO_OBSERVATION: "无观测",
+}
+
+
+def build_assimilation_detail(state: dict[str, Any], log: dict[str, Any]) -> dict[str, Any]:
+    """从同化状态/日志派生**真实归因**（供摘要 / run_log / 自检用；不写盘、不猜）。
+
+    区分三件事，避免"回灌 0 条"时一律归因成 internal：
+      * 场景开关（`enabled=false` → 退回默认需求）；
+      * boundary 断面各自的停灌原因分布（无观测 / 门控拒绝 / edges 未落地 / 不在白名单）；
+      * internal 观测被拒条数（硬规则，单独列）。
+    """
+    stopped_by_reason: dict[str, int] = {}
+    for edge in state.get("edges") or []:
+        if edge.get("assimilating") is True or edge.get("role") == "internal":
+            continue
+        reason = str((edge.get("gate") or {}).get("reason") or "unknown")
+        stopped_by_reason[reason] = stopped_by_reason.get(reason, 0) + 1
+    records = log.get("records") or []
+    return {
+        "enabled": state.get("enabled"),
+        "applied_count": int(state.get("applied_count") or 0),
+        "applied_ids": [
+            edge["segment_id"] for edge in state.get("edges") or [] if edge.get("assimilating") is True
+        ],
+        "boundary_stopped_by_reason": dict(sorted(stopped_by_reason.items())),
+        "internal_sections": sum(
+            1 for edge in state.get("edges") or [] if edge.get("role") == "internal"
+        ),
+        "internal_observations_rejected": sorted(
+            record["segment_id"]
+            for record in records
+            if record.get("role") == "internal" and record.get("observation")
+        ),
+        "boundary_observations": sorted(
+            record["segment_id"]
+            for record in records
+            if record.get("role") == "boundary" and record.get("observation")
+        ),
+        "scenario_edges": dict(log.get("scenario_edges") or {}),
+    }
+
+
+def attribution_text(detail: dict[str, Any]) -> str:
+    """把归因 dict 拼成一句人读文案（真网 / 机制示例共用）。"""
+    parts: list[str] = []
+    if detail.get("enabled") is False:
+        parts.append("场景关闭同化（enabled=false → 退回默认需求）")
+    applied = int(detail.get("applied_count") or 0)
+    if applied:
+        parts.append(f"已回灌 {applied} 条（{'、'.join(detail.get('applied_ids') or [])}）")
+    stopped = dict(detail.get("boundary_stopped_by_reason") or {})
+    if detail.get("enabled") is False:
+        # 场景关闭时所有 boundary 都是同一个原因，已在上一句说明，不重复列分布
+        stopped.pop(calibrate.REASON_DISABLED, None)
+    if stopped:
+        text = "；".join(
+            f"{REASON_LABELS.get(reason, reason)} {count} 条" for reason, count in stopped.items()
+        )
+        parts.append(("boundary 停灌原因分布：" if not applied else "其余 boundary 停灌：") + text)
+    internal_rejected = detail.get("internal_observations_rejected") or []
+    if internal_rejected:
+        parts.append(
+            f"internal 观测被拒 {len(internal_rejected)} 条"
+            f"（{'、'.join(internal_rejected)}；internal_not_allowed 硬规则）"
+        )
+    if not parts:
+        parts.append("无 boundary 候选可灌（如实）")
+    return "；".join(parts)
+
+
 # ============================================================================
 # 观测覆盖（自检用：压 confidence / 抬 data_age，TC-20 第④项）
 # ============================================================================
@@ -152,8 +230,9 @@ def _network_blockers(
     state: dict[str, Any],
     video_source: str,
     scenario_edges: dict[str, Any],
+    detail: dict[str, Any],
 ) -> list[dict[str, str]]:
-    """把真网模式当前的**真实阻塞**列出来（不编造通过）。"""
+    """把真网模式当前的**真实阻塞**列出来（不编造通过；归因按实际状态，不写死）。"""
     blockers: list[dict[str, str]] = []
     blockers.append(
         {
@@ -173,22 +252,46 @@ def _network_blockers(
     observed_boundary = sorted(
         segment_id for segment_id in observations if roles.get(segment_id) == "boundary"
     )
-    if observed_internal:
+    applied_count = int(detail.get("applied_count") or 0)
+    # 「观测都在 internal、因此回灌 0 条」只在**确实没有 boundary 可用观测**时才成立；
+    # 混合快照（boundary 已回灌 > 0）时不能再说"故回灌 0 条"（否则与状态自相矛盾）。
+    if observed_internal and applied_count == 0 and not observed_boundary:
         blockers.append(
             {
                 "code": "observations_are_internal",
                 "detail": (
-                    f"视频快照有数据的段 {observed_internal} 在真网拓扑里是 internal（端点不是 boundary 节点）"
-                    "→ 硬规则禁止回灌，故真网模式回灌 0 条；这不是 bug，是 'internal 永不回灌' 在起作用"
+                    f"视频/断面观测段 {observed_internal} 在真网拓扑里都是 internal（端点不是 boundary 节点）"
+                    "→ 硬规则禁止回灌；再加上 boundary 候选段没有任何观测，故本次回灌 0 条。"
+                    "这不是 bug，是 'internal 永不回灌' 在起作用"
                 ),
             }
         )
-    if not observed_boundary:
+    if observed_boundary:
+        # 有 boundary 观测：按实际回灌/门控结果如实写（不再报"无 boundary 观测"）
+        rejected = [
+            segment_id
+            for segment_id in observed_boundary
+            if segment_id not in (detail.get("applied_ids") or [])
+        ]
+        if rejected:
+            blockers.append(
+                {
+                    "code": "boundary_observation_rejected",
+                    "detail": (
+                        f"boundary 观测段 {observed_boundary}，其中 {rejected} 未回灌"
+                        "（原因见 assimilation_state 的 gate / assimilation_log 的 dropped；"
+                        "例如门控拒绝 / edges 未落地），已回灌 "
+                        f"{applied_count} 条"
+                    ),
+                }
+            )
+    else:
         blockers.append(
             {
                 "code": "no_boundary_observation",
                 "detail": (
-                    "boundary 候选段没有任何视频/断面观测（当前视频链路只映射 2 段，均 internal）"
+                    f"boundary 候选段没有任何视频/断面观测（观测段 {sorted(observations) or '无'}，"
+                    f"其中 internal {observed_internal or '无'}）"
                     "→ TC-20 第①项的「边界流量/车速偏差」无法核；需上游给 boundary 段的实测或断面计数"
                 ),
             }
@@ -379,12 +482,14 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
             }
         )
 
+    assimilation_detail = build_assimilation_detail(state, assimilation_log)
     blockers = _network_blockers(
         sections_payload,
         observations,
         state,
         video_source,
         assimilation_log["scenario_edges"],
+        assimilation_detail,
     )
     blockers.extend(
         {
@@ -487,6 +592,21 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
         "evaluation_ts": eval_ts,
         "video_snapshot": assimilation_log["video_snapshot"],
         "observation_overrides": assimilation_log.get("observation_overrides"),
+        "assimilation_detail": assimilation_detail,
+        "observation_summary": {
+            "video_observed_segments": sorted(observations),
+            "observed_roles": {
+                segment_id: roles[segment_id]
+                for segment_id in sorted(observations)
+                if segment_id in roles
+            },
+            "internal_observations_rejected": assimilation_detail[
+                "internal_observations_rejected"
+            ],
+            "boundary_observations": assimilation_detail["boundary_observations"],
+            "applied_count": assimilation_detail["applied_count"],
+            "summary_text": attribution_text(assimilation_detail),
+        },
         "counts": {
             "sections": sections_payload["counts"],
             "assimilation": state["counts"],
@@ -524,6 +644,7 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
         "sections": sections_payload["counts"],
         "assimilation": state["counts"],
         "applied": state["applied_count"],
+        "assimilation_detail": assimilation_detail,
         "factors": {
             "active": len(active),
             "inactive": len(inactive),
@@ -713,12 +834,18 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
             "data_age_s": args.obs_data_age_s,
             "note": "自检注入的门控测试值（只用于 TC-20 第④项，不是输入数据）",
         }
+    assimilation_detail = build_assimilation_detail(state, assimilation_log)
 
     catalogue_payload, catalogue = factors.load_factor_catalogue()
     del catalogue_payload
     scenario_row = scenario.find_scenario(scenarios_payload, args.scenario)
     raw_injections = factors.scenario_injections(catalogue, scenario_row)
-    eval_ts, eval_ts_source = factors.derive_evaluation_ts(raw_injections, ts)
+    # --eval-ts 两种模式都生效（此前 sample 模式静默忽略，属缺陷；现在按 CLI 覆盖派生）
+    if args.eval_ts:
+        eval_ts = str(args.eval_ts)
+        eval_ts_source = "cli:--eval-ts"
+    else:
+        eval_ts, eval_ts_source = factors.derive_evaluation_ts(raw_injections, ts)
     observed_ids = {
         segment["segment_id"] for segment in baseline_payload["segments"]
         if segment.get("confidence") is not None
@@ -732,7 +859,11 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
     scenario_reports: list[dict[str, Any]] = []
     for row in scenarios_payload["scenarios"]:
         row_injections = factors.scenario_injections(catalogue, row)
-        row_ts, row_ts_source = factors.derive_evaluation_ts(row_injections, ts)
+        if args.eval_ts and str(row.get("scenario_id")) == scene.name:
+            # 被选中场景用 CLI 覆盖的评估时刻；其它场景各自按因素窗口派生（不跨场景借时间）
+            row_ts, row_ts_source = eval_ts, eval_ts_source
+        else:
+            row_ts, row_ts_source = factors.derive_evaluation_ts(row_injections, ts)
         row_active, row_inactive = factors.prepare_injections(
             catalogue, row, sections_payload, observed_ids, row_ts
         )
@@ -870,6 +1001,16 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
         "video_snapshot": assimilation_log["video_snapshot"],
         "edge_bridge": assimilation_log["edge_bridge"],
         "observation_overrides": assimilation_log.get("observation_overrides"),
+        "assimilation_detail": assimilation_detail,
+        "observation_summary": {
+            "video_observed_segments": sorted(observations),
+            "internal_observations_rejected": assimilation_detail[
+                "internal_observations_rejected"
+            ],
+            "boundary_observations": assimilation_detail["boundary_observations"],
+            "applied_count": assimilation_detail["applied_count"],
+            "summary_text": attribution_text(assimilation_detail),
+        },
         "counts": {
             "sections": sections_payload["counts"],
             "assimilation": state["counts"],
@@ -897,6 +1038,7 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
         "sections": sections_payload["counts"],
         "assimilation": state["counts"],
         "applied": state["applied_count"],
+        "assimilation_detail": assimilation_detail,
         "factors": {
             "active": len(active),
             "inactive": len(inactive),
@@ -926,7 +1068,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--out", default="", help="输出目录（默认 out/latest 或 out/latest/mechanism_demo）")
     parser.add_argument("--site", default="", help="站点 id（缺省用 site-ranges.json 的 default_site）")
     parser.add_argument("--video", default="", help="视频快照路径（缺省自动找）")
-    parser.add_argument("--eval-ts", default="", dest="eval_ts", help="因素评估时刻（缺省从场景因素派生）")
+    parser.add_argument(
+        "--eval-ts",
+        default="",
+        dest="eval_ts",
+        help="因素评估时刻（缺省从场景因素派生；network / sample 两种模式都生效）",
+    )
     parser.add_argument(
         "--obs-confidence",
         type=float,
@@ -973,6 +1120,9 @@ def print_summary(summary: dict[str, Any]) -> None:
         f"  同化：回灌 {assimilation['applied']} 条 · boundary {assimilation['boundary']} / "
         f"internal {assimilation['internal']}"
     )
+    detail = summary.get("assimilation_detail") or {}
+    if detail:
+        print(f"  同化归因：{attribution_text(detail)}")
     print(
         f"  因素：生效 {factors_counts['active']} 条 · 未生效/未落地 {factors_counts['inactive']} 条 · "
         f"受影响段 {factors_counts['changed_segments']}"
@@ -980,8 +1130,10 @@ def print_summary(summary: dict[str, Any]) -> None:
     print(f"  产物：{summary['out_dir']}")
     for blocker in summary.get("blockers") or []:
         print(f"  阻塞[{blocker['code']}]：{blocker['detail']}")
-    if mode == "network" and assimilation["applied"] == 0:
-        print("  注意：真网模式回灌 0 条属如实结果（internal 永不回灌 + 无 boundary 观测），不宣称 M1-10 通过。")
+    if int(detail.get("applied_count") or 0) == 0:
+        print("  注意：本次回灌 0 条已按上面的实际原因归因；不宣称 M1-10 通过（签字冻结/真孪生/边界观测见 blockers）。")
+    elif mode == "network":
+        print("  注意：有回灌但仍不得把同化后的数说成实测；M1-10 是否可宣称仍看签字冻结与真孪生。")
 
 
 def main(argv: list[str] | None = None) -> int:

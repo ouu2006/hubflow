@@ -436,15 +436,23 @@ python scripts/doc_gate.py
 ```text
 断面候选：61 段（boundary 11 / internal 50）· 状态：候选·待业主/队长签字冻结
 视频快照：在场（sibling:hubflow 的 work/perception/out/latest/segments_video.json，SZ-005/SZ-024）
-同化：回灌 0 条 · boundary 11 / internal 50（两段视频都在 internal 拓扑 → 硬规则拒绝）
+同化：回灌 0 条 · boundary 11 / internal 50
+同化归因：boundary 停灌原因分布：场景 edges 未落地 11 条；internal 观测被拒 2 条（SZ-005、SZ-024；internal_not_allowed 硬规则）
 因素：生效 3 条（S4：F01 c、F03 demand、F10 demand）· 未生效 0 条 · 受影响段 61
 阻塞：清单未签字 / 无 boundary 观测 / 真孪生基线缺失 / calibrator 未下发 /
       站点包 edges 仍是占位 E-001 / 本工作树无视频快照（只读引用同级 checkout）
 ```
 
+> 同化归因按 `assimilation_state` 的**实际 `enabled` / `gate.reason` 分布 / 观测角色**输出，
+> 不再写死"internal 永不回灌 + 无 boundary 观测"：例如 `--scenario S3` 会归因为
+> 「场景关闭同化（enabled=false → 退回默认需求）」。混合快照（boundary 已回灌 + internal 被拒）时
+> 按「已回灌 N 条 / internal 观测被拒 M 条」如实写，不会再说"故回灌 0 条"。
+
 **机制示例实跑摘要**：断面 2 段（boundary 1 / internal 1）→ **回灌 1 条**（`SEG-001`，gate 通过，
 `deviation` 0%/0% 因样例基线==样例声明观测）；`SEG-002` internal 观测被拒
-（`internal_not_allowed`）；S3（关同化）→ 回灌 0 条。**结论只用于验机制，不是本站结果**。
+（`internal_not_allowed`）；S3（关同化）→ 回灌 0 条。`--eval-ts` 在 sample 模式同样生效
+（例如 `--eval-ts 2026-01-01T09:00:00+08:00` 会让 S4 的 3 条因素全部落在窗口外 → 生效 0 条）。
+**结论只用于验机制，不是本站结果**。
 
 **产物**（均在 `out/latest/`，`out/` 已 gitignore，不进仓库）：
 
@@ -483,9 +491,11 @@ python scripts/doc_gate.py
 
 | 命令 | 结果 |
 |---|---|
-| `python work/twin/run_assimilation.py` | exit 0；61 段候选 / 11 boundary / 回灌 0（诚实）/ 因素 3 条生效 |
+| `python work/twin/run_assimilation.py` | exit 0；61 段候选 / 11 boundary / 回灌 0（按实际 `enabled`+`config_unresolved` 归因）/ 因素 3 条生效 |
+| `python work/twin/run_assimilation.py --scenario S3` | exit 0；同化归因=「场景关闭同化（enabled=false → 退回默认需求）」（不再误写成 internal/无观测） |
 | `python work/twin/run_assimilation.py --mode sample` | exit 0；2 段 / 回灌 1 条（机制示例） |
-| `python work/twin/tools/check_assimilation.py` | **7 项 PASS · 1 项 BLOCKED · 0 项 FAIL**；TC-20②③④ + 本单专属一/二 + 机制示例① PASS；真网 TC-20① BLOCKED |
+| `python work/twin/run_assimilation.py --mode sample --eval-ts 2026-01-01T09:00:00+08:00` | exit 0；`--eval-ts` 在 sample 模式生效（S4 的 3 条因素全部落到窗口外 → 生效 0 条，不再静默忽略） |
+| `python work/twin/tools/check_assimilation.py` | **8 项 PASS · 1 项 BLOCKED · 0 项 FAIL**；TC-20②③④ + 本单专属一/二 + 机制示例① + 真网①判据自测 PASS；真网 TC-20① 按实际数据 BLOCKED（补上 boundary 观测/放开 edges 后自动转 PASS，不翻 FAIL） |
 | `python work/twin/tools/check_factors.py` | **8 项 PASS · 6 项 BLOCKED · 0 项 FAIL**；F01/F02/F04/F05/F06/F07/F08/F09 机制 PASS（F07/F08 硬触发跳 level=4）；F03/F10/F11/F12/F13/F14（demand 类）BLOCKED |
 | 旧样例链路回归 `python work/twin/run.py --sample` | 产物与改造前**逐字节一致**（`segments/vehicles/assimilation_state/run_log` 四个文件 sha256 相同） |
 | `python scripts/doc_gate.py` | 8/8 通过（八组门禁） |

@@ -245,6 +245,131 @@ def gate_case() -> tuple[bool, str]:
     return (not problems), "；".join(problems) if problems else "；".join(details)
 
 
+def tc20_network_item(state: dict[str, Any], run_log: dict[str, Any]) -> Item:
+    """TC-20①（真网）判定：按实际回灌/门控/数据状态给 PASS / BLOCKED，不写死数据。
+
+    - 有 boundary 观测且回灌成功 → **PASS**（补齐 boundary 观测后自动转 PASS，不翻 FAIL）；
+    - 无回灌但有 boundary 候选 → **BLOCKED**（按实际 enabled/reason/观测动态归因）；
+    - boundary 候选为 0 → FAIL（清单异常）。
+    """
+    boundary_edges = [edge for edge in state["edges"] if edge.get("role") == "boundary"]
+    applied_count = int(state.get("applied_count") or 0)
+    applied_ids = [
+        edge["segment_id"] for edge in state["edges"] if edge.get("assimilating") is True
+    ]
+    detail = run_log.get("assimilation_detail") or {}
+    observation_summary = run_log.get("observation_summary") or {}
+    observed_segments = observation_summary.get("video_observed_segments") or []
+    observed_roles = observation_summary.get("observed_roles") or {}
+    internal_obs_rejected = detail.get("internal_observations_rejected") or []
+    stopped_reasons = detail.get("boundary_stopped_by_reason") or {}
+    reason_text = (
+        "；".join(f"{reason} {count} 条" for reason, count in stopped_reasons.items()) or "无"
+    )
+    dynamic_facts = (
+        f"boundary 候选 {len(boundary_edges)} 条；观测段 "
+        f"{ {segment_id: observed_roles.get(segment_id) for segment_id in observed_segments} }；"
+        f"回灌 {applied_count} 条"
+        f"{'（' + '、'.join(applied_ids) + '）' if applied_ids else ''}；"
+        f"boundary 停灌原因 {reason_text}；"
+        f"internal 观测被拒 {len(internal_obs_rejected)} 条"
+        f"{'（' + '、'.join(internal_obs_rejected) + '）' if internal_obs_rejected else ''}"
+    )
+    if applied_ids:
+        deviations = [
+            edge.get("deviation")
+            for edge in state["edges"]
+            if edge.get("segment_id") in applied_ids and isinstance(edge.get("deviation"), dict)
+        ]
+        return Item(
+            "TC20-1-net",
+            "TC-20①（真网，SZ-###）M1-10 boundary 回灌",
+            "PASS",
+            f"{dynamic_facts}；deviation={deviations}（真网边界回灌已发生）",
+        )
+    if not boundary_edges:
+        return Item(
+            "TC20-1-net",
+            "TC-20①（真网，SZ-###）M1-10 boundary 回灌",
+            "FAIL",
+            f"{dynamic_facts}；boundary 候选为 0，断面清单异常",
+        )
+    return Item(
+        "TC20-1-net",
+        "TC-20①（真网，SZ-###）M1-10 boundary 回灌",
+        "BLOCKED",
+        (
+            f"{dynamic_facts}；真孪生基线缺失 + 断面清单未签字（见 run_log.blockers）。"
+            "补齐 boundary 观测（或放开场景 edges）后本项按实际结果转 PASS/门控判定，不翻 FAIL"
+        ),
+    )
+
+
+def tc20_network_logic_probe() -> Item:
+    """判据自测：用**合成状态**证明"有 boundary 回灌 → PASS、无观测 → BLOCKED"（不翻 FAIL）。"""
+    applied_state = {
+        "enabled": True,
+        "applied_count": 1,
+        "edges": [
+            {
+                "segment_id": "T-B",
+                "role": "boundary",
+                "assimilating": True,
+                "gate": {"passed": True, "reason": None},
+                "deviation": {"q_pct": 5.0, "v_pct": 8.0},
+            },
+            {
+                "segment_id": "T-I",
+                "role": "internal",
+                "assimilating": False,
+                "gate": {"passed": False, "reason": calibrate.REASON_INTERNAL},
+            },
+        ],
+    }
+    applied_log = {
+        "observation_summary": {"video_observed_segments": ["T-B"], "observed_roles": {"T-B": "boundary"}},
+        "assimilation_detail": {
+            "internal_observations_rejected": [],
+            "boundary_stopped_by_reason": {},
+        },
+    }
+    blocked_state = {
+        "enabled": True,
+        "applied_count": 0,
+        "edges": [
+            {
+                "segment_id": "T-B",
+                "role": "boundary",
+                "assimilating": False,
+                "gate": {"passed": False, "reason": calibrate.REASON_NO_OBSERVATION},
+            },
+            {
+                "segment_id": "T-I",
+                "role": "internal",
+                "assimilating": False,
+                "gate": {"passed": False, "reason": calibrate.REASON_INTERNAL},
+            },
+        ],
+    }
+    blocked_log = {
+        "observation_summary": {"video_observed_segments": [], "observed_roles": {}},
+        "assimilation_detail": {
+            "internal_observations_rejected": [],
+            "boundary_stopped_by_reason": {calibrate.REASON_NO_OBSERVATION: 1},
+        },
+    }
+    probe_ok = (
+        tc20_network_item(applied_state, applied_log).status == "PASS"
+        and tc20_network_item(blocked_state, blocked_log).status == "BLOCKED"
+    )
+    return Item(
+        "TC20-1-net-logic",
+        "TC-20①（真网）判据自测：有回灌→PASS / 无观测→BLOCKED（不翻 FAIL）",
+        "PASS" if probe_ok else "FAIL",
+        "合成状态：boundary 回灌 1 条 → PASS；boundary 无观测 → BLOCKED",
+    )
+
+
 def main() -> int:
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -390,23 +515,9 @@ def main() -> int:
         )
     )
 
-    # ---- TC-20① 真网：无 boundary 观测 → 如实 BLOCKED ----
-    network_boundary = [edge for edge in state["edges"] if edge.get("role") == "boundary"]
-    network_applied = state.get("applied_count")
-    blocker_codes = [blocker.get("code") for blocker in network["run_log.json"].get("blockers") or []]
-    blocked_ok = network_applied == 0 and "no_boundary_observation" in blocker_codes
-    items.append(
-        Item(
-            "TC20-1-net",
-            "TC-20①（真网，SZ-###）M1-10 boundary 回灌",
-            "BLOCKED" if blocked_ok else "FAIL",
-            (
-                f"boundary 候选 {len(network_boundary)} 条、真网回灌 {network_applied} 条；"
-                "阻塞原因：视频快照两段（SZ-005/SZ-024）拓扑均为 internal（硬规则禁止回灌）+ "
-                "无 boundary 观测 + 真孪生基线缺失 + 清单未签字（见 run_log.blockers）"
-            ),
-        )
-    )
+    # ---- TC-20① 真网：按实际回灌/门控/数据状态判定（补上 boundary 观测后应转 PASS，不能翻 FAIL） ----
+    items.append(tc20_network_item(state, network["run_log.json"]))
+    items.append(tc20_network_logic_probe())
 
     # ---- 本单专属一：只灌 boundary + 清单一致性 + 配置错误报错 ----
     net_sub_ok, net_sub_detail = _applied_subset_boundary(state, sections_payload, log)
