@@ -19,7 +19,7 @@
   python work/engine/run.py --sample --compare    # ①不推荐 / ②此刻最快 / ③协同推荐 三组对照
   python work/engine/run.py --sample --out /tmp/x --samples ... --stations ...
   python work/engine/run.py --network real        # 真网(SZ-### 61 段)协同推荐,写 out/real/,**不动样例 out/**
-  python work/engine/run.py --network real --compare   # 真网三组对照(TC-17 数据)
+  python work/engine/run.py --network real --compare   # 真网三组对照(TC-17 数据),写 out/real/compare/
   python work/engine/run.py --network real --site-id <登记表里的 site_id> --segments <上游 segments 快照路径>
   # 站点/真网路径由 work/twin/site-ranges.json 登记表决定(不写死在代码里);换站只改登记表 + --site-id
 """
@@ -45,6 +45,9 @@ DEFAULT_STATIONS_DIR = HERE.parents[1] / "stations"
 DEFAULT_SITE_RANGES = realnet.DEFAULT_SITE_RANGES
 #: 真网产物默认输出目录:与样例 out/ **分开**,不覆盖样例基线
 DEFAULT_REAL_OUT_DIR = DEFAULT_OUT_DIR / "real"
+#: 真网 `--compare` 产物目录:与真网默认模式**再分开** —— 两种 mode 的 routes.json 不能共用一个路径,
+#: 否则后跑覆盖前者,下游按固定路径读取时会拿到错 mode 的产物(IKMS11 独立审查发现 1)
+DEFAULT_REAL_COMPARE_OUT_DIR = DEFAULT_REAL_OUT_DIR / "compare"
 
 SAMPLE_FILES = {
     "network": "network_sample.json",
@@ -1959,7 +1962,10 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         "--out",
         default=None,
         dest="out_dir",
-        help="输出目录(缺省:样例 → work/engine/out;真网 → work/engine/out/real)",
+        help=(
+            "输出目录(缺省:样例 → work/engine/out;真网 → work/engine/out/real;"
+            "真网 --compare → work/engine/out/real/compare)"
+        ),
     )
     parser.add_argument("--samples", default=str(DEFAULT_SAMPLES_DIR), dest="samples_dir")
     parser.add_argument("--stations", default=str(DEFAULT_STATIONS_DIR), dest="stations_dir")
@@ -1981,9 +1987,15 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         raise SystemExit(
             "--sample 与 --network real 互斥:样例基线(7 节点 SEG-###)与真网(SZ-###)是两张网"
         )
-    out_dir = Path(ns.out_dir) if ns.out_dir else (
-        DEFAULT_REAL_OUT_DIR if chosen_network == "real" else DEFAULT_OUT_DIR
-    )
+    if ns.out_dir:
+        # 显式传参优先:调用方要写哪就写哪(--out 的约定不变)
+        out_dir = Path(ns.out_dir)
+    elif chosen_network == "real":
+        # 真网两种 mode 分目录:默认 → out/real/;--compare → out/real/compare/。
+        # 否则后跑的会覆盖先跑的 routes.json,下游按固定路径取用时可能拿到错 mode 的产物。
+        out_dir = DEFAULT_REAL_COMPARE_OUT_DIR if ns.compare else DEFAULT_REAL_OUT_DIR
+    else:
+        out_dir = DEFAULT_OUT_DIR
     scenario = ns.scenario or ("real" if chosen_network == "real" else "sample")
     return {
         "network": chosen_network,

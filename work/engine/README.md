@@ -226,7 +226,7 @@ locate(session_id, position, heading, ts) → {
 ```text
 # 真网协同推荐(时段容量预约 + 不伤害前车):写 out/real/routes.json,不覆盖样例 out/
 python work/engine/run.py --network real
-# 真网三组对照(① 不推荐 ② 此刻最快 ③ 协同推荐)+ TC-17 三项对比数据
+# 真网三组对照(① 不推荐 ② 此刻最快 ③ 协同推荐)+ TC-17 三项对比数据:写 out/real/compare/
 python work/engine/run.py --network real --compare
 # 接上游 segments 快照(只按 SZ-### 精确匹配;段号对不上就降级并留 note)
 python work/engine/run.py --network real --segments work/perception/out/latest/segments_video.json
@@ -236,6 +236,11 @@ python work/engine/run.py --network real --site-id <登记表里的 site_id>
 python work/engine/run.py --sample
 python work/engine/run.py --sample --compare
 ```
+
+> **真网两种 mode 的产物目录是分开的**（IKMS11 独立审查整改）：默认模式 → `out/real/`，
+> `--compare` → `out/real/compare/`。**不能共用同一个 `routes.json` 路径**——否则后跑覆盖前者，
+> 下游按固定路径读取时会拿到错 mode 的产物。`--out` 显式传参仍然优先，`run_log.json` 与
+> `routes.json` 始终写在同一目录。
 
 **数据从哪来（不写死站点名 / 节点 / 段号 / 坐标）**
 
@@ -280,11 +285,14 @@ python work/engine/run.py --sample --compare
 
 | 文件 | 内容 |
 |---|---|
-| `work/engine/out/real/routes.json` | 真网协同推荐：`requests[]` 为契约第二节响应体（段号 `SZ-###`，路线额外带 `length_m`）；`network`（**61 段逐段** `length_m` / from-to / `param_source`）、`od_derivation`（OD 规则 / 入口 / 出口 / 跳过）、`segments_source`（上游快照命中与降级）三块可追溯元数据 |
-| `work/engine/out/real/run_log.json` | 真网统计（61 段 / 44 节点 / OD 数 / 备选数 / reservation 数 / M1-4 自检标志）、参数来源、可复现所需输入 |
+| `work/engine/out/real/routes.json` | **默认模式**：真网协同推荐。`requests[]` 为契约第二节响应体（段号 `SZ-###`，路线额外带 `length_m`）；`network`（**61 段逐段** `length_m` / from-to / `param_source`）、`od_derivation`（OD 规则 / 入口 / 出口 / 跳过）、`segments_source`（上游快照命中与降级）三块可追溯元数据 |
+| `work/engine/out/real/run_log.json` | **默认模式**日志：真网统计（61 段 / 44 节点 / OD 数 / 备选数 / reservation 数 / M1-4 自检标志）、参数来源、可复现所需输入 |
+| `work/engine/out/real/compare/routes.json` | **`--compare` 模式**：真网三组对照（① 不推荐 ② 此刻最快 ③ 协同推荐）+ `comparison.tc17` 三项数据 + `capacity_shortage` / 租约释放 / 突发再疏导证据；`network` / `od_derivation` / `segments_source` 同默认模式 |
+| `work/engine/out/real/compare/run_log.json` | **`--compare` 模式**日志（三组计数 / TC-17 判据 / 再疏导计数） |
 | `work/engine/out/routes.json` | **样例基线产物，保持原样**（`--sample` / `--sample --compare` 写这里，逐字节基线） |
 
-> `--out` 可另指目录；真网默认 `work/engine/out/real/`。**真网产物不覆盖 `work/engine/out/routes.json`**；
+> `--out` 可另指目录（**显式传参优先于上面的默认目录**）；`routes.json` 与 `run_log.json` 写同一目录。
+> **真网产物不覆盖样例 `work/engine/out/routes.json`**，默认模式与 `--compare` 模式也**互不覆盖**；
 > 接口层（`work/assembly/`）要不要切真网数据源是后续前端/接口单的事，**本单不碰 `work/assembly/`**。
 
 **降级与不编数（一律如实记录）**
@@ -294,24 +302,46 @@ python work/engine/run.py --sample --compare
 - 上游快照段号对不上（例如只有旧 `SEG-###` 产物）：**0 命中 → 全量降级**，并列出被忽略的段号
   （`ignored_segment_ids`），**绝不把两套段号混进同一份真网响应**；
 - 真网节点没有 `type` 字段：统一按 `intersection`（`network.node_type_source` 注明）；落客/上客点位归
-  站点包 `points.json`（真网点位归 IKMHMX / 池·S 踏勘），本单**不编点位**，`dropoff_point` 为 `null`；
+  站点包 `points.json`（真网点位归 IKMHMX / 池·S 踏勘），本单**不编点位**：真网 `points=[]` →
+  `arrival_route.dropoff_point` 恒为 `null`（`walk_min` 同为 `null`），**下游按 null 处理，不补假点位**；
 - 演示时刻 / 窗口：无上游 `ts` 时用固定常量 `realnet.DEMO_BASE_TS` / `DEMO_WINDOW_SEC`，**不读系统时钟**；
   同一输入连跑两遍 `routes.json` 逐字节一致（确定性硬约束）；
 - 口径恒为「**演示数据（模拟）**」：几何来自 OSM 真值，但指标 / 需求 / 时刻都是演示假设值。
+
+**再疏导在真网的证据（默认 0 事件 ≠ 复用失效）**
+
+`--network real --compare` **默认**（`DEMO_DEMAND_VPH=600`）的突发再疏导演示是 `events=[] / rerouted_count=0`
+——**不是"再疏导没有复用"**，而是该需求水平下突发时刻没有"改道收益超过 `hysteresis`"的在途车：机制照常跑完
+一个决策周期、如实返回 0 事件（不编事件）。把需求调高即可看到改道：
+
+```text
+$ python work/engine/run.py --network real --compare --demand-vph 1200
+exit=0；突发时刻在途 85 辆，封 SZ-002 → 改道 1 辆走 SZ-054
+事件在 routes.json 的 comparison.scenario.reroute_demo.events:
+  {"session_id":"S-cmp-OD-R-001-0141","eta_before_s":null,"eta_after_s":52.43,
+   "reroute":{"count":1,"reason":"前方路段变慢:前方路段封闭(触发阈值 30.0s),改走 SZ-054(原路线已不可通行,改道后剩余耗时 52.4s)"}}
+```
+
+> 机制代码与样例 `--sample --compare` 的再疏导**完全同一套**（`reroute.py`，不按 source 分支）；
+> 差别只在真网默认需求低、封路时段没有可改道的在途车。TC-17 三项判定用**突发注入前**的统计口径。
 
 **真网自检（真跑摘要，详细记录见 [`DESIGN.md`](DESIGN.md) 第二十一节）**
 
 ```text
 $ python work/engine/run.py --network real
-exit=0；读入 61 段 / 44 节点；12 个 OD；3 个 OD 备选≥2；
-reservation.harm_check.passed=true 12 条；响应段号全部 SZ-###（硬校验通过）
+exit=0；写 out/real/routes.json（71036 B）+ run_log.json；读入 61 段 / 44 节点；12 个 OD；
+3 个 OD 备选≥2；reservation.harm_check.passed=true 12 条；响应段号全部 SZ-###（硬校验通过）
 
 $ python work/engine/run.py --network real --compare
-exit=0；TC-17 三项（前车不受影响 / 不新增橙红 / 全网总行程时间下降）全过；
-capacity_shortage 与租约释放证据 passed=true
+exit=0；写 out/real/compare/routes.json（85973 B）+ run_log.json；两种 mode 产物互不覆盖；
+TC-17 三项（前车不受影响 / 不新增橙红 / 全网总行程时间下降）全过；
+capacity_shortage 与租约释放证据 passed=true；再疏导证据见上一节 --demand-vph 1200
 
 $ python work/engine/run.py --sample / --sample --compare
 两次连跑逐字节一致；routes.json 的 sha256 与改造前基线**完全一致**
+
+# 两种真网模式各跑两遍：默认模式 sha C933… / FB12…，--compare 模式 sha 8C6D… / 4F29…，
+# 各自两遍逐字节一致，且两种模式产物分目录、互不覆盖（详见 DESIGN.md 第二十三节）
 ```
 
 ## 六、交付标准
