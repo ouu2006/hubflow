@@ -1,13 +1,20 @@
 <script setup lang="ts">
 // 左栏:视频源台账(N 路,可用性以 /perception-api/streams 实际返回判定)+ 跟踪环节清单。
-// IKMS1T 起不再固定 6 路:行数 = 登记表 cameras 条数 N(0 路合法),左栏自身滚动;
+// IKMS1T 起不再固定 6 路:行数 = 源台账 cameras 条数 N(0 路合法),左栏自身滚动;
 // 数字一律取 meta;服务未提供的环节(透视标定 / 越线计数 / 判级)显示「—」并注明出处。
+//
+// 2026-10-18 口径(IKNBT2):**N 段 = N 摄像头 = N 视频(演示,mock 复用)**——
+// 本台账只是**源台账/初始映射**,不代表一期摄像头总数;0 路源台账 ≠ 本站没有摄像头/视频。
 import { computed } from 'vue'
+import { demoCameraCount } from '../../../shared/cameras'
 import { feedOf, feedText, metaLine } from './channels'
 import type { ChannelState } from './channels'
 
 const props = defineProps<{ channels: ChannelState[]; currentId: string }>()
 const emit = defineEmits<{ (e: 'select', source: string): void }>()
+
+/** 一期演示摄像头总数 = 路段数（Z=61 / GZ=433；与源台账分开说） */
+const demoCameraTotal = computed(() => demoCameraCount())
 
 /** 有视频源且服务端真返回了 meta 的通道数(未接入视频源的不算"已导出") */
 const exportedCount = computed(() =>
@@ -51,17 +58,19 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
     <div class="td-card-head">
       视频源
       <span class="td-head-tag">
-        <template v-if="channels.length === 0">0 路 · 本站未布摄像头</template>
-        <template v-else-if="allNoSource">{{ channels.length }} 路 · 全部未接入视频源(本期留空)</template>
-        <template v-else>{{ channels.length }} 路 · 离线样本(已导出 {{ exportedCount }})<template v-if="noSourceCount > 0">
-          · 未接入视频源 {{ noSourceCount }} 路</template></template>
+        <template v-if="channels.length === 0">源台账 0 路（仅初始映射）· 一期演示 {{ demoCameraTotal }} 路</template>
+        <template v-else>源台账 {{ channels.length }} 路（仅初始映射）· 已导出 {{ exportedCount }}<template v-if="noSourceCount > 0">
+          · 未接入视频源 {{ noSourceCount }}</template></template>
       </span>
     </div>
     <div class="td-card-body flush">
-      <!-- 0 路合法(IKMS1T):如实显示,不报错、不拿别的站数据顶 -->
+      <!-- 0 路源台账合法(IKMS1T):如实显示"仅初始映射"，并注明一期演示摄像头口径（IKNBT2） -->
       <div v-if="channels.length === 0" class="ledger-empty">
-        <span class="le-l1">本站未布摄像头</span>
-        <span class="le-l2">登记表 cameras 0 条（N = 0 路 · 0 路合法）</span>
+        <span class="le-l1">源台账 0 路（仅源侧初始映射）</span>
+        <span class="le-l2">
+          一期口径：N 段 = N 摄像头 = N 视频（演示）——本站 {{ demoCameraTotal }} 段 =
+          {{ demoCameraTotal }} 路演示摄像头，视频为 mock 复用样本；本页只展示源台账通道。
+        </span>
       </div>
       <template v-if="channels.length > 0">
         <div
@@ -81,11 +90,16 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
             </div>
             <div class="chan-l2">{{ c.def.segmentId }} {{ c.def.name }}</div>
             <div class="chan-l3 td-mono">
-              {{ !c.def.hasVideo ? '未接入视频源 · 本期留空(路网上已布点)' : metaLine(c.meta, c.detTotal) }}
+              {{ !c.def.hasVideo ? '源台账无视频源 · 本期留空(演示复用见大屏路段卡)' : metaLine(c.meta, c.detTotal) }}
             </div>
           </div>
         </div>
       </template>
+      <p class="ledger-note">
+        一期口径：<b>N 段 = N 摄像头 = N 视频（演示）</b>——本站 {{ demoCameraTotal }} 段即
+        {{ demoCameraTotal }} 路演示摄像头，每路都有画面（视频为 mock 复用，同一份样本可多路复用）；
+        本台账 {{ channels.length }} 路是<b>源台账/初始映射</b>，<b>不代表一期摄像头总数</b>；真实接入归 IKMHMX。
+      </p>
     </div>
   </section>
 
@@ -112,14 +126,15 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
     </div>
     <div class="td-card-body">
       <p class="line">
-        <template v-if="channels.length === 0">本包 · 0 路通道(本站未布摄像头)</template>
-        <template v-else-if="allNoSource">本包 · {{ channels.length }} 路通道全部未接入视频源(本期留空)</template>
-        <template v-else>一期 · 离线样本视频(批处理;文件数由登记表 video_streams 决定)</template>
+        <template v-if="channels.length === 0">源台账 0 路（仅初始映射）· 一期演示 {{ demoCameraTotal }} 路（按路段数，mock 复用）</template>
+        <template v-else-if="allNoSource">源台账 {{ channels.length }} 路均无独立视频源（演示复用见大屏路段卡；源台账不代表一期总数）</template>
+        <template v-else>一期 · 离线样本视频（演示 mock；同一份视频可多路复用）</template>
       </p>
       <p class="line">二期 · 现场摄像头流(本期不接入)</p>
       <p class="line strong">点位与字段不变 · 只换视频源</p>
       <p class="note">
-        另有「未接入视频源」的通道:路网上已布点(大屏可点),但本期不给视频 ——
+        另有「源台账未接入视频源」的通道:路网上已布点(大屏可点),但源台账侧没有独立视频源 ——
+        一期按 <b>N 段 = N 摄像头 = N 视频（演示，mock 复用）</b>口径，画面用演示复用样本视频补齐；
         它与「未导出」(有样本视频、服务端还没处理)不是一回事,故分两档显示。
       </p>
     </div>
@@ -143,6 +158,18 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
 .le-l2 {
   font-size: 11px;
   color: var(--td-text-color-placeholder);
+}
+/* 源台账 vs 一期演示口径的说明（IKNBT2）：贴在台账底部，常驻可见 */
+.ledger-note {
+  margin: 0;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--td-component-stroke);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+.ledger-note b {
+  color: var(--td-text-color-secondary);
 }
 .chan {
   align-items: flex-start;

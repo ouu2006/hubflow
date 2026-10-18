@@ -983,7 +983,10 @@ const mapChip = computed<string>(() => {
   // —— 那就答不上"每段可查摄像头数、没有的如实显示 0"。
   const id = selectedId.value
   if (!id) return ''
-  const cam = `摄像头 ${cameraCountOf(id)} 路`
+  // IKNBT2 口径：N 段 = N 摄像头 = N 视频（演示）。源台账 0 路不写「0 路/没摄像头」，
+  // 而是「演示摄像头（复用样本视频）」；源台账有的写「源台账 N 路」以示这只是初始映射。
+  const camCount = cameraCountOf(id)
+  const cam = camCount > 0 ? `源台账摄像头 ${camCount} 路` : '演示摄像头（复用样本视频）'
   const s = selected.value
   const flow = isFlow.value
   if (flow) {

@@ -475,16 +475,19 @@ const pin = ref<CameraPin | null>(null)
 /**
  * 摄像头布点（Issue IKLX5Y）：位置取站点包 `channels[].lon/lat`（落在该段折线上的示意点，
  * **不是路测点位**），点击跳到感知层对应通道。
- * 实心 = 有**样本视频源**（演示，非本站现场）、空心 = 未接入视频源（本期留空）——两件事在页面上要分开说，
- * 且"有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
+ * ⚠️ 2026-10-18 口径（IKNBT2）：图钉只是**源台账布点**（初始映射），不代表一期摄像头总数——
+ * 一期 **N 段 = N 摄像头 = N 视频（演示，mock 复用）**；源台账无布点的段也有演示摄像头与复用视频
+ * （见大屏右栏「关联摄像头」卡），不要把"没图钉"读成"没摄像头/没视频"。
+ * 实心 = 源台账有**样本视频源**（演示，非本站现场）、空心 = 源台账无独立视频源（画面为演示复用）——
+ * "有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
  */
 function addCameraPins(map: MapLibreMap): void {
   for (const p of pins) {
     const el = document.createElement('div')
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
     el.textContent = p.cid.replace('C-', '')
-    el.title = `${p.cid} ${p.name} · ${p.segment_id} · ${
-      p.hasVideo ? '有样本视频源（演示，非本站现场）' : '未接入视频源 · 本期留空'
+    el.title = `${p.cid} ${p.name} · ${p.segment_id} · 源台账图钉：${
+      p.hasVideo ? '有样本视频源（演示，非本站现场）' : '无独立视频源（演示复用见右栏路段卡）'
     } · 点击进感知层`
     el.addEventListener('mouseenter', () => {
       pin.value = p
@@ -972,7 +975,7 @@ onUnmounted(() => {
     <div v-if="pin" class="cam-chip" :style="camChipStyle">
       <b>{{ pin.cid }}</b> {{ pin.name }}
       <span class="cam-chip-sub">
-        {{ pin.segment_id }} · {{ pin.hasVideo ? '有样本视频源（演示，非本站现场）' : '未接入视频源 · 本期留空' }} · 点击进感知层
+        {{ pin.segment_id }} · 源台账：{{ pin.hasVideo ? '有样本视频源（演示，非本站现场）' : '无独立视频源（演示复用见右栏路段卡）' }} · 点击进感知层
       </span>
     </div>
 
@@ -1007,9 +1010,9 @@ onUnmounted(() => {
         <!-- 「只摄像头段上色」是拥堵版的策略；流量版对所有有 q 的段上色，这里只解释图钉语义 -->
         <template v-if="cameraOnly">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />摄像头 · 有样本视频源（演示，非本站现场）</div>
-          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
-          <div class="lg-note">流量版按 q 分档上色：未挂摄像头的段只要有流量数据同样上色（颜色只表示流量大小）</div>
+          <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
+          <div class="lg-note">流量版按 q 分档上色：源台账无布点的段只要有流量数据同样上色（颜色只表示流量大小）</div>
         </template>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
@@ -1050,9 +1053,12 @@ onUnmounted(() => {
         <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
         <template v-if="cameraOnly">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />摄像头 · 有样本视频源（演示，非本站现场）</div>
-          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
-          <div class="lg-note">样本视频非本站现场；未挂摄像头的路段只画灰轮廓、不上色</div>
+          <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
+          <div class="lg-note">
+            图钉仅源台账布点（初始映射，不代表一期总数）；一期 N 段 = N 摄像头 = N 视频（mock 复用，画面见右栏路段卡）；
+            拥堵版仅源台账布点段上色。
+          </div>
         </template>
       </template>
     </div>
