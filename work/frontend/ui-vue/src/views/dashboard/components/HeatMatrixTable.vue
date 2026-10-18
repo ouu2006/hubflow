@@ -1,12 +1,28 @@
 <script setup lang="ts">
 // 路段 × 时间热力矩阵:每行 = 一个路段,每列 = 一个时间桶(labels),
-// 格子色 = ciColor(v);null(该桶数据不可用)= 灰 #8B8B8B(绝不用 0 冒充)。
+// 格子色 = ciColor(v)（拥堵版）/ 流量档位色（流量版, Issue IKNB9G）;
+// null(该桶数据不可用 / 流量版只给当前快照)= 灰 #8B8B8B(绝不用 0 冒充)。
 import { ciColor, UNAVAILABLE, type HeatMatrix } from '../../../shared/traffic'
+import { flowBandOfQ } from '../../../shared/flow'
 
-defineProps<{ matrix: HeatMatrix | null }>()
+const props = withDefaults(
+  defineProps<{
+    matrix: HeatMatrix | null
+    /** ci = 决策拥堵版（CI 色阶）；flow = 纯车流量版（q_vph 四档蓝阶） */
+    mode?: 'ci' | 'flow'
+  }>(),
+  { mode: 'ci' },
+)
+
+function cellColor(v: number | null): string {
+  if (v === null) return UNAVAILABLE.color
+  if (props.mode === 'flow') return flowBandOfQ(v)?.color ?? UNAVAILABLE.color
+  return ciColor(v)
+}
 
 function cellTitle(label: string, v: number | null): string {
-  return v === null ? `${label} · 数据不可用` : `${label} · CI ${v.toFixed(1)}`
+  if (v === null) return `${label} · ${props.mode === 'flow' ? '无流量数据（该桶未提供 q）' : '数据不可用'}`
+  return props.mode === 'flow' ? `${label} · q ${v.toFixed(0)} 辆/h` : `${label} · CI ${v.toFixed(1)}`
 }
 </script>
 
@@ -25,7 +41,7 @@ function cellTitle(label: string, v: number | null): string {
           v-for="(v, i) in row.buckets"
           :key="i"
           class="hm-cell"
-          :style="{ background: v === null ? UNAVAILABLE.color : ciColor(v) }"
+          :style="{ background: cellColor(v) }"
           :title="cellTitle(matrix.labels[i] ?? '', v)"
         />
       </span>
