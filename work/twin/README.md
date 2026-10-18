@@ -539,7 +539,7 @@ python scripts/doc_gate.py
 > **一句话**：在真网 61 段上把 SUMO 真正跑起来——1 s 步进、每 60 s 一帧快照、`--duration 3900` 出 **65 个统计点**，
 > 三类虚拟司机 D1 送客 / D2 接客 / D3 往返都真实运行在 SUMO 中；同一命令两遍 `segments_twin.json` /
 > `twin_timeseries.json` **逐字节一致**；`--no-sumo` 样例链路四产物**逐字节不变**。
-> **IKNAUH 起再加全路段背景车流**（ackground_source=demo_uniform，演示假设）：每 60 s 每段 1 辆，61 段全部有指标（大屏不再灰档）。
+> **IKNAUH 起再加全路段背景车流**（background_source=demo_uniform，演示假设）：每 60 s 每段 1 辆，61 段全部有指标（大屏不再灰档）。
 > 所有数值仍是**演示数据（模拟）**：需求/背景车流来自样例与演示假设（真实需求归 IKMHMX），不是实测。
 
 ### 17.1 一键命令

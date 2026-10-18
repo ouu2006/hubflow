@@ -74,9 +74,11 @@ BACKGROUND_PER_SEGMENT_PER_WINDOW = 1
 BACKGROUND_OFFSET_STEP_S = 17
 BACKGROUND_OFFSET_MOD_S = SNAPSHOT_EVERY_S - 15
 BACKGROUND_FINAL_OFFSET_MOD_S = 10
-#: 覆盖补投（coverage top-up）：某段本窗口的排班车过了 15 s 还没进网（入口被占满），
-#: 最多补投 2 次；补投的也是真实 SUMO 车辆，只为保证该窗口能聚合出指标（演示口径）
-BACKGROUND_TOPUP_GRACE_S = 15
+#: 覆盖补投（coverage top-up）：某段本窗口的排班车过了 10 s 还没进网（入口被占满），
+#: 最多补投 2 次；补投的也是真实 SUMO 车辆，只为保证该窗口能聚合出指标（演示口径）。
+#: 宽限从 15 s 收到 10 s：排班偏移 41–44 s 的四段（SZ-014/022/030/038）在 55 s 检查点
+#: 前才能满足宽限，否则常规窗口没有补投机会（审查发现，本次未触发但属潜在覆盖缺口）。
+BACKGROUND_TOPUP_GRACE_S = 10
 BACKGROUND_TOPUP_MAX_ATTEMPTS = 2
 
 #: 背景车流口径说明（写进产物：segments_twin / twin_timeseries / run_log）
