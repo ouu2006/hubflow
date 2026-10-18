@@ -11,6 +11,7 @@
 |---|---|---|
 | **`stations/` 九件结构** | ✅ **定稿并冻结** | 见第二节；两组顶层键名写进 [`docs/数据契约.md`](../../docs/数据契约.md) 第六节 6.3 |
 | **`run.py --sample`** | ✅ 可跑（对照组基线）；`--sample --compare` 已接三组对照 | 不依赖上游、不依赖 SUMO，读 `samples/` + `stations/thresholds.json` 写 `out/`；`--compare` 见文末「IKMF1V 实现记录」 |
+| **`run.py --network real`** | ✅ **真网 61 段算路**（IKMS11） | 读站点范围登记表 → 真网产物 → 统一图；边界推导 OD；预约 / 不伤害 / 再疏导 / `--compare` 全在真网跑，写 `out/real/`；`--sample` 基线逐字节不变。见文末「IKMS11 真网接入」 |
 | **`network.py`（路网 + BPR）** | ✅ **实做**（W1 交付项） | 统一图结构载入与校验、`t = t0·(1+α·x^β)` |
 | **`candidates.py`（K 最短路）** | ✅ **实做**（W1 交付项） | Yen 算法 + 路径重叠度 ≤ 0.7 筛选 |
 | **`reserve.py`（时段容量预约 + 不伤害）** | ✅ **实做**（W3；IKMF1V） | `SlotTable` / `walk_slots()` / `harm_check()` / `recommend()` / `release_expired()`，见文末实现记录 |
@@ -95,7 +96,7 @@ ls -l out/                   # routes.json + run_log.json
 2. **`stations/` 九件全是占位值**：列车时刻、点位经纬度、标定控制点等均为"一眼能看出是样例"的整数/占位值，**不是实测数据**，对外材料一律按"演示数据（模拟）"口径。
 3. **`od[].exit_node` 是本次新加的字段**（见数据契约 6.3）：`routes.json` 的 `departure_route` 必填，但"送完人之后去哪"此前无处安放。已写进契约；`demand.json` 的脚本归开发A，**开发A 若要改名请提 Issue**。
 4. **`--sample` 不接预约/不伤害/再疏导**（见第三节 ③），因此 `quota` 也恒为 `null`（`--compare` 的 ③ 协同链路里 `reservation` / `quota` / `reroute` 都有值，见文末「IKMF1V 实现记录」）。
-5. **`run.py` 不带 `--sample` 会抛 `NotImplementedError`** —— 真链路要 SUMO 孪生数据（`work/twin`）与站点包路网（`network.json`，Issue #37），两者都还没到位。
+5. **`run.py` 不带 `--sample` / `--network real` 会抛 `NotImplementedError`**（默认安全：不显式选数据来源就不跑）。真链路已不再依赖 SUMO：真网入口 `--network real` 读站点范围登记表指向的真网产物（IKMS11，见文末）；`stations/network.json` 仍是 7 节点占位件，真值化归 IKMHMX。
 
 ---
 
@@ -287,5 +288,95 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
 - 判据①的基线仍来自**登记那一刻**的规划 —— 差值语义是「相对登记时计划变慢了多少」，与手册 §7.6 `eta - l.eta` 一致；不是「相对上一次周期」。
 - 再疏导演示仍用「全封」（`factors.json` 里第一条倍率 ≤ 0 的 demo 值）：样例路网上半幅封闭（×0.5）造成的 ETA 增量达不到 `eps_harm_s` 触发阈，**有限变慢能触发**这条由上面 #1 的定向验证覆盖。
 - `--sample` 的冻结基线文案（`why` 里仍写「W3 尚未实现」）保持原样：它是被判定引用的对照组基线，改一个字就破坏逐字节一致。
+
+---
+
+# 附：IKMS11 真网接入（站点 Z 61 段 · `--network real`）
+
+> Issue：**IKMS11 真网算路**。本件把决策引擎从 7 节点样例网（`SEG-###`）切到站点 Z 的
+> **61 段真路网（`SZ-###`）**；`--sample` 仍是**逐字节基线**，一个字节没动。
+
+## 二十一、改了什么
+
+| 文件 | 改动 | 为什么 |
+|---|---|---|
+| **`realnet.py`（新增）** | 站点范围登记表读取 / 真网产物 → 统一图（校验段数·段号命名空间·端点·长度）/ 边界 OD 推导 / 上游 `segments` 快照按 `segment_id` 映射 / 逐段 `param_source` / 段号硬校验 / 路线补 `length_m` | 真网接入全部收在这一个模块，`run.py` 只做装载分流；**引擎代码不出现站点名 / 节点 id / 段号 / 坐标** |
+| `run.py` | 新增 `--network {sample,real}`、`--site-id`、`--site-ranges`、`--segments`、`--demand-vph`；新增 `run_real()`；`run_compare()` 的装载层抽成 `_load_dataset()`（样例 / 真网各自装载，机制完全共用）；真网产物在 `out/real/` | 保留 `--sample` 行为不变；真网入口默认写独立目录；`--out` 可覆盖 |
+| `reserve.py` | `walk_slots_detail()` 增加 `+inf` 守卫：前方路段被"突发"封闭后，后续路段的时段格沿用最后一个有限时段 | 真网路径更长：封闭段不在路径末段时，原实现会把 `+inf` 喂给 `slot_index_of()` 抛 `OverflowError`（样例网没暴露）。样例产物零变化（只在 `+inf` 分支生效） |
+| `README.md` / `DESIGN.md` | 新增「真网算路」章节 / 本记录 | 命令、OD 规则、产物路径、与 `stations/network.json` 的关系、降级口径 |
+
+## 二十二、三处需要申报的做法
+
+### ① 装载层分流、机制层不分流（`--sample` 逐字节不变的做法）
+
+`--sample` 的逐字节基线是用**最小侵入**保住的，不是"重写后碰巧一致"：
+
+1. 只把 **数据装载** 抽成 `_load_sample_dataset()` / `_load_real_dataset()`；候选生成、时段预约、不伤害、
+   再疏导、`--compare` 三组对照的代码**一行未改**（共用同一套函数，不按 `source` 分支）；
+2. 两处会写进产物的**样例专属文案**参数化（`compare_scenario_note` / `guided_common_note`），缺省值就是
+   改造前的原文 —— 样例路径取缺省，真网路径覆盖；
+3. 真网专属的后处理（补 `length_m`、段号硬校验、网络元数据块）**只在 `dataset["route_lengths"]` 为真时执行**，
+   样例产物不经过这些代码；
+4. `--sample` 的日志键名 / 顺序 / 取值位置与改造前完全一致（`samples_dir` 由 `**dataset["log_source_fields"]`
+   原位展开），模块 docstring / help 文案变化不进产物。
+
+→ 实测：`--sample` 两遍逐字节一致，且与改造前基线 sha256 **完全相同**（见第二十四节）。
+
+### ② 真网缺字段：不编数，逐边标 `param_source`
+
+真网产物里 `speed_limit` / `capacity_vph` **全为 null**、`lanes` 只有 10/61 段有值（真值等 T2 核对表补）。
+引擎口径：**长度缺失报错**；限速缺 → 站点包 `grading.defaults.v_f_kmh`；容量缺 → 有车道数按
+`lanes × grading.saturation_flow_vph_per_lane`，否则 `grading.defaults.c_vph`；车道数缺**保留 null 不补**。
+每条边/每段都写 `param_source`，产物 `network.param_source_counts` 汇总（本站：限速 61 段全部回落、
+容量 51 段用 defaults + 10 段按车道数推、车道数 51 段缺）。
+
+### ③ OD 规则：边界推导（不手写段号），并为「备选 ≥2」保留可验 OD
+
+真网是有向图（`oneway=yes` 的段只保留 from→to 方向），边界按**方向**分成 4 个进场边界（只有出边）与
+7 个离场边界（只有入边）。原始"进场边界 → 离场边界"对的候选路线数最多只有 2 条（多数只有 1 条），
+达不到 M1-4 的「备选 ≥2」；因此规则改为：
+
+1. 每个进场边界遍历**全部内部节点**当候选终点，按（候选路线数降序, 自由流耗时升序, 节点 id）取前 3 个；
+2. 终点是内部节点、`exit_node` 是它自由流最快的**可达离场边界** → 两者必不同，`departure_route` 可算（TC-12）；
+3. 不可达组合跳过留痕（`od_derivation.skipped`），不顺延硬凑；
+4. 本站结果：**12 个 OD 对**，其中 3 个 OD 的备选 = 2 条（M1-4 要求 ≥3 个 OD 对，达标）。
+
+> 为什么"候选路线数"不是循环论证：它是**真网拓扑 + 站点包 `k_candidates` / `max_path_overlap`** 的直接函数，
+> 只用来**挑终点**（挑能体现 K 候选的 OD），不是判据、不是阈值；OD 数与规则都写进 README，换站换网自动重推。
+
+## 二十三、自检（真跑；日志见 `_scratch/ikms11-selfcheck.log`，本文件只摘数字）
+
+| # | 验证了什么 | 命令 | 真实结果 |
+|---|---|---|---|
+| ① | `--sample` 基线逐字节不变 | `run.py --sample` / `--sample --compare` | sha256 **与改造前完全相同**：`routes.json` `c375d902…814c`（8310 B）/ `run_log.json` `6c27bfc1…6bfb`（730 B）；compare `c194bddc…0339`（22366 B）/ `ba047513…def1`（2277 B） |
+| ② | 样例连跑两遍 | 同一命令跑两遍 | `routes.json`/`run_log.json` 逐字节一致 |
+| ③ | 真网 61 段全读到 | `run.py --network real` | `network.segments_read=61` / `nodes_read=44` / `seg_target=61`；`network.segments[]` 61 条逐段带 `length_m`/from-to/`param_source` |
+| ④ | 真网 OD / 备选 / 不伤害（M1-4） | 同上 | **12 个 OD**；**3 个 OD 备选 = 2 条**；12/12 `reservation.harm_check.passed=true`；`run_log.m1_4.passed=true` |
+| ⑤ | 真网段号命名空间 | 同上 | 响应共 177 处段号引用，全部 `SZ-###`（`realnet.assert_segment_namespace()` 硬校验，非自述）；路线共 38 条，`length_m` 全部补齐 |
+| ⑥ | 真网连跑两遍 | 同一命令跑两遍 | `routes.json` `c933bc43…8eee` / `run_log.json` `fb125b44…504b`，两遍逐字节一致 |
+| ⑦ | 真网 `--compare`（TC-17 三项） | `run.py --network real --compare` | 车辆群 **1800**（12 OD × 600 vph × 900 s）；**TC-17 三项全过**：① 前车 ETA 最大增加 实验组 4.88 s ≤ 30 s（对照组 16.34 s）；② 实验组橙/红 4 段 vs 对照组 9 段，**相对对照组不新增**；③ 全网总行程时间 60861.35 < 91384.47 辆·秒。`capacity_shortage_evidence.passed=true`、`lease_release_evidence.passed=true` |
+| ⑧ | 真网 compare 连跑两遍 | 同一命令跑两遍 | `routes.json` `8c6d1fb9…c792` / `run_log.json` `4f29b0fd…addb`，两遍逐字节一致 |
+| ⑨ | 上游快照对接 | `--segments work/perception/out/latest/segments_video.json` | 命中 **2/61** 段（SZ-005/SZ-024），其余降级；采用快照 `ts=2026-10-11T13:29:56+08:00` / `window_sec=60` |
+| ⑩ | 段号对不上如实降级 | `--segments work/assembly/out/latest/segments.json`（旧 SEG-### 快照） | 命中 **0/61**，10 个 `SEG-###` 段号进 `ignored_segment_ids`、**不入响应**，`ts` 不采用不匹配快照的；不混算 |
+| ⑪ | 再疏导在真网可触发 | `--network real --compare --demand-vph 1200` | 突发时刻在途 85 辆，封 `SZ-002` → **改道 1 辆**（`front` 封闭触发，改走 `SZ-054`），事件写进 `comparison.scenario.reroute_demo.events`（默认 600 vph 时该演示为 0 辆，如实记录不编事件） |
+| ⑫ | 语法 / 硬编码 | `py_compile` 七个 `.py`；`grep 肇庆|23\.21|112\.65|吉庆` | 全过；`work/engine/*.py` 无站点名 / 坐标 / 路名硬编码 |
+| ⑬ | `doc_gate` | `python scripts/doc_gate.py` | **8/8 通过** |
+
+## 二十四、遗留与风险（不粉饰）
+
+1. **真网没有段号匹配的上游指标快照**：默认 `--network real` 的 61 段 `q_vph` 全为 0（降级口径），
+   `--compare` 的三组差异只由**时段预约占用**产生；上游（感知/孪生）按 `SZ-###` 出数后，用
+   `--segments` 接入即可，引擎代码不用改。当前感知产物只有 2 段 `SZ-###`，属上游进度，不归本单。
+2. **真网缺 `speed_limit` / `capacity_vph` 真值**：本单按站点包 defaults / 车道数推（逐边 `param_source` 留痕）；
+   真值等 T2 路段属性核对表补录（`stations/network.json` 真值化归 IKMHMX）。
+3. **真网节点无 `type` / 无点位表**：统一按 `intersection`，`dropoff_point` 为 `null`（不编点位）；
+   真网点位归 IKMHMX / 池·S 踏勘。
+4. **OD 需求是演示假设值**：`DEMO_DEMAND_VPH=600` 辆/小时/OD（与样例 OD 同量级），产物标 `demand_source`；
+   真值等上游需求快照（`demand.json` 真网版）。
+5. **接口层未切真网**：`work/assembly/traffic.py` 仍读 `work/engine/out/routes.json`（样例产物），
+   真网产物在 `work/engine/out/real/`；切换属前端/接口单（IKMS17/18），**本单不碰 `work/assembly/`**。
+6. **`TC-17` 的通过依赖演示需求**：600 vph 时三项全过；需求再低（如 120 vph）时三组趋同、第③项会 FAIL——
+   这是"没有背景车流/需求不足"的数据事实，**不调参数凑过**，README / 产物 note 均写明口径。
+7. **`reserve.py` 的 `+inf` 守卫**只影响"突发封路"演示路径，常规推荐/预约/对照数值不变（样例 sha 可证）。
 
 

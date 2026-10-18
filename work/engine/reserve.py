@@ -274,13 +274,23 @@ def walk_slots_detail(
     edge_times: list[float] = []
     start_epoch_s = float(start_epoch_s)
     elapsed_s = 0.0
+    last_slot_index = slot_index_of(start_epoch_s, table.slot_minutes)
     for edge_id in path:
         segment_id = table.edge_segment(edge_id)
-        slot_index = slot_index_of(start_epoch_s + elapsed_s, table.slot_minutes)
+        if math.isfinite(elapsed_s):
+            slot_index = slot_index_of(start_epoch_s + elapsed_s, table.slot_minutes)
+            last_slot_index = slot_index
+        else:
+            # 前方路段被"突发"演示临时封闭时 tt()=+inf,ETA 变成无穷大;
+            # 后续路段的时段格无法再按 ETA 定位,沿用最后一个有限时段(确定性、不抛 OverflowError),
+            # 上层照常把 ETA 当"不可达"处理(再疏导/伤害判断都只看有限性)。
+            slot_index = last_slot_index
         cells.append((segment_id, slot_index))
         segment_time = table.tt(edge_id, slot_index, extra)
         edge_times.append(segment_time)
         elapsed_s += segment_time
+        if not math.isfinite(elapsed_s):
+            elapsed_s = math.inf
     #: ETA 用"从 0 累加"的小数算,不拿 epoch 大数累加(否则浮点精度会丢到 1e-7 秒量级)
     return cells, elapsed_s, edge_times
 
