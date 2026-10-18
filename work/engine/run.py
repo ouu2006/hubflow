@@ -18,6 +18,10 @@
   python work/engine/run.py --sample              # 对照组基线(此刻最快)
   python work/engine/run.py --sample --compare    # ①不推荐 / ②此刻最快 / ③协同推荐 三组对照
   python work/engine/run.py --sample --out /tmp/x --samples ... --stations ...
+  python work/engine/run.py --network real        # 真网(SZ-### 61 段)协同推荐,写 out/real/,**不动样例 out/**
+  python work/engine/run.py --network real --compare   # 真网三组对照(TC-17 数据),写 out/real/compare/
+  python work/engine/run.py --network real --site-id <登记表里的 site_id> --segments <上游 segments 快照路径>
+  # 站点/真网路径由 work/twin/site-ranges.json 登记表决定(不写死在代码里);换站只改登记表 + --site-id
 """
 
 from __future__ import annotations
@@ -28,6 +32,7 @@ from typing import Any
 
 import candidates
 import network
+import realnet
 import reserve
 import reroute
 
@@ -36,6 +41,13 @@ DEFAULT_SAMPLES_DIR = HERE / "samples"
 DEFAULT_OUT_DIR = HERE / "out"
 #: 站点包在仓库根:`work/engine/` → `work/` → 仓库根 → `stations/`
 DEFAULT_STATIONS_DIR = HERE.parents[1] / "stations"
+#: 真网站点范围登记表(每站一份:seg_target / seg_prefix / out_json);引擎只读不写
+DEFAULT_SITE_RANGES = realnet.DEFAULT_SITE_RANGES
+#: 真网产物默认输出目录:与样例 out/ **分开**,不覆盖样例基线
+DEFAULT_REAL_OUT_DIR = DEFAULT_OUT_DIR / "real"
+#: 真网 `--compare` 产物目录:与真网默认模式**再分开** —— 两种 mode 的 routes.json 不能共用一个路径,
+#: 否则后跑覆盖前者,下游按固定路径读取时会拿到错 mode 的产物(IKMS11 独立审查发现 1)
+DEFAULT_REAL_COMPARE_OUT_DIR = DEFAULT_REAL_OUT_DIR / "compare"
 
 SAMPLE_FILES = {
     "network": "network_sample.json",
@@ -43,6 +55,46 @@ SAMPLE_FILES = {
     # 与 stations/demand.json 同形:OD 数组的容器键就是 od(开发规范 §6「样例就是契约的镜子」)
     "demand": "demand_sample.json",
 }
+
+#: `--sample` 产物信封说明(逐字节基线的一部分,不许改)
+SAMPLE_ROUTES_SCHEMA_NOTE = (
+    "每个 requests[] 元素就是 POST /api/traffic/route/recommend 的响应体形状"
+    "(契约第二节);这里包一层信封是为了让 --sample 一次跑完 ≥3 个 OD 对(M1-4 前置)"
+)
+#: `--sample --compare` 产物信封说明(逐字节基线的一部分,不许改)
+COMPARE_ROUTES_SCHEMA_NOTE = (
+    "requests[] 每个元素就是 POST /api/traffic/route/recommend 的响应体形状(契约第二节);"
+    "每个 OD 取一辆代表车(优先取被再疏导的车):arrival_route 是该车登记时的原始推荐,"
+    "reroute 是评估期内它的最后再疏导状态。comparison 块是 --compare 的对照产物"
+    "(① 不推荐 / ② 此刻最快 / ③ 协同推荐),不属于单次响应体,接口层不透出。"
+)
+#: `--sample --compare` 的对照场景说明(逐字节基线的一部分,不许改)
+COMPARE_SCENARIO_NOTE = (
+    "① 与 ② 在样例数据上路线恰好一致(自由流最短路 = BPR 快照最快),"
+    "所以两组指标相同 —— 这是数据事实,不是复制粘贴;② 与 ③ 的差异才是协同机制的效果"
+)
+#: `--sample --compare` 的共同车辆群说明(逐字节基线的一部分,不许改)
+COMPARE_GUIDED_COMMON_NOTE = (
+    "只统计被引导车辆自身 ETA(不含背景车流),按 TC-17 评测协议的共同车辆群口径;"
+    "样例路网上两组差异很小(被逼绕行的 OD-02 与避开的拥堵基本抵消),单列作参考"
+)
+#: 真网(非样例)产物信封说明
+REAL_ROUTES_SCHEMA_NOTE = (
+    "真网 routes:requests[] 每个元素就是 POST /api/traffic/route/recommend 的响应体形状"
+    "(契约第二节);段号全部来自真网命名空间(SZ-###),路线对象额外带 length_m 可回溯到 "
+    "network.segments[] 的逐段长度;network / od_derivation / segments_source 三块是可追溯元数据,"
+    "不属于单次响应体,接口层不透出"
+)
+#: 真网 `--compare` 的对照场景说明
+REAL_COMPARE_SCENARIO_NOTE = (
+    "① 不推荐 / ② 此刻最快 / ③ 协同推荐在同一份真网拓扑、同一份 segments 输入、"
+    "同一车辆群上跑;三组差异只来自推荐机制,不按数据 source 分支"
+)
+#: 真网 `--compare` 的共同车辆群说明
+REAL_COMPARE_GUIDED_COMMON_NOTE = (
+    "只统计被引导车辆自身 ETA(不含背景车流),按 TC-17 评测协议的共同车辆群口径;"
+    "真网拓扑上两组路线差异见 comparison.groups"
+)
 
 #: 样例用的固定请求参数(demo;真值由接口层给)
 SAMPLE_DRIVER_TYPE = "D1"
@@ -106,6 +158,188 @@ def load_samples(samples_dir: Path) -> dict[str, dict[str, Any]]:
             raise SystemExit(f"缺样例文件:{path}(--sample 需要 samples/ 下三份样例)")
         payloads[key] = network.read_json(path)
     return payloads
+
+
+# ============================================================================
+# 数据装载:--sample(7 节点样例网 SEG-###)/ --network real(真网 SZ-###)
+#
+# 两套输入**只在装载这一步分流**;后面的候选生成 / 时段预约 / 不伤害 / 再疏导 / --compare
+# 完全共用同一套函数(不按数据 source 分支)。dataset 把两边的差异收进元数据块,
+# 保证 --sample 的计算路径与产物逐字节不变。
+# ============================================================================
+
+
+def _load_sample_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
+    """装载 --sample 输入(样例网 + 样例 segments + 样例 OD + 站点包)。"""
+    samples_dir: Path = cfg["samples_dir"]
+    stations_dir: Path = cfg["stations_dir"]
+    payloads = load_samples(samples_dir)
+    graph = network.Graph(payloads["network"])
+    segments_state = network.load_segments(samples_dir / SAMPLE_FILES["segments"])
+    thresholds = network.load_thresholds(stations_dir / "thresholds.json")
+    params = thresholds["decision"]
+    grading = thresholds["grading"]
+    points = load_points(stations_dir)
+
+    demand = payloads["demand"]
+    od_pairs = demand.get("od")
+    if not isinstance(od_pairs, list) or not od_pairs:
+        raise ValueError("样例 demand 的 od 缺失或为空(容器键与 stations/demand.json 一致)")
+    # demand.json 没有 ts,时间戳取 segments 的
+    base_ts = str(payloads["segments"].get("ts") or "")
+    if not base_ts:
+        raise SystemExit("样例 segments 缺 ts 字段")
+
+    return {
+        "network": "sample",
+        "mode": "sample",
+        "graph": graph,
+        "graph_payload": payloads["network"],
+        "segments_state": segments_state,
+        "thresholds": thresholds,
+        "params": params,
+        "grading": grading,
+        "points": points,
+        "factors_payload": _load_optional_json(stations_dir / "factors.json"),
+        "demand": demand,
+        "od_pairs": od_pairs,
+        "segments_payload": payloads["segments"],
+        "ts": base_ts,
+        "schema_note": SAMPLE_ROUTES_SCHEMA_NOTE,
+        "compare_schema_note": COMPARE_ROUTES_SCHEMA_NOTE,
+        "log_source_fields": {"samples_dir": samples_dir.name},
+        "log_extra": {},
+        "network_block": None,
+        "od_derivation": None,
+        "segments_source": None,
+        "compare_scenario_note": COMPARE_SCENARIO_NOTE,
+        "compare_guided_common_note": COMPARE_GUIDED_COMMON_NOTE,
+        "route_lengths": False,
+        "seg_prefix": None,
+    }
+
+
+def _load_real_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
+    """装载 --network real 输入:站点登记表 → 真网统一图 → segments 映射 → 边界 OD。"""
+    stations_dir: Path = cfg["stations_dir"]
+    site = realnet.load_site(cfg.get("site_id"), cfg.get("site_ranges"))
+    network_file = realnet.site_network_path(site)
+    network_payload = realnet.read_json(network_file)
+    thresholds = network.load_thresholds(stations_dir / "thresholds.json")
+    params = thresholds["decision"]
+    grading = thresholds["grading"]
+
+    graph_payload, net_meta = realnet.normalize_network(network_payload, site, grading)
+    graph = network.Graph(graph_payload)
+    segments_state, seg_meta = realnet.build_segments_state(graph, cfg.get("segments"))
+    demand_vph = float(cfg.get("demand_vph") or realnet.DEMO_DEMAND_VPH)
+    if demand_vph <= 0.0:
+        raise SystemExit(f"--demand-vph 必须为正（实为 {demand_vph}）：需求按辆/小时口径")
+    od_pairs, od_meta = realnet.derive_od_pairs(graph, net_meta, demand_vph, params)
+
+    snapshot_used = bool(seg_meta.get("used"))
+    snapshot_ts = seg_meta.get("snapshot_ts") if snapshot_used else None
+    snapshot_window = seg_meta.get("snapshot_window_sec") if snapshot_used else None
+    base_ts = str(snapshot_ts or realnet.DEMO_BASE_TS)
+    window_sec = float(snapshot_window or realnet.DEMO_WINDOW_SEC)
+
+    segments_source = dict(seg_meta)
+    segments_source["ts_used"] = base_ts
+    segments_source["window_sec_used"] = window_sec
+    segments_source["ts_origin"] = (
+        "upstream_segments_snapshot"
+        if snapshot_ts
+        else (
+            "demo_constant:realnet.DEMO_BASE_TS（不读系统时钟；快照段号不匹配时也不采用其 ts）"
+            if seg_meta.get("snapshot")
+            else "demo_constant:realnet.DEMO_BASE_TS（不读系统时钟）"
+        )
+    )
+    segments_source["window_sec_origin"] = (
+        "upstream_segments_snapshot"
+        if snapshot_window
+        else (
+            "demo_constant:realnet.DEMO_WINDOW_SEC（快照段号不匹配时也不采用其 window_sec）"
+            if seg_meta.get("snapshot")
+            else "demo_constant:realnet.DEMO_WINDOW_SEC"
+        )
+    )
+    compare_scenario_note = REAL_COMPARE_SCENARIO_NOTE
+    if not seg_meta.get("used"):
+        compare_scenario_note += (
+            "；⚠ 本次没有段号匹配的上游 segments 快照：全部路段 q_vph=0（演示降级口径），"
+            "三组差异只由时段预约占用产生；真网指标快照接入后重跑更有意义，**不调参数凑过**"
+        )
+
+    network_block: dict[str, Any] = {
+        "site_id": net_meta["site_id"],
+        "site_name": net_meta["site_name"],
+        "network_file": net_meta["network_file"],
+        "source": net_meta["source"],
+        "crs": net_meta["crs"],
+        "generated_by": net_meta["generated_by"],
+        "seg_prefix": net_meta["seg_prefix"],
+        "seg_target": net_meta["seg_target"],
+        "segments_read": net_meta["segments_read"],
+        "nodes_read": net_meta["nodes_read"],
+        "node_type_source": net_meta["node_type_source"],
+        "boundary_source": net_meta["boundary_source"],
+        "entries": net_meta["entries"],
+        "exits": net_meta["exits"],
+        "param_defaults": net_meta["param_defaults"],
+        "param_source_counts": net_meta["param_source_counts"],
+        "lanes_missing": net_meta["lanes_missing"],
+        "speed_missing": net_meta["speed_missing"],
+        "capacity_missing": net_meta["capacity_missing"],
+        "origin_contract_map": network_payload.get("contract_map"),
+        "segments": realnet.network_trace(graph_payload, net_meta),
+    }
+
+    return {
+        "network": "real",
+        "mode": "real",
+        "graph": graph,
+        "graph_payload": graph_payload,
+        "segments_state": segments_state,
+        "thresholds": thresholds,
+        "params": params,
+        "grading": grading,
+        # 真网暂无真点点位表(点位归 IKMHMX / 池·S 踏勘);不拿样例点位硬套真网节点
+        "points": [],
+        "factors_payload": _load_optional_json(stations_dir / "factors.json"),
+        "demand": {"od": od_pairs, "note": od_meta["rule"]},
+        "od_pairs": od_pairs,
+        "segments_payload": {"ts": base_ts, "window_sec": window_sec},
+        "ts": base_ts,
+        "schema_note": REAL_ROUTES_SCHEMA_NOTE,
+        "compare_schema_note": REAL_ROUTES_SCHEMA_NOTE,
+        "log_source_fields": {
+            "site_id": net_meta["site_id"],
+            "network_file": net_meta["network_file"],
+            "segments_snapshot": seg_meta.get("snapshot"),
+        },
+        "log_extra": {
+            "segments_source": segments_source,
+            "od_derivation": od_meta,
+            "od_count": len(od_pairs),
+            "demand_vph_per_od": demand_vph,
+            "network_param_defaults": net_meta["param_defaults"],
+        },
+        "network_block": network_block,
+        "od_derivation": od_meta,
+        "segments_source": segments_source,
+        "compare_scenario_note": compare_scenario_note,
+        "compare_guided_common_note": REAL_COMPARE_GUIDED_COMMON_NOTE,
+        "route_lengths": True,
+        "seg_prefix": net_meta["seg_prefix"],
+    }
+
+
+def _load_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
+    """按 `cfg["network"]` 装载输入:缺省/`sample` → 样例网;`real` → 真网站点登记表。"""
+    if cfg.get("network") == "real":
+        return _load_real_dataset(cfg)
+    return _load_sample_dataset(cfg)
 
 
 def _segments_of(graph: network.Graph, path: list[str]) -> list[str]:
@@ -276,25 +510,15 @@ def build_request(
 
 def run_sample(cfg: dict[str, Any]) -> int:
     """用 samples/ + stations/thresholds.json 走完整链路,不依赖上游、不依赖 SUMO。"""
-    samples_dir: Path = cfg["samples_dir"]
+    dataset = _load_sample_dataset(cfg)
     out_dir: Path = cfg["out_dir"]
-
-    payloads = load_samples(samples_dir)
-    graph = network.Graph(payloads["network"])
-    segments_state = network.load_segments(samples_dir / SAMPLE_FILES["segments"])
-    thresholds = network.load_thresholds(cfg["stations_dir"] / "thresholds.json")
-    params = thresholds["decision"]
+    graph = dataset["graph"]
+    segments_state = dataset["segments_state"]
+    params = dataset["params"]
     # 点位表也读站点包:终点要折成**点位 id**(Issue #94 第①条),引擎里不许写站点相关的字符串常量
-    points = load_points(cfg["stations_dir"])
-
-    od_pairs = payloads["demand"].get("od")
-    if not isinstance(od_pairs, list) or not od_pairs:
-        raise ValueError("样例 demand 的 od 缺失或为空(容器键与 stations/demand.json 一致)")
-
-    # demand.json 没有 ts,时间戳取 segments 的
-    now_ts = str(payloads["segments"].get("ts") or "")
-    if not now_ts:
-        raise SystemExit("样例 segments 缺 ts 字段")
+    points = dataset["points"]
+    od_pairs = dataset["od_pairs"]
+    now_ts = dataset["ts"]
 
     network.ensure_out_dir(out_dir)
 
@@ -306,11 +530,8 @@ def run_sample(cfg: dict[str, Any]) -> int:
     routes = {
         "ts": now_ts,
         "is_simulated": True,
-        "mode": "sample",
-        "schema_note": (
-            "每个 requests[] 元素就是 POST /api/traffic/route/recommend 的响应体形状"
-            "(契约第二节);这里包一层信封是为了让 --sample 一次跑完 ≥3 个 OD 对(M1-4 前置)"
-        ),
+        "mode": dataset["mode"],
+        "schema_note": dataset["schema_note"],
         "requests": requests,
     }
     written: dict[str, int] = {}
@@ -320,10 +541,10 @@ def run_sample(cfg: dict[str, Any]) -> int:
     log = {
         "ts": now_ts,
         "is_simulated": True,
-        "mode": "sample",
+        "mode": dataset["mode"],
         "scenario": cfg.get("scenario", "sample"),
         "seed": cfg.get("seed", 0),
-        "samples_dir": samples_dir.name,
+        **dataset["log_source_fields"],
         "stations_dir": str(cfg["stations_dir"]),
         "node_count": len(graph.node_ids),
         "edge_count": len(graph._edges),  # noqa: SLF001 —— 只读计数,给日志看
@@ -345,6 +566,150 @@ def run_sample(cfg: dict[str, Any]) -> int:
             "时段容量预约 / 不伤害前车约束 / 再疏导是 W3/W5,reservation 恒为 null"
         ),
     }
+    written["run_log.json"] = network.write_json(out_dir / "run_log.json", log)
+    network.assert_artifact(out_dir / "run_log.json")
+    return 0
+
+
+# ============================================================================
+# --network real:真网(SZ-### 61 段)协同推荐入口
+#
+# 与 --sample 的区别只在**输入来源**:
+#   · --sample  = 7 节点 SEG-### 样例网的**对照组基线**(reservation 恒为 null,不许改);
+#   · --network real = 真网 61 段上的**协同推荐**(时段容量预约 + 不伤害前车),
+#     这是 M1-4 的验收口径(真网 ≥3 个 OD 对出候选路线且 reservation.harm_check.passed=true)。
+# 机制函数(reserve.recommend / reroute / _build_cooperative_request)与 --compare 完全共用,
+# 不按数据 source 分支;两边差异只体现在装载与产物元数据。
+# ============================================================================
+
+
+def run_real(cfg: dict[str, Any]) -> int:
+    """真网协同推荐:站点登记表 → 61 段真网 → 边界 OD → 时段预约 + 不伤害。"""
+    dataset = _load_real_dataset(cfg)
+    out_dir: Path = cfg["out_dir"]
+    graph = dataset["graph"]
+    segments_state = dataset["segments_state"]
+    params = dataset["params"]
+    points = dataset["points"]
+    od_pairs = dataset["od_pairs"]
+    now_ts = dataset["ts"]
+
+    network.ensure_out_dir(out_dir)
+
+    weight = network.make_weight_fn(graph, segments_state, params)
+    table = reserve.SlotTable(graph, segments_state, params)
+    leases: dict[str, dict[str, Any]] = {}
+    requests: list[dict[str, Any]] = []
+    for index, od in enumerate(od_pairs, start=1):
+        od_id = str(od.get("od_id") or f"OD-R-{index:03d}")
+        candidate_paths = candidates.select_candidates(
+            graph,
+            str(od["from_node"]),
+            str(od["to_node"]),
+            k=int(params.get("k_candidates", 3)),
+            max_overlap=float(params.get("max_path_overlap", 0.7)),
+            weight=weight,
+        )
+        decision = reserve.recommend(
+            graph,
+            {"od_id": od_id, "session_id": f"S-real-{od_id}"},
+            candidate_paths,
+            segments_state,
+            params,
+            table,
+            leases,
+            now_ts,
+        )
+        if decision["status"] != "ok":
+            requests.append(
+                _build_shortage_request(od, graph, params, index, decision, f"REQ-REAL-{index:04d}")
+            )
+            continue
+        # 一期口径:孪生行为体选择跟随推荐路线(手册 §7.6(5))
+        decision["lease"]["confirmed"] = True
+        requests.append(
+            _build_cooperative_request(
+                od,
+                graph,
+                segments_state,
+                params,
+                points,
+                index,
+                decision,
+                {"count": 0, "reason": None},
+                request_id_prefix="REQ-REAL",
+            )
+        )
+
+    # 段号命名空间硬校验 + 长度补齐(真网产物专属,样例基线不做,保持逐字节不变)
+    length_enriched = realnet.attach_route_lengths(requests, graph)
+    segment_refs_checked = realnet.assert_segment_namespace(requests, dataset["seg_prefix"])
+    stats = realnet.count_route_segments(requests, dataset["seg_prefix"])
+    reservation_passed = sum(
+        1
+        for request in requests
+        if isinstance(request.get("reservation"), dict)
+        and bool((request["reservation"].get("harm_check") or {}).get("passed"))
+    )
+
+    routes = {
+        "ts": now_ts,
+        "is_simulated": True,
+        "mode": dataset["mode"],
+        "network": dataset["network_block"],
+        "od_derivation": dataset["od_derivation"],
+        "segments_source": dataset["segments_source"],
+        "schema_note": dataset["schema_note"],
+        "requests": requests,
+    }
+    written: dict[str, int] = {}
+    written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
+    network.assert_artifact(out_dir / "routes.json")
+
+    log = {
+        "ts": now_ts,
+        "is_simulated": True,
+        "mode": dataset["mode"],
+        "scenario": cfg.get("scenario", "real"),
+        "seed": cfg.get("seed", 0),
+        **dataset["log_source_fields"],
+        "stations_dir": str(cfg["stations_dir"]),
+        "node_count": len(graph.node_ids),
+        "edge_count": len(graph._edges),  # noqa: SLF001 —— 只读计数,给日志看
+        "od_count": len(od_pairs),
+        "demand_vph_per_od": float(cfg.get("demand_vph") or realnet.DEMO_DEMAND_VPH),
+        "requests_with_alternative": stats["od_with_alternative"],
+        "requests_with_reservation": stats["od_with_reservation"],
+        "route_count": stats["route_count"],
+        "segment_ref_count": stats["segment_ref_count"],
+        "segment_refs_checked": segment_refs_checked,
+        "length_m_enriched": length_enriched,
+        "is_reservation_effective": True,
+        "snapshots": 1,
+        "segments_source": dataset["segments_source"],
+        "od_derivation": dataset["od_derivation"],
+        "m1_4": {
+            "od_count": len(od_pairs),
+            "od_with_alternative": stats["od_with_alternative"],
+            "od_with_reservation": stats["od_with_reservation"],
+            "od_with_reservation_harm_passed": reservation_passed,
+            "passed": bool(
+                len(od_pairs) >= 3
+                and stats["od_with_alternative"] >= 3
+                and reservation_passed >= 3
+            ),
+        },
+        "decision_params_used": {key: params[key] for key in sorted(params)},
+        "network_param_defaults": dataset["network_block"]["param_defaults"],
+        "param_source_counts": dataset["network_block"]["param_source_counts"],
+        "written_bytes": written,
+        "note": (
+            "真网协同推荐:段号一律 SZ-###(来自站点范围登记表的 seg_prefix),"
+            "routes.json 的 network.segments[] 给出逐段 length_m/from-to/param_source;"
+            "segments_source 如实记录上游快照命中/降级情况;参数全部读 stations/thresholds.json"
+        ),
+    }
+    log.update(dataset["log_extra"])
     written["run_log.json"] = network.write_json(out_dir / "run_log.json", log)
     network.assert_artifact(out_dir / "run_log.json")
     return 0
@@ -789,8 +1154,13 @@ def _build_cooperative_request(
     index: int,
     decision: dict[str, Any],
     reroute_block: dict[str, Any],
+    request_id_prefix: str = "REQ-COMPARE",
 ) -> dict[str, Any]:
-    """把一个 OD 代表车的协同推荐结果折成契约第二节的响应体(不新增契约字段)。"""
+    """把一个 OD 代表车的协同推荐结果折成契约第二节的响应体(不新增契约字段)。
+
+    `request_id_prefix` 默认 `REQ-COMPARE`(**--compare 的逐字节基线**);
+    真网协同推荐入口传 `REQ-REAL`,只改请求号前缀,响应体形状不变。
+    """
     od_id = str(od.get("od_id") or f"OD-{index:02d}")
     path = list(decision["path"])
     eta_s = float(decision["eta_s"])
@@ -803,7 +1173,7 @@ def _build_cooperative_request(
     path_ids, chosen_index = _path_id_plan(od_id, candidates_list, path)
 
     request: dict[str, Any] = {
-        "request_id": f"REQ-COMPARE-{index:04d}",
+        "request_id": f"{request_id_prefix}-{index:04d}",
         "session_id": str(decision["session_id"]),
         "od_id": od_id,
         "driver_type": driver_type,
@@ -1168,8 +1538,13 @@ def _tc17_summary(
     baseline_orange_red: list[str],
     params: dict[str, Any],
     grading: dict[str, Any],
+    guided_common_note: str | None = None,
 ) -> dict[str, Any]:
-    """TC-17 三项判据的对比数据(③ 协同推荐 vs ② "此刻最快" 对照组)。"""
+    """TC-17 三项判据的对比数据(③ 协同推荐 vs ② "此刻最快" 对照组)。
+
+    `guided_common_note` 只替换"共同车辆群"那段说明文案(真网 / 样例口径不同);
+    缺省用 --sample 的逐字节基线原文,保证样例产物不变。
+    """
     experimental = group_metrics["cooperative"]
     control = group_metrics["fastest"]
     no_guidance = group_metrics["no_guidance"]
@@ -1253,8 +1628,11 @@ def _tc17_summary(
                 "experimental_all_s": experimental["total_travel_time_s"],
                 "control_all_s": control["total_travel_time_s"],
                 "note": (
-                    "只统计被引导车辆自身 ETA(不含背景车流),按 TC-17 评测协议的共同车辆群口径;"
-                    "样例路网上两组差异很小(被逼绕行的 OD-02 与避开的拥堵基本抵消),单列作参考"
+                    guided_common_note
+                    or (
+                        "只统计被引导车辆自身 ETA(不含背景车流),按 TC-17 评测协议的共同车辆群口径;"
+                        "样例路网上两组差异很小(被逼绕行的 OD-02 与避开的拥堵基本抵消),单列作参考"
+                    )
                 ),
             },
             "passed": bool(experimental["network_total_time_s"] < control["network_total_time_s"]),
@@ -1277,32 +1655,30 @@ def _load_optional_json(path: Path) -> dict[str, Any] | None:
 
 
 def run_compare(cfg: dict[str, Any]) -> int:
-    """--compare:同一份输入跑 ① 不推荐 / ② 此刻最快 / ③ 协同推荐,输出 TC-17 三组对比数据。"""
-    samples_dir: Path = cfg["samples_dir"]
+    """--compare:同一份输入跑 ① 不推荐 / ② 此刻最快 / ③ 协同推荐,输出 TC-17 三组对比数据。
+
+    `--network real` 时同一套机制在真网(SZ-### 61 段)上跑;数据只换装载层,机制不按 source 分支。
+    """
+    dataset = _load_dataset(cfg)
     out_dir: Path = cfg["out_dir"]
     stations_dir: Path = cfg["stations_dir"]
 
-    payloads = load_samples(samples_dir)
-    graph = network.Graph(payloads["network"])
-    segments_state = network.load_segments(samples_dir / SAMPLE_FILES["segments"])
-    thresholds = network.load_thresholds(stations_dir / "thresholds.json")
+    graph = dataset["graph"]
+    segments_state = dataset["segments_state"]
+    thresholds = dataset["thresholds"]
     params = thresholds["decision"]
     grading = thresholds["grading"]
-    points = load_points(stations_dir)
-    factors_payload = _load_optional_json(stations_dir / "factors.json")
+    points = dataset["points"]
+    factors_payload = dataset["factors_payload"]
 
-    demand = payloads["demand"]
-    od_pairs = demand.get("od")
-    if not isinstance(od_pairs, list) or not od_pairs:
-        raise ValueError("样例 demand 的 od 缺失或为空(容器键与 stations/demand.json 一致)")
+    demand = dataset["demand"]
+    od_pairs = dataset["od_pairs"]
     od_by_id = {str(od.get("od_id") or f"OD-{index + 1:02d}"): od for index, od in enumerate(od_pairs)}
 
-    base_ts = str(payloads["segments"].get("ts") or "")
-    if not base_ts:
-        raise SystemExit("样例 segments 缺 ts 字段")
+    base_ts = dataset["ts"]
     tz = reserve.tzinfo_of(base_ts)
 
-    vehicles, window_s = _scenario_vehicles(demand, payloads["segments"], base_ts)
+    vehicles, window_s = _scenario_vehicles(demand, dataset["segments_payload"], base_ts)
     base_epoch_s = reserve.iso_to_epoch_s(base_ts)
     evaluation_end_epoch_s = base_epoch_s + float(window_s)
     od_candidates = _static_candidates(graph, od_pairs, segments_state, params)
@@ -1341,7 +1717,13 @@ def run_compare(cfg: dict[str, Any]) -> int:
         )
 
     baseline_orange_red = _baseline_orange_red(segments_state, grading)
-    tc17 = _tc17_summary(group_metrics, baseline_orange_red, params, grading)
+    tc17 = _tc17_summary(
+        group_metrics,
+        baseline_orange_red,
+        params,
+        grading,
+        guided_common_note=dataset["compare_guided_common_note"],
+    )
 
     reroute_demo = _run_reroute_demo(
         group_results["cooperative"], graph, params, factors_payload, base_ts, window_s, tz
@@ -1414,30 +1796,32 @@ def run_compare(cfg: dict[str, Any]) -> int:
         graph, segments_state, params, od_pairs, od_candidates, base_ts
     )
 
+    # 真网产物:补 length_m 可追溯 + 段号命名空间硬校验(样例基线不做,保持逐字节不变)
+    if dataset["route_lengths"]:
+        realnet.attach_route_lengths(requests, graph)
+        realnet.assert_segment_namespace(requests, dataset["seg_prefix"])
+
     network.ensure_out_dir(out_dir)
 
-    routes = {
+    routes: dict[str, Any] = {
         "ts": base_ts,
         "is_simulated": True,
         "mode": "compare",
-        "schema_note": (
-            "requests[] 每个元素就是 POST /api/traffic/route/recommend 的响应体形状(契约第二节);"
-            "每个 OD 取一辆代表车(优先取被再疏导的车):arrival_route 是该车登记时的原始推荐,"
-            "reroute 是评估期内它的最后再疏导状态。comparison 块是 --compare 的对照产物"
-            "(① 不推荐 / ② 此刻最快 / ③ 协同推荐),不属于单次响应体,接口层不透出。"
-        ),
-        "requests": requests,
-        "comparison": {
+    }
+    if dataset["network_block"]:
+        routes["network"] = dataset["network_block"]
+        routes["od_derivation"] = dataset["od_derivation"]
+        routes["segments_source"] = dataset["segments_source"]
+    routes["schema_note"] = dataset["compare_schema_note"]
+    routes["requests"] = requests
+    routes["comparison"] = {
             "scenario": {
                 "base_ts": base_ts,
                 "window_sec": window_s,
                 "vehicle_count": len(vehicles),
                 "od_count": len(od_pairs),
                 "group_labels": {group: label for group, label in group_defs},
-                "note": (
-                    "① 与 ② 在样例数据上路线恰好一致(自由流最短路 = BPR 快照最快),"
-                    "所以两组指标相同 —— 这是数据事实,不是复制粘贴;② 与 ③ 的差异才是协同机制的效果"
-                ),
+                "note": dataset["compare_scenario_note"],
                 "counts_note": (
                     "TC-17 评测协议四计数在本引擎侧评估里的口径:attempted=需求车辆总数;"
                     "inserted=成功登记预约的车(=completed + in_transit);not_entered=被两条约束拒绝的车;"
@@ -1470,7 +1854,6 @@ def run_compare(cfg: dict[str, Any]) -> int:
             "capacity_shortage_evidence": capacity_shortage_evidence,
             "lease_release_evidence": lease_release_evidence,
             "requests_without_reservation": requests_without_reservation,
-        },
     }
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
@@ -1482,7 +1865,7 @@ def run_compare(cfg: dict[str, Any]) -> int:
         "mode": "compare",
         "scenario": cfg.get("scenario", "compare"),
         "seed": cfg.get("seed", 0),
-        "samples_dir": samples_dir.name,
+        **dataset["log_source_fields"],
         "stations_dir": str(stations_dir),
         "node_count": len(graph.node_ids),
         "edge_count": len(graph._edges),  # noqa: SLF001 —— 只读计数,给日志看
@@ -1521,6 +1904,7 @@ def run_compare(cfg: dict[str, Any]) -> int:
             "capacity_shortage 与租约释放的证据见 comparison 里的同名块"
         ),
     }
+    log.update(dataset["log_extra"])
     written["run_log.json"] = network.write_json(out_dir / "run_log.json", log)
     network.assert_artifact(out_dir / "run_log.json")
     return 0
@@ -1528,37 +1912,118 @@ def run_compare(cfg: dict[str, Any]) -> int:
 
 def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
     parser = argparse.ArgumentParser(description="work/engine 模块统一入口")
-    parser.add_argument("--sample", action="store_true", help="用 samples/ 跑通链路(不依赖上游/SUMO)")
+    parser.add_argument(
+        "--sample",
+        action="store_true",
+        help="用 samples/ 的 7 节点样例网跑通链路(不依赖上游/SUMO;产物是逐字节基线)",
+    )
     parser.add_argument(
         "--compare",
         action="store_true",
-        help="三条对照链路:① 不推荐 ② 此刻最快 ③ 协同推荐(TC-17 举证;需与 --sample 同用)",
+        help="三组对照:① 不推荐 ② 此刻最快 ③ 协同推荐(TC-17 举证);可与 --sample 或 --network real 同用",
     )
-    parser.add_argument("--out", default=str(DEFAULT_OUT_DIR), dest="out_dir")
+    parser.add_argument(
+        "--network",
+        choices=("sample", "real"),
+        default=None,
+        help=(
+            "数据来源:sample=7 节点样例网(SEG-###)/ real=站点登记表里的真网(SZ-### 61 段);"
+            "缺省 None 时需显式 --sample 或 --network real(不改变旧行为)"
+        ),
+    )
+    parser.add_argument(
+        "--site-id",
+        default=None,
+        dest="site_id",
+        help="真网站点 id(读 work/twin/site-ranges.json;缺省用登记表 default_site;隐含 --network real)",
+    )
+    parser.add_argument(
+        "--site-ranges",
+        default=str(DEFAULT_SITE_RANGES),
+        dest="site_ranges",
+        help="站点范围登记表路径(默认 work/twin/site-ranges.json)",
+    )
+    parser.add_argument(
+        "--segments",
+        default=None,
+        help=(
+            "真网用的上游 segments 快照路径(如 work/perception/out/latest/segments_video.json);"
+            "缺省 = 无上游指标,按 q_vph=0 + 站点包 defaults 降级并留 note"
+        ),
+    )
+    parser.add_argument(
+        "--demand-vph",
+        type=float,
+        default=None,
+        dest="demand_vph",
+        help="真网每个推导 OD 的演示需求(辆/小时;缺省用 realnet.DEMO_DEMAND_VPH,属演示假设值)",
+    )
+    parser.add_argument(
+        "--out",
+        default=None,
+        dest="out_dir",
+        help=(
+            "输出目录(缺省:样例 → work/engine/out;真网 → work/engine/out/real;"
+            "真网 --compare → work/engine/out/real/compare)"
+        ),
+    )
     parser.add_argument("--samples", default=str(DEFAULT_SAMPLES_DIR), dest="samples_dir")
     parser.add_argument("--stations", default=str(DEFAULT_STATIONS_DIR), dest="stations_dir")
-    parser.add_argument("--scenario", default="sample")
+    parser.add_argument("--scenario", default=None)
     parser.add_argument("--seed", type=int, default=0)
     ns, _extra = parser.parse_known_args(argv)
+
+    chosen_network = ns.network
+    if chosen_network is None:
+        if ns.site_id or ns.segments:
+            chosen_network = "real"
+        elif ns.sample:
+            chosen_network = "sample"
+    if chosen_network == "sample" and ns.site_id:
+        raise SystemExit(
+            "--site-id 只用于 --network real;--sample 是 7 节点样例网(SEG-###),不读真网登记表"
+        )
+    if chosen_network == "real" and ns.sample:
+        raise SystemExit(
+            "--sample 与 --network real 互斥:样例基线(7 节点 SEG-###)与真网(SZ-###)是两张网"
+        )
+    if ns.out_dir:
+        # 显式传参优先:调用方要写哪就写哪(--out 的约定不变)
+        out_dir = Path(ns.out_dir)
+    elif chosen_network == "real":
+        # 真网两种 mode 分目录:默认 → out/real/;--compare → out/real/compare/。
+        # 否则后跑的会覆盖先跑的 routes.json,下游按固定路径取用时可能拿到错 mode 的产物。
+        out_dir = DEFAULT_REAL_COMPARE_OUT_DIR if ns.compare else DEFAULT_REAL_OUT_DIR
+    else:
+        out_dir = DEFAULT_OUT_DIR
+    scenario = ns.scenario or ("real" if chosen_network == "real" else "sample")
     return {
+        "network": chosen_network,
+        "site_id": ns.site_id,
+        "site_ranges": Path(ns.site_ranges),
+        "segments": ns.segments,
+        "demand_vph": ns.demand_vph,
         "sample": ns.sample,
         "compare": ns.compare,
-        "out_dir": Path(ns.out_dir),
+        "out_dir": out_dir,
         "samples_dir": Path(ns.samples_dir),
         "stations_dir": Path(ns.stations_dir),
-        "scenario": ns.scenario,
+        "scenario": scenario,
         "seed": ns.seed,
     }
 
 
 def main(argv: list[str] | None = None) -> int:
     cfg = parse_args(argv)
-    if not cfg["sample"]:
+    if cfg["network"] is None:
         raise NotImplementedError(
-            "真链路待后续 issue:需要 SUMO 孪生数据(work/twin)与站点包路网(network.json,Issue #37)"
+            "请显式选择数据来源:--sample(7 节点样例网对照基线)或 --network real"
+            "(站点登记表里的真网,61 段 SZ-###)。真网入口不再依赖 SUMO;用法见 work/engine/README.md"
         )
     if cfg["compare"]:
         return run_compare(cfg)
+    if cfg["network"] == "real":
+        return run_real(cfg)
     return run_sample(cfg)
 
 
