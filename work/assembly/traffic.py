@@ -68,6 +68,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextvars
 import copy
 import json
 import math
@@ -108,6 +109,17 @@ ENGINE_ROUTES_SAMPLE = ROOT / "work" / "engine" / "out" / "routes.json"
 ENGINE_ROUTES = ENGINE_ROUTES_SAMPLE
 SITE_RANGES = ROOT / "work" / "twin" / "site-ranges.json"
 STATIONS_DIR = ROOT / "stations"
+
+#: ---- 多站（IKNB9F）：站点由请求头 / 查询参数 / 启动参数选择，数据路径按站点登记表解析 ----
+#: 请求头优先级高于查询参数；都缺省用 --station 启动参数（默认 Z，站点 Z 行为不变）。
+STATION_HEADER = "X-Station-Pack"
+STATION_QUERY_KEY = "station"
+DEFAULT_STATION_KEY = "Z"
+CODE_STATION_NOT_FOUND = "STATION_NOT_FOUND"
+_STATION_CTX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "traffic_station", default=None
+)
+_STARTUP_STATION_KEY: str = DEFAULT_STATION_KEY
 
 LEVEL_NAMES = {1: "畅通", 2: "缓行", 3: "拥堵", 4: "严重拥堵"}
 LEVEL_NAME_FALLBACK = "数据不可用"
@@ -635,12 +647,219 @@ def get_dispatch_store() -> DispatchStore:
     return _DISPATCH_STORE
 
 
+# ---------------------------------------------------------------- 多站（IKNB9F）
+
+
+def _repo_path(rel: str) -> Path:
+    """站点登记表里的路径一律相对仓库根。"""
+    path = Path(str(rel))
+    return path if path.is_absolute() else (ROOT / path)
+
+
+def _station_registry() -> dict[str, Any]:
+    return read_json(SITE_RANGES) or {}
+
+
+def _default_site_record() -> dict[str, Any]:
+    """登记表 default_site（站点 Z）记录；缺文件/缺字段时返回空对象（不抛错）。"""
+    registry = _station_registry()
+    sites = [site for site in (registry.get("sites") or []) if isinstance(site, dict)]
+    default_id = registry.get("default_site")
+    if isinstance(default_id, str) and default_id:
+        for site in sites:
+            if site.get("site_id") == default_id:
+                return site
+    return sites[0] if sites else {}
+
+
+def _site_pack_key(site: dict[str, Any]) -> str:
+    """站点 → 前端站点包键（Z / GZ / …）。未登记 station_pack_key 时退回 site_id。"""
+    key = site.get("station_pack_key")
+    if isinstance(key, str) and key:
+        return key
+    return str(site.get("site_id") or "")
+
+
+def _site_by_station_key(raw: str | None) -> dict[str, Any] | None:
+    """把站点包键（Z / GZ）或 site_id（zhaoqingdong / guangzhounan）解析成登记表记录。"""
+    if raw is None:
+        return None
+    wanted = str(raw).strip()
+    if not wanted:
+        return None
+    for site in _station_registry().get("sites") or []:
+        if not isinstance(site, dict):
+            continue
+        keys = {str(site.get("site_id") or ""), _site_pack_key(site)}
+        if wanted in keys:
+            return site
+    return None
+
+
+def _resolve_station_key(raw: str | None) -> tuple[str | None, str | None]:
+    """站点包键归一；未登记站点返回 (None, 可读说明)，由调用方如实 404、不拿默认站冒充。"""
+    site = _site_by_station_key(raw)
+    if site is None:
+        known = "、".join(
+            _site_pack_key(item)
+            for item in (_station_registry().get("sites") or [])
+            if isinstance(item, dict)
+        )
+        return None, (
+            f"未登记站点 {raw!r}；已登记站点包键：{known or '（空）'}。"
+            "缺该站产物如实 404 / 降级，不拿站点 Z 数据冒充"
+        )
+    return _site_pack_key(site), None
+
+
+def _active_station_key() -> str:
+    return _STATION_CTX.get() or _STARTUP_STATION_KEY
+
+
+def _active_site() -> dict[str, Any]:
+    return _site_by_station_key(_active_station_key()) or _default_site_record()
+
+
+def _is_default_station(site: dict[str, Any] | None = None) -> bool:
+    """默认站（登记表 default_site，即站点 Z）沿用历史固定路径，保证 Z 不退化。"""
+    target = site or _active_site()
+    default_site = _default_site_record()
+    return str(target.get("site_id") or "") == str(default_site.get("site_id") or "")
+
+
+def _station_paths(station_key: str | None = None) -> dict[str, Any]:
+    """当前站点的数据源路径（不读文件内容，只解析路径；缺产物由下游按缺失处理）。
+
+    默认站：与 IKNB9F 之前完全一致（Z 不退化）；
+    其它站：按登记表 `twin_out_dir` / `engine_out_dir` / `out_json` 解析，缺字段给 None，
+    **绝不回退到站点 Z 的路径**。
+    """
+    site = _site_by_station_key(station_key or _active_station_key()) or _default_site_record()
+    key = _site_pack_key(site)
+    if _is_default_station(site):
+        return {
+            "key": key,
+            "site": site,
+            "is_default": True,
+            "perception_video": PERCEPTION_VIDEO,
+            "twin_latest": TWIN_LATEST,
+            "twin_snapshot": TWIN_SNAPSHOT,
+            "twin_vehicles": TWIN_VEHICLES,
+            "twin_assimilation": TWIN_ASSIMILATION,
+            "engine_routes": (("real", ENGINE_ROUTES_REAL), ("sample", ENGINE_ROUTES_SAMPLE)),
+            "network_json": None,
+        }
+    twin_dir = site.get("twin_out_dir")
+    engine_dir = site.get("engine_out_dir")
+    twin_root = _repo_path(str(twin_dir)) if twin_dir else None
+    engine_root = _repo_path(str(engine_dir)) if engine_dir else None
+    network_json = _repo_path(str(site["out_json"])) if site.get("out_json") else None
+    return {
+        "key": key,
+        "site": site,
+        "is_default": False,
+        "perception_video": None,
+        "twin_latest": (twin_root / "latest" / "segments_twin.json") if twin_root else None,
+        "twin_snapshot": (twin_root / "segments.json") if twin_root else None,
+        "twin_vehicles": (twin_root / "vehicles.json") if twin_root else None,
+        "twin_assimilation": (twin_root / "assimilation_state.json") if twin_root else None,
+        "engine_routes": ((("real", engine_root / "routes.json"),) if engine_root else ()),
+        "network_json": network_json,
+    }
+
+
+def _read_if_exists(path: Path | None) -> dict[str, Any] | None:
+    return read_json(path) if path is not None else None
+
+
+def _synthesized_network(site: dict[str, Any]) -> dict[str, Any] | None:
+    """非默认站没有手写站点包 network.json：由真网产物**合成契约形状**（几何真值来自 OSM）。
+
+    只做字段映射，不编数值：speed_limit / capacity_vph 一律 null（与真网产物一致，
+    判级/容量由 thresholds.grading 回落）；节点只给经纬度与 boundary 标记。
+    """
+    network_json = _station_paths()["network_json"]
+    if network_json is None or not Path(network_json).is_file():
+        return None
+    network = read_json(Path(network_json)) or {}
+    nodes: list[dict[str, Any]] = []
+    for node in network.get("nodes") or []:
+        if not isinstance(node, dict):
+            continue
+        node_id = node.get("node_id") or node.get("id")
+        if not node_id:
+            continue
+        nodes.append({
+            "node_id": node_id,
+            "lon": _num(node.get("lon")),
+            "lat": _num(node.get("lat")),
+            "boundary": bool(node.get("boundary")),
+        })
+    edges: list[dict[str, Any]] = []
+    for edge in network.get("edges") or []:
+        if not isinstance(edge, dict):
+            continue
+        segment_id = edge.get("segment_id") or edge.get("id")
+        if not segment_id:
+            continue
+        edges.append({
+            "section": segment_id,
+            "id": segment_id,
+            "name": edge.get("name"),
+            "from": edge.get("from"),
+            "to": edge.get("to"),
+            "kind": edge.get("kind"),
+            "length_m": _num(edge.get("length_m")),
+            "lanes": _num(edge.get("lanes")),
+            "oneway": edge.get("oneway"),
+            "speed_limit": None,
+            "capacity_vph": None,
+            "coords": edge.get("coords") or [],
+        })
+    return {
+        "is_simulated": True,
+        "site": site.get("site_name"),
+        "range_m": _num(site.get("range_m")),
+        "note": (
+            "该站没有手写站点包 network.json：本对象由真网产物（work/twin/netpack/…/network_junction.json）"
+            "合成契约形状。几何取自 OSM 真值；speed_limit / capacity_vph 为 null（一期未标定），"
+            "判级与容量按站点包 thresholds.grading 回落，不编数。"
+        ),
+        "nodes": nodes,
+        "edges": edges,
+    }
+
+
 # ---------------------------------------------------------------- 站点包（stations/*.json）
 
 
 def station_json(name: str) -> dict[str, Any] | None:
-    """读站点包里的一个文件（文件名固定，换站只换文件内容）。"""
-    return read_json(STATIONS_DIR / name)
+    """读站点包里的一个文件（文件名固定，换站只换文件内容）。
+
+    IKNB9F 多站：
+      · 默认站（Z）读 `stations/`，与改造前完全一致（Z 不退化）；
+      · 非默认站没有手写站点包时：`thresholds.json` 读**共享演示参数**（stations/thresholds.json，
+        只读、不是该站真实标定），`network.json` 由真网产物合成，`points.json` 给如实空表，
+        其它文件返回 None（下游按缺数据降级，**不拿站点 Z 数据冒充**）。
+    """
+    site = _active_site()
+    if _is_default_station(site):
+        return read_json(STATIONS_DIR / name)
+    if name == "thresholds.json":
+        return read_json(STATIONS_DIR / name)
+    if name == "network.json":
+        return _synthesized_network(site)
+    if name == "points.json":
+        return {
+            "is_simulated": True,
+            "site": site.get("site_name"),
+            "points": [],
+            "note": (
+                "该站暂未登记点位表（T1 点位数据归池·S）；本接口如实返回空表，"
+                "不拿站点 Z 的点位 / 断面冒充"
+            ),
+        }
+    return None
 
 
 def _grading() -> dict[str, Any]:
@@ -690,15 +909,8 @@ def _site_ranges() -> dict[str, Any]:
 
 
 def _site_meta() -> dict[str, Any]:
-    """当前站点登记（work/twin/site-ranges.json 的 default_site）；缺文件返回空对象。"""
-    registry = _site_ranges()
-    sites = [s for s in (registry.get("sites") or []) if isinstance(s, dict)]
-    default_id = registry.get("default_site")
-    if isinstance(default_id, str) and default_id:
-        matched = [s for s in sites if s.get("site_id") == default_id]
-        if matched:
-            return matched[0]
-    return sites[0] if sites else {}
+    """当前请求生效的站点登记（IKNB9F：按请求头 / ?station= / --station 解析；默认 Z）。"""
+    return _active_site()
 
 
 def _site_landmarks() -> list[dict[str, Any]]:
@@ -734,9 +946,10 @@ def _assimilation_gate() -> dict[str, Any]:
 
 def _latest_data_ts() -> str:
     """数据快照时间（取在场运行产物的最大 ts；都没有才用当前时间，保证可复现）。"""
+    paths = _station_paths()
     stamps: list[str] = []
-    for path in (PERCEPTION_VIDEO, TWIN_LATEST, TWIN_SNAPSHOT):
-        payload = read_json(path)
+    for path in (paths["perception_video"], paths["twin_latest"], paths["twin_snapshot"]):
+        payload = _read_if_exists(path)
         ts = payload.get("ts") if payload else None
         if isinstance(ts, str) and ts:
             stamps.append(ts)
@@ -849,15 +1062,16 @@ def _normalize_segment(raw: dict[str, Any], grading: dict[str, Any],
 
 def _raw_segment_layers() -> list[tuple[str, str, dict[str, Any]]]:
     """按优先级返回在场的链路产物：(数据源标签, 链路, payload)。"""
+    paths = _station_paths()
     layers: list[tuple[str, str, dict[str, Any]]] = []
-    video = read_json(PERCEPTION_VIDEO)
+    video = _read_if_exists(paths["perception_video"])
     if video and isinstance(video.get("segments"), list):
         layers.append(("perception.video", "video", video))
-    twin_latest = read_json(TWIN_LATEST)
+    twin_latest = _read_if_exists(paths["twin_latest"])
     if twin_latest and isinstance(twin_latest.get("segments"), list):
         layers.append(("twin.latest", "twin", twin_latest))
     else:
-        twin_snapshot = read_json(TWIN_SNAPSHOT)
+        twin_snapshot = _read_if_exists(paths["twin_snapshot"])
         if twin_snapshot and isinstance(twin_snapshot.get("segments"), list):
             layers.append(("twin.snapshot", "twin", twin_snapshot))
     return layers
@@ -1076,7 +1290,7 @@ def build_segment_sources(segment_id: str) -> dict[str, Any] | None:
 
 
 def _vehicle_records() -> list[dict[str, Any]]:
-    payload = read_json(TWIN_VEHICLES)
+    payload = _read_if_exists(_station_paths()["twin_vehicles"])
     if not payload or not isinstance(payload.get("vehicles"), list):
         return []
     valid_states = {"行驶", "排队", "落客服务", "候客", "违停", "已离开"}
@@ -1104,7 +1318,7 @@ def _vehicle_records() -> list[dict[str, Any]]:
 
 
 def build_vehicles() -> dict[str, Any]:
-    payload = read_json(TWIN_VEHICLES)
+    payload = _read_if_exists(_station_paths()["twin_vehicles"])
     vehicles = _vehicle_records()
     ts = payload.get("ts") if payload and isinstance(payload.get("ts"), str) else None
     result: dict[str, Any] = {
@@ -1155,7 +1369,7 @@ def build_overview(snapshot: dict[str, Any]) -> dict[str, Any]:
     vehicles = _vehicle_records()
     inbound = sum(1 for vehicle in vehicles if vehicle.get("state") != "已离开")
     guided = sum(1 for vehicle in vehicles if vehicle.get("guided") is True)
-    vehicles_available = bool(read_json(TWIN_VEHICLES))
+    vehicles_available = bool(_read_if_exists(_station_paths()["twin_vehicles"]))
 
     level_distribution = [
         {
@@ -1214,12 +1428,14 @@ def build_network() -> dict[str, Any]:
         if not isinstance(segment_id, str) or not segment_id:
             continue
         lengths[segment_id] = _num(edge.get("length_m"))
+        coords = edge.get("coords")
         segments.append({
             "segment_id": segment_id,
             "name": _segment_name(segment_id, names),
-            "kind": "main",
-            # 站点包网络只给了节点占位坐标（无经纬度），不编几何：给空折线由页面降级
-            "coords": [],
+            "kind": edge.get("kind") or "main",
+            # 默认站（Z）的 network.json 只给占位节点坐标 → 空折线（页面用站点包几何）；
+            # 非默认站由真网产物合成 network.json，coords 为 OSM 真几何 → 原样透出。
+            "coords": coords if isinstance(coords, list) else [],
         })
 
     sections: list[dict[str, Any]] = []
@@ -1256,8 +1472,12 @@ def build_network() -> dict[str, Any]:
         "is_simulated": True,
         "origin": "demo",
         "note": (
-            f"站点包网络（{node_count} 节点 / {len(segments)} 段）：几何为站点包占位节点坐标"
-            "（network.json 未给经纬度），不含实测几何；指标为演示数据（模拟）"
+            f"站点包网络（{node_count} 节点 / {len(segments)} 段）："
+            + (
+                "几何取自真网产物（OSM 切片，经纬度真值）；指标为演示数据（模拟）"
+                if any(segment["coords"] for segment in segments)
+                else "几何为站点包占位节点坐标（network.json 未给经纬度），不含实测几何；指标为演示数据（模拟）"
+            )
         ),
         "attribution": None,
         "segments": segments,
@@ -1366,7 +1586,7 @@ def build_factors(segment_id: str | None = None) -> dict[str, Any]:
 
 
 def build_assimilation() -> dict[str, Any]:
-    state = read_json(TWIN_ASSIMILATION)
+    state = _read_if_exists(_station_paths()["twin_assimilation"])
     scenarios = station_json("scenarios.json") or {}
     points_payload = station_json("points.json") or {}
     gate = _assimilation_gate()
@@ -1862,11 +2082,6 @@ def build_report_compare() -> dict[str, Any]:
 # 响应体 `data_source` + 响应头 `X-Traffic-Data-Source` 标来源；两层的段号命名空间不同，
 # 绝不把两层请求 / 路线拼在一起，也不把路线 ETA 与当前路段快照的指标混算。
 
-#: 路线数据源层（优先级从高到低）
-ROUTE_LAYERS: tuple[tuple[str, Path], ...] = (
-    ("real", ENGINE_ROUTES_REAL),
-    ("sample", ENGINE_ROUTES_SAMPLE),
-)
 #: 层 → 人话来源（响应体 data_source_note）
 ROUTE_LAYER_NOTES = {
     "real": "真网产物（work/engine/out/real/routes.json，IKMS11 真网算路）",
@@ -1875,10 +2090,29 @@ ROUTE_LAYER_NOTES = {
 _SEGMENT_NAMESPACE_PATTERN = re.compile(r"^([A-Za-z]+)-")
 
 
+def _route_layer_paths() -> tuple[tuple[str, Path], ...]:
+    """当前站点的路线数据源层（优先级从高到低）。
+
+    默认站（Z）：真网 out/real → 样例 out/ 回退，与改造前一致；
+    其它站：只用该站自己的引擎产物（**不拿站点 Z 路线冒充**）。
+    """
+    return tuple((key, path) for key, path in _station_paths()["engine_routes"] if path is not None)
+
+
+def _route_layer_note(key: str) -> str:
+    """路线层来源说明（非默认站补站点上下文，不写死 Z 的路径文案）。"""
+    paths = _station_paths()
+    if not paths["is_default"]:
+        for layer_key, path in paths["engine_routes"]:
+            if layer_key == key:
+                return f"站点 {paths['site'].get('site_name')} 引擎真网产物（{Path(path).relative_to(ROOT).as_posix()}，IKNB9F）"
+    return ROUTE_LAYER_NOTES.get(key, key)
+
+
 def _routes_layers() -> list[tuple[str, dict[str, Any]]]:
     """在场的引擎路线层（real 优先，sample 回退）；顶层无 requests 的按缺失处理。"""
     layers: list[tuple[str, dict[str, Any]]] = []
-    for key, path in ROUTE_LAYERS:
+    for key, path in _route_layer_paths():
         payload = read_json(path)
         if payload and isinstance(payload.get("requests"), list) and payload["requests"]:
             layers.append((key, payload))
@@ -2044,7 +2278,7 @@ def _route_response_meta(
     return {
         "ts": payload.get("ts") if isinstance(payload.get("ts"), str) else _latest_data_ts(),
         "data_source": f"engine.routes.{layer_key}",
-        "data_source_note": ROUTE_LAYER_NOTES.get(layer_key, layer_key),
+        "data_source_note": _route_layer_note(layer_key),
         "session_matched": bool(match_meta.get("session_matched")),
         "requested_session_id": match_meta.get("requested_session_id"),
         "segment_namespaces": namespaces,
@@ -2108,6 +2342,25 @@ def _error(status: int, code: str, message: str, note: str | None = None,
     if note:
         payload["note"] = note
     return _json(payload, status, source)
+
+
+@app.middleware("http")
+async def _station_middleware(request: Request, call_next):
+    """按请求选站（IKNB9F）：`X-Station-Pack` 优先，其次 `?station=`；缺省用 --station。
+
+    未知站点直接 404 + note（不静默拿默认站数据冒充）；已知站点在请求内生效。
+    """
+    raw = request.headers.get(STATION_HEADER) or request.query_params.get(STATION_QUERY_KEY)
+    if not raw:
+        return await call_next(request)
+    key, note = _resolve_station_key(raw)
+    if key is None:
+        return _error(404, CODE_STATION_NOT_FOUND, f"未知站点：{raw}", note=note)
+    token = _STATION_CTX.set(key)
+    try:
+        return await call_next(request)
+    finally:
+        _STATION_CTX.reset(token)
 
 
 async def _read_body(request: Request) -> dict[str, Any]:
@@ -2312,7 +2565,7 @@ def api_route_options() -> JSONResponse:
             "ts": payload.get("ts") if isinstance(payload.get("ts"), str) else _latest_data_ts(),
             "is_simulated": True,
             "data_source": f"engine.routes.{layer_key}",
-            "data_source_note": ROUTE_LAYER_NOTES.get(layer_key, layer_key),
+            "data_source_note": _route_layer_note(layer_key),
             "segment_namespaces": _routes_namespaces(payload),
             "count": len(options),
             "options": options,
@@ -2806,16 +3059,25 @@ async def api_stream() -> StreamingResponse:
 
 
 def print_data_check() -> int:
-    """--check：把「每个数据文件在不在、回落到哪一层」打印出来（不起服务）。"""
+    """--check：把「当前站点每个数据文件在不在、回落到哪一层」打印出来（不起服务）。"""
+    paths = _station_paths()
+    site = paths["site"]
     print(f"仓库根目录：{ROOT}")
-    files = [
-        ("视频链路路段产物", PERCEPTION_VIDEO),
-        ("孪生链路路段产物", TWIN_LATEST),
-        ("孪生契约形状快照", TWIN_SNAPSHOT),
-        ("孪生车辆", TWIN_VEHICLES),
-        ("同化状态", TWIN_ASSIMILATION),
-        ("引擎路线·真网优先", ENGINE_ROUTES_REAL),
-        ("引擎路线·样例回退", ENGINE_ROUTES_SAMPLE),
+    print(
+        f"当前站点：{_active_station_key()}（{site.get('site_name')}，site_id={site.get('site_id')}）"
+        f" · {'默认站路径' if paths['is_default'] else '按站点登记表路径'}"
+    )
+    files: list[tuple[str, Path | None]] = [
+        ("视频链路路段产物", paths["perception_video"]),
+        ("孪生链路路段产物", paths["twin_latest"]),
+        ("孪生契约形状快照", paths["twin_snapshot"]),
+        ("孪生车辆", paths["twin_vehicles"]),
+        ("同化状态", paths["twin_assimilation"]),
+    ]
+    route_layers = paths["engine_routes"]
+    for key, path in route_layers:
+        files.append((f"引擎路线·{key}", path))
+    files.extend([
         ("站点范围登记", SITE_RANGES),
         ("站点包 network", STATIONS_DIR / "network.json"),
         ("站点包 points", STATIONS_DIR / "points.json"),
@@ -2823,8 +3085,11 @@ def print_data_check() -> int:
         ("站点包 scenarios", STATIONS_DIR / "scenarios.json"),
         ("站点包 factors", STATIONS_DIR / "factors.json"),
         ("站点包 demand", STATIONS_DIR / "demand.json"),
-    ]
+    ])
     for label, path in files:
+        if path is None:
+            print(f"  [缺失] {label:<18}（该站无此数据源路径）")
+            continue
         state = "存在" if path.is_file() else "缺失"
         print(f"  [{state}] {label:<18} {path.relative_to(ROOT)}")
 
@@ -2840,7 +3105,7 @@ def print_data_check() -> int:
     layers = _routes_layers()
     if layers:
         detail = "；".join(
-            f"{key}（{ROUTE_LAYER_NOTES.get(key, key)}）requests {len(payload['requests'])} 条"
+            f"{key}（{_route_layer_note(key)}）requests {len(payload['requests'])} 条"
             f" · 段号命名空间 {' / '.join(f'{prefix}-###' for prefix in _routes_namespaces(payload)) or '未知'}"
             for key, payload in layers
         )
@@ -2898,6 +3163,14 @@ def main() -> int:
     )
     parser.add_argument("--reset-state", action="store_true",
                         help="复位处置运行态（重放 seed_dispatch）并写一条 reset 审计后退出（不起服务）")
+    parser.add_argument(
+        "--station",
+        default=DEFAULT_STATION_KEY,
+        help=(
+            "默认站点包键（Z / GZ / …；IKNB9F 多站）。请求头 `X-Station-Pack` 或查询参数 "
+            "`?station=` 可逐请求覆盖；未知站点如实 404，不拿默认站数据冒充"
+        ),
+    )
     args = parser.parse_args()
 
     try:
@@ -2907,6 +3180,13 @@ def main() -> int:
         print(f"参数错误：--state-path {exc}", file=sys.stderr)
         print(f"  允许目录：{allowed}（只接受 .json 文件；不会对其它路径做改名 / 覆盖）", file=sys.stderr)
         return 2
+    global _STARTUP_STATION_KEY
+    station_key, station_note = _resolve_station_key(args.station)
+    if station_key is None:
+        print(f"参数错误：--station {args.station!r} 未登记：{station_note}", file=sys.stderr)
+        return 2
+    _STARTUP_STATION_KEY = station_key
+
     configure_dispatch_store(state_path)
     store = get_dispatch_store()  # 启动时加载：坏文件改名留证、按初始态启动
 
@@ -2926,6 +3206,11 @@ def main() -> int:
         return print_data_check()
 
     print(f"接口层 traffic.py → http://{args.host}:{args.port}", flush=True)
+    print(
+        f"  站点：默认 {_STARTUP_STATION_KEY}（请求头 {STATION_HEADER} / ?station= 可逐请求切站；"
+        "未知站点 404，不拿默认站冒充）",
+        flush=True,
+    )
     print("  口径：只读快照 / 所有响应 is_simulated=true / 数据源三层回落（缺文件不 500）", flush=True)
     print("  路线：真网产物 out/real/routes.json 优先，缺失回退样例 out/routes.json", flush=True)
     print(

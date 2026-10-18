@@ -12,6 +12,7 @@
     {
       "site_id": "zhaoqingdong",
       "site_name": "肇庆东站",
+      "station_pack_key": "Z",
       "anchor_lonlat": [112.6581162, 23.2173959],
       "range_m": 500,
       "pull_bbox": [112.6482379, 23.2092208, 112.6647876, 23.2249875],
@@ -31,6 +32,33 @@
       "decided_by": "IKMERX 自动推定（build_junction_pack.py --auto-range）",
       "date": "2026-10-17",
       "evidence": "network_junction.json range_reason：站区车道最远点 429 m × 1.2 = 515.2 m → 四舍五入到 50 m 档 = 500 m；业主 2026-10-17 口径为「脚本自动推定，肇庆东 500 m」"
+    },
+    {
+      "site_id": "guangzhounan",
+      "site_name": "广州南站",
+      "anchor_lonlat": [113.269, 22.989],
+      "range_m": 800,
+      "pull_bbox": [113.257, 22.977, 113.281, 23.001],
+      "seg_target": 433,
+      "seg_prefix": "GZ",
+      "snap_m": 30,
+      "junction_tol_m": 2,
+      "min_seg_m": 20,
+      "min_coverage_pct": 10,
+      "bridge_seg_count": 10,
+      "osm_file": "work/twin/netpack/osm/guangzhounan.osm",
+      "out_json": "work/twin/netpack/guangzhounan/network_junction.json",
+      "out_ts": "work/frontend/ui-vue/src/station-packs/stationGZ.network.ts",
+      "ts_export": "STATION_GZ_SEGMENTS",
+      "station_pack_ts": "work/frontend/ui-vue/src/station-packs/stationGZ.network.ts",
+      "station_pack_meta_ts": "work/frontend/ui-vue/src/station-packs/stationGZ.ts",
+      "station_pack_key": "GZ",
+      "twin_out_dir": "work/twin/out/sites/guangzhounan",
+      "engine_out_dir": "work/engine/out/real/sites/guangzhounan",
+      "range_source": "manual",
+      "decided_by": "IKNB9F / 业主 2026-10-18「先行适配广州南站」：以车站锚点 113.269,22.989 为中心、拉取 +/-0.012 度站区 OSM；演示范围 800 m（站区密集路网取 800 m 半径；拉取 bbox 仍为 +/-0.012 度）为人工给定，不是官方划定",
+      "date": "2026-10-18",
+      "evidence": "OSM 切片 work/twin/netpack/osm/guangzhounan.osm（Overpass overpass-api.de，2026-10-18，c OpenStreetMap contributors ODbL）；范围不是官方划定、不报精度数字；段数目标由脚本实际产出后回填（见 out_json.stats）"
     }
   ]
 }

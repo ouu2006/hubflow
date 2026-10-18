@@ -50,8 +50,13 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json'
   // 顶栏「线路图切换器」选的是**浏览器侧**的包键,而 mock 中间件跑在 vite 的 Node 进程里,
   // 天生拿不到浏览器状态 —— 所以每个请求把当前包键带上,mock 按它现取包。
-  // (真接口 traffic.py 忽略该头;读的是服务端 stations/*.json。)
-  headers['X-Station-Pack'] = activePackKey()
+  // 真接口 traffic.py（IKNB9F 起）同样按这个头切站；并用查询参数 `station` 兜底
+  // （某些浏览器/代理对自定义请求头不友好时仍能按站取数；mock 侧只认头，两条通道不冲突）。
+  const stationKey = activePackKey()
+  headers['X-Station-Pack'] = stationKey
+  const requestPath = USE_MOCK
+    ? path
+    : `${path}${path.includes('?') ? '&' : '?'}station=${encodeURIComponent(stationKey)}`
 
   const controller = new AbortController()
   const timeoutMs = opts.timeoutMs ?? REQUEST_TIMEOUT_MS
@@ -64,7 +69,7 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   }
 
   try {
-    const res = await fetch(path, {
+    const res = await fetch(requestPath, {
       method,
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),

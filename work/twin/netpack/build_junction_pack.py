@@ -719,7 +719,7 @@ def make_payload(nodes, edges, stats, site, osm_name, snap_m, junction_tol_m, mi
     }
 
 
-def fmt_ts(edges, osm_name: str) -> str:
+def fmt_ts(edges, osm_name: str, export_name: str = "STATION_Z_SEGMENTS") -> str:
     lines = [
         "// 站点包 ·「站点 OSM 真路网 · 先路线后分段」演示站",
         "//",
@@ -729,7 +729,7 @@ def fmt_ts(edges, osm_name: str) -> str:
         "",
         "import type { PackSegment } from './types.ts'",
         "",
-        "export const STATION_Z_SEGMENTS: PackSegment[] = [",
+        f"export const {export_name}: PackSegment[] = [",
     ]
     for s in edges:
         lines.append("  {")
@@ -808,6 +808,8 @@ def main() -> int:
     junction_tol_m = float(pick("junction_tol_m", a.junction_tol_m, DEFAULT_JUNCTION_TOL_M))
     min_seg_m = float(pick("min_seg_m", a.min_seg_m, DEFAULT_MIN_SEG_M))
     seg_prefix = str(pick("seg_prefix", a.seg_prefix, DEFAULT_SEG_PREFIX))
+    # 前端几何 TS 的导出名：Z 沿用历史名（保证既有产物逐字节不变）；新站由登记表给（如 STATION_GZ_SEGMENTS）
+    ts_export = str(pick("ts_export", None, "STATION_Z_SEGMENTS"))
     min_coverage_pct = float(pick("min_coverage_pct", a.min_coverage_pct, 10.0))
 
     anchor = None
@@ -866,7 +868,7 @@ def main() -> int:
     json_text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
     targets = [(out_json, json_text)]
     if out_ts is not None:
-        targets.append((out_ts, fmt_ts(r_edges, osm_name)))
+        targets.append((out_ts, fmt_ts(r_edges, osm_name, ts_export)))
 
     if a.check:
         bad = 0

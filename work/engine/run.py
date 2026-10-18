@@ -2011,7 +2011,15 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
     elif chosen_network == "real":
         # 真网两种 mode 分目录:默认 → out/real/;--compare → out/real/compare/。
         # 否则后跑的会覆盖先跑的 routes.json,下游按固定路径取用时可能拿到错 mode 的产物。
-        out_dir = DEFAULT_REAL_COMPARE_OUT_DIR if ns.compare else DEFAULT_REAL_OUT_DIR
+        # 多站(IKNB9F):非默认站写 out/real/sites/<site_id>/,与站点 Z 的 out/real 互不覆盖;
+        # 默认站(登记表 default_site)保持既有 out/real 路径不变(老路径/测试不退化)。
+        base_real = DEFAULT_REAL_OUT_DIR
+        if ns.site_id:
+            registry = realnet.load_site_ranges(Path(ns.site_ranges))
+            default_site = str(registry.get("default_site") or "")
+            if default_site and ns.site_id != default_site:
+                base_real = DEFAULT_REAL_OUT_DIR / "sites" / str(ns.site_id)
+        out_dir = (base_real / "compare") if ns.compare else base_real
     else:
         out_dir = DEFAULT_OUT_DIR
     scenario = ns.scenario or ("real" if chosen_network == "real" else "sample")
