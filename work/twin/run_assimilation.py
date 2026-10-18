@@ -1,32 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""同化 + 多因素一键入口（Issue IKMS19）。
+"""同化 + 多因素一键入口（Issue IKMS19 / IKNAUN）。
 
-一条命令产出（默认**真网模式**，写 `work/twin/out/latest/`）：
+一条命令产出（默认**真网模式**，写 `work/twin/out/latest/assimilation/`；**不再覆盖 W1 主循环的
+`out/latest/run_log.json`**）：
 
 | 产物 | 内容 | 谁消费 |
 |---|---|---|
 | `sections_candidate.json` | 61 段 `boundary` / `internal` **候选**（自动推导，每段 role+依据，状态=候选·待签字冻结） | 业主/队长签字、IKMHMX 冻结、接口层透出 |
-| `assimilation_state.json` | 契约 §三信封 + `edges`（只灌 boundary；internal 固定 `internal_not_allowed`） | 接口层 `GET /api/traffic/assimilation`（`work/assembly/traffic.py` 读 `work/twin/out/assimilation_state.json`） |
-| `assimilation_log.json` | 回灌/停灌日志（逐段 gate 求值、偏差、calibrator 计划） | 验收（TC-20 第④项「日志可见」）、W1 真孪生接入 |
+| `assimilation_state.json` | 契约 §三信封 + `edges`（只灌 boundary；internal 固定 `internal_not_allowed`）+ `baseline` 溯源 | 接口层 `GET /api/traffic/assimilation`（`work/assembly/traffic.py` 读 `work/twin/out/assimilation_state.json`） |
+| `assimilation_log.json` | 回灌/停灌日志（逐段 gate 求值、偏差、calibrator 计划、基线溯源） | 验收（TC-20 第④项「日志可见」）、W1 真孪生接入 |
 | `factors_report.json` | 因素登记表 + S1~S4 场景注入 + 未落地原因 + 逐因素方向校验 | 验收（TC-16）、决策页「为什么堵」 |
-| `segments_before.json` / `segments_after.json` | 因素注入前后的孪生段快照（before = 基线，after = 注入后） | 决策/前端对照、TC-16 |
-| `run_log.json` | 本次运行摘要（计数 / 产物字节数 / 阻塞项） | 自检、交接 |
+| `segments_before.json` / `segments_after.json` | 因素注入前后的孪生段快照（before = 基线+`baseline_used`，after = 注入后） | 决策/前端对照、TC-16 |
+| `run_log.json` | 本次运行摘要（计数 / 基线来源+快照 sha / 产物字节数 / 阻塞项） | 自检、交接 |
+
+**基线优先级（IKNAUN）**：`--twin <segments_twin.json>` → 缺省自动发现
+`work/twin/out/latest/segments_twin.json`（W1 `loop.py` 产物）→ 都没有才退回**空载网络基线**
+（明确标注"空载基线/演示，不是仿真实测"；`--no-twin` 可强制降级做自检）。
 
 **两条模式，段号命名空间严格分开**：
 
 * `--mode network`（默认）：本站真网 `SZ-###`（61 段，`work/twin/netpack/network_junction.json`）。
-  真孪生基线缺失 → 用**空载网络基线**（明确标注"空载基线/演示，不是仿真实测"）；
-  视频快照只覆盖 `SZ-005`/`SZ-024`（拓扑均为 internal）→ 硬规则禁止回灌，真实回灌数 0；
+  真孪生快照在场时以其为基线（`baseline_source="twin.latest"` + `twin_snapshot_sha` + 每段
+  `baseline_used`）；视频快照只覆盖 `SZ-005`/`SZ-024`（拓扑均为 internal）→ 硬规则禁止回灌，
+  真实回灌数 0（如实 `no_boundary_observation` / BLOCKED）；
 * `--mode sample`：旧 7 节点样例网 `SEG-###`（`work/twin/samples/`）——**机制示例**，
   用来把「boundary 回灌 / internal 拒绝 / 门控拒绝 / 关闭同化 / 两遍一致」整条机制跑通并自检。
   **不得**把样例结果当本站结论，也不得和 `SZ-###` 混写进同一份产物。
 
-**确定性**：不读系统时钟；`ts` 一律从输入（视频快照 ts / 样例 ts / 场景因素 `from`）派生；
-同一输入两遍，所有产物逐字节一致（`本单专属二`）。
+**确定性**：不读系统时钟；`ts` 一律从输入（视频快照 ts / 孪生快照 ts / 样例 ts / 场景因素 `from`）
+派生；同一输入两遍，所有产物逐字节一致（`本单专属二`）。
 
 用法：
     python work/twin/run_assimilation.py                      # 真网模式，默认场景 S4（多因素）
+    python work/twin/run_assimilation.py --twin work/twin/out/latest/segments_twin.json
+    python work/twin/run_assimilation.py --no-twin            # 强制空载基线（自检/降级演练）
     python work/twin/run_assimilation.py --scenario S3        # 关同化的场景（TC-20 第③项）
     python work/twin/run_assimilation.py --mode sample        # 机制示例（SEG-###）
     python work/twin/run_assimilation.py --video <快照路径>   # 显式指定视频快照
@@ -50,12 +58,15 @@ import sections
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 
-#: 默认输出目录（gitignore：out/）
-DEFAULT_OUT = HERE / "out" / "latest"
+#: 默认输出目录（gitignore：out/）——IKNAUN 起**分目录**，不再与 W1 主循环共用 `out/latest/`
+#: （旧版默认写 `out/latest/run_log.json` 会覆盖主循环同名产物）
+DEFAULT_OUT = HERE / "out" / "latest" / "assimilation"
 #: 机制示例（SEG-###）的默认输出目录——与真网产物分目录，不混命名空间
 DEFAULT_SAMPLE_OUT = DEFAULT_OUT / "mechanism_demo"
 #: 样例输入目录（机制示例用；**只读**，绝不改写）
 SAMPLES_DIR = HERE / "samples"
+#: W1 真孪生快照的默认路径（`loop.py` 产物；`--twin` 缺省自动发现）
+DEFAULT_TWIN = HERE / "out" / "latest" / "segments_twin.json"
 
 #: 视频快照缺失时用的**固定演示时刻**（不读系统时钟；与 work/engine/realnet.py 同口径）
 DEMO_BASE_TS = "2026-10-18T08:00:00+08:00"
@@ -220,6 +231,49 @@ def apply_observation_overrides(
 
 
 # ============================================================================
+# 真孪生快照（W1 `loop.py` 产物）——同化基线的首选来源（IKNAUN）
+# ============================================================================
+
+
+def find_twin_snapshot(
+    override: str | Path | None = None, no_twin: bool = False
+) -> tuple[Path | None, str]:
+    """定位真孪生快照：返回 `(路径或 None, 来源说明)`。
+
+    优先 `--twin` 显式路径；缺省自动发现 `out/latest/segments_twin.json`（W1 主循环默认产物）；
+    `--no-twin` 强制不用（自检/降级演练）。**找不到就如实返回 None**，由调用方降级为空载基线，
+    不许伪造一份"孪生结果"。
+    """
+    if no_twin:
+        return None, "disabled:--no-twin"
+    if override:
+        path = Path(override)
+        if not path.is_file():
+            raise SystemExit(
+                f"--twin 指向的真孪生快照不存在：{path}"
+                "（先跑 `python work/twin/loop.py --duration 3900 --seed 42`）"
+            )
+        return path, "cli:--twin"
+    if DEFAULT_TWIN.is_file():
+        return DEFAULT_TWIN, "auto:out/latest/segments_twin.json"
+    return None, "missing"
+
+
+def load_twin_payload(
+    twin_path: Path | None, twin_source: str
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    """读真孪生快照 → `(payload, meta)`；无文件返回 `(None, None)`（不伪造）。"""
+    if twin_path is None:
+        return None, None
+    payload, sha, meta = baseline.load_twin_snapshot(twin_path)
+    meta = dict(meta)
+    meta["path"] = repo_rel(twin_path)
+    meta["source"] = twin_source
+    meta["sha256"] = sha
+    return payload, meta
+
+
+# ============================================================================
 # 真网模式（SZ-###）
 # ============================================================================
 
@@ -231,6 +285,8 @@ def _network_blockers(
     video_source: str,
     scenario_edges: dict[str, Any],
     detail: dict[str, Any],
+    baseline_payload: dict[str, Any],
+    twin_source: str,
 ) -> list[dict[str, str]]:
     """把真网模式当前的**真实阻塞**列出来（不编造通过；归因按实际状态，不写死）。"""
     blockers: list[dict[str, str]] = []
@@ -296,21 +352,27 @@ def _network_blockers(
                 ),
             }
         )
-    blockers.append(
-        {
-            "code": "no_twin_baseline",
-            "detail": (
-                "真孪生基线缺失：`stations/sumo/*.net.xml` 未构建、`loop.run_with_sumo` 仍是骨架"
-                "→ 本单只能用空载网络基线（演示，不是仿真实测）；真孪生跑起来后必须换真基线"
-            ),
-        }
-    )
+    baseline_source = baseline_payload.get("baseline_source")
+    if baseline_source != baseline.BASELINE_TWIN:
+        blockers.append(
+            {
+                "code": "no_twin_baseline",
+                "detail": (
+                    "真孪生快照缺失"
+                    f"（查找来源 {twin_source}；期望 {repo_rel(DEFAULT_TWIN)}）"
+                    "→ 本次基线退回**空载网络基线**（演示，不是孪生模拟结果）；"
+                    "先跑 `python work/twin/loop.py --duration 3900 --seed 42`，"
+                    "再用 `--twin <快照>` 或让默认自动发现接真基线"
+                ),
+            }
+        )
     blockers.append(
         {
             "code": "calibrator_not_dispatched",
             "detail": (
-                f"本次回灌 {state['applied_count']} 条；即使有可灌的值，也只落 `calibrator_plan`，"
-                "**没有实际下发 SUMO**（无真 SUMO 路网/主循环，不假装回灌到仿真）"
+                f"本次回灌 {state['applied_count']} 条；W1 真孪生主循环已能跑（IKNAER/IKNAUH），"
+                "但**同化回灌尚未接进主循环**（没有 `traci.calibrator.setFlow` 实际下发），"
+                "只落 `calibrator_plan`，不假装回灌到仿真"
             ),
         }
     )
@@ -349,20 +411,35 @@ def _network_blockers(
 
 
 def run_network(args: argparse.Namespace) -> dict[str, Any]:
-    """真网模式：真网断面候选 + 空载基线 + 视频观测 + 场景因素 → 全套产物。"""
+    """真网模式：真网断面候选 + 真孪生基线（优先）/空载降级 + 视频观测 + 场景因素 → 全套产物。"""
     grading = baseline.load_grading()
     site, network, network_path = sections.load_site_network(args.site or None)
+    twin_path, twin_source = find_twin_snapshot(
+        override=args.twin or None, no_twin=bool(getattr(args, "no_twin", False))
+    )
+    twin_payload, twin_meta = load_twin_payload(twin_path, twin_source)
     video_path, video_source, video_searched = calibrate.find_video_snapshot(
         override=args.video or None, seg_prefix=str(site["seg_prefix"])
     )
     video_payload: dict[str, Any] | None = None
     if video_path is not None:
         video_payload = calibrate.load_video_snapshot(video_path)
-    ts = str(video_payload.get("ts")) if video_payload else DEMO_BASE_TS
+    # 时间从输入派生：观测 ts 优先；无观测时用孪生快照 ts；都没有才用固定演示时刻
+    if video_payload is not None:
+        ts = str(video_payload.get("ts"))
+    elif twin_meta is not None:
+        ts = str(twin_meta["ts"])
+    else:
+        ts = DEMO_BASE_TS
 
     sections_payload = sections.build_candidate_payload(site, network, network_path, ts)
     baseline_payload = baseline.build_network_baseline(
-        sections_payload, video_payload, grading, ts
+        sections_payload,
+        video_payload,
+        grading,
+        ts,
+        twin_payload=twin_payload,
+        twin_meta=twin_meta,
     )
     observations, invalid_observations = (
         calibrate.observations_from_video(video_payload) if video_payload else ({}, [])
@@ -490,6 +567,8 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
         video_source,
         assimilation_log["scenario_edges"],
         assimilation_detail,
+        baseline_payload,
+        twin_source,
     )
     blockers.extend(
         {
@@ -560,7 +639,7 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
             "多因素注入报告（演示数据（模拟））：因素值读 stations/factors.json、注入事件读 "
             "stations/scenarios.json 的 S1~S4；判级调 work/perception/level.py 唯一实现；"
             "未生效因素不写 multiplier=1.0 占位。demand 类因素是'只登记不改假测量'"
-            "（需 SUMO 需求生成器，真孪生缺失，见 blockers）。"
+            "（需主循环需求生成器接入；真实需求归 IKMHMX）。"
         ),
     }
 
@@ -590,6 +669,12 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
         "scenario_id": scene.name,
         "seed": scene.seed,
         "evaluation_ts": eval_ts,
+        "twin_snapshot": {
+            "present": twin_payload is not None,
+            "source": twin_source,
+            **(twin_meta or {}),
+        },
+        "baseline": state.get("baseline"),
         "video_snapshot": assimilation_log["video_snapshot"],
         "observation_overrides": assimilation_log.get("observation_overrides"),
         "assimilation_detail": assimilation_detail,
@@ -620,7 +705,7 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
         "blockers": blockers,
         "note": (
             "同化 + 多因素一键入口（真网模式，演示数据（模拟））：不读系统时钟；"
-            "internal 永不回灌；真孪生/真实断面数据缺失处如实标阻塞，不编造指标"
+            "internal 永不回灌；真孪生快照/边界观测/edges 缺失处如实标阻塞，不编造指标"
         ),
     }
     written["run_log.json"] = write_json(out_dir / "run_log.json", run_log)
@@ -641,6 +726,12 @@ def run_network(args: argparse.Namespace) -> dict[str, Any]:
         "written": written,
         "published": published,
         "ts": ts,
+        "baseline": dict(state.get("baseline") or {}),
+        "twin_snapshot": {
+            "present": twin_payload is not None,
+            "source": twin_source,
+            **(twin_meta or {}),
+        },
         "sections": sections_payload["counts"],
         "assimilation": state["counts"],
         "applied": state["applied_count"],
@@ -998,6 +1089,7 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
         "scenario_id": scene.name,
         "seed": scene.seed,
         "evaluation_ts": eval_ts,
+        "baseline": state.get("baseline"),
         "video_snapshot": assimilation_log["video_snapshot"],
         "edge_bridge": assimilation_log["edge_bridge"],
         "observation_overrides": assimilation_log.get("observation_overrides"),
@@ -1039,6 +1131,7 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
         "assimilation": state["counts"],
         "applied": state["applied_count"],
         "assimilation_detail": assimilation_detail,
+        "baseline": dict(state.get("baseline") or {}),
         "factors": {
             "active": len(active),
             "inactive": len(inactive),
@@ -1056,7 +1149,7 @@ def run_sample(args: argparse.Namespace) -> dict[str, Any]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="同化 + 多因素一键入口（Issue IKMS19）",
+        description="同化 + 多因素一键入口（Issue IKMS19 / IKNAUN）",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument("--mode", choices=("network", "sample"), default="network")
@@ -1065,9 +1158,24 @@ def build_parser() -> argparse.ArgumentParser:
         default="S4",
         help="场景：S1~S4 / scenario_1~4 / 常态~多因素（默认 S4 多因素）",
     )
-    parser.add_argument("--out", default="", help="输出目录（默认 out/latest 或 out/latest/mechanism_demo）")
+    parser.add_argument(
+        "--out",
+        default="",
+        help="输出目录（默认 out/latest/assimilation 或 …/assimilation/mechanism_demo；不覆盖主循环 out/latest/run_log.json）",
+    )
     parser.add_argument("--site", default="", help="站点 id（缺省用 site-ranges.json 的 default_site）")
     parser.add_argument("--video", default="", help="视频快照路径（缺省自动找）")
+    parser.add_argument(
+        "--twin",
+        default="",
+        help="真孪生快照路径（缺省自动发现 out/latest/segments_twin.json；优先作为同化基线）",
+    )
+    parser.add_argument(
+        "--no-twin",
+        action="store_true",
+        dest="no_twin",
+        help="强制不用真孪生快照（退回空载基线；自检/降级演练用）",
+    )
     parser.add_argument(
         "--eval-ts",
         default="",
@@ -1111,6 +1219,23 @@ def print_summary(summary: dict[str, Any]) -> None:
         f"  断面候选：{sections_counts['total']} 段"
         f"（boundary {sections_counts['boundary']} / internal {sections_counts['internal']}）"
     )
+    baseline_info = summary.get("baseline") or {}
+    twin = summary.get("twin_snapshot") or {}
+    if mode == "network":
+        if baseline_info.get("baseline_source") == baseline.BASELINE_TWIN:
+            print(
+                "  基线：真孪生快照（baseline_source=twin.latest，"
+                f"sha={str(baseline_info.get('twin_snapshot_sha'))[:16]}…，"
+                f"ts={baseline_info.get('ts')}，来源 {twin.get('source')}，"
+                f"{twin.get('segment_count') or '—'} 段）"
+            )
+        else:
+            print(
+                "  基线：空载网络基线（baseline_source=empty_load_demo，演示，不是孪生模拟结果；"
+                f"真孪生快照查找来源 {twin.get('source') or 'missing'}）"
+            )
+    else:
+        print(f"  基线：机制示例样例（baseline_source={baseline_info.get('baseline_source')}，非本站真网）")
     video = summary.get("video_snapshot") or {}
     print(
         f"  视频快照：{'在场' if video.get('present') else '缺失'}"
@@ -1131,9 +1256,9 @@ def print_summary(summary: dict[str, Any]) -> None:
     for blocker in summary.get("blockers") or []:
         print(f"  阻塞[{blocker['code']}]：{blocker['detail']}")
     if int(detail.get("applied_count") or 0) == 0:
-        print("  注意：本次回灌 0 条已按上面的实际原因归因；不宣称 M1-10 通过（签字冻结/真孪生/边界观测见 blockers）。")
+        print("  注意：本次回灌 0 条已按上面的实际原因归因；不宣称 M1-10 通过（签字冻结/边界观测/edges 见 blockers）。")
     elif mode == "network":
-        print("  注意：有回灌但仍不得把同化后的数说成实测；M1-10 是否可宣称仍看签字冻结与真孪生。")
+        print("  注意：有回灌但仍不得把同化后的数说成实测；M1-10 是否可宣称仍看签字冻结与边界观测。")
 
 
 def main(argv: list[str] | None = None) -> int:

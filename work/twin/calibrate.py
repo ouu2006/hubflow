@@ -576,6 +576,16 @@ def build_assimilation(
         "internal": len(internal_ids),
         "applied": len(applied),
     }
+    # 基线溯源（IKNAUN）：真孪生快照 / 空载演示 / 样例 —— 给 TC-20① 前置断言与页面核对用
+    twin_meta = baseline_payload.get("twin_snapshot") or {}
+    baseline_meta = {
+        "baseline_source": baseline_payload.get("baseline_source"),
+        "baseline_kind": baseline_payload.get("baseline_kind"),
+        "ts": baseline_payload.get("ts"),
+        "window_sec": baseline_payload.get("window_sec"),
+        "twin_snapshot_sha": twin_meta.get("sha256"),
+        "twin_snapshot_present": bool(twin_meta.get("present")) or bool(twin_meta.get("sha256")),
+    }
     state: dict[str, Any] = {
         "ts": ts,
         "is_simulated": True,
@@ -583,6 +593,7 @@ def build_assimilation(
         "period_s": period_s,
         "mode": mode,
         "gate": gate_config,
+        "baseline": baseline_meta,
         "edges": state_edges,
         "applied_count": len(applied),
         "counts": counts,
@@ -590,7 +601,7 @@ def build_assimilation(
             "数据同化状态（演示数据（模拟））：只有 role=boundary 的断面允许回灌；"
             "internal 固定 assimilating=false / reason=internal_not_allowed（硬规则）。"
             "回灌值来自视频链路快照（样本视频回放，非本站现场），同化后的孪生数仍是演示数据，"
-            "**不得说成实测**。"
+            "**不得说成实测**；偏差分母见 baseline.baseline_source（twin.latest / empty_load_demo）。"
         ),
     }
     if scenario_id:
@@ -603,6 +614,7 @@ def build_assimilation(
         "enabled": enabled,
         "period_s": period_s,
         "gate": gate_config,
+        "baseline": baseline_meta,
         "scenario_edges": {
             "requested": requested,
             "resolved_boundary": sorted(resolved),
@@ -616,8 +628,9 @@ def build_assimilation(
         "calibrator_plan": build_calibrator_plan(applied, period_s),
         "note": (
             "回灌/停灌日志（演示数据（模拟））：每次停灌都留 reason（TC-20 第④项）。"
-            "calibrator_plan 只是 setFlow 计划，**本次未接入 SUMO、未实际下发**；"
-            "站点 Z 的 stations/sumo/*.net.xml 与真孪生主循环未就绪（见 README 第十六节）。"
+            "calibrator_plan 只是 setFlow 计划，**本次未接入主循环、未实际下发**；"
+            "W1 真孪生主循环已能跑（IKNAER/IKNAUH），但回灌接线（traci.calibrator.setFlow）"
+            "仍属后续单，不假装回灌到仿真。"
         ),
     }
     return state, log
