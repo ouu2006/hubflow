@@ -942,5 +942,88 @@ cd work/frontend/ui-vue && npm run dev:remote
 # mock 兼容：npm run dev（无 /route/options，回退演示会话路线 + 如实提示）
 ```
 
+## 十八、大屏双色模式：决策拥堵版 ↔ 纯车流量版（Issue IKNB9G，2026-10-18）
+
+> 业主 2026-10-18：路段颜色要两个版本，大屏加切换按钮：
+> ① **纯车流量版本**（直接取（演示）识别出的 q_vph，按流量分档，**不得用 level**）；
+> ② **决策拥堵版本**（现有 level 判级，默认）。
+> ⚠️ 与 **IKNB9I 口径**（2026-10-18 同日）：6 路视频全 mock、**YOLO 仅项目代号、一期不实装模型**；
+> 因此页面文案写「演示识别 / 一期 YOLO 仅为项目代号、不实装模型」，**不宣称真实 YOLO 识别**，
+> 且不出现「实测 / 实时 / 现场」。
+
+### 18.1 交互与覆盖范围
+
+- 大屏 KPI 条下方新增「**颜色模式**：决策拥堵版 | 纯车流量版」切换按钮（`role=group`，即时重绘）：
+  | 项 | 决策拥堵版（默认） | 纯车流量版 |
+  |---|---|---|
+  | 地图 | 按接口 `level` 四级配色（沿用「只摄像头段上色」策略，C-2 不改） | 按 `q_vph` 四档蓝阶；**有 q 的段都上色**（不受摄像头覆盖限制），缺 q / 陈旧灰档 |
+  | 左栏列表 | 四级视图：x + LevelBadge 等级；指数视图：CI 排行 | 「按车流量降序」：q 辆/h + 流量档位角标（不用 LevelBadge）；排序按档位、同档按 q 降序 |
+  | 图例 | 四级编码 / CI 色阶（原样） | 「纯车流量色阶（q_vph · 4 档）」+ 档位区间 + 灰=无流量数据 + 固定口径标注 |
+  | 档位分布 | 沿用 CI 四档分布（C-2 不改） | 流量四档分布（高→低）+ 无流量数据灰档 |
+  | 热力矩阵 | CI 色阶（原样） | 流量色阶；**接口只给当前快照 q** → 仅最后一桶有值，历史桶如实灰 |
+  | 排序角标 | 按等级 / CI | 按车流量（同行角标 = 流量档位） |
+- **C-2 既有元素一项不删**：切回决策拥堵版后四级/CI 视图、图例、CI 色阶、KPI、右栏决策卡全部原样；
+  流量版下「拥挤指数视图」按钮保留但置灰并提示「流量版不提供 CI 视图（CI 是决策口径），切回拥堵版可用」。
+- 右栏「路段信息 / 决策计算摘要 / 直接下令」与 KPI 仍是**决策口径**（level/CI），颜色模式只切换
+  地图 / 列表 / 图例 / 热力 / 排序的配色；切换条右侧已写明这一点，避免把流量色读成判级结论。
+- 流量版地图浮牌只报 q 与流量档位（不写 level / CI / x）。
+
+### 18.2 分档阈值（单一配置源 + 依据）
+
+配置在 [`src/shared/flow.ts`](ui-vue/src/shared/flow.ts)（**前端唯一配置源**；页面/地图/图例/热力/列表都从这里取，
+不散落魔法数；本轮不改 `stations/` 与接口契约）：
+
+| 档位 | 边界（q_vph） | 名称（蓝阶） | 颜色 |
+|---|---|---|---|
+| 1 档 | ≤ 240 | 低流量 | `#D6E4FF` |
+| 2 档 | ≤ 540 | 中低流量 | `#85A5FF` |
+| 3 档 | ≤ 900 | 中高流量 | `#2F54EB` |
+| 4 档 | > 900 | 高流量 | `#10239E` |
+
+**阈值依据**（一期展示口径、待标定，不参与判级）：本站 W1 演示数据 61 段 q_vph 分布
+P50 = 120 / P75 = 540 / P90 = 780 辆/h（范围 60~1320），站区默认通行能力 c = 1600 辆/h
+（`stations/thresholds.json` grading.defaults.c_vph），取 240 / 540 / 900 ≈ **0.15c / 0.34c / 0.56c**
+作四档边界；颜色用**蓝阶**与拥堵等级色（绿/黄/橙/红）语义分离。真实标定另开单。
+
+**口径铁律**：流量版只用 `q_vph`，**不读 level / CI**；缺 q 或 `data_age_s > 120s` → 灰档
+「无流量数据」，不硬填；所有响应/页面仍 `is_simulated = true`，常驻「演示数据（模拟）」。
+
+### 18.3 持久化
+
+- **localStorage**：键 `hubflow.dashboard.colorMode`（`flow` / `congestion`），切换即写、刷新后保持；
+- **query 深链覆盖一次**：`#/dashboard?color=flow` / `?color=congestion`（可和 `?segment=SZ-005` 同用），
+  读到后同时写回 localStorage；README 采用「localStorage 持久 + query 覆盖」这一种组合（二选一已写清）。
+
+### 18.4 mock / remote 与降级
+
+- remote（`npm run dev:remote`）：`/segments` 返回 61 段（W1 全路段有 q/level），两模式均可切换；
+- mock（`npm run dev`）：站点包 6 段演示基线（有 q），两模式均可切换；
+- 缺 q / 陈旧：地图/列表/图例/分布/热力一律灰档「无流量数据」并按 `is_simulated` 标注，**不显示成蓝/绿等级色**。
+
+### 18.5 实测与截图（2026-10-18）
+
+remote（Tabbit/Chromium，1590 宽；`#/dashboard?segment=SZ-005`，同一段两种模式）：
+
+- 决策拥堵版：图例「四级编码」；列表 `x 0.41 / 拥堵`（LevelBadge）；地图仅摄像头覆盖段按 level 上色；
+- 纯车流量版：图例「纯车流量色阶（q_vph · 4 档）」；列表 `660 辆/h · 中高流量`（流量角标）；
+  地图有 q 段全部按蓝阶上色；档位分布 4/9/8/39/1；热力矩阵切流量色阶；页脚「纯车流量（演示识别…）」；
+- 持久化：切 flow 后 `localStorage=flow`，刷新仍为 flow；`?color=congestion` 覆盖为拥堵版并写回 storage；
+- 缺 q 降级（浏览器路由拦截 `/segments` 删 SZ-005.q_vph）：该行「无流量数据」、分布灰档 +1、无控制台错误；
+  陈旧（`data_age_s=999`）同样灰档；
+- mock 模式：6 段列表/图例/分布均按流量四档显示，0 pageerror。
+- 截图（不入库）：`D:\hubflow\_scratch\iknb9g\`
+  `mode-congestion.png`、`mode-flow.png`、`mode-flow-persist.png`、`mock-mode-flow.png`、
+  `degrade-missing-q.png`、`degrade-stale.png`。
+
+```bash
+# 自检（仓库根；remote 复用已起的 8000 服务即可）
+python work/assembly/traffic.py --port 8000
+cd work/frontend/ui-vue && npm run dev:remote
+# 浏览器打开 http://localhost:5173/#/dashboard?segment=SZ-005
+# 点「纯车流量版」→ 地图/列表/图例/分布/热力切流量四档；再点「决策拥堵版」回到 level 配色
+cd work/frontend/ui-vue && npm run build   # exit 0
+```
+
+
 
 

@@ -49,6 +49,7 @@ import {
   CI_BAND_NOTE,
   CI_BANDS,
   CI_DISCLAIMER,
+  formatClock,
   formatStamp,
   isStale,
   LEVELS,
@@ -72,6 +73,21 @@ import {
   type TrafficOverview,
   type VehicleRecord,
 } from '../../shared/traffic'
+import {
+  COLOR_MODE_QUERY_KEY,
+  COLOR_MODE_STORAGE_KEY,
+  FLOW_BANDS,
+  FLOW_COLOR_NOTE,
+  FLOW_MODE_LABEL,
+  FLOW_MODE_NOTE,
+  FLOW_UNAVAILABLE_LABEL,
+  flowBandOf,
+  flowRangeLabel,
+  parseColorMode,
+  storeColorMode,
+  type ColorMode,
+  type FlowBand,
+} from '../../shared/flow'
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from './components/LevelBadge.vue'
 import MapLibreViewer from './components/MapLibreViewer.vue'
@@ -320,6 +336,41 @@ const selectedId = ref<string | null>(null)
 const sourceMode = ref<SourceMode>('both')
 /** 视图模式:四级视图(判级产出)/ 拥挤指数视图(展示量,原 /heat 页头切换) */
 const viewMode = ref<CongestionViewMode>('level')
+// ---------- 颜色模式（Issue IKNB9G，业主 2026-10-18）----------
+// 两套颜色，二选一，切换即时重绘（地图 / 列表 / 图例 / 热力 / 排序）：
+//   · congestion（默认）= 决策拥堵版：按接口 level 四级判级配色（C-2 既有行为，不改判级）；
+//   · flow = 纯车流量版：按 q_vph 分四档（阈值集中在 shared/flow.ts），**仅展示、不参与判级**。
+// 持久化：localStorage 键 `hubflow.dashboard.colorMode`；`?color=flow|congestion` 深链可覆盖一次。
+// 口径：flow 只用 q，不读 level / CI；缺 q 或数据陈旧 → 灰档「无流量数据」；不宣称 YOLO 已实装。
+function initialColorMode(): ColorMode {
+  const fromQuery = parseColorMode(route.query[COLOR_MODE_QUERY_KEY])
+  if (fromQuery) return fromQuery
+  try {
+    return parseColorMode(localStorage.getItem(COLOR_MODE_STORAGE_KEY)) ?? 'congestion'
+  } catch {
+    return 'congestion'
+  }
+}
+const colorMode = ref<ColorMode>(initialColorMode())
+const isFlow = computed<boolean>(() => colorMode.value === 'flow')
+storeColorMode(colorMode.value)
+watch(
+  () => route.query[COLOR_MODE_QUERY_KEY],
+  (raw) => {
+    const mode = parseColorMode(raw)
+    if (mode && mode !== colorMode.value) applyColorMode(mode)
+  },
+)
+/** 切模式：写 localStorage；flow 下不提供 CI 视图（CI 是决策口径），自动回四级视图 */
+function applyColorMode(mode: ColorMode): void {
+  colorMode.value = mode
+  storeColorMode(mode)
+  if (mode === 'flow' && viewMode.value === 'index') viewMode.value = 'level'
+}
+function setColorMode(mode: ColorMode): void {
+  if (colorMode.value === mode) return
+  applyColorMode(mode)
+}
 /** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
 const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
@@ -778,14 +829,34 @@ interface DistRow {
   color: string
 }
 
-const dist = computed<DistRow[]>(() =>
-  (overview.value?.level_distribution ?? []).map((r) => ({
+const dist = computed<DistRow[]>(() => {
+  // 纯车流量版（Issue IKNB9G）：按 q_vph 四档统计（数据来自 /segments；缺 q / 陈旧→无流量数据灰档）
+  if (isFlow.value) {
+    const counts = new Map<number, number>()
+    let missing = 0
+    for (const seg of segments.value) {
+      const band = flowBandOf(seg)
+      if (band) counts.set(band.band, (counts.get(band.band) ?? 0) + 1)
+      else missing += 1
+    }
+    return [
+      ...FLOW_BANDS.map((band) => ({
+        level: band.band as CongestionLevel,
+        name: band.name,
+        count: counts.get(band.band) ?? 0,
+        color: band.color,
+      })),
+      { level: 0 as const, name: FLOW_UNAVAILABLE_LABEL, count: missing, color: UNAVAILABLE.color },
+    ]
+  }
+  // 决策拥堵版：沿用接口 level_distribution（C-2 既有口径，不重算）
+  return (overview.value?.level_distribution ?? []).map((r) => ({
     level: r.level,
     name: r.name,
     count: r.count,
     color: r.level === 0 ? UNAVAILABLE.color : LEVELS[r.level].color,
-  })),
-)
+  }))
+})
 
 const distTotal = computed(() => {
   const o = overview.value
@@ -811,19 +882,56 @@ interface SegRow {
   text: string
   stale: boolean
   name: string
+  /** 流量版（IKNB9G）：该段流量档位；null = 无流量数据（拥堵版恒为 null） */
+  flowBand: FlowBand | null
+  /** 行尾数值文案（流量版 = q 辆/h；拥堵/指数版为空，沿用原模板） */
+  valueText: string
 }
 
-/** 监控范围过滤(0 = 数据不可用档) */
+/** 监控范围过滤(0 = 数据不可用档;流量版 = 四档 band) */
 const scoped = computed<SegmentRecord[]>(() => {
   const s = scope.value
   if (s === null) return segments.value
+  if (isFlow.value) {
+    if (s === 0) return segments.value.filter((x) => !flowBandOf(x))
+    return segments.value.filter((x) => flowBandOf(x)?.band === s)
+  }
   if (s === 0) return segments.value.filter((x) => isStale(x))
   return segments.value.filter((x) => !isStale(x) && x.level === s)
 })
 
-/** 四级视图:按等级降序、同档按饱和度降序(与默认选中同口径);指数视图:按 CI 降序、不可用排最后 */
+/**
+ * 路段列表行：
+ *   · 流量版：按 q 四档降序（同档按 q 降序），行尾显示 q、角标显示流量档位（不用 LevelBadge，
+ *     避免把流量读成判级）；缺 q / 陈旧 → 灰档「无流量数据」；
+ *   · 拥堵版：四级视图按等级降序 / 指数视图按 CI 降序（既有行为，C-2 不改）。
+ */
 const segRows = computed<SegRow[]>(() => {
   const list = [...scoped.value]
+  if (isFlow.value) {
+    list.sort(
+      (a, b) =>
+        (flowBandOf(b)?.band ?? 0) - (flowBandOf(a)?.band ?? 0) ||
+        (b.q_vph ?? -1) - (a.q_vph ?? -1),
+    )
+    return list.map((seg) => {
+      const band = flowBandOf(seg)
+      const stale = isStale(seg)
+      return {
+        seg,
+        color: band?.color ?? UNAVAILABLE.color,
+        text: band?.textColor ?? UNAVAILABLE.text,
+        stale: !band,
+        name: nameOf(seg.segment_id),
+        flowBand: band,
+        valueText: band
+          ? `${fmt(seg.q_vph, 0)} 辆/h`
+          : stale
+            ? `数据不可用 · 陈旧 ${seg.data_age_s ?? '—'}s`
+            : FLOW_UNAVAILABLE_LABEL,
+      }
+    })
+  }
   if (viewMode.value === 'index') {
     list.sort((a, b) => {
       const av = ciAvailable(a)
@@ -842,6 +950,8 @@ const segRows = computed<SegRow[]>(() => {
       text: st.text,
       stale: isStale(seg),
       name: nameOf(seg.segment_id),
+      flowBand: null,
+      valueText: '',
     }
   })
 })
@@ -875,6 +985,14 @@ const mapChip = computed<string>(() => {
   if (!id) return ''
   const cam = `摄像头 ${cameraCountOf(id)} 路`
   const s = selected.value
+  const flow = isFlow.value
+  if (flow) {
+    // 纯车流量版（IKNB9G）：浮牌只报 q 与流量档位，不写等级/CI（避免把流量读成拥堵结论）
+    if (!s) return `${id} 无流量记录 · ${cam}`
+    const band = flowBandOf(s)
+    const qText = band ? `q ${fmt(s.q_vph, 0)} 辆/h` : FLOW_UNAVAILABLE_LABEL
+    return `${s.segment_id} ${band ? band.name : FLOW_UNAVAILABLE_LABEL} · ${qText} · ${cam}（流量版：仅按 q 分档）`
+  }
   if (!s) return `${id} 无路况记录 · ${cam}`
   const v = pair.value?.slots.find((x) => x.source === 'video')
   const t = pair.value?.slots.find((x) => x.source === 'twin')
@@ -963,8 +1081,24 @@ const selectedAlerts = computed(() =>
 
 // ---------- 底部 · 档位分布(原 /heat 左栏) ----------
 const bandRows = computed(() => {
+  // 纯车流量版（IKNB9G）：q 四档分布（高→低排列，与拥堵版档位分布同向）
+  if (isFlow.value) {
+    const counts = new Map<number, number>()
+    for (const seg of segments.value) {
+      const band = flowBandOf(seg)
+      if (band) counts.set(band.band, (counts.get(band.band) ?? 0) + 1)
+    }
+    const rows = FLOW_BANDS.map((band) => ({
+      level: band.band as CongestionLevel,
+      name: `${band.name}（${flowRangeLabel(band)}）`,
+      count: counts.get(band.band) ?? 0,
+      color: band.color,
+    }))
+    return rows.reverse()
+  }
+  // 决策拥堵版：沿用既有 CI 四档口径（C-2 不改）
   const avail = segments.value.filter(ciAvailable)
-  const out: { level: CongestionLevel; name: string; count: number }[] = []
+  const out: { level: CongestionLevel; name: string; count: number; color: string }[] = []
   for (let lv = 4; lv >= 1; lv--) {
     const lo = CI_BANDS[lv - 1] ?? 0
     const hi = CI_BANDS[lv] ?? 100
@@ -972,12 +1106,53 @@ const bandRows = computed(() => {
       const ci = s.ci as number
       return lv === 4 ? ci >= lo && ci <= hi : ci >= lo && ci < hi
     }).length
-    out.push({ level: lv as CongestionLevel, name: LEVELS[lv as CongestionLevel].name, count })
+    out.push({
+      level: lv as CongestionLevel,
+      name: LEVELS[lv as CongestionLevel].name,
+      count,
+      color: LEVELS[lv as CongestionLevel].color,
+    })
   }
   return out
 })
 
-const unavailableCount = computed(() => segments.value.filter((s) => !ciAvailable(s)).length)
+const unavailableCount = computed(() =>
+  isFlow.value
+    ? segments.value.filter((s) => !flowBandOf(s)).length
+    : segments.value.filter((s) => !ciAvailable(s)).length,
+)
+
+// ---------- 底部 · 热力矩阵：流量版用 q 单桶矩阵（接口只给当前快照；历史桶如实灰） ----------
+function flowHeatLabels(): string[] {
+  const moment = Date.parse(snapshotTs.value)
+  const count = 12
+  const bucketSec = 60
+  if (Number.isNaN(moment)) return Array.from({ length: count }, () => '—')
+  return Array.from({ length: count }, (_, index) =>
+    formatClock(new Date(moment - (count - 1 - index) * bucketSec * 1000).toISOString()),
+  )
+}
+
+const flowHeat = computed<HeatMatrix | null>(() => {
+  if (!isFlow.value) return null
+  const labels = heat.value?.labels?.length ? heat.value.labels : flowHeatLabels()
+  const rows = segments.value.map((seg) => {
+    const q = flowBandOf(seg) ? (seg.q_vph as number) : null
+    return {
+      segment_id: seg.segment_id,
+      name: nameOf(seg.segment_id),
+      buckets: [...Array(Math.max(0, labels.length - 1)).fill(null), q] as (number | null)[],
+    }
+  })
+  return {
+    ts: heat.value?.ts ?? snapshotTs.value,
+    is_simulated: true,
+    bucket_sec: heat.value?.bucket_sec ?? 60,
+    buckets: labels.length,
+    labels,
+    rows,
+  }
+})
 
 // ---------- 底部 · 告警条 ----------
 const unclosed = computed(() =>
@@ -1081,6 +1256,36 @@ function onCommandChanged(): void {
       </div>
     </div>
 
+    <!-- 颜色模式切换（Issue IKNB9G，业主 2026-10-18）：决策拥堵版 ↔ 纯车流量版 -->
+    <div class="color-mode-bar" role="group" aria-label="颜色模式切换">
+      <span class="cm-title">颜色模式</span>
+      <button
+        type="button"
+        class="cm-item"
+        :class="{ on: !isFlow }"
+        :aria-pressed="!isFlow"
+        @click="setColorMode('congestion')"
+      >
+        决策拥堵版
+      </button>
+      <button
+        type="button"
+        class="cm-item flow"
+        :class="{ on: isFlow }"
+        :aria-pressed="isFlow"
+        @click="setColorMode('flow')"
+      >
+        纯车流量版
+      </button>
+      <span v-if="isFlow" class="cm-note">
+        <b>{{ FLOW_MODE_LABEL }}</b> · {{ FLOW_MODE_NOTE }} · {{ FLOW_COLOR_NOTE }}
+        · 仅颜色 / 列表 / 图例 / 热力随模式切换；KPI 与右栏决策信息仍为决策口径
+      </span>
+      <span v-else class="cm-note">
+        决策拥堵版：按接口 level 四级判级配色（判级来自感知层，前端不重算）
+      </span>
+    </div>
+
     <!-- 主体三栏 · 横向可拖(Issue #81)。
          ElSplitter 的每个 panel 后面自带一条 bar,两条 bar 把三栏隔开;
          bar 宽度为 0(只有 16px dragger 绝对定位),栏间距由 .spl-gap 补回 10px。
@@ -1106,18 +1311,21 @@ function onCommandChanged(): void {
                     :aria-pressed="viewMode === 'level'"
                     @click="viewMode = 'level'"
                   >
-                    四级视图
+                    {{ isFlow ? '流量四档' : '四级视图' }}
                   </span>
                   <span
                     class="td-seg-item"
-                    :class="{ on: viewMode === 'index' }"
+                    :class="{ on: viewMode === 'index', disabled: isFlow }"
                     role="button"
                     :aria-pressed="viewMode === 'index'"
-                    @click="viewMode = 'index'"
+                    :aria-disabled="isFlow"
+                    :title="isFlow ? '流量版不提供 CI 视图（CI 是决策口径）；切回决策拥堵版可用' : ''"
+                    @click="!isFlow && (viewMode = 'index')"
                   >
                     拥挤指数视图
                   </span>
                 </div>
+                <p v-if="isFlow" class="note">流量版不提供 CI 视图（CI 是决策口径）；切回「决策拥堵版」可用，C-2 既有能力未删。</p>
                 <div class="dist-bar" :style="{ background: TD.bgSecondary }">
                   <span
                     v-for="r in dist"
@@ -1140,7 +1348,8 @@ function onCommandChanged(): void {
                     :aria-pressed="scope === r.level"
                     @click="toggleScope(r.level)"
                   >
-                    <LevelBadge :level="r.level === 0 ? 1 : r.level" :stale="r.level === 0" />
+                    <span v-if="isFlow" class="flow-swatch" :style="{ background: r.color }" />
+                    <LevelBadge v-else :level="r.level === 0 ? 1 : r.level" :stale="r.level === 0" />
                     <span class="td-num dist-count">{{ r.count }}</span>
                   </span>
                   <span class="dist-item all" :class="{ on: scope === null }" role="button" @click="scope = null">
@@ -1155,7 +1364,7 @@ function onCommandChanged(): void {
             <section class="td-card seg-card">
               <div class="td-card-head">
                 路段监测
-                <span class="td-head-tag">{{ viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
+                <span class="td-head-tag">{{ isFlow ? '按车流量降序' : viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
               </div>
               <div class="td-card-body flush seg-body">
                 <div class="td-scroll seg-list">
@@ -1180,11 +1389,25 @@ function onCommandChanged(): void {
                         <span class="seg-name">{{ row.name }}</span>
                         <span class="seg-id td-mono">{{ row.seg.segment_id }}</span>
                       </span>
-                      <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
-                        <template v-if="row.stale">数据不可用 · 陈旧 {{ row.seg.data_age_s ?? '—' }}s</template>
-                        <template v-else>x {{ fmt(row.seg.x) }}</template>
-                      </span>
-                      <LevelBadge :level="row.seg.level" :stale="row.stale" />
+                      <template v-if="isFlow">
+                        <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
+                          {{ row.valueText }}
+                        </span>
+                        <span
+                          class="flow-badge"
+                          :class="{ off: !row.flowBand }"
+                          :style="row.flowBand ? { background: row.flowBand.color, color: row.flowBand.textColor } : {}"
+                        >
+                          {{ row.flowBand ? row.flowBand.name : FLOW_UNAVAILABLE_LABEL }}
+                        </span>
+                      </template>
+                      <template v-else>
+                        <span class="seg-value td-num" :style="{ color: row.stale ? UNAVAILABLE.text : row.text }">
+                          <template v-if="row.stale">数据不可用 · 陈旧 {{ row.seg.data_age_s ?? '—' }}s</template>
+                          <template v-else>x {{ fmt(row.seg.x) }}</template>
+                        </span>
+                        <LevelBadge :level="row.seg.level" :stale="row.stale" />
+                      </template>
                     </div>
                     <p v-if="segRows.length === 0" class="empty">
                       {{ scope === null ? '快照为空(接口层未起?)' : '该范围当前没有路段' }}
@@ -1229,6 +1452,7 @@ function onCommandChanged(): void {
                   :selected-id="selectedId"
                   :routes="routeHighlights"
                   :mode="viewMode"
+                  :color-mode="colorMode"
                   :ts="snapshotTs"
                   :hover-chip="mapChip"
                   :legend="true"
@@ -1497,20 +1721,34 @@ function onCommandChanged(): void {
     <div class="heat-band">
       <section class="td-card band-card">
         <div class="td-card-head">
-          档位分布 · 当前时刻<span class="td-head-tag">灰档 {{ unavailableCount }}</span>
+          档位分布 · 当前时刻<span class="td-head-tag">
+            {{ isFlow ? `流量四档 · ${FLOW_UNAVAILABLE_LABEL} ${unavailableCount}` : `灰档 ${unavailableCount}` }}
+          </span>
         </div>
         <div class="td-card-body">
-          <BandDistribution :rows="bandRows" :unavailable="unavailableCount" />
-          <p class="note">共 {{ distTotal }} 个路段 · 灰档不计入均值,与地图同源</p>
+          <BandDistribution
+            :rows="bandRows"
+            :unavailable="unavailableCount"
+            :unavailable-label="isFlow ? FLOW_UNAVAILABLE_LABEL : '不可用'"
+          />
+          <p class="note">
+            共 {{ distTotal }} 个路段 ·
+            {{ isFlow ? `${FLOW_UNAVAILABLE_LABEL}不计入分档,分档阈值见 shared/flow.ts` : '灰档不计入均值,与地图同源' }}
+          </p>
         </div>
       </section>
 
       <section class="td-card band-card wide">
         <div class="td-card-head">
-          路段 × 时间热力矩阵<span class="td-head-tag">最近 12 个快照 · 每 60 s 一档 · 左旧右新</span>
+          路段 × 时间热力矩阵<span class="td-head-tag">
+            {{ isFlow ? '流量版：仅当前快照桶有 q，历史桶灰' : '最近 12 个快照 · 每 60 s 一档 · 左旧右新' }}
+          </span>
         </div>
         <div class="td-card-body flush">
-          <HeatMatrixTable :matrix="heat" />
+          <HeatMatrixTable :matrix="isFlow ? flowHeat : heat" :mode="isFlow ? 'flow' : 'ci'" />
+          <p v-if="isFlow" class="note" style="padding: 4px 10px 0">
+            流量版矩阵只展示<b>当前快照</b>的 q（接口没有流量时序）；历史桶如实为空（灰），不用 0 或波形冒充历史。
+          </p>
         </div>
       </section>
 
@@ -1525,6 +1763,9 @@ function onCommandChanged(): void {
             <span>灰档 = 数据不可用(缺 CI 或数据陈旧),绝不落进通配色</span>
           </div>
           <p class="note">{{ CI_BAND_NOTE }}</p>
+          <p v-if="isFlow" class="note">
+            CI 色阶为决策口径展示，<b>不参与流量版配色</b>（流量版只用 q 分档；C-2 既有元素保留）。
+          </p>
         </div>
       </section>
     </div>
@@ -1554,8 +1795,18 @@ function onCommandChanged(): void {
       <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
       <span>{{ footStationLine }}</span>
       <span>数据来源:{{ footDataSource }} · 底图:{{ sourceLabel }}</span>
+      <span>
+        颜色模式:{{ isFlow ? '纯车流量（q 四档，仅展示，不代表拥堵结论）' : '决策拥堵（接口 level）' }}
+      </span>
       <span class="right">
-        口径:一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)· {{ CI_DISCLAIMER }}
+        口径:
+        <template v-if="isFlow">
+          一期全部示例数据(模拟)· {{ FLOW_MODE_LABEL }} · {{ FLOW_MODE_NOTE }} ·
+          数据不可用灰显(TC-11) · {{ FLOW_COLOR_NOTE }}
+        </template>
+        <template v-else>
+          一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)· {{ CI_DISCLAIMER }}
+        </template>
       </span>
     </template>
   </AppShell>
@@ -1572,6 +1823,87 @@ function onCommandChanged(): void {
   border-radius: var(--td-radius-sm);
   background: var(--td-warning-color-1);
   color: #a06a00;
+}
+
+/* ---------- 颜色模式切换（Issue IKNB9G：决策拥堵版 ↔ 纯车流量版） ---------- */
+.color-mode-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 16px 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: var(--td-radius-md);
+  background: var(--td-bg-color-container);
+}
+.cm-title {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+.cm-item {
+  height: 26px;
+  padding: 0 12px;
+  font-size: 12px;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+}
+.cm-item:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+.cm-item.on {
+  background: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+}
+/* 流量版用蓝阶主色（与拥堵版品牌蓝按钮区分：这里只是「当前模式」语义） */
+.cm-item.flow.on {
+  background: #2f54eb;
+  border-color: #2f54eb;
+}
+.cm-note {
+  flex: 1;
+  min-width: 240px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
+.cm-note b {
+  color: var(--td-brand-color);
+}
+/* 流量版列表角标（不用 LevelBadge：避免把车流量读成判级） */
+.flow-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.flow-badge.off {
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-placeholder);
+  border-color: var(--td-component-border);
+}
+.flow-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  flex: 0 0 auto;
+}
+.view-seg .td-seg-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ---------- KPI 条 ---------- */

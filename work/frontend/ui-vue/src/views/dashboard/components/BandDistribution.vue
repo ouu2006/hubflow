@@ -1,25 +1,36 @@
 <script setup lang="ts">
-// 档位分布 · 当前时刻:按 CI_BANDS 四档统计路段数 + 等级色方块;
+// 档位分布 · 当前时刻:按档位统计路段数 + 色块;
+//   拥堵版 = CI 四档（沿用既有口径，色取等级色）；
+//   流量版（Issue IKNB9G）= q_vph 四档（色由调用方按 shared/flow.ts 配置传入）。
 // 不可用单独成档——灰虚线框 + 斜杠符号(手册 §6.2「档位分布用灰虚线框 + 斜杠」),绝不用蓝/绿。
 import { LEVELS, type CongestionLevel } from '../../../shared/traffic'
 
-defineProps<{
-  rows: { level: CongestionLevel; name: string; count: number }[]
-  unavailable: number
-}>()
+const props = withDefaults(
+  defineProps<{
+    rows: { level: CongestionLevel; name: string; count: number; color?: string }[]
+    unavailable: number
+    /** 不可用档的名称（拥堵版=不可用；流量版=无流量数据） */
+    unavailableLabel?: string
+  }>(),
+  { unavailableLabel: '不可用' },
+)
+
+function rowColor(level: CongestionLevel, color?: string): string {
+  return color ?? LEVELS[level]?.color ?? '#8B8B8B'
+}
 </script>
 
 <template>
   <div class="dist">
-    <div v-for="r in rows" :key="r.level" class="dist-row">
-      <span class="swatch" :style="{ background: LEVELS[r.level].color }" />
+    <div v-for="r in props.rows" :key="r.level" class="dist-row">
+      <span class="swatch" :style="{ background: rowColor(r.level, r.color) }" />
       <span class="dist-name">{{ r.name }}</span>
       <span class="dist-count td-num">{{ r.count }}</span>
     </div>
     <div class="dist-row">
       <span class="unbox"><i /></span>
-      <span class="dist-name">不可用</span>
-      <span class="dist-count td-num">{{ unavailable }}</span>
+      <span class="dist-name">{{ props.unavailableLabel }}</span>
+      <span class="dist-count td-num">{{ props.unavailable }}</span>
     </div>
   </div>
 </template>

@@ -74,6 +74,15 @@ import {
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import { basemapEnabled } from '../../../shared/settings'
 import {
+  FLOW_BANDS,
+  FLOW_COLOR_NOTE,
+  FLOW_MODE_LABEL,
+  FLOW_MODE_NOTE,
+  flowBandOf,
+  flowRangeLabel,
+  type ColorMode,
+} from '../../../shared/flow'
+import {
   BASEMAP_PROXY_PROBE,
   BASEMAP_STYLE_URL,
   setBasemapProxyDetected,
@@ -156,6 +165,12 @@ const props = withDefaults(
     /** 推荐 / 备选 / 离站三组路线高亮（IKMF1W；空数组 = 不画路线） */
     routes?: RouteHighlight[]
     mode?: MapMode
+    /**
+     * 颜色模式（Issue IKNB9G）：
+     *   `congestion`（默认）= 决策拥堵 level 四级配色；
+     *   `flow` = 纯车流量 q_vph 四档配色（仅展示，不参与判级；有 q 的段都上色，缺 q / 陈旧灰档）。
+     */
+    colorMode?: ColorMode
     /** 快照时间（热力视图的"更新时间戳"，手册 §11.2 必现） */
     ts?: string
     /** 跟随鼠标的信息浮牌文字（空串不画） */
@@ -167,6 +182,7 @@ const props = withDefaults(
     vehicles: () => [],
     routes: () => [],
     mode: 'level',
+    colorMode: 'congestion',
     ts: '',
     hoverChip: '',
     legend: true,
@@ -235,22 +251,39 @@ const pins = cameraPins()
 
 const segById = computed(() => new Map(props.segments.map((s) => [s.segment_id, s])))
 const isIndex = computed(() => props.mode === 'index')
+/** 纯车流量版（Issue IKNB9G）：颜色只看 q_vph 分档，忽略 level / CI / 摄像头覆盖策略 */
+const isFlow = computed(() => props.colorMode === 'flow')
 
 /**
- * 路段色。三档，别混：
- *   ① 有监控且数据可用 → 等级色 / ci 色阶；
- *   ② 有监控但数据不可用 → 灰（粗，`UNAVAILABLE`）；
- *   ③ **没监控** → 灰（细、淡）——"这段没摄像头"本身是个信息，不能与 ② 长得一样。
+ * 该段是否"有可展示的数据"（决定线宽 / 透明度）。
+ *   · 拥堵版：沿用「只摄像头段上色」策略（业主 2026-10-15）；色块按 level / CI；
+ *   · 流量版：**有 q 且不陈旧**即可上色（流量是全网口径，不受摄像头覆盖限制），缺 q 灰档。
+ */
+function coveredOf(seg: DemoSegment): boolean {
+  if (isFlow.value) return flowBandOf(segById.value.get(seg.segment_id)) !== null
+  return isCameraCovered(seg.segment_id)
+}
+
+/**
+ * 路段色。四档，别混：
+ *   ① 流量版：q 四档蓝阶（缺 q / 陈旧 → 灰）；
+ *   ② 拥堵版有监控且数据可用 → 等级色 / ci 色阶；
+ *   ③ 拥堵版有监控但数据不可用 → 灰（粗，`UNAVAILABLE`）；
+ *   ④ 拥堵版**没监控** → 灰（细、淡）——"这段没摄像头"本身是个信息，不能与 ③ 长得一样。
  */
 function colorOf(seg: DemoSegment): string {
-  if (!isCameraCovered(seg.segment_id)) return UNAVAILABLE.color
   const rec = segById.value.get(seg.segment_id)
+  if (isFlow.value) {
+    return flowBandOf(rec)?.color ?? UNAVAILABLE.color
+  }
+  if (!isCameraCovered(seg.segment_id)) return UNAVAILABLE.color
   if (!rec) return UNAVAILABLE.color
   return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
 }
 
-/** 热力晕染强度（仅指数视图且 ci 可用）：随 ci 单调增，不改任何判级着色 */
+/** 热力晕染强度（仅拥堵版指数视图且 ci 可用；流量版不用 CI 热力，按色阶直读） */
 function heatOf(seg: DemoSegment): number {
+  if (isFlow.value) return 0
   if (!isCameraCovered(seg.segment_id)) return 0
   const rec = segById.value.get(seg.segment_id)
   if (!rec || !ciAvailable(rec)) return 0
@@ -269,8 +302,8 @@ function routeGeoJson(): FeatureCollection {
         name: seg.name,
         kind: seg.kind,
         color: colorOf(seg),
-        /** 该段是否有摄像头覆盖（策略 'all' 时恒 true）—— 线宽/透明度按它分档 */
-        covered: isCameraCovered(seg.segment_id),
+        /** 该段是否有可展示数据（拥堵版=摄像头覆盖；流量版=有 q 且不陈旧）—— 线宽/透明度按它分档 */
+        covered: coveredOf(seg),
         /** 热力晕染强度（0 = 不画） */
         heat: heatOf(seg),
       },
@@ -828,7 +861,7 @@ function initMap(): void {
 // ---- 响应式：数据 / 模式 / 选中 / 路线 / 车辆 ----
 
 watch(
-  () => [props.segments, props.mode] as const,
+  () => [props.segments, props.mode, props.colorMode] as const,
   () => {
     const map = mapRef.value
     if (!map || !ready.value) return
@@ -948,9 +981,39 @@ onUnmounted(() => {
       {{ hoverChip }}
     </div>
 
-    <!-- 图例（自绘视图搬来；index 视图是色阶版，level 视图是四级版） -->
+    <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级） -->
     <div v-if="legend" class="legend">
-      <template v-if="isIndex">
+      <template v-if="isFlow">
+        <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>
+        <div v-for="band in FLOW_BANDS" :key="band.band" class="lg-row">
+          <span class="dot" :style="{ background: band.color }" />
+          {{ band.band }} 档 {{ band.name }} · {{ flowRangeLabel(band) }}
+        </div>
+        <div class="lg-row"><LevelBadge :level="1" stale />灰 = 无流量数据（缺 q / 数据陈旧），不硬填</div>
+        <div class="lg-note strong">{{ FLOW_MODE_LABEL }} · {{ FLOW_MODE_NOTE }}</div>
+        <div class="lg-note">{{ FLOW_COLOR_NOTE }}</div>
+        <div class="lg-sep" />
+        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+        </div>
+        <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
+        <template v-if="hasRoutes">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
+          <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
+          <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
+        </template>
+        <!-- 「只摄像头段上色」是拥堵版的策略；流量版对所有有 q 的段上色，这里只解释图钉语义 -->
+        <template v-if="cameraOnly">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="dot cam-dot" />摄像头 · 有样本视频源（演示，非本站现场）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 未接入视频源</div>
+          <div class="lg-note">流量版按 q 分档上色：未挂摄像头的段只要有流量数据同样上色（颜色只表示流量大小）</div>
+        </template>
+        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
+      </template>
+      <template v-else-if="isIndex">
         <div class="lg-title">拥挤指数色阶(ci · 0~100)</div>
         <div class="lg-ramp" :style="{ background: ciGradientCss() }" />
         <div class="lg-scale">
