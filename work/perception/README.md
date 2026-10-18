@@ -124,7 +124,7 @@
 
 > **归属**：本节的**标定与四项指标**条目（**M1-2** / **M1-9** / **TC-01** / **TC-19** / **M1-10 / TC-20**）归**开发A**（`calib.py` / `metrics.py`）；**判级**条目（**M1-3**）归**开发B**（`level.py`）；**TC-16** 由开发A 出指标、开发B 出判级，两人共同举证。
 
-- **M1-2**：**视频链路与孪生链路各至少 1 条路段**产出平均车速与排队长度的**时间序列**，**≥ 60 个统计点**；
+- **M1-2**：**视频链路与孪生链路各至少 1 条路段**产出平均车速与排队长度的**时间序列**，**≥ 60 个统计点**（视频侧由 IKNAUM 产出 `out/latest/segments_video_timeseries.json` 65 点/段，见第九节 9.1；**M1-2 整体仍以台账/池·Q 复核为准，本单不宣称整体通过**）；
 - **M1-3**：同一输入连续跑三次，**判级结果完全一致**，且**至少覆盖两个等级**；
 - **M1-9**：**视频链路（YOLO）真的在算路段**——6 段样本视频完成透视标定（控制点 ≥4 组、**重投影误差 ≤ 3 px**【demo 目标值】），至少 1 条路段产出流量 / 车速 / 排队时序（`source = "video"`），**与人工抽查方向一致**；
 - **TC-01**：链路 → 指标 → 判级**可复现**，**上报周期可配置并生效**；
@@ -187,20 +187,47 @@
 | `calib.py` | 透视标定：`stations/calibration.json` 控制点 → 单应矩阵（留一交叉验证 + 尺度误差 + 有效标定带） | 控制点是 **inferred 演示值**（非池·V 现场拾取）；换站/换视频重做标定 |
 | `metrics.py` | 四项指标：流量 / 平均车速 / 密度 / 排队长度（只用有效标定带内的点） | 两条链路共用；不按 `source` 分支 |
 | `level.py` | 五步判级（可用性门 → 硬触发 → 四项取最高 → 因素修正 → 防抖） | 阈值全读 `stations/thresholds.json` 的 `grading` 组；**代码不写死判级数字** |
-| `run_chain.py`（新） | `data/monitor/<stream>/{meta,detections,frames}` → `out/latest/segments_video.json`（契约 `segments.json` 形状，`source: "video"`） | 通道→路段映射**只读** `mapping/camera-segments.json`；时间戳取输入 meta（不读系统时钟）→ 同输入连跑 3 次**逐字节一致**（M1-3） |
+| `run_chain.py`（新） | `data/monitor/<stream>/{meta,detections,frames}` → `out/latest/segments_video.json`（契约 `segments.json` 形状，`source: "video"`）+ `out/latest/segments_video_timeseries.json`（视频侧 ≥60 点时序，IKNAUM） | 通道→路段映射**只读** `mapping/camera-segments.json`；时间戳取输入 meta（不读系统时钟）→ 同输入连跑 3 次**逐字节一致**（M1-3） |
 
 **用法（仓库根）**：
 
 ```bash
-python work/perception/run_chain.py            # 写 out/latest/segments_video.json + pipeline_status.json
-python work/perception/run_chain.py --check    # 与既有产物逐字节比对
+python work/perception/run_chain.py            # 写 segments_video.json + pipeline_status.json + segments_video_timeseries.json
+python work/perception/run_chain.py --check    # 与既有产物逐字节比对（含视频侧时序，不写盘；首次先不带 --check 跑一遍）
 python work/perception/level.py --self-test    # 判级自检：3 次一致 + 覆盖 ≥2 档 + 降档防抖
 python work/perception/calib.py --all          # 标定自检：重投影误差 / 尺度误差 / 有效标定带
+# 视频侧时序窗口 / 步长 / 点数可配（默认 10 s / 1 s / 65 点；点数 <60 会如实 ❌ 且退出码 1，不降标准）
+python work/perception/run_chain.py --ts-window 10 --ts-step 1 --ts-points 65
 ```
 
 **当前本机数据**：只有 `road2` / `track1` **2 路样本视频**（不是 6 段）——所以本机只能举证 2 条路段：
 `road2→SZ-005（level 3 拥堵）`、`track1→SZ-024（level 1 畅通）`；**6 段覆盖（M1-9）未达成**，缺的 4 段视频不在仓库/本机，
 **不伪造、不拿别的视频顶**，如实记阻塞（视频源与真实标定归 IKMHMX / 二期现场接入）。
+
+### 9.1 视频侧 ≥60 点时序（IKNAUM，2026-10-18；M1-2 视频侧证据）
+
+> **一句话**：视频链路从"单窗口快照"补出**视频侧 65 点时序** —— `out/latest/segments_video_timeseries.json`；
+> **短样本循环回放明示**（`video_reuse: true`），只证**视频侧点数门槛**，**不宣称 M1-2 整体通过**。
+
+| 项 | 口径 |
+|---|---|
+| 产物 | `work/perception/out/latest/segments_video_timeseries.json`（**`out/` gitignored 不入库**，本地生成；同输入两遍逐字节一致） |
+| 形状 | 顶层 `ts` / `base_ts` / `window_sec` / `step_sec` / `is_simulated:true` / `kind:"video_timeseries"` / `source:"video"` / `video_reuse:true` / `points` / `point_ts[65]` / `reuse` / `metric_formulas` / `segments`；每段含 `segment_id` / `stream_id` / `cam_id` / `cid` / `points` / `valid` / `sample_duration_s` / `reuse_cycles` + 数组 `q_vph` / `v_kmh` / `k_vpk` / `L_q_m` / `T_d_min`（各 `points` 个，与 `point_ts` 一一对应） |
+| 生成方式 | 对 `data/monitor/<stream>/detections.json` 的米制轨迹做**循环回放 + 滑动窗口**：`t_replay = t + 轮次 × 样本周期`，窗口取 `[k×step, k×step+window)`，窗口内用**同一套 `metrics.py`** 重算四项指标；**固定输入、不读系统时钟**（时间戳一律 `base_ts = max(meta.generated_at)`，第 k 点 = `base_ts + k×step + window`） |
+| 可配 | `--ts-window`（默认 10 s ≈1~1.5 个样本回放周期）、`--ts-step`（默认 1 s）、`--ts-points`（默认 65，与孪生侧 65 点对齐便于并排审阅）、`--ts-out`（输出路径） |
+| 回放声明 | 样本只有 **road2≈6.6 s / track1≈9.3 s**，远短于统计跨度 → 同一段样本被**循环回放**（road2 回放 11.156 轮、track1 7.986 轮）；**非实时流、非本站现场实测**，产物顶层与每段都标 `video_reuse: true` |
+| 指标口径 | 时序点**只出四项指标**（q / v / k / L_q / T_d），**不重跑判级**（跨周期防抖需连续周期；单窗口快照 `segments_video.json` 已判级）。⚠️ `q_vph` 是**回放等效流量**（短样本反复复用会把过车率抬到样本自身的重复频率），**不等于现场流量**，不与单窗口快照的 60 s 窗口口径直接比较 |
+| M1-2 视频侧判定 | 每段 **65 点**；**v_kmh 有效 65/65、L_q_m 有效 65/65**（SZ-005 / SZ-024 两段均达标）；⚠️ `L_q_m=0.0` 是 metrics 判定的**空排队**（不是缺测），所以 L_q 有效点数恒等于统计点数，**不能把 65/65 读成“排队动态强证据”**（产物 `valid_note` 已写明）。写盘与 `--check` 都会打印每段有效点数，**没有任何 SZ-### 段 v/L_q 有效点同时 ≥60 则 ❌ 且退出码 1（不降标准）；点数不足时不写盘，避免覆盖既有 65 点证据** |
+| **边界（不得写成 M1-2 通过）** | 本单只补**视频侧**：孪生侧 65 点已由 W1（PR !50）达成；**M1-2 整体判定仍按 `docs/验收台账-20261018.md` 由池·Q 复核**（本单不宣称整体通过、不改台账、不动 `stations/`） |
+| 复跑环境 | `data/monitor/` **gitignored 不入库**（样本视频导出产物，见第七节 ①）：本机复跑用主工作区 `D:\hubflow\hubflow\work\perception\data` 的只读 junction；换机器需先导出同一批数据 |
+| 两遍一致 | 连续两遍 `run_chain.py`：`segments_video.json` sha `16E21537…`（**与改前基线一致** → 兼容）、`pipeline_status.json` sha `69C39F85…`（**与改前基线一致**）、`segments_video_timeseries.json` sha `FAB744E5…`（两遍相同）；`run_chain.py --check` exit 0 |
+| 接口层 / 大屏读法（本单不改） | 接口层 `work/assembly/traffic.py` 当前只读 `out/latest/segments_video.json`（`PERCEPTION_VIDEO`，单窗口快照），**本单不改接口层**；视频时序是**独立只读产物**、字段自描述 —— 若后续要上接口/大屏，建议接口层新增只读端点直接读该文件（**不改 traffic 契约字段形状**），大屏现状仍消费快照 |
+
+```bash
+# 复跑（仓库根；需 data/monitor 已由第七节 ① 导出）
+python work/perception/run_chain.py            # 写 3 个产物（快照 + pipeline_status + 视频侧时序）
+python work/perception/run_chain.py --check    # 3 个产物逐字节比对（含时序），exit 0 = 一致
+```
 
 > **口径纪律**：样本视频**非本站现场**、`is_simulated: true`、`source: "video"`；页面与产物不得出现「实测 / 实时 / 现场」；
 > 标定 `inferred: true` 的精度数字只是**留一交叉验证的演示值**，**不得**当 M1-9 的现场精度结论。
