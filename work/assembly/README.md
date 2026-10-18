@@ -2,16 +2,16 @@
 
 > ⚠️ **2026-10-11 业主裁定（推翻前述接口规划）**：web 端整体推翻 harness 架构，后端接口面改为**根据前端页面重新规划**后再落地。本文件第二节的端点清单、"既有 8 个端点零改动"边界与"PR #51 实现基准"**作废待重订**（PR #51 已收回，traffic.py 骨架可在该 PR 页面回看）；重订前第二节仅作历史参考。
 
-> **产出**：接口层 `traffic.py` + 一键演示脚本（Windows `.bat` + `run_all.py`）+ 压测脚本
+> **产出**：接口层 `traffic.py` + **一键演示 `demo_all.py` / `demo_all.ps1`（C-4）** + **压测 `stress_test.py` + `压测报告.md`（C-5）** + **对外接口 `对外接口.md`（C-6）** + **`部署与监控.md` / `monitor_check.py`（C-7）** + 启动脚本 `run_all.py`
 > **同时负责**：**公共文件的唯一修改人**（根 `README.md`、`.gitignore`、`.gitee/`、`docs/数据契约.md`、路由注册）
 > **注意**：这里登记的是**公共文件由开发C 改、队长复核**，不是"开发C 想怎么改就怎么改"。
 
 ## 一、负责什么
 
 1. **接口层** `traffic.py`：演示前最后一步，把快照文件（`segments.json` / `routes.json` / `vehicles.json`）包成 HTTP 接口给双端调用；
-2. **一键演示脚本**：**Windows 下双击 `.bat` 就能跑**（现场演示不允许"先教我敲命令"）；
+2. **一键演示脚本**（C-4）：`demo_all.py`（`demo_all.ps1` 双击/命令行均可）一条命令完成环境检查 → 真网算路 → 感知链路 → 起接口层 → 端点自检 → 收尾；`--rounds 3` 即 **M1-6 无人干预连跑 3 轮**，每轮日志/产物/内存留存，**失败即停、缺前置如实标阻塞**；
 3. **公共文件**：根目录 `README.md`、`.gitignore`、`.gitee/`、`docs/数据契约.md`、`app/main.py` 注册与路由表 —— **只由你一人改，队长复核**；
-4. **压力测试**：按算力预算跑，以"**无人干预连跑 3 轮不出问题**"为验收口径（M1-6）。
+4. **压力测试**（C-5）：`stress_test.py` 3 轮 × 多并发打只读端点，记录启动耗时 / P50·P95 / 错误数 / 内存曲线，报告写实测数字、**不判定"性能达标"**；交付文档见 C-6 [`对外接口.md`](对外接口.md) / C-7 [`部署与监控.md`](部署与监控.md)。
 
 ## 二、接口层（演示前最后一步）
 
@@ -269,21 +269,66 @@ python work/assembly/traffic.py --reset-state  # 复位运行态（留审计；�
 > 证据：`work/assembly/自检记录-IKMS1H.md`（真跑断言表 + 重启前后 JSON + 审计全量）；运行态文件与 `out/`
 > 测试数据均被 gitignore，不入库。
 
-## 三、一键演示脚本
+### 2.3 交付包索引（C-4 ~ C-7，IKMS1I，2026-10-18）
 
-```text
-双击 demo.bat                    # 现场演示就按这一个
-python run_all.py                # 等价命令行入口
-python run_all.py --stress       # 压力测试：连续 3 轮
+> 手册附录 B.3 的四件交付物已落地。**全部为演示数据（模拟）口径**：不接真实下发通道、无真实用户数据；
+> 缺前置（真网产物 / 感知样本导出 / 前端 dev server）时脚本**如实标阻塞，不写「通过」**。
+
+| 交付物 | 文件 | 一条命令 / 怎么用 | 判定口径 |
+|---|---|---|---|
+| **C-4 一键演示** | [`demo_all.py`](demo_all.py) · [`demo_all.ps1`](demo_all.ps1) | `python work/assembly/demo_all.py --rounds 3`（Windows 也可 `demo_all.ps1 --rounds 3`） | 环境检查 → 真网算路 → 感知链路 → 接口层 → 端点自检；每轮日志在 `out/demo/round-<n>/`，汇总 `out/demo_all_report.json`；退出码 0=全成功 / 2=有阻塞 / 1=有失败 |
+| **C-4 证据** | [`自检记录-IKMS1I.md`](自检记录-IKMS1I.md) | 见该文件「M1-6 三轮」一节 | 三轮逐轮结果 / 耗时 / 内存 / 阻塞项如实记录 |
+| **C-5 压测** | [`stress_test.py`](stress_test.py) · [`压测报告.md`](压测报告.md) | `python work/assembly/stress_test.py` | 3 轮 × 14 只读端点 × 20 次 × 8 并发；实测启动耗时 / P50·P95 / 错误数 / RSS；**不判定性能达标** |
+| **C-6 对外接口** | [`对外接口.md`](对外接口.md) | 直接阅读 | 端点表（27 条，`/plan/audit` 标非契约）/ 请求响应示例 / 信封 / 鉴权形状 / **围栏衔接** / 错误码表 / 演示环境声明 |
+| **C-7 部署与监控** | [`部署与监控.md`](部署与监控.md) · [`monitor_check.py`](monitor_check.py) | `python work/assembly/monitor_check.py` | 单机部署步骤 / 端口 / 守护 / 日志 / 回滚 + 监控项清单（数据·服务·效果分层，一期/二期标注） |
+
+## 三、一键演示与压测（C-4 / C-5）
+
+**一条命令演示（C-4）**——环境检查 → 真网算路 → 感知链路 → 起接口层 → 端点自检 → 收尾：
+
+```bash
+# 1 轮（彩排）
+python work/assembly/demo_all.py
+# M1-6：无人干预连跑 3 轮（每轮日志/产物/内存都留存；失败即停，不隐藏）
+python work/assembly/demo_all.py --rounds 3
+# Windows 双击或 PowerShell 入口（参数原样透传）
+powershell -ExecutionPolicy Bypass -File work/assembly/demo_all.ps1 --rounds 3
+# 只验接口层（真网/感知前置缺失时也能跑）
+python work/assembly/demo_all.py --skip-engine --skip-perception
 ```
 
-| 脚本 | 干什么 | 纪律 |
-|---|---|---|
-| `demo.bat` | **双击即跑**：建目录 → 启动孪生主循环（`work/twin/loop.py`）→ 跑全链路 → 起接口层 → 打开管理端 | **不许要求现场敲命令、不许要求现场装东西** |
-| `run_all.py` | 把**孪生 → 感知判级 → 决策 → 快照 → 接口层**串起来，一键跑完全链路 | 每一步都做**产物存在性断言**（见第五节） |
-| `stress.py` | 连续 3 轮 + 日志留存 + 内存观察 | 判定标准：**3 轮全成功、日志留存、内存不持续增长** |
+| 参数 | 作用 |
+|---|---|
+| `--rounds N` | 连跑轮数（默认 1；M1-6 用 3） |
+| `--with-perception-server` | 额外起感知服务 :8101（样本数据在场时） |
+| `--skip-engine` / `--skip-perception` | 跳过对应上游步骤（缺前置时如实标阻塞） |
+| `--keep-going` | 某轮失败后仍跑完剩余轮次（默认失败即停） |
+| `--json-report <path>` | 汇总报告路径（默认 `work/assembly/out/demo_all_report.json`，gitignored） |
 
-**场景参数**：`--scenario scenario_2`（峰值场景，验收主战场：同一输入跑 ①不推荐 ②"此刻最快" ③协同推荐，同屏对比）。
+- 每轮目录：`work/assembly/out/demo/round-<n>/`（`engine-real.log` / `perception-chain.log` / `traffic-server.log` 等）；
+- 汇总报告与**退出码**：`0` 全部步骤成功；`2` 跑完但有阻塞项（**如实记录，不算 M1-6 通过**）；`1` 有失败 / 异常；
+- **不伪造成功**：感知链路在缺 `work/perception/data/monitor/` 样本导出时会「0 通道产出」——
+  脚本把这种「命令退出码 0 但产物为空」判为**阻塞**并写明原因（照 README 第五节的产物存在性纪律）。
+
+**压测（C-5）**——3 轮 × 多并发打只读端点，记录启动耗时 / P50·P95 / 错误数 / 内存曲线：
+
+```bash
+python work/assembly/stress_test.py
+# 自定义：python work/assembly/stress_test.py --rounds 3 --concurrency 8 --requests-per-endpoint 20
+```
+
+- 报告：[`压测报告.md`](压测报告.md)（每次运行重写；写**本机实测**环境与数字，**不给「性能达标」结论**）；
+- 原始数据：`work/assembly/out/stress_test_report.json`（gitignored）；
+- 只压只读 GET 端点（写端点会改持久化运行态，另见 §2.2 与 `自检记录-IKMS1H.md`）。
+
+**监控自检（C-7）**：
+
+```bash
+python work/assembly/monitor_check.py            # 进程 / 端口 / 数据陈旧 / 5xx / 磁盘 / 持久化文件
+```
+
+> 历史说明：早期 README 列的 `demo.bat` / `stress.py` 是**计划中的脚本名**，仓库里一直没有这两个文件；
+> 本单落地为 `demo_all.py`（C-4）与 `stress_test.py`（C-5），旧的 `run_all.py` 仍保留（只起接口层，可选感知服务）。
 
 ## 四、硬性边界
 
