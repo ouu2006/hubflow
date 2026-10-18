@@ -1362,7 +1362,7 @@ def _derived_env_factors(moment: datetime | None = None) -> list[dict[str, Any]]
 
 _ENV_FACTOR_NOTE = (
     "场景注入为演示口径（模拟）：接口层只更新环境上下文与 derived_factors（F01/F02/F03/F10），"
-    "不重算 level / ci —— 判级由感知层统一重算、接口层不重算。"
+    "不重算 level / ci —— 判级由感知层统一重算、接口层不重算；接口层内存态，重启复位。"
 )
 
 

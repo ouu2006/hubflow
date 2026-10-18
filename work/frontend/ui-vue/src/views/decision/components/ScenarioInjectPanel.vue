@@ -61,7 +61,7 @@ async function apply(): Promise<void> {
     })
     msg.value = USE_MOCK
       ? '已注入(服务端重算判级 / CI,演示口径)'
-      : '已注入（接口层只更新环境上下文与折算因素；判级由感知层统一重算，接口层不重算）'
+      : '已注入（接口层只更新环境上下文与折算因素；判级由感知层统一重算，接口层不重算；接口层内存态，重启复位）'
     emit('changed')
   } catch (e) {
     msg.value = `注入失败:${e instanceof Error ? e.message : String(e)}`

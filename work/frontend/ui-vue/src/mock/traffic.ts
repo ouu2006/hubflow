@@ -468,8 +468,11 @@ function buildOverview(): TrafficOverview {
   const delta = prevAvgSpeed === null ? 0 : round(avgRounded - prevAvgSpeed, 1)
   prevAvgSpeed = avgRounded
 
-  // 最堵路段:先按 level 取最高档,同档取 x(饱和度)大者
-  const worst = [...segments].sort((a, b) => b.level - a.level || (b.x ?? 0) - (a.x ?? 0))[0] ?? null
+  // 最堵路段：只在「可用（非陈旧）」且已判级（level≥1）的路段里取，
+  // 避免把 level=0「数据不可用」当成最堵路段（TC-11：无数据不给结论）。
+  const worst = [...segments]
+    .filter((s) => !isStaleRec(s) && s.level >= 1)
+    .sort((a, b) => b.level - a.level || (b.x ?? 0) - (a.x ?? 0))[0] ?? null
 
   // 站前在途车辆与采纳率:演示基线(车速/流量同源抖动口径,不是仿真输出)
   const vehiclesInbound = 128 + (tick % 7) - 3
@@ -492,7 +495,7 @@ function buildOverview(): TrafficOverview {
     avg_speed_kmh: avgRounded,
     avg_speed_delta_kmh: delta,
     worst_segment: worst
-      ? { segment_id: worst.segment_id, name: nameOfSegment(worst.segment_id), level: worst.level, x: worst.x ?? 0 }
+      ? { segment_id: worst.segment_id, name: nameOfSegment(worst.segment_id), level: worst.level as CongestionLevel, x: worst.x ?? 0 }
       : null,
     vehicles_inbound: vehiclesInbound,
     vehicles_guided: guided,
@@ -965,8 +968,8 @@ function derivedFactors(now: Date): FactorApplied[] {
 }
 
 /** 全路段「注入因素后」的判级 / 饱和度(未抖动口径;场景注入的前后对照用) */
-function levelsAfterFactors(): Map<string, { level: CongestionLevel; x: number }> {
-  const out = new Map<string, { level: CongestionLevel; x: number }>()
+function levelsAfterFactors(): Map<string, { level: CongestionLevel | 0; x: number }> {
+  const out = new Map<string, { level: CongestionLevel | 0; x: number }>()
   for (const { base } of segmentBases()) {
     const a = applyFactors(base)
     out.set(a.segment_id, { level: a.level, x: a.x ?? 0 })
@@ -1020,7 +1023,7 @@ function buildContext(): TrafficContext {
  * (天气清回站点包声明、时段清回时钟推导、需求倍率清回"跟随所选时段")。前端取消选中芯片时
  * 发 `null` 而不是省略——省略会让服务端保留上一个值,页面显示"没选"却仍在生效。
  */
-function applyScenario(body: ScenarioInput, before: Map<string, { level: CongestionLevel; x: number }>): ScenarioResult {
+function applyScenario(body: ScenarioInput, before: Map<string, { level: CongestionLevel | 0; x: number }>): ScenarioResult {
   const now = new Date()
   // 天气:显式 null 清回站点包声明
   if (body.weather === null) scenarioState.weather = null

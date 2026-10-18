@@ -597,7 +597,7 @@ onUnmounted(() => {
 const CN_NUM: Record<CongestionLevel, string> = { 1: '一', 2: '二', 3: '三', 4: '四' }
 
 function levelName(seg: SegmentRecord): string {
-  return isStale(seg) ? UNAVAILABLE.name : (seg.level_name ?? LEVELS[seg.level].name)
+  return isStale(seg) ? UNAVAILABLE.name : (seg.level_name ?? levelStyle(seg).name)
 }
 
 function fmt(v: number | undefined | null, digits = 2): string {
@@ -777,7 +777,7 @@ const videoAvailable = computed(
 const detailSummary = computed<string>(() => {
   const s = selected.value
   if (!s) return ''
-  const parts = [`${CN_NUM[s.level]}级`, levelName(s)]
+  const parts = [`${s.level >= 1 ? CN_NUM[s.level as CongestionLevel] : '不可用'}级`, levelName(s)]
   parts.push(`更新 ${s.data_age_s ?? '—'}s 前`)
   parts.push(`饱和度 ${fmt(s.x)}`)
   if (s.triggered_by && s.triggered_by.length > 0) parts.push(`触发 ${s.triggered_by.join(' / ')}`)
@@ -791,7 +791,7 @@ const ciText = computed(() => {
 
 const ciTextColor = computed(() => {
   const r = selected.value
-  return r && ciAvailable(r) ? LEVELS[r.level].text : UNAVAILABLE.color
+  return r && ciAvailable(r) ? levelStyle(r).text : UNAVAILABLE.color
 })
 
 /** 四个 CI 权重(来自 thresholds,不写死) */

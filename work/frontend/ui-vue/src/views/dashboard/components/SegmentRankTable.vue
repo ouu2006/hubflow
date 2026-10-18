@@ -10,7 +10,7 @@ defineProps<{
     id: string
     name: string
     ci: number | null
-    level: CongestionLevel
+    level: CongestionLevel | 0
     available: boolean
   }[]
   selectedId: string | null

@@ -11,6 +11,7 @@ import { computed, onMounted, ref } from 'vue'
 import { ACK_COMPARISON, EFFECT_SCENARIOS } from '../../../shared/demoDecision'
 import { getTrafficReportCompare } from '../../../api/traffic'
 import type { ReportCompare } from '../../../shared/traffic'
+import { USE_MOCK } from '../../../shared/env'
 
 const picked = ref<string>(EFFECT_SCENARIOS[0]?.key ?? 'peak')
 const scenario = computed(() => EFFECT_SCENARIOS.find((s) => s.key === picked.value) ?? EFFECT_SCENARIOS[0]!)
@@ -22,6 +23,8 @@ const reportRows = computed<Record<string, unknown>[]>(() => report.value?.rows 
 const reportColumns = computed<string[]>(() => Object.keys(reportRows.value[0] ?? {}))
 
 onMounted(async () => {
+  // mock 模式没有 /report/compare(实测 404):不请求、不常驻告警,A/B/C 仍按"前端演示脚本"展示
+  if (USE_MOCK) return
   try {
     report.value = await getTrafficReportCompare()
   } catch (e) {
@@ -49,8 +52,11 @@ onMounted(async () => {
       </span>
     </div>
     <div class="td-card-body">
-      <!-- 接口报表(真接口):一期无报表产物 → rows 空 + note,如实展示 -->
-      <p v-if="reportError" class="src warn">{{ reportError }}</p>
+      <!-- 接口报表(真接口):一期无报表产物 → rows 空 + note,如实展示；mock 模式没有该端点 -->
+      <p v-if="USE_MOCK" class="src">
+        mock 模式：接口层报表端点 GET /api/traffic/report/compare 未实现（404）；下方 A/B/C 为前端演示脚本，不是接口数据。
+      </p>
+      <p v-else-if="reportError" class="src warn">{{ reportError }}</p>
       <template v-else-if="report">
         <p class="src">
           报表来源:接口 GET /api/traffic/report/compare · rows {{ reportRows.length }} 条 · is_simulated = true

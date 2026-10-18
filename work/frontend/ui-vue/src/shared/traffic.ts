@@ -46,7 +46,7 @@ export interface SegmentRecord {
    * 判级。契约类型是四级；接口层在「上游未判级」时如实返回 0（level_name=数据不可用），
    * 页面按 levelStyle()/LevelBadge 的灰档兜底处理，绝不落进通配色（TC-11）。
    */
-  level: CongestionLevel
+  level: CongestionLevel | 0
   level_name?: string
   triggered_by?: string[]
   confidence?: number
@@ -570,9 +570,10 @@ export interface AlertsSnapshot {
 // 收成一个函数 + `AlertList` 的**必需** `levelOf` 回调后,漏传会被 `vue-tsc` 当场拦下。
 export type SegmentLookup = (segmentId: string) => SegmentRecord | undefined
 
-/** 按当前路段快照重算告警等级(快照缺该路段退回告警记录值) */
+/** 按当前路段快照重算告警等级(快照缺该路段 / 上游未判级 level=0 时退回告警记录值) */
 export function alertLevelOf(a: TrafficAlert, findSegment: SegmentLookup): CongestionLevel {
-  return findSegment(a.segment_id)?.level ?? a.level
+  const segLevel = findSegment(a.segment_id)?.level
+  return typeof segLevel === 'number' && segLevel >= 1 && segLevel <= 4 ? (segLevel as CongestionLevel) : a.level
 }
 
 // ---------- 下发 / 回写(决策工作台) ----------
@@ -830,8 +831,8 @@ export interface ScenarioResult {
   factors: FactorApplied[]
   /** 受影响路段(缺省全路网) */
   segment_ids: string[]
-  /** 受影响路段的判级变化(注入前 → 注入后) */
-  effects: { segment_id: string; name: string; level_before: CongestionLevel; level_after: CongestionLevel; x_before: number; x_after: number }[]
+  /** 受影响路段的判级变化(注入前 → 注入后)；0 = 上游未判级（数据不可用） */
+  effects: { segment_id: string; name: string; level_before: CongestionLevel | 0; level_after: CongestionLevel | 0; x_before: number; x_after: number }[]
   note: string
   // ---- 接口层（真接口）附加字段：判级不下发则 effects 如实为空，不伪造等级变化 ----
   /** 接口层不重算 level / ci：恒为 false（effects 为空） */

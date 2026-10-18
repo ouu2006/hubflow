@@ -63,52 +63,54 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
     else opts.signal.addEventListener('abort', onOuterAbort, { once: true })
   }
 
-  let res: Response
   try {
-    res = await fetch(path, {
+    const res = await fetch(path, {
       method,
       headers,
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       signal: controller.signal,
     })
+
+    if (!res.ok) {
+      let code = `HTTP_${res.status}`
+      let message = res.statusText || `请求失败(${res.status})`
+      try {
+        const data = (await res.json()) as { code?: unknown; message?: unknown; note?: unknown; error?: { message?: unknown } }
+        if (typeof data.code === 'string') code = data.code
+        if (typeof data.message === 'string') message = data.message
+        else if (typeof data.error?.message === 'string') message = data.error.message
+        // 接口层的 note 是"为什么没有 + 降级口径",带进错误里便于页面提示(不丢诊断信息)
+        if (typeof data.note === 'string' && data.note) message = `${message}（${data.note}）`
+      } catch {
+        /* 非 JSON 错误体:用状态文本 */
+      }
+      // vite 代理在后端未起 / 断开时回 502(Bad Gateway):这是"数据不可用"的主场景,
+      // 给可读提示(而不是把 "Bad Gateway" 直接抛给页面)。
+      if (res.status === 502 || res.status === 503 || res.status === 504) {
+        throw new ApiError(
+          res.status,
+          'BACKEND_UNAVAILABLE',
+          `后端不可用(网关 ${res.status}):${networkHint()}`,
+        )
+      }
+      if (res.status === 404) message = `${message}(端点不存在或服务未就绪:${method} ${path})`
+      throw new ApiError(res.status, code, message)
+    }
+
+    if (res.status === 204) return undefined as T
+    // ⚠️ 超时定时器要覆盖 **读 body**(res.json),不能只覆盖到响应头：
+    // 大包/半开连接时响应头先到、body 卡住,旧实现在 finally 里已 clearTimeout,会把 10s 超时变成无限等。
+    return (await res.json()) as T
   } catch (e) {
     // 调用方主动取消(切页 / 丢弃过期响应):原样抛出,页面按 AbortError 处理
+    if (e instanceof ApiError) throw e
     if (opts.signal?.aborted) throw e
     if (e instanceof DOMException && e.name === 'AbortError') {
       throw new ApiError(0, 'TIMEOUT', `请求超时(${timeoutMs}ms):${method} ${path} —— ${networkHint()}`, true)
     }
-    throw new ApiError(0, 'NETWORK', `网络错误:${method} ${path} —— ${networkHint()}`)
+    throw new ApiError(0, 'NETWORK', `网络错误:${method} ${path} —— ${networkHint()}`, true)
   } finally {
     clearTimeout(timer)
     if (opts.signal && onOuterAbort) opts.signal.removeEventListener('abort', onOuterAbort)
   }
-
-  if (!res.ok) {
-    let code = `HTTP_${res.status}`
-    let message = res.statusText || `请求失败(${res.status})`
-    try {
-      const data = (await res.json()) as { code?: unknown; message?: unknown; note?: unknown; error?: { message?: unknown } }
-      if (typeof data.code === 'string') code = data.code
-      if (typeof data.message === 'string') message = data.message
-      else if (typeof data.error?.message === 'string') message = data.error.message
-      // 接口层的 note 是"为什么没有 + 降级口径",带进错误里便于页面提示(不丢诊断信息)
-      if (typeof data.note === 'string' && data.note) message = `${message}（${data.note}）`
-    } catch {
-      /* 非 JSON 错误体:用状态文本 */
-    }
-    // vite 代理在后端未起 / 断开时回 502(Bad Gateway):这是"数据不可用"的主场景,
-    // 给可读提示(而不是把 "Bad Gateway" 直接抛给页面)。
-    if (res.status === 502 || res.status === 503 || res.status === 504) {
-      throw new ApiError(
-        res.status,
-        'BACKEND_UNAVAILABLE',
-        `后端不可用(网关 ${res.status}):${networkHint()}`,
-      )
-    }
-    if (res.status === 404) message = `${message}(端点不存在或服务未就绪:${method} ${path})`
-    throw new ApiError(res.status, code, message)
-  }
-
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
 }
