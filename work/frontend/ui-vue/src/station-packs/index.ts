@@ -6,7 +6,8 @@
 //   · 浏览器:`main.ts` 读构建期的 `import.meta.env.VITE_STATION_PACK`(`.env.z` 里写),
 //     在挂载前注入 —— 之后所有组件与模块读到的都是同一份包;
 //   · vite mock:`vite.config.ts` 用 `loadEnv` 读同一个变量,经 `mockApiPlugin({ pack })` 注入。
-// **本仓现有两个包,同站不同代几何**:
+// **多站**：`GZ` = 广州南站（IKNB9F，独立 OSM 真网 + 脚本生成的演示站点包；顶栏「广州南站」）。
+// **站点 Z 仍是两个包,同站不同代几何**:
 //   · `Z`   = 现行几何(61 段,站区 500 m,IKMERX 三步管线产物 / IKMDKY 切新段后)
 //   · `Z21` = 旧 21 段过渡几何(按路名归并)——**只用于切换对照**,定稿后按 netpack README 删除。
 // 顶栏「线路图切换器」与监控大屏工具条各有一个入口;取不到就落默认包 Z。
@@ -16,11 +17,14 @@
 
 import { STATION_Z } from './stationZ.ts'
 import { STATION_Z21 } from './stationZ21.ts'
+import { STATION_GZ } from './stationGZ.ts'
 import type { StationPack } from './types.ts'
 
 export const PACKS: Record<string, StationPack> = {
   Z: STATION_Z,
   Z21: STATION_Z21,
+  // IKNB9F 多站框架：广州南站（GZ-### 真网几何，站点包由脚本生成）
+  GZ: STATION_GZ,
 }
 
 export const DEFAULT_PACK_KEY = 'Z'

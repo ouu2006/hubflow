@@ -143,8 +143,9 @@ class LoopConfig:
     out_dir: Path = DEFAULT_OUT_DIR
     samples_dir: Path = DEFAULT_SAMPLES_DIR
     no_sumo: bool = False
-    site: str = ""  # 站点名由调用方给;脚本里不得写死具体站名/坐标(M1-1 口径)
-    stations_dir: Path = STATIONS  # 站点包目录（真孪生路径读 demand/scenarios/thresholds）
+    site: str = ""  # 站点显示名由调用方给;脚本里不得写死具体站名/坐标(M1-1 口径)
+    site_id: str = ""  # 站点登记表 id（IKNB9F：多站；缺省 = 登记表 default_site，即站点 Z）
+    stations_dir: Path = STATIONS  # 站点包目录（真孪生路径读 demand/scenarios/thresholds；一期各站共享演示参数）
     base_ts: str = DEMO_BASE_TS  # 仿真时钟固定起点（不读系统时钟）
 
 
@@ -280,6 +281,9 @@ def run_with_sumo(cfg: LoopConfig) -> int:
       5. 产物写 `<out>/latest/`:`segments_twin.json` / `vehicles.json` / `run_log.json` /
          `twin_timeseries.json`(每段 65 点时序,举证 M1-2 孪生侧)。
 
+    多站(IKNB9F):`--site-id <登记表 site_id>` 选真网;非默认站默认输出 `out/sites/<site_id>/`,
+    与站点 Z 的 `out/` 互不覆盖(站名/段号/几何全部来自登记表与真网产物,脚本不写死站名)。
+
     **不读系统时钟、不随机**:时钟从固定 `DEMO_BASE_TS` 派生,车辆生成顺序固定,
     SUMO 种子 = `--seed`;同一命令两遍 `segments_twin.json` / `twin_timeseries.json` 逐字节一致。
     """
@@ -298,6 +302,7 @@ def run_with_sumo(cfg: LoopConfig) -> int:
     ensure_out_dir(latest_dir)
     net_dir = cfg.out_dir / SUMO_SUBDIR
     net_build = sumonet.build_station_net(
+        site_id=cfg.site_id or None,
         stations_dir=cfg.stations_dir,
         out_dir=net_dir,
     )
@@ -1073,7 +1078,12 @@ def _write_twin_artifacts(
         "seed": cfg.seed,
         "scenario_seed": scene.seed,
         "seed_match_scenario": int(scene.seed) == int(cfg.seed),
-        "site": cfg.site or net_build.get("site_id"),
+        "site": cfg.site or net_build.get("site_name") or net_build.get("site_id"),
+        "site_id": net_build.get("site_id"),
+        "params_source": (
+            "判级/决策/需求参数一期各站共享站点 Z 的演示站点包（stations/）；"
+            "换站只换路网与输出目录，站点包参数待真实化（IKMHMX）"
+        ),
         "base_ts": cfg.base_ts,
         "tick_s": TICK_S,
         "snapshot_every_s": SNAPSHOT_EVERY_S,
@@ -1232,15 +1242,34 @@ class _TimeCursor:
         return self._elapsed_s
 
 
+def _default_out_for_site(site_id: str) -> Path:
+    """按站给独立输出目录（IKNB9F）：默认站（Z）沿用 out/；非默认站写 out/sites/<site_id>/。
+
+    这样两个站的真网/快照/车辆/run_log 互不覆盖，接口层也能按站取数。
+    """
+    if not site_id:
+        return DEFAULT_OUT_DIR
+    import site_config  # 同目录模块；只在真孪生路径需要
+
+    registry = site_config.load_site_ranges()
+    default_site = str(registry.get("default_site") or "")
+    if not default_site or site_id == default_site:
+        return DEFAULT_OUT_DIR
+    return DEFAULT_OUT_DIR / "sites" / site_id
+
+
 def parse_args(argv: list[str] | None = None) -> LoopConfig:
     parser = argparse.ArgumentParser(description="孪生主循环")
     parser.add_argument("--scenario", default="scenario_1")
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--duration", type=int, default=SNAPSHOT_EVERY_S, dest="duration_s")
-    parser.add_argument("--out", default=str(DEFAULT_OUT_DIR), dest="out_dir")
+    parser.add_argument("--out", default=None, dest="out_dir",
+                        help="输出根目录；缺省：默认站 work/twin/out，其它站 work/twin/out/sites/<site_id>")
     parser.add_argument("--samples", default=str(DEFAULT_SAMPLES_DIR), dest="samples_dir")
     parser.add_argument("--no-sumo", action="store_true", dest="no_sumo")
-    parser.add_argument("--site", default="")
+    parser.add_argument("--site", default="", help="站点显示名（仅日志用）")
+    parser.add_argument("--site-id", default="", dest="site_id",
+                        help="站点登记表 work/twin/site-ranges.json 里的 site_id（缺省=登记表 default_site）")
     parser.add_argument("--stations", default=str(STATIONS), dest="stations_dir")
     parser.add_argument(
         "--base-ts",
@@ -1249,14 +1278,16 @@ def parse_args(argv: list[str] | None = None) -> LoopConfig:
         help="仿真时钟固定起点（默认 DEMO_BASE_TS；不读系统时钟）",
     )
     ns = parser.parse_args(argv)
+    out_dir = Path(ns.out_dir) if ns.out_dir else _default_out_for_site(ns.site_id)
     return LoopConfig(
         scenario=ns.scenario,
         seed=ns.seed,
         duration_s=ns.duration_s,
-        out_dir=Path(ns.out_dir),
+        out_dir=out_dir,
         samples_dir=Path(ns.samples_dir),
         no_sumo=ns.no_sumo,
         site=ns.site,
+        site_id=ns.site_id,
         stations_dir=Path(ns.stations_dir),
         base_ts=ns.base_ts,
     )
