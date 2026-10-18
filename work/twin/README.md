@@ -571,7 +571,7 @@ python work/twin/loop.py --no-sumo --out work/twin/out/sample_check
 |---|---|
 | 输入 | 只有 `netpack/network_junction.json`（44 节点 / 61 段，几何真值来自 OSM 切片）；站名/段数/路径读 `site-ranges.json` 登记表，脚本不写死站名/段号/坐标 |
 | 边 id | **直接用 `SZ-###`**（与站点包 / 感知 / 引擎同一命名空间）；反向补边 `SZ-###_rev` 只参与仿真、**不新增段号**，检测器并回原段统计 |
-| 双向补边 | 61 段里 `oneway=yes` 的保持单向；其余 33 条补反向边——OSM 缺 `oneway` 标记按双向理解，这是 SUMO 路网能连通（`boundary -> boundary` 可通行路线 43 条）的前提 |
+| 双向补边 | 61 段里 `oneway=yes` 保持单向；非单向段共 **39** 条，其中 **6 条已有真实反向段（SZ-020 / SZ-045~SZ-048 / SZ-058）**，实际**补 33 条反向边**——OSM 缺 `oneway` 标记按双向理解，这是 SUMO 路网能连通（`boundary -> boundary` 可通行路线 43 条）的前提 |
 | 缺值回落 | `lanes` 缺 -> 默认 2 道（标 `default:demo_lanes=2`）；`speed_limit` 61 段全为 null -> 站点包 `thresholds.grading.defaults.v_f_kmh`（标来源）；**逐条来源写进 `out/sumo/station_netmeta.json`**，汇总进 `run_log.net_build` |
 | 坐标 | 真网只给 WGS-84 `lon/lat` -> 局部切平面投影成米制 `x/y`（锚点 = 全部节点均值，从数据派生，不写死坐标）；`xy_to_lonlat` 严格互逆，供 `vehicles.json` 反算 WGS-84 |
 | 可重建 / 确定性 | 抹掉 netconvert 生成时间戳与本机路径回显后，**同一输入两次建网 sha256 一致**（2026-10-18 本机：`d1bb71b4ea7cea61...`，180790 B，44 节点 / 61 正向 / 33 反向） |
