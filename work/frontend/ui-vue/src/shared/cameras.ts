@@ -61,6 +61,14 @@ export function camerasBySegment(): Map<string, CameraPin[]> {
   return out
 }
 
+/**
+ * 某段登记的摄像头（全量：含未上图 / 无坐标项；动态 N，0 = 该段无摄像头）。
+ * 大屏「关联摄像头」卡用：`hasVideo` 说有没有视频源，`source` 与感知服务 stream_id 同键。
+ */
+export function camerasOfSegment(segmentId: string): PackChannel[] {
+  return activePack().channels.filter((channel) => channel.segment_id === segmentId)
+}
+
 /** 某段的摄像头数（0 = 该段没监控） */
 export function cameraCountOf(segmentId: string): number {
   return activePack().channels.filter((c) => c.segment_id === segmentId).length

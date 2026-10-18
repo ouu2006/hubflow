@@ -19,7 +19,7 @@
 //   ⑤ CI 只用于热力展示与辅助排序,**不得作为判级依据**(手册 §6.5 第 1 条),冲突以四级为准;
 //   ⑥ 不做 3D、不做无断面间标注的内插;所有数字带单位或口径标注,空值一律「—」,不编造。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   getTrafficAlerts,
   getTrafficCiHistory,
@@ -79,8 +79,38 @@ import CiTrendBars from './components/CiTrendBars.vue'
 import FactorBreakdown from './components/FactorBreakdown.vue'
 import HeatMatrixTable from './components/HeatMatrixTable.vue'
 import SegmentRankTable from './components/SegmentRankTable.vue'
+import SegmentCameraCard from './components/SegmentCameraCard.vue'
+import SegmentDecisionSummary from './components/SegmentDecisionSummary.vue'
+import SegmentDispatchCard from './components/SegmentDispatchCard.vue'
 
 const router = useRouter()
+const route = useRoute()
+
+// ---------- 深链选中（Issue IKMS18）：#/dashboard?segment=SZ-010 ----------
+// 语义：站点包存在的段即可选中（地图上任一段都可点）；快照没覆盖的段由详情卡按「无数据」降级。
+// 用于从别的页面 / 外链直接定位某段看摄像头与下令，不改变默认选中逻辑。
+const deepSegment = computed<string>(() => {
+  const raw = route.query.segment
+  return typeof raw === 'string' ? raw : Array.isArray(raw) ? (raw[0] ?? '') : ''
+})
+let deepApplied = false
+/** 段号是否可选：站点包几何里有，或当前快照里有（快照段号不一定在包里，允许深链选中） */
+function isSelectableSegment(id: string): boolean {
+  if (!id) return false
+  return Boolean(demoSegment(id)) || segments.value.some((item) => item.segment_id === id)
+}
+function applyDeepSegment(): void {
+  const id = deepSegment.value
+  if (!id || deepApplied) return
+  deepApplied = true
+  if (isSelectableSegment(id)) selectedId.value = id
+}
+watch(deepSegment, (id) => {
+  if (id && isSelectableSegment(id)) {
+    deepApplied = true
+    selectedId.value = id
+  }
+})
 
 // ---------- 三栏可拖拽(Issue #81,业主 2026-10-13 口径:「宽度谁定」交给用户) ----------
 //
@@ -304,10 +334,12 @@ const selected = computed<SegmentRecord | null>(
   () => segments.value.find((s) => s.segment_id === selectedId.value) ?? null,
 )
 
+// Issue IKMS18：允许选中**站点包里但快照没覆盖**的路段（地图上任一段都可点）。
+// 这种段：摄像头卡照常按登记表展示；指标 / 判级 / 下令一律如实「无数据 / 不可用」，不编造。
 const selectedName = computed<string>(() => {
-  const s = selected.value
-  if (!s) return '—'
-  return demoSegment(s.segment_id)?.name ?? s.segment_id
+  const id = selectedId.value
+  if (!id) return '—'
+  return demoSegment(id)?.name ?? selected.value?.segment_id ?? id
 })
 
 /** 默认选中:非陈旧路段里 level 最高者(同档取 x 大者);无可用则退回首条 */
@@ -325,6 +357,14 @@ function pickDefaultId(list: SegmentRecord[]): string | null {
 /** 选中路段相关的三个接口(并排表 + 因素 + CI 走势);选中变化与快照刷新都会重拉 */
 async function loadSelectedSide(segmentId: string | null): Promise<void> {
   if (!segmentId) {
+    pair.value = null
+    segFactors.value = []
+    history.value = null
+    return
+  }
+  // 站点包里有、但当前快照没覆盖的段（Issue IKMS18 允许地图选中）：不请求不存在的快照端点，
+  // 详情卡按「无数据」如实降级（避免 404 噪声，也不拿别的段顶替）。
+  if (!selected.value) {
     pair.value = null
     segFactors.value = []
     history.value = null
@@ -386,6 +426,7 @@ async function refresh(): Promise<void> {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
     if (selectedId.value === null) selectedId.value = pickDefaultId(seg.value.segments)
+    applyDeepSegment()
   }
   track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
@@ -892,7 +933,14 @@ function onSelect(id: string): void {
 }
 
 function gotoDecision(): void {
-  void router.push('/decision')
+  // 带段号深链：决策页「决策可视化」按该段展示（与右栏「查看完整决策过程」同一口径）
+  const segment = selectedId.value
+  void router.push(segment ? { path: '/decision', query: { segment } } : '/decision')
+}
+
+/** 大屏下令成功（下发 / 回写）→ 重拉快照：告警状态、回执留痕与决策页保持同一后端状态 */
+function onCommandChanged(): void {
+  void refresh()
 }
 </script>
 
@@ -1167,13 +1215,43 @@ function gotoDecision(): void {
             路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? '—' }}</span>
           </div>
           <div class="td-card-body">
-            <template v-if="selected">
+            <template v-if="selectedId">
               <div class="d-title">
                 <span class="d-name">{{ selectedName }}</span>
-                <LevelBadge :level="selected.level" :stale="isStale(selected)" />
+                <LevelBadge v-if="selected" :level="selected.level" :stale="isStale(selected)" />
+                <span v-else class="td-chip">无路况记录 · 数据不可用</span>
               </div>
-              <div class="d-summary">{{ detailSummary }}</div>
+              <div class="d-summary">
+                {{
+                  selected
+                    ? detailSummary
+                    : '该路段在当前快照里没有运行指标（段号未被感知 / 孪生产物覆盖）——不显示等级，按数据不可用灰档处理（TC-11）。'
+                }}
+              </div>
 
+              <!-- ① 关联摄像头（Issue IKMS18）：该段登记摄像头 + 感知服务真实帧预览 / 如实空窗 -->
+              <SegmentCameraCard :segment-id="selectedId || ''" />
+
+              <!-- ② 决策计算摘要（Issue IKMS18）：输入 + 判级（后端下发，前端不重算）+ 四档阈值对照 + 因素/CI -->
+              <SegmentDecisionSummary
+                :segment-id="selectedId || ''"
+                :record="selected"
+                :factors="segFactors"
+                :thresholds="thresholds"
+                :stale="selected ? isStale(selected) : true"
+              />
+
+              <!-- ③ 直接下令（Issue IKMS18）：关联告警 → 下发（渠道/比例）→ 回执 → 回写；
+                   与决策页调用同一 plan/dispatch · plan/ack，状态共享（GET /alerts）。
+                   放在摘要之后、既有热力/双源等块之前——「摄像头 → 计算摘要 → 下令」三联动同屏可见。 -->
+              <SegmentDispatchCard
+                :segment-id="selectedId || ''"
+                :record="selected"
+                :alerts="alerts"
+                @changed="onCommandChanged"
+              />
+
+              <template v-if="selected">
               <!-- 大号 CI + 四项加权构成(原 /heat 右栏;CI 只展示不判级) -->
               <div class="ci-head">
                 <div class="idx-ci td-num" :style="{ color: ciTextColor }">{{ ciText }}</div>
@@ -1247,6 +1325,10 @@ function gotoDecision(): void {
                 </div>
               </div>
               <p v-else class="empty">本路段无预测</p>
+              </template>
+              <p v-else class="empty sm">
+                无运行指标：CI / 双数据源 / 因素 / 走势 / 预测均不给编造值（数据不可用灰档，TC-11）。
+              </p>
 
               <!-- 关联告警(原 /heat 右栏) -->
               <div class="sec-head">
@@ -1254,8 +1336,8 @@ function gotoDecision(): void {
               </div>
               <AlertList :alerts="selectedAlerts" :level-of="segLevelOf" />
 
-              <button class="td-btn primary act-btn" type="button" @click="gotoDecision">
-                下发分流方案 ›
+              <button class="td-btn act-btn" type="button" @click="gotoDecision">
+                到决策页处置（完整工作台）›
               </button>
             </template>
             <p v-else class="empty">点击左侧列表或地图中的路段查看详情</p>
@@ -1963,5 +2045,15 @@ function gotoDecision(): void {
   font-size: 11px;
   line-height: 1.6;
   color: var(--td-text-color-placeholder);
+}
+
+/* 右栏顺序（Issue IKMS18）：点路段后**先看路段信息**（关联摄像头 / 决策计算摘要 / 直接下令），
+   推荐路线卡排在其后 —— 监控管理平台的操作面板优先，不是删掉路线能力（C-2 一项不删）。
+   .td-col 是 flex column，用 order 调整顺序，不改 DOM 结构。 */
+.col-right > .td-card:not(.route-card) {
+  order: 1;
+}
+.col-right > .route-card {
+  order: 2;
 }
 </style>

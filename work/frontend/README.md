@@ -817,3 +817,56 @@ npm run dev:remote                              # 浏览器验证三页（记录
 「折算环境因素 F01 ×0.75 / F03 ×1.072 / F10 ×1.073」+「接口层不重算 level / ci」；
 感知页 2 路视频有检测框、4 路如实空窗。
 
+## 十六、大屏监控平台化：点路段三联动（Issue IKMS18，2026-10-18）
+
+> 目标（业主口径「像监控管理平台一样」）：点大屏任一选中的路段 → 右栏详情卡**同时**给出
+> ① 该段关联摄像头画面、② 该段决策计算摘要、③ 大屏直接下令（下发 → 回执 → 回写）。
+> 既有能力（左栏选择监控 / 四级 / CI 图 / 热力 / 告警条 / 路线 / 断流降级 / 页脚数据源）**一项不删**（C-2）。
+
+### 16.1 右栏结构（路段信息优先）
+
+- 右栏顺序调整为：**路段信息（三联动）→ 推荐路线卡**（`.td-col` 是 flex column，用 `order` 调序，
+  不改 DOM；路线能力保留）。`#/dashboard?segment=SZ-010` 深链可直接选中任意站点包路段 / 快照段。
+- 三个新组件（`src/views/dashboard/components/`）：
+
+| 组件 | 作用 | 关键口径 |
+|---|---|---|
+| `SegmentCameraCard.vue` | 该段登记摄像头（`camerasOfSegment`，动态 N 路，与 `cameraChannels.generated.ts` / 登记表同一键） | 有视频源 + 服务已导出 → 定时抽 `<img>` 帧（`/perception-api/streams/{source}/frames/{n}.jpg`，与感知页同一路径），可暂停；无视频源「未接入视频源」；有源未导出「未导出」；服务不可用可读错误 + 8s 重试；0 路「该路段无摄像头」；**不伪造画面** |
+| `SegmentDecisionSummary.vue` | 输入指标（q/v/k/L_q/x/置信度/数据年龄/来源）+ 判级（level/level_name/triggered_by）+ 四档阈值对照 + 因素 + CI + 深链 | **前端不重算判级**：level 等原样展示接口快照；四档阈值来自 `GET /thresholds`，只做「当前值 vs 边界」展示；阈值行按标签识别「原始量 / 比值」两种口径（traffic.py 原始量 vs mock 比值），不混用 |
+| `SegmentDispatchCard.vue` | 该段关联告警（`segment_id` 匹配且非终态）→ 渠道单选 + 分流比例滑杆 → `postPlanDispatch` 回执 → `postPlanAck` 四选一 → 处置留痕 | 与决策页同一接口 / 同一后端状态（`GET /alerts`）；无告警 / 无快照如实 disabled + 文案；回写前置「必须先有下发回执」（TC-07）；四项留痕（认领人 / 时间 / 动作 / 结果）在卡内可见，终态后仍从 /alerts 读回；**演示态内存、重启复位** |
+
+- `shared/cameras.ts` 新增 `camerasOfSegment(segmentId)`（补全「某段摄像头全量」口径，`cameraCountOf` 仍复用）；
+- 决策页支持 `#/decision?segment=SZ-005` 深链：优先选中该段告警；该段无告警时「决策可视化」仍按该段展示（不伪造告警）。
+
+### 16.2 不造假 / 降级（TC-11）
+
+无快照记录的段（如地图上点到的快照未覆盖段）：详情卡显示「无路况记录 · 数据不可用」，
+决策摘要输入全「—」，摄像头卡照常按登记表展示（该段有摄像头就显示空窗 / 画面），下令入口 disabled；
+无摄像头段显示「该路段无摄像头」；无视频源显示空窗；感知服务断开显示错误 + 重试。
+顺带修复 `CiTrendBars` 在「CI 时序为空（min/max=null）」时 `toFixed` 崩溃（数据不可用段会触发），
+修复后无数据段整页零 pageerror。
+
+### 16.3 实测与自检（2026-10-18）
+
+- remote（`npm run dev:remote` + `traffic.py:8000` + `perception:8101`）：
+  点 SZ-005 → 右栏同屏可见「关联摄像头（C-02 road2 真实帧 + 样本视频角标）/ 决策计算摘要（q=660…x=0.41、接口判级拥堵、四档阈值 0.6/0.8/0.95、CI 27.5）/ 直接下令（AL-SZ-005 待认领）」；
+  下发 → 回执「情报板已确认 · 分流 20% · 13:04:26」→ 回写「已缓解」→ 留痕「张工(大屏) · 情报板诱导 · 分流 20% · 结果 已缓解 · 13:04:31」；
+  到决策页 `#/decision?segment=SZ-005` 处置队列：同一告警 AL-SZ-005「已闭环」、回执与回写留痕逐字一致（TC-07 跨页同源）。
+- 降级：`?segment=SZ-010`（有摄像头无视频源）→「未接入视频源」空窗；`?segment=SEG-003`（无摄像头、快照 level=0）→「该路段无摄像头」+「数据不可用」灰档；均无 pageerror。
+- mock（`npm run dev`）：同一三联动可用，mock 告警 DEMO-AL-2026-1017-001 完成下发（分流 30%）→ 回写（已缓解）→ 留痕可见；与 remote 模式页面形状一致。
+- 截图（不入库）：`D:\hubflow\_scratch\ikms18\`：
+  `final-three-linked-SZ-005.png`（三联动同屏）、`final-dispatch-receipt.png`、`final-ack-history.png`、
+  `final-SZ-010-no-video.png`、`final-SEG-003-no-camera.png`、`final-decision-queue-sync.png`、
+  `mock-three-linked-SZ-005.png`、`mock-dispatch-ack.png`。
+
+```bash
+# remote 模式自检（仓库根）
+python work/assembly/traffic.py --port 8000
+python work/perception/server.py --port 8101 --data <perception 导出数据目录>
+cd work/frontend/ui-vue && npm run dev:remote
+# 打开 http://localhost:5173/#/dashboard?segment=SZ-005 → 三联动 → 下发 → 回写 → 到决策页核对同一告警
+# mock 模式
+cd work/frontend/ui-vue && npm run dev
+```
+
+

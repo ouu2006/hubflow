@@ -27,7 +27,9 @@
 //   下发渠道 / 回写结果是**展示枚举**(一期无真实下发通道);空值一律「—」,不编造数字;
 //   场景注入(环境侧)与人工置位(事件侧 F07 / F08 / F11)是两个口子,不得混称(手册 §:2222)。
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { activePack } from '../../station-packs/index'
+import { demoSegment } from '../../shared/demoNetwork'
 import AppShell from '../../components/AppShell.vue'
 import LevelBadge from '../dashboard/components/LevelBadge.vue'
 import AlertQueue from './components/AlertQueue.vue'
@@ -77,6 +79,14 @@ const snapshotIso = ref('')
 const snapshotMs = ref(0)
 // 站点名初始值取当前站点包;拿到 meta 后由 meta.station.name 覆盖(单一口径)
 const stationName = ref(activePack().station.name)
+
+// ---------- 深链：大屏「查看完整决策过程 / 到决策页处置」→ #/decision?segment=SZ-005（Issue IKMS18） ----------
+// 语义：优先选中该段的告警；该段无告警时「决策可视化」仍按该段展示（不伪造告警）。
+const route = useRoute()
+const deepSegment = computed<string>(() => {
+  const raw = route.query.segment
+  return typeof raw === 'string' ? raw : Array.isArray(raw) ? (raw[0] ?? '') : ''
+})
 /** 视图:决策可视化(新) / 处置队列 / 效果对比 */
 const view = ref<'flow' | 'queue' | 'compare'>('flow')
 const sourceMode = ref<SourceMode>('both')
@@ -293,10 +303,12 @@ async function refresh(): Promise<void> {
     ctx.value = ctxRes
     thresholds.value = thrRes
     dataError.value = ''
-    // 默认选中第一条「待认领」
+    // 默认选中第一条「待认领」；深链点名的段优先选它自己的告警（Issue IKMS18）
     if (selectedId.value === null && alerts.value.length > 0) {
       const first = alerts.value.find((a) => a.status === '待认领') ?? alerts.value[0]
-      selectedId.value = first ? first.alert_id : null
+      const wanted = deepSegment.value
+      const hit = wanted ? alerts.value.find((a) => a.segment_id === wanted) : undefined
+      selectedId.value = (hit ?? first)?.alert_id ?? null
     }
   } catch (e) {
     if (seq !== refreshSeq) return
@@ -456,9 +468,9 @@ onUnmounted(() => {
 })
 
 // ---------- 决策可视化视图(本单新增)的派生数据 ----------
-/** 该视图按**路段**工作:选中告警所属路段;没有告警时退回首条路段快照 */
+/** 该视图按**路段**工作:选中告警所属路段;无告警时深链段号优先,再退回首条路段快照 */
 const flowSegmentId = computed<string>(
-  () => selected.value?.segment_id ?? Object.keys(segMap.value)[0] ?? '',
+  () => selected.value?.segment_id ?? deepSegment.value ?? Object.keys(segMap.value)[0] ?? '',
 )
 
 const flowRecord = computed<SegmentRecord | null>(() => segMap.value[flowSegmentId.value] ?? null)
@@ -466,7 +478,11 @@ const flowRecord = computed<SegmentRecord | null>(() => segMap.value[flowSegment
 const flowName = computed<string>(() => {
   const id = flowSegmentId.value
   if (!id) return '—'
-  return alerts.value.find((a) => a.segment_id === id)?.segment_name ?? id
+  return (
+    demoSegment(id)?.name ??
+    alerts.value.find((a) => a.segment_id === id)?.segment_name ??
+    id
+  )
 })
 
 /** 该路段的生效因素(从快照里取;与因素面板同源) */
@@ -708,6 +724,11 @@ function onFlowChanged(): void {
                   回写前置:须先下发并拿到派发回执(TC-07 闭环顺序:下发 → 回执 → 回写)。
                 </p>
                 <p v-if="terminal" class="note">终态（已闭环 / 误报）不可再回写，也不得互相翻转。</p>
+                <p v-if="terminal && selected?.writeback" class="note">
+                  回写留痕：{{ selected.writeback.operator }} · {{ selected.writeback.action }} ·
+                  结果 {{ selected.writeback.result }} · {{ hhmmss(selected.writeback.at) }}
+                  <span class="sep">|</span>与决策页 / 大屏同源（GET /api/traffic/alerts）
+                </p>
                 <p v-else class="note">
                   结果四选一为展示口径 · 流转:已消除 / 已缓解 → 已闭环;未改善 → 留在处置中;误报 → 误报
                 </p>

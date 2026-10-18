@@ -11,23 +11,27 @@ function pct(ci: number): string {
 
 <template>
   <div v-if="history" class="trend">
-    <div class="plot">
-      <span class="thr" :style="{ bottom: '65%' }" />
-      <span class="thr" :style="{ bottom: '85%' }" />
-      <div class="bars">
-        <span
-          v-for="(p, i) in history.points"
-          :key="i"
-          class="bar"
-          :style="{ height: pct(p.ci), background: ciColor(p.ci) }"
-          :title="`${p.ts} · CI ${p.ci}`"
-        />
+    <template v-if="history.points.length > 0">
+      <div class="plot">
+        <span class="thr" :style="{ bottom: '65%' }" />
+        <span class="thr" :style="{ bottom: '85%' }" />
+        <div class="bars">
+          <span
+            v-for="(p, i) in history.points"
+            :key="i"
+            class="bar"
+            :style="{ height: pct(p.ci), background: ciColor(p.ci) }"
+            :title="`${p.ts} · CI ${p.ci}`"
+          />
+        </div>
       </div>
-    </div>
-    <div class="axis">
-      <span class="td-mono">min {{ history.min.toFixed(1) }}</span>
-      <span class="td-mono">max {{ history.max.toFixed(1) }}</span>
-    </div>
+      <div class="axis">
+        <span class="td-mono">min {{ history.min === null ? '—' : history.min.toFixed(1) }}</span>
+        <span class="td-mono">max {{ history.max === null ? '—' : history.max.toFixed(1) }}</span>
+      </div>
+    </template>
+    <!-- 无可用 CI（数据不可用 / 陈旧）：如实空态，不给编造走势（TC-11） -->
+    <p v-else class="trend-empty">无可用 CI 走势（该段数据不可用 / 陈旧，不给编造序列）</p>
   </div>
   <p v-else class="trend-empty">加载中…</p>
 </template>
