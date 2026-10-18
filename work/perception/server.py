@@ -15,6 +15,10 @@
   GET /api/perception/streams/{sid}/detections         逐帧检测框 JSON
   GET /api/perception/streams/{sid}/frames/{n}.jpg     第 n 帧(1 起)原始 JPEG
 
+health 除通道列表外还带计数(IKMS1T):`mapping_cameras` = 登记表 N 路(动态 0..路段数)、
+`mapping_cameras_with_video` = 登记有视频源的摄像头数、`data_stream_count` = 实际有检测数据的
+视频通道数 X —— 摄像头有 N 个 ≠ 有 N 路视频;`/streams` 仍只返回实际有数据的通道,不伪造。
+
 口径:样本视频非本站现场;本服务是一期接口面新增(感知面),不改冻结的 traffic 契约。
 """
 from __future__ import annotations
@@ -109,17 +113,33 @@ def _read_json(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _data_streams() -> list[str]:
+    """实际有检测数据可出的通道(有 meta.json 的目录);与 /streams 的判定同口径。"""
+    if not DATA_DIR.is_dir():
+        return []
+    return sorted(d.name for d in DATA_DIR.iterdir() if d.is_dir() and (d / "meta.json").is_file())
+
+
 @app.get("/api/perception/health")
 def health() -> JSONResponse:
-    streams = sorted(p.name for p in DATA_DIR.iterdir() if p.is_dir()) if DATA_DIR.is_dir() else []
+    # 口径(IKMS1T):摄像头数 ≠ 视频路数。
+    #   · mapping_cameras            = 登记表 cameras 条数 N(动态 0..路段数,默认每段最多 1 路)
+    #   · mapping_cameras_with_video = 登记表里 has_video_source=true 的摄像头数
+    #   · data_streams               = /streams 实际能返回的通道(有检测数据 X 路)
+    # 页面据此区分「摄像头有 N 个」与「真有视频数据 X 路」;本服务不伪造 N 路视频。
+    data_streams = _data_streams()
+    cameras = MAPPING.get("cameras", []) if isinstance(MAPPING.get("cameras"), list) else []
+    cams_with_video = [c for c in cameras if isinstance(c, dict) and c.get("has_video_source") is True]
     return _envelope(
         {
-            "status": "ok" if streams else "empty",
-            "streams": streams,
+            "status": "ok" if data_streams else "empty",
+            "streams": data_streams,
             "data_dir": str(DATA_DIR),
             "mapping_registry": str(MAPPING_PATH.relative_to(ROOT)) if MAPPING else None,
-            "mapping_cameras": len(MAPPING.get("cameras", [])),
+            "mapping_cameras": len(cameras),
+            "mapping_cameras_with_video": len(cams_with_video),
             "mapping_video_streams": len(STREAM_MAP),
+            "data_stream_count": len(data_streams),
         }
     )
 
