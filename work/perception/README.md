@@ -12,6 +12,10 @@
 > ② **孪生链路**（虚拟检测器，`source: "twin"`）：断面过车统计 → 四项指标。
 > **二期只把视频源换成现场实时摄像头流**（`source` 仍是 `"video"`，**字段不变**）。
 > **判级一套代码两条链路共用，不得按 `source` 分支**——否则二期换数据源就要改代码。
+>
+> **样本视频段数 ≠ 摄像头路数（IKMS1T）**：一期目标是 **6 段样本视频（M1-9，另议）**，**本机目前只有
+> `road2` / `track1` 两路**（见第九节）；而**摄像头数量 N 由登记表 `cameras` 条数决定**（0 ≤ N ≤ 路段数，
+> 当前示例 6 路，见第八节）。两者**不是同一件事**，不得混写、不得拿"6 段"当"6 路摄像头"的依据。
 
 ## 一、三条式路线图
 
@@ -148,21 +152,27 @@
 
 **口径纪律**：画面是**样本视频离线回放**（非本站现场、非实时流），页面角标与页脚已标注「样本视频回放 · 演示数据(模拟)」；**不得**表述为"实时画面/现场实测"。前端对检测流与指标快照分别标注数据来源，两者不混。
 
-## 八、摄像头 ↔ 通道 ↔ 路段 三段映射（Issue IKMDKY）
+## 八、摄像头 ↔ 通道 ↔ 路段 三段映射（Issue IKMDKY；IKMS1T 起 N 路动态）
 
 > **一次性定死**：「哪路视频算在哪条路段上」不再只活在运行产物里，而是登记在
 > [`mapping/camera-segments.json`](mapping/camera-segments.json)（**唯一真值来源**，规则与现状见
 > [`mapping/README.md`](mapping/README.md)）。
+>
+> **IKMS1T（业主 2026-10-17）去固定 6 路**：摄像头数量 = 登记表 `cameras` 条数 **N**，动态
+> **0 ≤ N ≤ 本站路段数（肇庆东 61）**，**默认一段最多 1 路**，**0 路合法**；`has_video_source:false`
+> 的摄像头**仍计入 N**。登记表当前保留的 **6 路是合法示例，不是固定值**。
+> ⚠️ **摄像头数量 ≠ 样本视频段数**：样本视频仍只有 `road2` / `track1` **2 路**（本机现状，见第九节），
+> **不伪造视频流**、不暗示 N 路都有视频。
 
 | 项 | 口径 |
 |---|---|
-| 三段字段 | `cam_id`（cam-01…cam-06）· `channel_id`（= 感知服务 `stream_id`，road2 / track1）· `segment_id`（现役站点段号 `SZ-###`） |
+| 三段字段 | `cam_id`（`cam-NN`，随 N 动态；当前示例 cam-01…cam-06）· `channel_id`（= 感知服务 `stream_id`，road2 / track1）· `segment_id`（现役站点段号 `SZ-###`） |
 | 现役段号命名空间 | **`SZ-###`（3 位）** = 站点 Z 真 OSM 路网（61 段）；**`SEG-###` 只属 7 节点样例网**（engine samples / App fixture / `stations/*.json` 占位件），不是本站真网 |
-| 多对一 | 一路通道只算一条路段；一条路段可以有多路通道 |
-| 无视频源 | `has_video_source: false` = 本期没有视频流；**不等于**没有摄像头，更**不等于**数据可用（TC-11） |
-| 服务端补字段 | `server.py` 在 `/api/perception/streams` 与 `/streams/{sid}/meta` 响应里补 `segment_id` / `cam_id` / `cid` / `mapping_status` / `mapping_note`（**不改 `data/monitor/*/meta.json` 数据文件**，那是导出产物）；未登记通道返回 `unmapped` + `null`，不编造 |
-| 当前结果 | 6 路摄像头里 **C-02→road2→SZ-005、C-05→track1→SZ-024**（样本视频回放，非本站现场、演示映射）；其余 4 路无视频源 |
-| 自检 | `python tools/check_camera_map.py`（6 路逐条对账 + `SZ-###` 零悬空 + `SEG-###` 活跃引用清单 + 站点包 channels 与登记表一致） |
+| 数量与上限 | **N = `cameras` 条数，0 ≤ N ≤ 路段数（61）**；默认一段最多 1 路，同段多路需另开扩展单；`video_streams` 是「有视频源」摄像头的子集，条数任意（0..N） |
+| 无视频源 | `has_video_source: false` = 本期没有视频流；**不等于**没有摄像头，更**不等于**数据可用（TC-11）；它**仍计入 N** |
+| 服务端补字段 | `server.py` 在 `/api/perception/streams` 与 `/streams/{sid}/meta` 响应里补 `segment_id` / `cam_id` / `cid` / `mapping_status` / `mapping_note`（**不改 `data/monitor/*/meta.json` 数据文件**，那是导出产物）；未登记通道返回 `unmapped` + `null`，不编造；`/health` 另给「登记表 N 路 / 有视频源 X 路 / 实际有数据 Y 路」 |
+| 当前结果 | N = 6 路示例里 **C-02→road2→SZ-005、C-05→track1→SZ-024**（样本视频回放，非本站现场、演示映射）；其余 4 路无视频源 |
+| 自检 | `python tools/check_camera_map.py`（N 路逐条对账 + `SZ-###` 零悬空 + 默认每段≤1 + 视频流⊆有视频源 + 生成物行数==N + `SEG-###` 活跃引用清单）；`python tools/check_camera_map.py --self-test`（0 / 1 / 61 路放行，重复段 / 超路段数 / 悬空段号 / 重复 cid 拦截；**内存 fixture，不污染正式登记表**） |
 
 > **换源时怎么改**：先改 `mapping/camera-segments.json`，跑生成器 `gen_station_channels.py`，再跑自检与门禁；真实摄像头接入时按 **IKMHMX** 重做标定与映射。样本视频里的 `road2/track1` 不是肇庆东站现场，**不得**把该映射说成"实拍路段"。
 

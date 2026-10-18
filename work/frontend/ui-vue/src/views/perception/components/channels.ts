@@ -6,8 +6,10 @@
 //   绝不用前端推算值或设计稿示例值冒充。
 //
 // 2026-10-12(站点包层):**通道 ↔ 路段映射**从当前站点包读(`src/station-packs/`)——
-// "这一路画面算到哪条路段上"取决于这个站有哪些路,属于包的内容。通道目录本身(6 路、
-// cid、源文件名)是公开样本视频的属性,与站点无关,留在这里。
+// "这一路画面算到哪条路段上"取决于这个站有哪些路,属于包的内容。通道目录本身(cid、源文件名)
+// 是公开样本视频的属性,与站点无关,留在这里。
+// **IKMS1T(2026-10-18)去固定 6 路**:通道条数 N 随登记表动态(0 ≤ N ≤ 路段数,默认每段最多 1 路;
+// 0 路合法),本文件不再假设"永远 6 路",页面按 `activePack().channels` 的长度渲染。
 import type { Detection, PerceptionDetections, PerceptionStreamMeta } from '../../../api/perception'
 import { activePack } from '../../../station-packs/index.ts'
 import { CLASS_COLORS, type VehicleClassKey } from '../../../shared/theme'

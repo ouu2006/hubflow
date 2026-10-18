@@ -2,6 +2,7 @@
 // 唯一真值来源：`work/perception/mapping/camera-segments.json`（IKMDKY 三段映射登记表）。
 // 页面（stationZ.ts）只 import 本文件；后端（work/perception/server.py）读同一份登记表。
 // 改映射：先改登记表 JSON，再跑 `python work/perception/tools/gen_station_channels.py`。
+// 行数 = 登记表 cameras 条数 N，动态（IKMS1T：0 ≤ N ≤ 路段数，默认每段最多 1 路），不写死 6。
 
 import type { PackChannel } from './types.ts'
 

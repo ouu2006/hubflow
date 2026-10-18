@@ -49,6 +49,8 @@ const pError = ref('')
 
 /** 当前检测通道(默认 C-05 track1,与设计稿一致) */
 const currentSource = ref('track1')
+/** 台账/监控墙再次点中同一路时,currentSource 不变但也要让监控墙回到该页/取消筛选 */
+const selectTick = ref(0)
 
 // ---- 深链:大屏点摄像头进来 = `#/perception?source=cam-03`(Issue IKLX5Y) ----
 //
@@ -76,29 +78,46 @@ watch(() => route.query.source, () => {
   if (next) currentSource.value = next
 })
 
+/** 本包通道数 N(= 当前站点包 channels 条数 = 登记表 cameras 条数;0 路合法,不再固定 6) */
+const channelTotal = computed(() => packChannels().length)
 /** 本包是否至少声明了一路有视频源的通道 —— 没有就不该报"服务未连接" */
 const packHasVideo = computed(() => packChannels().some((c) => c.hasVideo))
+/** 是否布了摄像头:N=0(新站/未布点站)合法,页面如实显示空态、不渲染"当前通道"详情 */
+const hasChannels = computed(() => channelTotal.value > 0)
+/** 0 路时的占位定义:只为让 current 计算有非空返回;N=0 时详情面板整体不渲染,不会冒充真实通道 */
+const EMPTY_CHANNEL: ChannelDef = {
+  cid: '—',
+  source: '',
+  name: '本站未布摄像头',
+  segmentId: '—',
+  hasVideo: false,
+}
 
 /**
- * 页头口径(两句话都随包走,不写死):
- *   有视频源 → 既有的"6 段离线样本视频"口径;
- *   本包全部没有视频源(站点包 Z,业主:视频样本先不弄) → 如实说"未接入视频源",
- *   否则页头会声称有一批根本不存在的样本视频。
+ * 页头口径(随包走,不写死):
+ *   有视频源 → "样本视频"口径;
+ *   本包全部没有视频源 → 如实说"未接入视频源";
+ *   0 路 → 如实说"本站未布摄像头",不得拿别的站数据顶。
  */
-const subLine = computed(() =>
-  packHasVideo.value
+const subLine = computed(() => {
+  if (!hasChannels.value) {
+    return '本站未布摄像头（登记表 cameras 0 条）· 检测 → 跟踪 → 透视标定 → 四项指标暂无输入'
+  }
+  return packHasVideo.value
     ? '样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子'
-    : `${packChannels().length} 路通道 · 全部未接入视频源(本期留空) · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`,
-)
-const sourceBadge = computed(() =>
-  packHasVideo.value ? '离线样本视频 · 非实时流 · 非本站现场' : '本批摄像头未接入视频源 · 页面不显示任何画面',
-)
-/** 页脚出处(同一条纪律:没有视频源就不说"样本视频",但站名与"非实时流"照旧要说) */
-const footSourceLine = computed(() =>
-  packHasVideo.value
+    : `${channelTotal.value} 路通道 · 全部未接入视频源(本期留空) · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`
+})
+const sourceBadge = computed(() => {
+  if (!hasChannels.value) return '本站未布摄像头 · 页面不显示任何画面'
+  return packHasVideo.value ? '离线样本视频 · 非实时流 · 非本站现场' : '本批摄像头未接入视频源 · 页面不显示任何画面'
+})
+/** 页脚出处(同一条纪律:没有视频源就不说"样本视频";0 路照实说未布摄像头) */
+const footSourceLine = computed(() => {
+  if (!hasChannels.value) return `本站未布摄像头 · 非${stationName.value}现场 · 非实时流`
+  return packHasVideo.value
     ? `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流`
-    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流`,
-)
+    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流`
+})
 
 const summary = ref<PerceptionSummary | null>(null)
 const summaryUnavailable = ref(true)
@@ -126,11 +145,10 @@ const channels = computed<ChannelState[]>(() =>
   }),
 )
 
-const fallbackDef = packChannels()[0] as ChannelDef
 const current = computed<ChannelState>(() => {
   const hit = channels.value.find((c) => c.def.source === currentSource.value)
   return (
-    hit ?? channels.value[0] ?? { def: fallbackDef, meta: null, det: null, detTotal: null, detFailed: false }
+    hit ?? channels.value[0] ?? { def: EMPTY_CHANNEL, meta: null, det: null, detTotal: null, detFailed: false }
   )
 })
 
@@ -233,6 +251,8 @@ async function loadTrafficBase(): Promise<void> {
 
 function onSelect(source: string): void {
   currentSource.value = source
+  // 同一路再次点击时 currentSource 不会变,用 tick 通知监控墙"用户又点了这一路"
+  selectTick.value += 1
 }
 
 watch(currentSource, (src) => void loadDetail(src), { immediate: true })
@@ -277,8 +297,9 @@ onMounted(() => {
             <button class="td-btn sm" type="button" @click="loadStreams">重试</button>
           </div>
         </section>
-        <MonitorWall :channels="channels" :current-id="currentSource" @select="onSelect" />
+        <MonitorWall :channels="channels" :current-id="currentSource" :select-tick="selectTick" @select="onSelect" />
         <PipelinePanel
+          v-if="hasChannels"
           :channels="channels"
           :current="current.def"
           :meta="current.meta"
@@ -288,7 +309,7 @@ onMounted(() => {
         <SemanticsPanel />
       </div>
 
-      <div class="td-col col-right">
+      <div v-if="hasChannels" class="td-col col-right">
         <DetailPanel
           :ch="current"
           :summary="summary"
@@ -299,8 +320,8 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- 数据供给 ↔ 需求对照(能获取的数据 / 要用到的数据 + 缺口) -->
-    <DataSupplyPanel :channels="channels" :current="current.def" :source-pair="sourcePair" />
+    <!-- 数据供给 ↔ 需求对照(能获取的数据 / 要用到的数据 + 缺口);0 路时无可对照 -->
+    <DataSupplyPanel v-if="hasChannels" :channels="channels" :current="current.def" :source-pair="sourcePair" />
 
     <template #foot>
       <span>{{ footSourceLine }}</span>

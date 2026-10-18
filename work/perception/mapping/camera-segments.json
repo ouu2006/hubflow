@@ -1,16 +1,18 @@
 {
   "is_simulated": true,
-  "registry_version": "2026-10-17",
-  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY）。唯一真值来源：页面画的与后端发的都取本文件；样本视频非本站现场，映射仅用于演示/联调。",
+  "registry_version": "2026-10-18",
+  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY 建表 / IKMS1T 去固定化）。唯一真值来源：页面画的与后端发的都取本文件。摄像头条数 N = cameras 条数，动态：0 ≤ N ≤ 本站路段数（肇庆东 61），默认一段最多 1 路；本表当前登记的 6 路是**合法示例**，不是固定值。样本视频非本站现场，映射仅用于演示/联调。",
   "segment_id_namespaces": {
     "SZ-###": "站点 Z 真 OSM 路网（61 段，见 work/twin/netpack/network_junction.json / stationZ.network.ts）—— 本站唯一现役段号",
     "SEG-###": "7 节点样例网（stations/network.json 占位件 + work/engine/samples/ + 鸿蒙 App fixture）—— 样例数据专用，不是本站真网；保留不改名，避免把样例冒充本站",
     "SZ-##": "旧 21 段对照包 Z21（stationZ21.*，只用于顶栏切换对照，定稿后按 netpack README 删除）"
   },
   "rules": [
-    "一路通道只能算一条路段；一条路段可以有多路通道（多对一）",
+    "一路通道只能算一条路段；**本站默认一段最多 1 路摄像头**（N ≤ 路段数，肇庆东 61），同一条路段多路摄像头的场景本单不启用、需另开扩展单",
+    "cameras 条数 N 动态：0 ≤ N ≤ 本站路段数；0 路合法（新站/未布点站），video_streams 是 has_video_source=true 摄像头的子集、条数任意（0..N），不得要求固定条数",
+    "**摄像头数量 ≠ 样本视频段数**：N 路是布点数；样本视频仍只有 road2 / track1 两路（业主口径：YOLO 是代号、前端假视频即可），不得伪造视频流、不得暗示 N 路都有视频",
     "cam_id ↔ channel_id ↔ segment_id 只有这一份登记表：页面（stationZ.channels）与后端（接口层 / meta）取同一个键",
-    "无视频源 ≠ 没有摄像头 ≠ 数据可用：has_video_source=false 只表示本期没有视频流",
+    "无视频源 ≠ 没有摄像头 ≠ 数据可用：has_video_source=false 只表示本期没有视频流，仍计入 N 路",
     "样本视频非本站现场：video_streams 的 segment_id 是演示映射（依据写 evidence），真实摄像头接入时按 IKMHMX 重做标定",
     "拿不到的值标 null 或【待核实】，不编坐标 / 段号"
   ],

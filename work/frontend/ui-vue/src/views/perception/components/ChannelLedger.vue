@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// 左栏:视频源台账(6 路,可用性以 /perception-api/streams 实际返回判定)+ 跟踪环节清单。
+// 左栏:视频源台账(N 路,可用性以 /perception-api/streams 实际返回判定)+ 跟踪环节清单。
+// IKMS1T 起不再固定 6 路:行数 = 登记表 cameras 条数 N(0 路合法),左栏自身滚动;
 // 数字一律取 meta;服务未提供的环节(透视标定 / 越线计数 / 判级)显示「—」并注明出处。
 import { computed } from 'vue'
 import { feedOf, feedText, metaLine } from './channels'
@@ -50,32 +51,41 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
     <div class="td-card-head">
       视频源
       <span class="td-head-tag">
-        {{ channels.length }} 路<template v-if="allNoSource"> · 全部未接入视频源(本期留空)</template><template v-else> · 离线样本(已导出 {{ exportedCount }})<template v-if="noSourceCount > 0">
+        <template v-if="channels.length === 0">0 路 · 本站未布摄像头</template>
+        <template v-else-if="allNoSource">{{ channels.length }} 路 · 全部未接入视频源(本期留空)</template>
+        <template v-else>{{ channels.length }} 路 · 离线样本(已导出 {{ exportedCount }})<template v-if="noSourceCount > 0">
           · 未接入视频源 {{ noSourceCount }} 路</template></template>
       </span>
     </div>
     <div class="td-card-body flush">
-      <div
-        v-for="c in channels"
-        :key="c.def.source"
-        class="td-row chan"
-        :class="{ on: c.def.source === currentId }"
-        role="button"
-        :aria-pressed="c.def.source === currentId"
-        @click="emit('select', c.def.source)"
-      >
-        <div class="chan-main">
-          <div class="chan-l1">
-            <span class="cid td-mono">{{ c.def.cid }}</span>
-            <span class="src">· {{ c.def.source }}</span>
-            <span class="td-chip" :class="stateOf(c).cls">{{ stateOf(c).text }}</span>
-          </div>
-          <div class="chan-l2">{{ c.def.segmentId }} {{ c.def.name }}</div>
-          <div class="chan-l3 td-mono">
-            {{ !c.def.hasVideo ? '未接入视频源 · 本期留空(路网上已布点)' : metaLine(c.meta, c.detTotal) }}
+      <!-- 0 路合法(IKMS1T):如实显示,不报错、不拿别的站数据顶 -->
+      <div v-if="channels.length === 0" class="ledger-empty">
+        <span class="le-l1">本站未布摄像头</span>
+        <span class="le-l2">登记表 cameras 0 条（N = 0 路 · 0 路合法）</span>
+      </div>
+      <template v-if="channels.length > 0">
+        <div
+          v-for="c in channels"
+          :key="c.def.source"
+          class="td-row chan"
+          :class="{ on: c.def.source === currentId }"
+          role="button"
+          :aria-pressed="c.def.source === currentId"
+          @click="emit('select', c.def.source)"
+        >
+          <div class="chan-main">
+            <div class="chan-l1">
+              <span class="cid td-mono">{{ c.def.cid }}</span>
+              <span class="src">· {{ c.def.source }}</span>
+              <span class="td-chip" :class="stateOf(c).cls">{{ stateOf(c).text }}</span>
+            </div>
+            <div class="chan-l2">{{ c.def.segmentId }} {{ c.def.name }}</div>
+            <div class="chan-l3 td-mono">
+              {{ !c.def.hasVideo ? '未接入视频源 · 本期留空(路网上已布点)' : metaLine(c.meta, c.detTotal) }}
+            </div>
           </div>
         </div>
-      </div>
+      </template>
     </div>
   </section>
 
@@ -102,8 +112,9 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
     </div>
     <div class="td-card-body">
       <p class="line">
-        <template v-if="allNoSource">本包 · {{ channels.length }} 路通道全部未接入视频源(本期留空)</template>
-        <template v-else>一期 · 6 段样本视频(离线批处理)</template>
+        <template v-if="channels.length === 0">本包 · 0 路通道(本站未布摄像头)</template>
+        <template v-else-if="allNoSource">本包 · {{ channels.length }} 路通道全部未接入视频源(本期留空)</template>
+        <template v-else>一期 · 离线样本视频(批处理;文件数由登记表 video_streams 决定)</template>
       </p>
       <p class="line">二期 · 现场摄像头流(本期不接入)</p>
       <p class="line strong">点位与字段不变 · 只换视频源</p>
@@ -116,6 +127,23 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
 </template>
 
 <style scoped>
+/* 0 路空态:如实写明,不报错、不拿别的站数据顶 */
+.ledger-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 18px 12px;
+  text-align: center;
+}
+.le-l1 {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.le-l2 {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
 .chan {
   align-items: flex-start;
 }

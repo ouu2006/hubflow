@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 中栏下部:检测流水线(5 环节横向流程)+ 六路汇总(本次批处理)。
+// 中栏下部:检测流水线(5 环节横向流程)+ N 路汇总(本次批处理;N 随登记表动态,IKMS1T 起不再固定 6)。
 // 环节产物取当前通道 meta;服务未提供的量(标定 RANGE/RMSE、越线、平均 Q、处理用时)如实显示「—」。
 import { computed } from 'vue'
 import type { PerceptionSummary, PerceptionStreamMeta } from '../../../api/perception'
