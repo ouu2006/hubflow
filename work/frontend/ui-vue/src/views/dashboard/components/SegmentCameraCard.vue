@@ -8,7 +8,8 @@
 //   · 有视频源、服务在、但该通道没导出：「未导出（样本视频未处理）」；
 //   · 无视频源：「未接入视频源 · 本期留空」；
 //   · 感知服务整体不可用：可读错误 + 重试（8 s 自动重试），**绝不伪造画面**；
-//   · 该段登记摄像头 0 路：「该路段无摄像头」。
+//   · 该段 0 路摄像头 / 登记摄像头均无视频源：按业主口径显示「演示复用样本视频」
+//     （从 road2/track1 确定性复用，明确标注非真实摄像头，详见 IKNAUI）。
 //
 // 唯一真值来源 = 站点包 `channels`（由 work/perception/mapping/camera-segments.json 生成），
 // 与感知页 / 地图摄像头图钉同一个 `source` / `hasVideo` 键，不另造第二份。
@@ -41,10 +42,16 @@ const views = computed(() =>
 )
 const hasPlayable = computed(() => views.value.some((v) => v.hasVideo && v.meta !== null))
 const videoCount = computed(() => views.value.filter((v) => v.hasVideo).length)
+/** 该段是否有任何“有视频源”的登记摄像头；false 时（含 0 路）走演示复用视频 */
+const hasAnyVideo = computed(() => cameras.value.some((c) => c.hasVideo !== false))
+/** 登记了但无视频源的摄像头 cid 列表（用于说明“登记摄像头均无视频源”） */
+const noVideoCids = computed(() =>
+  cameras.value.filter((c) => c.hasVideo === false).map((c) => c.cid).join(' / '),
+)
 
 // ---------- 全路段视频复用（Issue IKNAUI 业主口径：全部 61 段都要有视频显示）----------
 //
-// **仅对没有登记摄像头（cameras.length === 0）的段启用**：从现有 2 路样本视频 road2 / track1 中
+// **对没有登记摄像头、或登记摄像头均无视频源的段启用**：从现有 2 路样本视频 road2 / track1 中
 // 按 segment_id **确定性**挑一路（同一段永远同一路，不用随机），复用它真实的抽帧画面。
 // 不新增 / 不伪造摄像头登记——感知页台账仍是登记表里的 6 路；这里只是「演示复用视频」。
 const REUSE_SOURCES = ['road2', 'track1'] as const
@@ -54,7 +61,7 @@ function reuseSourceOf(segmentId: string): string {
   return REUSE_SOURCES[hash % REUSE_SOURCES.length]!
 }
 const reuseStream = computed<string>(() =>
-  cameras.value.length === 0 ? reuseSourceOf(props.segmentId) : '',
+  !hasAnyVideo.value ? reuseSourceOf(props.segmentId) : '',
 )
 const reuseMeta = computed<PerceptionStreamMeta | null>(() => {
   if (!reuseStream.value) return null
@@ -117,8 +124,8 @@ async function loadStreams(): Promise<void> {
   } catch (e) {
     streams.value = null
     error.value = `感知服务未连接 / 不可用：${e instanceof Error ? e.message : String(e)}`
-    // 有视频源的摄像头、或 0 路摄像头（要复用样本视频）才需要重试；无视频源且无复用需求的段不报错
-    if (cameras.value.some((c) => c.hasVideo !== false) || cameras.value.length === 0) scheduleRetry()
+    // 服务错误总与卡片画面相关（有视频源→原视频；无视频源/0 路→演示复用视频），统一 8s 重试
+    scheduleRetry()
   } finally {
     loading.value = false
   }
@@ -150,8 +157,8 @@ watch(
   <section class="cam-card">
     <div class="sec-head">
       关联摄像头
-      <span class="sub-tag">{{ cameras.length }} 路</span>
-      <span v-if="cameras.length === 0 && reuseMeta" class="td-chip warn">演示复用视频 · 非本站现场</span>
+      <span class="sub-tag">{{ cameras.length }} 路{{ cameras.length > 0 && !hasAnyVideo ? ' · 均无视频源' : '' }}</span>
+      <span v-if="!hasAnyVideo && reuseMeta" class="td-chip warn">演示复用视频 · 非本站现场</span>
       <span v-else-if="hasPlayable" class="td-chip warn">样本视频回放 · 非本站现场</span>
       <a
         v-if="hasAnyPlayable"
@@ -164,11 +171,11 @@ watch(
       </a>
     </div>
 
-    <!-- 0 路登记摄像头：按业主口径显示「演示复用视频」（确定性复用 2 路样本视频之一，真实抽帧） -->
-    <template v-if="cameras.length === 0">
+    <!-- 0 路登记摄像头 / 登记摄像头均无视频源：按业主口径显示「演示复用视频」（确定性复用 2 路样本视频之一，真实抽帧） -->
+    <template v-if="!hasAnyVideo">
       <div class="cam-row">
         <div class="cam-head">
-          <span class="cam-id td-mono">无独立摄像头</span>
+          <span class="cam-id td-mono">{{ cameras.length === 0 ? '无独立摄像头' : '登记摄像头均无视频源' }}</span>
           <span class="cam-name">演示复用样本视频（按段号确定性映射）</span>
           <span class="td-chip" :class="{ ok: reuseMeta, err: Boolean(error) || reuseFrameFailed }">
             {{
@@ -233,7 +240,7 @@ watch(
         </template>
       </div>
       <p class="cam-note">
-        该路段<b>无独立摄像头</b>：画面为从现有 2 路样本视频（road2 / track1）中按段号<b>确定性复用</b>的演示帧，
+        该路段<b>{{ cameras.length === 0 ? '无独立摄像头' : `登记摄像头（${noVideoCids}）均无视频源` }}</b>：画面为从现有 2 路样本视频（road2 / track1）中按段号<b>确定性复用</b>的演示帧，
         同一份样本视频用于多路演示，<b>非本站现场、非实时流</b>；
         不新增 / 不伪造摄像头登记（感知页台账仍按登记表 6 路）。
       </p>
