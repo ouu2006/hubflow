@@ -62,16 +62,27 @@ export function camerasBySegment(): Map<string, CameraPin[]> {
 }
 
 /**
- * 某段登记的摄像头（全量：含未上图 / 无坐标项；动态 N，0 = 该段无摄像头）。
- * 大屏「关联摄像头」卡用：`hasVideo` 说有没有视频源，`source` 与感知服务 stream_id 同键。
+ * 某段源台账登记的摄像头（全量：含未上图 / 无坐标项）。
+ * ⚠️ 2026-10-18 口径（IKNBT2）：**N 段 = N 摄像头 = N 视频（演示）**——
+ * 源台账 0 路 **不等于**"该段没有摄像头/没有视频"：一期每段都有 1 路演示摄像头、画面为
+ * mock 复用样本视频（见 `demoCameraCount` 与大屏「关联摄像头」卡）。本函数只返回源台账条目。
  */
 export function camerasOfSegment(segmentId: string): PackChannel[] {
   return activePack().channels.filter((channel) => channel.segment_id === segmentId)
 }
 
-/** 某段的摄像头数（0 = 该段没监控） */
+/** 源台账摄像头数（0 = 源台账未登记该段；**不代表一期摄像头总数为 0**，见 IKNBT2 口径） */
 export function cameraCountOf(segmentId: string): number {
   return activePack().channels.filter((c) => c.segment_id === segmentId).length
+}
+
+/**
+ * 一期演示口径的摄像头总数：**N 段 = N 摄像头 = N 视频（mock 复用）**。
+ * 返回当前站点包的路段数（Z=61 / GZ=433）；大屏/感知页用它标注"演示摄像头 N 路"，
+ * 与源台账（`channels` 条数，仅初始映射）分开说，不拿源台账当一期总数。
+ */
+export function demoCameraCount(): number {
+  return activePack().segments.length
 }
 
 /** 当前包的上色策略（不写 = `'all'`，既有行为） */

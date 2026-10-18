@@ -7,6 +7,7 @@
 // 深色 token 只在本卡片内的画面格生效(CSS 变量下发,避免深色外溢到壳层)。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { TD_VIDEO } from '../../../shared/theme'
+import { demoCameraCount } from '../../../shared/cameras'
 import MonitorCell from './MonitorCell.vue'
 import type { ChannelState } from './channels'
 
@@ -44,8 +45,10 @@ const videoVars = {
   '--v-brand': TD_VIDEO.brand,
 }
 
-/** 通道总数 N(登记表条数;0 路合法) */
+/** 通道总数 N(源台账条数;0 路合法;≠ 一期演示摄像头总数,见 demoCameraTotal) */
 const total = computed(() => props.channels.length)
+/** 一期演示摄像头总数 = 路段数（N 段 = N 摄像头 = N 视频，mock 复用；IKNBT2） */
+const demoCameraTotal = computed(() => demoCameraCount())
 /** 有视频源的通道数(登记表 has_video_source=true;不等于样本视频已导出) */
 const videoCount = computed(() => props.channels.filter((c) => c.def.hasVideo).length)
 /** 未接入视频源的通道数(Issue IKLX5Y) */
@@ -79,7 +82,9 @@ const rangeText = computed(() => {
 })
 
 const emptyHint = computed(() => {
-  if (total.value === 0) return '本站未布摄像头（登记表 cameras 0 条）'
+  if (total.value === 0) {
+    return `源台账 0 路（仅初始映射）· 一期演示摄像头 ${demoCameraTotal.value} 路（N 段 = N 摄像头 = N 视频，mock 复用）`
+  }
   if (filter.value === 'video' && videoCount.value === 0) return `当前 ${total.value} 路都没有视频源`
   if (filter.value === 'novideo' && noVideoCount.value === 0) return `全部 ${total.value} 路都已接入视频源`
   return `切回「全部」可看 ${total.value} 路（其中 ${noVideoCount.value} 路未接入视频源）`
@@ -164,10 +169,13 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <!-- 0 路合法(IKMS1T):新站 / 未布点站如实显示,不报错、不拿别的站数据顶 -->
+    <!-- 0 路源台账合法(IKMS1T):如实说"仅初始映射"，并注明一期演示摄像头口径（IKNBT2） -->
     <div v-if="total === 0" class="wall-empty">
-      <span class="we-l1">本站未布摄像头</span>
-      <span class="we-l2">登记表 cameras 0 条（N = 0 路 · 0 路合法）· 不显示任何画面</span>
+      <span class="we-l1">源台账 0 路（仅源侧初始映射）</span>
+      <span class="we-l2">
+        一期口径：N 段 = N 摄像头 = N 视频（演示）——本站 {{ demoCameraTotal }} 段 =
+        {{ demoCameraTotal }} 路演示摄像头，视频为 mock 复用；本墙只展示源台账通道。
+      </span>
     </div>
 
     <template v-else>

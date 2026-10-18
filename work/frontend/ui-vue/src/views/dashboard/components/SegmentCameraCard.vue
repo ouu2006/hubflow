@@ -13,9 +13,13 @@
 //
 // 唯一真值来源 = 站点包 `channels`（由 work/perception/mapping/camera-segments.json 生成），
 // 与感知页 / 地图摄像头图钉同一个 `source` / `hasVideo` 键，不另造第二份。
+//
+// 2026-10-18 口径（IKNBT2）：**N 段 = N 摄像头 = N 视频（演示）**——
+// 源台账 0 路不再写「无独立摄像头」，而是「演示摄像头 · 复用样本视频」；有登记摄像头段保持
+// 源台账身份，但同样说明"一期每路都有视频（mock 复用）"。不伪造真实摄像头/登记表。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getPerceptionStreams, perceptionFrameUrl, type PerceptionStreamMeta } from '../../../api/perception'
-import { camerasOfSegment, perceptionHref } from '../../../shared/cameras'
+import { camerasOfSegment, demoCameraCount, perceptionHref } from '../../../shared/cameras'
 
 const props = defineProps<{ segmentId: string }>()
 
@@ -31,6 +35,8 @@ const FRAME_STEP = 5
 const CLOCK_MS = 500
 
 const cameras = computed(() => camerasOfSegment(props.segmentId))
+/** 一期演示口径的摄像头总数：N 段 = N 摄像头（Z=61 / GZ=433；与源台账分开说） */
+const demoCameraTotal = computed(() => demoCameraCount())
 const views = computed(() =>
   cameras.value.map((camera) => ({
     cid: camera.cid,
@@ -157,8 +163,14 @@ watch(
   <section class="cam-card">
     <div class="sec-head">
       关联摄像头
-      <span class="sub-tag">{{ cameras.length }} 路{{ cameras.length > 0 && !hasAnyVideo ? ' · 均无视频源' : '' }}</span>
-      <span v-if="!hasAnyVideo && reuseMeta" class="td-chip warn">演示复用视频 · 非本站现场</span>
+      <span class="sub-tag">
+        {{
+          cameras.length > 0
+            ? `源台账 ${cameras.length} 路`
+            : `演示摄像头 · 复用样本视频（按路段数 ${demoCameraTotal} 路）`
+        }}
+      </span>
+      <span v-if="!hasAnyVideo && reuseMeta" class="td-chip warn">演示复用 · 非本站现场 · 非实时</span>
       <span v-else-if="hasPlayable" class="td-chip warn">样本视频回放 · 非本站现场</span>
       <a
         v-if="hasAnyPlayable"
@@ -171,18 +183,20 @@ watch(
       </a>
     </div>
 
-    <!-- 0 路登记摄像头 / 登记摄像头均无视频源：按业主口径显示「演示复用视频」（确定性复用 2 路样本视频之一，真实抽帧） -->
+    <!-- 无真实登记源 / 登记摄像头均无视频源：按一期口径显示「演示摄像头 · 复用样本视频」（确定性复用 2 路样本视频之一） -->
     <template v-if="!hasAnyVideo">
       <div class="cam-row">
         <div class="cam-head">
-          <span class="cam-id td-mono">{{ cameras.length === 0 ? '无独立摄像头' : '登记摄像头均无视频源' }}</span>
-          <span class="cam-name">演示复用样本视频（按段号确定性映射）</span>
+          <span class="cam-id td-mono">{{ cameras.length === 0 ? '演示摄像头' : `登记源台账 ${noVideoCids}` }}</span>
+          <span class="cam-name">
+            {{ cameras.length === 0 ? '演示复用样本视频（本段演示画面 · mock 复用）' : '源台账无独立视频源 · 演示复用样本视频' }}
+          </span>
           <span class="td-chip" :class="{ ok: reuseMeta, err: Boolean(error) || reuseFrameFailed }">
             {{
               reuseFrameFailed
                 ? '帧加载失败'
                 : reuseMeta
-                  ? '演示复用视频'
+                  ? '演示复用'
                   : error
                     ? '服务不可用'
                     : '未导出'
@@ -206,7 +220,7 @@ watch(
               <button class="td-btn sm" type="button" @click="retryFrame(`reuse:${reuseStream}`)">重试本帧</button>
             </div>
             <span v-if="!reuseFrameFailed" class="cam-badge">
-              演示复用视频 · 同一份样本视频用于多路演示 · 非本站现场
+              演示复用 · 非本站现场 · 非实时
             </span>
           </div>
           <div class="cam-meta td-mono">
@@ -240,11 +254,19 @@ watch(
         </template>
       </div>
       <p class="cam-note">
-        该路段<b>{{ cameras.length === 0 ? '无独立摄像头' : `登记摄像头（${noVideoCids}）均无视频源` }}</b>：画面为从现有 2 路样本视频（road2 / track1）中按段号<b>确定性复用</b>的演示帧，
-        同一份样本视频用于多路演示，<b>非本站现场、非实时流</b>；
-        不新增 / 不伪造摄像头登记（感知页台账仍按登记表 6 路）。
+        一期口径：<b>N 段 = N 摄像头 = N 视频（演示）</b>——本站 {{ demoCameraTotal }} 段即
+        {{ demoCameraTotal }} 路演示摄像头，每路都有画面；视频为 <b>mock 复用</b>（同一份 road2 / track1
+        可被多路复用），<b>演示复用 · 非本站现场 · 非实时</b>。
+        <template v-if="cameras.length === 0">
+          本段无真实登记源 → 显示「演示摄像头」，不代表没有摄像头/视频；
+        </template>
+        <template v-else>
+          本段源台账摄像头（{{ noVideoCids }}）无独立视频源 → 画面为演示复用；
+        </template>
+        不伪造真实摄像头 / 登记表（源台账 {{ cameras.length }} 路仅作初始映射，不代表一期摄像头总数；真实接入归 IKMHMX）。
       </p>
     </template>
+
 
     <template v-else>
       <p v-if="error && videoCount > 0" class="cam-warn">
@@ -312,8 +334,11 @@ watch(
       </div>
 
       <p class="cam-note">
-        摄像头 ↔ 通道 ↔ 路段取 work/perception/mapping/camera-segments.json（唯一真值来源，动态 N 路）；
-        有视频源的通道画面为<b>样本视频回放</b>，非本站现场、非实时流。
+        源台账摄像头 ↔ 通道 ↔ 路段取 work/perception/mapping/camera-segments.json（**仅初始映射**，源台账
+        {{ cameras.length }} 路，不代表一期摄像头总数）；有视频源的通道画面为<b>样本视频回放</b>
+        （演示复用，非本站现场、非实时）。
+        一期口径：<b>N 段 = N 摄像头 = N 视频（演示）</b>——本站 {{ demoCameraTotal }} 段 =
+        {{ demoCameraTotal }} 路演示摄像头，每路都有画面；真实接入归 IKMHMX。
       </p>
     </template>
   </section>

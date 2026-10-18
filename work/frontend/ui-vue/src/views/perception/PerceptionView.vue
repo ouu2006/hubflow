@@ -39,6 +39,7 @@ import PipelinePanel from './components/PipelinePanel.vue'
 import SemanticsPanel from './components/SemanticsPanel.vue'
 import { channels as packChannels, type ChannelDef, type ChannelState } from './components/channels'
 import { activePack } from '../../station-packs/index'
+import { demoCameraCount } from '../../shared/cameras'
 
 const streams = ref<PerceptionStreamMeta[]>([])
 const detMap = ref<Record<string, PerceptionDetections>>({})
@@ -80,6 +81,8 @@ watch(() => route.query.source, () => {
 
 /** 本包通道数 N(= 当前站点包 channels 条数 = 登记表 cameras 条数;0 路合法,不再固定 6) */
 const channelTotal = computed(() => packChannels().length)
+/** 一期演示口径摄像头总数：N 段 = N 摄像头 = N 视频（mock 复用；与源台账分开说，IKNBT2） */
+const demoCameraTotal = computed(() => demoCameraCount())
 /** 本包是否至少声明了一路有视频源的通道 —— 没有就不该报"服务未连接" */
 const packHasVideo = computed(() => packChannels().some((c) => c.hasVideo))
 /** 是否布了摄像头:N=0(新站/未布点站)合法,页面如实显示空态、不渲染"当前通道"详情 */
@@ -88,7 +91,7 @@ const hasChannels = computed(() => channelTotal.value > 0)
 const EMPTY_CHANNEL: ChannelDef = {
   cid: '—',
   source: '',
-  name: '本站未布摄像头',
+  name: '源台账未登记（一期为演示摄像头）',
   segmentId: '—',
   hasVideo: false,
 }
@@ -97,26 +100,35 @@ const EMPTY_CHANNEL: ChannelDef = {
  * 页头口径(随包走,不写死):
  *   有视频源 → "样本视频"口径;
  *   本包全部没有视频源 → 如实说"未接入视频源";
- *   0 路 → 如实说"本站未布摄像头",不得拿别的站数据顶。
+ *   0 路源台账 → 如实说"源台账 0 路（仅初始映射）"，并注明一期 N 段 = N 摄像头 = N 视频（mock 复用），
+ *   不得把源台账 0 路写成"本站没有摄像头/没有视频"（IKNBT2 口径）。
  */
 const subLine = computed(() => {
   if (!hasChannels.value) {
-    return '本站未布摄像头（登记表 cameras 0 条）· 检测 → 跟踪 → 透视标定 → 四项指标暂无输入'
+    return `源台账 0 路（仅初始映射）· 一期演示摄像头 ${demoCameraTotal.value} 路（按路段数，mock 复用样本视频）· 本页只展示源台账通道`
   }
+  const ledger = `源台账 ${channelTotal.value} 路（仅初始映射，不代表一期总数；一期 N 段 = N 摄像头 = N 视频，mock 复用）`
   return packHasVideo.value
-    ? '样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · 环境(天气 / 时间)按因素登记表折算路况因子'
-    : `${channelTotal.value} 路通道 · 全部未接入视频源(本期留空) · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`
+    ? `样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · ${ledger}`
+    : `${channelTotal.value} 路源台账通道 · 全部未接入视频源(本期留空) · ${ledger} · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`
 })
 const sourceBadge = computed(() => {
-  if (!hasChannels.value) return '本站未布摄像头 · 页面不显示任何画面'
-  return packHasVideo.value ? '离线样本视频 · 非实时流 · 非本站现场' : '本批摄像头未接入视频源 · 页面不显示任何画面'
-})
-/** 页脚出处(同一条纪律:没有视频源就不说"样本视频";0 路照实说未布摄像头) */
-const footSourceLine = computed(() => {
-  if (!hasChannels.value) return `本站未布摄像头 · 非${stationName.value}现场 · 非实时流`
+  if (!hasChannels.value) {
+    return `源台账 0 路 · 一期演示摄像头 ${demoCameraTotal.value} 路（mock 复用）`
+  }
   return packHasVideo.value
-    ? `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流`
-    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流`
+    ? '离线样本视频 · 非实时流 · 非本站现场'
+    : '本批源台账摄像头未接入视频源 · 页面不显示任何画面'
+})
+/** 页脚出处(同一条纪律:没有视频源就不说"样本视频";0 路源台账照实说"仅初始映射") */
+const footSourceLine = computed(() => {
+  if (!hasChannels.value) {
+    return `源台账 0 路（仅初始映射）· 一期演示摄像头 ${demoCameraTotal.value} 路（按路段数，mock 复用）· 非${stationName.value}现场 · 非实时流`
+  }
+  const ledger = `一期口径：N 段 = N 摄像头 = N 视频（演示，mock 复用；源台账 ${channelTotal.value} 路仅初始映射，不代表一期总数）`
+  return packHasVideo.value
+    ? `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流 · ${ledger}`
+    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流 · ${ledger}`
 })
 
 const summary = ref<PerceptionSummary | null>(null)
