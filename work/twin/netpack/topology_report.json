@@ -1,0 +1,1635 @@
+{
+  "schema_version": "1.0",
+  "is_simulated": true,
+  "generated_by": "work/twin/netpack/tools/check_topology.py",
+  "note": "自动拓扑校验报告（Issue IKNB9H）：全部判据可机器复现，不靠人工看图。main_road_gap 的路口终止是 WARN（真实终点/切片截断待核对）；单向段无后继、可达性缺失、非法掉头才是 FAIL。",
+  "inputs": {
+    "graph": "work/twin/netpack/network_junction.enriched.json",
+    "graph_sha256": "6d7ca0d0b8811e6fb4978f162d56fb7ea566fb6721d54e6b8009d2aebdeee500",
+    "raw": "work/twin/netpack/network_junction.json",
+    "raw_sha256": "3e64a1d92de171fb3fcfc37fa3e92ff9519dc98b8621b3c287b76762f75182f8",
+    "routes": null,
+    "graph_source": "work/twin/netpack/network_junction.json",
+    "graph_source_sha256": "3e64a1d92de171fb3fcfc37fa3e92ff9519dc98b8621b3c287b76762f75182f8"
+  },
+  "summary": {
+    "segments": 61,
+    "nodes": 44,
+    "entries": 9,
+    "exits": 8,
+    "checks": 7,
+    "failures": 0,
+    "warnings": 2,
+    "passed": true,
+    "exit_code": 0
+  },
+  "checks": {
+    "schema": {
+      "name": "schema",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 0,
+      "failures": [],
+      "warnings": [],
+      "details": {
+        "segments": 61,
+        "segments_checked": 61,
+        "field_sources_allowed": [
+          "osm",
+          "derived",
+          "default"
+        ]
+      }
+    },
+    "boundary_roles": {
+      "name": "boundary_roles",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 0,
+      "failures": [],
+      "warnings": [],
+      "details": {
+        "roles": {
+          "entry": [
+            "N-001",
+            "N-006",
+            "N-013",
+            "N-038"
+          ],
+          "exit": [
+            "N-002",
+            "N-003",
+            "N-040"
+          ],
+          "both": [
+            "N-016",
+            "N-018",
+            "N-024",
+            "N-026",
+            "N-044"
+          ],
+          "through": [
+            "N-004",
+            "N-005",
+            "N-007",
+            "N-008",
+            "N-009",
+            "N-010",
+            "N-011",
+            "N-012",
+            "N-014",
+            "N-015",
+            "N-017",
+            "N-019",
+            "N-020",
+            "N-021",
+            "N-022",
+            "N-023",
+            "N-025",
+            "N-027",
+            "N-028",
+            "N-029",
+            "N-030",
+            "N-031",
+            "N-032",
+            "N-033",
+            "N-034",
+            "N-035",
+            "N-036",
+            "N-037",
+            "N-039",
+            "N-041",
+            "N-042",
+            "N-043"
+          ]
+        },
+        "derived_boundaries": [
+          "N-006"
+        ]
+      }
+    },
+    "oneway_successor": {
+      "name": "oneway_successor",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 0,
+      "failures": [],
+      "warnings": [],
+      "details": {
+        "oneway_segments_checked": 28,
+        "boundary_terminated": 3,
+        "rule": "非边界单向段的行车末端必须有可通行后继（排除自身反向）；边界/派生边界除外"
+      }
+    },
+    "bidirectional_pairing": {
+      "name": "bidirectional_pairing",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 0,
+      "failures": [],
+      "warnings": [],
+      "details": {
+        "bidirectional_segments": 33,
+        "explicit_opposite_directions": 8,
+        "duplicate_direction_groups": 0
+      }
+    },
+    "main_road_gap": {
+      "name": "main_road_gap",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 2,
+      "failures": [],
+      "warnings": [
+        {
+          "code": "main_road_gap",
+          "message": "主干道链 CH-010（鼎湖大道）在路口 N-008 终止，未接同名主干道；最近同名校验候选 SZ-016（57.3 m）；可能是真实终点或切片/命名截断，待人工核对（不作为 FAIL）",
+          "chain_id": "CH-010",
+          "node_id": "N-008",
+          "severity": "warn",
+          "candidate": {
+            "segment_id": "SZ-016",
+            "node_id": "N-005",
+            "distance_m": 57.3
+          }
+        },
+        {
+          "code": "main_road_gap",
+          "message": "主干道链 CH-011（鼎湖大道）在路口 N-005 终止，未接同名主干道；最近同名校验候选 SZ-017（63.6 m）；可能是真实终点或切片/命名截断，待人工核对（不作为 FAIL）",
+          "chain_id": "CH-011",
+          "node_id": "N-005",
+          "severity": "warn",
+          "candidate": {
+            "segment_id": "SZ-017",
+            "node_id": "N-007",
+            "distance_m": 63.6
+          }
+        }
+      ],
+      "details": {
+        "main_chains": 4,
+        "main_road_gaps_fail": 0,
+        "main_road_terminus_warnings": 2,
+        "connection_candidates": 2,
+        "rule": "主干道按同名 + 共享节点串链；端点非边界且总度数 1 → FAIL(main_road_gap)；端点落在路口 → WARN（可能是真实终点/命名截断）+ 最近同名候选；候选只报告，绝不自动写图"
+      }
+    },
+    "reachability": {
+      "name": "reachability",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 0,
+      "failures": [],
+      "warnings": [],
+      "details": {
+        "entries": [
+          "N-001",
+          "N-006",
+          "N-013",
+          "N-016",
+          "N-018",
+          "N-024",
+          "N-026",
+          "N-038",
+          "N-044"
+        ],
+        "exits": [
+          "N-002",
+          "N-003",
+          "N-016",
+          "N-018",
+          "N-024",
+          "N-026",
+          "N-040",
+          "N-044"
+        ],
+        "entry_exit_pairs": 72,
+        "pairs_compared": 67,
+        "pairs_reachable": 48,
+        "pairs_unreachable": 19,
+        "nodes": 44,
+        "nodes_reachable": 44,
+        "nodes_coreachable": 44,
+        "segments": 61,
+        "segments_uncovered": [],
+        "whitelist": null,
+        "whitelisted_nodes": [],
+        "whitelisted_segments": [],
+        "rule": "入场 boundary → 离场 boundary 用有向图 + 禁非法掉头算路；每个入至少 1 个可达出、每个出至少 1 个可达入；所有节点/段必须在某条『入→出』路径上，否则 FAIL（可列白名单，须给理由）",
+        "matrix": [
+          {
+            "from_node": "N-001",
+            "to_node": "N-002",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-016",
+              "SZ-009"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-016",
+              "SZ-009"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-003",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-016",
+              "SZ-015"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-016",
+              "SZ-015"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-016",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-018"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-018"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-018",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-001",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-003",
+              "SZ-007",
+              "SZ-010",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-002",
+            "reachable": true,
+            "edges": [
+              "SZ-014",
+              "SZ-006",
+              "SZ-009"
+            ],
+            "segments": [
+              "SZ-014",
+              "SZ-006",
+              "SZ-009"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-003",
+            "reachable": true,
+            "edges": [
+              "SZ-014",
+              "SZ-006",
+              "SZ-015"
+            ],
+            "segments": [
+              "SZ-014",
+              "SZ-006",
+              "SZ-015"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-016",
+            "reachable": true,
+            "edges": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-018"
+            ],
+            "segments": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-018"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-018",
+            "reachable": true,
+            "edges": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ],
+            "segments": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-006",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-059",
+              "SZ-060",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-002",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-003",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-016",
+            "reachable": true,
+            "edges": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-018"
+            ],
+            "segments": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-018"
+            ]
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-018",
+            "reachable": true,
+            "edges": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ],
+            "segments": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ]
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-013",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-055",
+              "SZ-012",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-002",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-003",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-018",
+            "reachable": true,
+            "edges": [
+              "SZ-018_rev",
+              "SZ-011",
+              "SZ-019"
+            ],
+            "segments": [
+              "SZ-018",
+              "SZ-011",
+              "SZ-019"
+            ]
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-018_rev",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-018",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-018_rev",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-018",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-018_rev",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-018",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-016",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-018_rev",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-018",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-002",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-003",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-016",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-019_rev",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-019",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-019_rev",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-019",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-019_rev",
+              "SZ-005",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-019",
+              "SZ-005",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-018",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-019_rev",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-019",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-002",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-003",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-016",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-018",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-022",
+              "SZ-050",
+              "SZ-049",
+              "SZ-047",
+              "SZ-027_rev",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-022",
+              "SZ-050",
+              "SZ-049",
+              "SZ-047",
+              "SZ-027",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-022",
+              "SZ-030",
+              "SZ-035_rev",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-022",
+              "SZ-030",
+              "SZ-035",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-024",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-022",
+              "SZ-050",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-022",
+              "SZ-050",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-002",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-003",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-016",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-018",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-026_rev",
+              "SZ-053_rev",
+              "SZ-044_rev",
+              "SZ-039_rev",
+              "SZ-027",
+              "SZ-048",
+              "SZ-049_rev",
+              "SZ-050_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-026",
+              "SZ-053",
+              "SZ-044",
+              "SZ-039",
+              "SZ-027",
+              "SZ-048",
+              "SZ-049",
+              "SZ-050",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-026_rev",
+              "SZ-053_rev",
+              "SZ-044_rev",
+              "SZ-039_rev",
+              "SZ-041_rev",
+              "SZ-037_rev",
+              "SZ-052_rev",
+              "SZ-035_rev",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-026",
+              "SZ-053",
+              "SZ-044",
+              "SZ-039",
+              "SZ-041",
+              "SZ-037",
+              "SZ-052",
+              "SZ-035",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-026",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-026_rev",
+              "SZ-040",
+              "SZ-024_rev",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-026",
+              "SZ-040",
+              "SZ-024",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-002",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-013",
+              "SZ-008",
+              "SZ-006",
+              "SZ-009"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-013",
+              "SZ-008",
+              "SZ-006",
+              "SZ-009"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-003",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-013",
+              "SZ-008",
+              "SZ-006",
+              "SZ-015"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-013",
+              "SZ-008",
+              "SZ-006",
+              "SZ-015"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-016",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-018"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-018"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-018",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-019"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-030",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-037",
+              "SZ-041",
+              "SZ-039",
+              "SZ-044",
+              "SZ-053",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-004"
+            ]
+          },
+          {
+            "from_node": "N-038",
+            "to_node": "N-044",
+            "reachable": true,
+            "edges": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ],
+            "segments": [
+              "SZ-001",
+              "SZ-061",
+              "SZ-002",
+              "SZ-011",
+              "SZ-005",
+              "SZ-035",
+              "SZ-052",
+              "SZ-023",
+              "SZ-049",
+              "SZ-047",
+              "SZ-038",
+              "SZ-045",
+              "SZ-036",
+              "SZ-057",
+              "SZ-058",
+              "SZ-056"
+            ]
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-002",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-003",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-016",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-018",
+            "reachable": false,
+            "edges": null,
+            "segments": null
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-024",
+            "reachable": true,
+            "edges": [
+              "SZ-056_rev",
+              "SZ-020",
+              "SZ-057_rev",
+              "SZ-036_rev",
+              "SZ-046",
+              "SZ-038_rev",
+              "SZ-048",
+              "SZ-049_rev",
+              "SZ-050_rev",
+              "SZ-022_rev"
+            ],
+            "segments": [
+              "SZ-056",
+              "SZ-020",
+              "SZ-057",
+              "SZ-036",
+              "SZ-046",
+              "SZ-038",
+              "SZ-048",
+              "SZ-049",
+              "SZ-050",
+              "SZ-022"
+            ]
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-026",
+            "reachable": true,
+            "edges": [
+              "SZ-056_rev",
+              "SZ-020",
+              "SZ-057_rev",
+              "SZ-024",
+              "SZ-040_rev",
+              "SZ-026"
+            ],
+            "segments": [
+              "SZ-056",
+              "SZ-020",
+              "SZ-057",
+              "SZ-024",
+              "SZ-040",
+              "SZ-026"
+            ]
+          },
+          {
+            "from_node": "N-044",
+            "to_node": "N-040",
+            "reachable": true,
+            "edges": [
+              "SZ-056_rev",
+              "SZ-020",
+              "SZ-057_rev",
+              "SZ-036_rev",
+              "SZ-046",
+              "SZ-038_rev",
+              "SZ-048",
+              "SZ-049_rev",
+              "SZ-023_rev",
+              "SZ-052_rev",
+              "SZ-035_rev",
+              "SZ-004"
+            ],
+            "segments": [
+              "SZ-056",
+              "SZ-020",
+              "SZ-057",
+              "SZ-036",
+              "SZ-046",
+              "SZ-038",
+              "SZ-048",
+              "SZ-049",
+              "SZ-023",
+              "SZ-052",
+              "SZ-035",
+              "SZ-004"
+            ]
+          }
+        ]
+      }
+    },
+    "u_turn": {
+      "name": "u_turn",
+      "passed": true,
+      "failure_count": 0,
+      "warning_count": 0,
+      "failures": [],
+      "warnings": [],
+      "details": {
+        "bidirectional_probes": 33,
+        "boundary_routes_checked": 48,
+        "all_pairs_checked": 0,
+        "rule": "非法掉头 = 同段号、相反方向、且前一条遍历边 u_turn_allowed=false；u_turn_allowed 只在双向断头端点允许（无 OSM 掉头限制数据）"
+      }
+    }
+  },
+  "findings": [
+    {
+      "code": "main_road_gap",
+      "message": "主干道链 CH-010（鼎湖大道）在路口 N-008 终止，未接同名主干道；最近同名校验候选 SZ-016（57.3 m）；可能是真实终点或切片/命名截断，待人工核对（不作为 FAIL）",
+      "chain_id": "CH-010",
+      "node_id": "N-008",
+      "severity": "warn",
+      "candidate": {
+        "segment_id": "SZ-016",
+        "node_id": "N-005",
+        "distance_m": 57.3
+      },
+      "check": "main_road_gap"
+    },
+    {
+      "code": "main_road_gap",
+      "message": "主干道链 CH-011（鼎湖大道）在路口 N-005 终止，未接同名主干道；最近同名校验候选 SZ-017（63.6 m）；可能是真实终点或切片/命名截断，待人工核对（不作为 FAIL）",
+      "chain_id": "CH-011",
+      "node_id": "N-005",
+      "severity": "warn",
+      "candidate": {
+        "segment_id": "SZ-017",
+        "node_id": "N-007",
+        "distance_m": 63.6
+      },
+      "check": "main_road_gap"
+    }
+  ],
+  "connection_candidates": [
+    {
+      "kind": "main_road_same_name",
+      "chain_id": "CH-010",
+      "chain_name": "鼎湖大道",
+      "node_id": "N-008",
+      "candidate_segment_id": "SZ-016",
+      "candidate_node_id": "N-005",
+      "distance_m": 57.3
+    },
+    {
+      "kind": "main_road_same_name",
+      "chain_id": "CH-011",
+      "chain_name": "鼎湖大道",
+      "node_id": "N-005",
+      "candidate_segment_id": "SZ-017",
+      "candidate_node_id": "N-007",
+      "distance_m": 63.6
+    }
+  ]
+}

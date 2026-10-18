@@ -248,6 +248,7 @@ python work/engine/run.py --sample --compare
 |---|---|---|
 | 站点范围登记表 | [`work/twin/site-ranges.json`](../twin/site-ranges.json) | 按 `--site-id`（缺省 `default_site`）取 `seg_target`（=61）、`seg_prefix`（=`SZ`）、`out_json`（真网产物路径） |
 | 真网产物 | 登记表 `out_json` 指向的 [`network_junction.json`](../twin/netpack/network_junction.json) | 读 `nodes[]`（44）+ `edges[]`（61，含 from/to/length_m/lanes/coords）；校验段数、段号命名空间、端点、长度后建统一图 |
+| 方向/车道/贯通性（IKNB9H） | [`network_junction.enriched.json`](../twin/netpack/network_junction.enriched.json)（由 `netpack/topology.py` 生成，**不覆盖原 JSON**） | 优先读；用 `enrichment.source_sha256` 与 raw 对账，**过期直接报错**；缺 enriched 时按 oneway 现推并标 `derived_from_raw` |
 | 站点包参数 | [`stations/thresholds.json`](../../stations/thresholds.json) 的 `grading` 组 | 缺字段回落：`speed_limit` → `grading.defaults.v_f_kmh`；`capacity_vph` → 有 `lanes` 按 `lanes × grading.saturation_flow_vph_per_lane`，否则 `grading.defaults.c_vph` |
 | 上游指标（可选） | `--segments` 指定的 segments 快照 | 只按 `segment_id` 精确匹配 `SZ-###`；未覆盖的段 `q_vph=0` + defaults 降级；别的命名空间条目**不入响应** |
 
@@ -266,10 +267,12 @@ python work/engine/run.py --sample --compare
 | `speed_limit` | `network_junction` | `station_pack:thresholds.grading.defaults.v_f_kmh` |
 | `capacity_vph` | `network_junction` | 有车道数 → `derived:lanes×grading.saturation_flow_vph_per_lane`；否则 `station_pack:grading.defaults.c_vph` |
 
-**OD 从真网边界推导**（不手写段号；规则即实现，数据来自真网产物的 `nodes[].boundary`）：
+**OD 从真网边界推导**（不手写段号；规则即实现，数据来自真网产物的 `nodes[].boundary_role`）：
 
-1. **边界节点** = `nodes[].boundary=true`（真网脚本按无向度数 1 标记；缺失时退化为度数 1 并留 note）；
-2. **进场边界** = 只有出边、没有入边（本站 4 个）；**离场边界** = 只有入边、没有出边（本站 7 个）；
+1. **边界节点** = `nodes[].boundary_role`（有向出入度：`entry` / `exit` / `both`；含 `topology.py`
+   派生的、原 boundary 漏掉的边界，如本站 `N-006`）；没有该字段时退回有向出入度，不再用无向度数 1
+   （多出边的边界节点会被无向度数漏掉）；
+2. **进场边界** = `entry` / `both`（本站 9 个）；**离场边界** = `exit` / `both`（本站 8 个）；
 3. 对每个进场边界，把**全部内部节点**当候选终点，取「**候选路线数最多**」的前 3 个（并列按自由流耗时、
    节点 id）——候选路线数由真网拓扑 + 站点包 `k_candidates` / `max_path_overlap` 算出，所以这是
    **数据 + 参数推出来的 OD**，不是手写；取 3 个是演示 OD 的覆盖广度（常量
@@ -277,7 +280,7 @@ python work/engine/run.py --sample --compare
 4. 每个 OD 的 `exit_node` = 从行程终点出发**自由流最快的可达离场边界**——终点是内部节点、出口是边界节点，
    两者必不相同，`departure_route` 才是真实离场路线（TC-12 必现）；
 5. 不可达 / 找不到出口的组合**跳过并留痕**（`od_derivation.skipped`），不顺延硬凑；
-6. 本站推导结果：**12 个 OD 对**（4 个进场边界 × 3 个终点），其中 **3 个 OD 的备选 = 2 条**；
+6. 本站推导结果（IKNB9H 后）：**27 个 OD 对**（9 个进场边界 × 3 个终点），其中 **7 个 OD 有 ≥2 条备选**；
    每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）**演示假设值**（无上游需求快照，产物标
    `demand_source`，**不是实测**）。
 
@@ -329,20 +332,47 @@ exit=0；突发时刻在途 85 辆，封 SZ-002 → 改道 1 辆走 SZ-054
 
 ```text
 $ python work/engine/run.py --network real
-exit=0；写 out/real/routes.json（71036 B）+ run_log.json；读入 61 段 / 44 节点；12 个 OD；
-3 个 OD 备选≥2；reservation.harm_check.passed=true 12 条；响应段号全部 SZ-###（硬校验通过）
+exit=0；写 out/real/routes.json（约 309 KB）+ run_log.json；读入 61 段 / 44 节点；
+27 个 OD（9 个进场边界 × 3 个终点）；7 个 OD 备选≥2；reservation.harm_check.passed=true 27 条；
+响应段号全部 SZ-###（硬校验通过）；每条路线带 legs[]（方向/车道/U-turn）
 
 $ python work/engine/run.py --network real --compare
-exit=0；写 out/real/compare/routes.json（85973 B）+ run_log.json；两种 mode 产物互不覆盖；
+exit=0；写 out/real/compare/routes.json（约 324 KB）+ run_log.json；两种 mode 产物互不覆盖；
 TC-17 三项（前车不受影响 / 不新增橙红 / 全网总行程时间下降）全过；
 capacity_shortage 与租约释放证据 passed=true；再疏导证据见上一节 --demand-vph 1200
 
 $ python work/engine/run.py --sample / --sample --compare
 两次连跑逐字节一致；routes.json 的 sha256 与改造前基线**完全一致**
+（IKNB9H 自检锁定：routes c375d902… / run_log 819f297f…）
 
-# 两种真网模式各跑两遍：默认模式 sha C933… / FB12…，--compare 模式 sha 8C6D… / 4F29…，
-# 各自两遍逐字节一致，且两种模式产物分目录、互不覆盖（详见 DESIGN.md 第二十三节）
+# 两种真网模式各跑两遍：同一输入两遍 routes.json / run_log.json 逐字节一致
+# （IKNB9H 自检 04_engine_real_two_pass 记录 sha256；真网产物因双向段 + 派生边界 OD 数变多，
+#  旧 IKMS11 的 12 OD 基线数字已被本轮替换，样例 --sample 基线不受影响）
 ```
+
+### 5.2 方向 / 车道 / U-turn（IKNB9H，真网路线消费 enriched 图）
+
+**一句话**：路段数据层（`work/twin/netpack/topology.py` → `network_junction.enriched.json`）带
+`direction` / 车道三件套 / `u_turn_allowed` / `continuity`；引擎用这张图建**有向遍历边**——
+双向段展开正向 + `_rev`，单向段只展开一个方向，掉头只在 `u_turn_allowed=true` 处放行。
+
+| 项 | 口径 |
+|---|---|
+| 装载 | `realnet.load_network_payload(site)` 优先读 enriched，并用 `enrichment.source_sha256` 与 raw 对账；**过期直接报错**，不拿旧方向算路 |
+| 建图 | 双向段：`SZ-###`（forward）+ `SZ-###_rev`（reverse），`section` 仍是 `SZ-###`；单向段只一条；`attributes.forbid_u_turn=true` |
+| 算路 | `candidates.dijkstra` 用**边状态** Dijkstra（状态 = 节点 + 上一条边），执行"同段反向立即掉头且 `u_turn_allowed=false` 则禁止"；Yen K 短路同样透传 |
+| 路线输出 | `arrival_route` / `departure_route` / `alternatives` 新增 `legs[]`（逐段 `direction` / `lanes` / `u_turn_allowed`）与 `direction_counts`；`segments[]` 仍只有 `SZ-###`（反向边折回 section，不出现 `_rev`） |
+| 硬校验 | `realnet.attach_route_topology()` 逐条路线查连续 / 边存在 / 非法掉头；不合法直接 `SystemExit`，不输出错路线 |
+| 缺 enriched 时 | 按 oneway + 显式反向对现推方向（`topology_source=derived_from_raw`），不静默假装有数据；GZ 站生成 enriched 后自动切回 |
+| 范围 | **只在 `--network real` 生效**；`--sample` 走旧图结构，产物逐字节不变（自检锁定） |
+| 全 OD / 可达性 | `python work/engine/topology_check.py` 批量算全部边界 OD + 全部节点对，写 `work/engine/route_matrix.json`；单点算路 `--from N-001 --to N-005`（节点或段号均可） |
+
+**本轮 Z 站结果（2026-10-18，真跑）**：61 段（33 双向 / 28 单向）、94 条遍历边、9 个进场边界 / 8 个离场边界；
+27 个 OD；`route_matrix.json` 覆盖 61/61 段、0 条非法路线；边界 OD 67 对里 48 对可达，19 对如实 `unreachable`
+（单向/边界方向决定的合法不可达，不是错）；样例基线仍逐字节一致。
+
+> **契约口径**：`legs[]` / `direction_counts` 是**追加字段**（不改既有字段、不改 `--sample` 产物）；
+> 契约字段裁定人是开发B，前端/接口按需消费，未消费也不影响旧字段。`docs/数据契约.md` 本单不改。
 
 ## 六、交付标准
 

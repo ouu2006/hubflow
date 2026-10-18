@@ -223,13 +223,13 @@ def _load_real_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
     """装载 --network real 输入:站点登记表 → 真网统一图 → segments 映射 → 边界 OD。"""
     stations_dir: Path = cfg["stations_dir"]
     site = realnet.load_site(cfg.get("site_id"), cfg.get("site_ranges"))
-    network_file = realnet.site_network_path(site)
-    network_payload = realnet.read_json(network_file)
+    network_payload, topology_meta = realnet.load_network_payload(site)
     thresholds = network.load_thresholds(stations_dir / "thresholds.json")
     params = thresholds["decision"]
     grading = thresholds["grading"]
 
     graph_payload, net_meta = realnet.normalize_network(network_payload, site, grading)
+    net_meta.update(topology_meta)
     graph = network.Graph(graph_payload)
     segments_state, seg_meta = realnet.build_segments_state(graph, cfg.get("segments"))
     demand_vph = float(cfg.get("demand_vph") or realnet.DEMO_DEMAND_VPH)
@@ -282,10 +282,20 @@ def _load_real_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
         "seg_target": net_meta["seg_target"],
         "segments_read": net_meta["segments_read"],
         "nodes_read": net_meta["nodes_read"],
+        "graph_edges": net_meta.get("graph_edges"),
         "node_type_source": net_meta["node_type_source"],
         "boundary_source": net_meta["boundary_source"],
         "entries": net_meta["entries"],
         "exits": net_meta["exits"],
+        # IKNB9H：方向/车道/U-turn/贯通性来源与统计
+        "topology_source": net_meta.get("topology_source"),
+        "topology_file": net_meta.get("topology_file"),
+        "topology_note": net_meta.get("topology_note"),
+        "directions": net_meta.get("directions"),
+        "u_turn_allowed_segments": net_meta.get("u_turn_allowed_segments"),
+        "left_turn_allowed_segments": net_meta.get("left_turn_allowed_segments"),
+        "derived_boundaries": net_meta.get("derived_boundaries"),
+        "capacity_note": net_meta.get("capacity_note"),
         "param_defaults": net_meta["param_defaults"],
         "param_source_counts": net_meta["param_source_counts"],
         "lanes_missing": net_meta["lanes_missing"],
@@ -324,6 +334,10 @@ def _load_real_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
             "od_count": len(od_pairs),
             "demand_vph_per_od": demand_vph,
             "network_param_defaults": net_meta["param_defaults"],
+            "topology_source": net_meta.get("topology_source"),
+            "topology_file": net_meta.get("topology_file"),
+            "topology_directions": net_meta.get("directions"),
+            "u_turn_allowed_segments": net_meta.get("u_turn_allowed_segments"),
         },
         "network_block": network_block,
         "od_derivation": od_meta,
@@ -641,8 +655,9 @@ def run_real(cfg: dict[str, Any]) -> int:
             )
         )
 
-    # 段号命名空间硬校验 + 长度补齐(真网产物专属,样例基线不做,保持逐字节不变)
+    # 段号命名空间硬校验 + 长度补齐 + 方向/车道 legs（真网产物专属，样例基线不做，保持逐字节不变）
     length_enriched = realnet.attach_route_lengths(requests, graph)
+    topology_enriched = realnet.attach_route_topology(requests, graph)
     segment_refs_checked = realnet.assert_segment_namespace(requests, dataset["seg_prefix"])
     stats = realnet.count_route_segments(requests, dataset["seg_prefix"])
     reservation_passed = sum(
@@ -684,6 +699,7 @@ def run_real(cfg: dict[str, Any]) -> int:
         "segment_ref_count": stats["segment_ref_count"],
         "segment_refs_checked": segment_refs_checked,
         "length_m_enriched": length_enriched,
+        "route_legs_enriched": topology_enriched,
         "is_reservation_effective": True,
         "snapshots": 1,
         "segments_source": dataset["segments_source"],
@@ -1796,9 +1812,11 @@ def run_compare(cfg: dict[str, Any]) -> int:
         graph, segments_state, params, od_pairs, od_candidates, base_ts
     )
 
-    # 真网产物:补 length_m 可追溯 + 段号命名空间硬校验(样例基线不做,保持逐字节不变)
+    # 真网产物:补 length_m 可追溯 + 方向/车道 legs + 段号命名空间硬校验
+    # (样例基线不做,保持逐字节不变)
     if dataset["route_lengths"]:
         realnet.attach_route_lengths(requests, graph)
+        realnet.attach_route_topology(requests, graph)
         realnet.assert_segment_namespace(requests, dataset["seg_prefix"])
 
     network.ensure_out_dir(out_dir)
