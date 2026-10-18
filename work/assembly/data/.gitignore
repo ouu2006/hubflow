@@ -1,0 +1,5 @@
+# 接口层运行态（IKMS1H 处置闭环持久化）：
+# dispatch.json 是**演示运行态**（下发回执 / 回写留痕 / 审计），由 traffic.py 运行时生成，不入库；
+# 只提交本 .gitignore，保证 data/ 目录存在且运行态文件被拦住。
+*
+!.gitignore

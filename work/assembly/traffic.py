@@ -21,17 +21,23 @@
 路线响应的 `data_source` 与响应头 `X-Traffic-Data-Source` 标来源；两层段号命名空间不同，
 不把两层请求拼在一起、不把路线 ETA 与路段快照指标混算（`segments_not_in_snapshot` 如实列出差异段）。
 
-## 写端点（一期：进程内存态，重启复位；不落库、不写快照）
+## 写端点
 
-| 端点 | 语义 | 口径 |
+| 端点 | 语义 | 持久化 |
 |---|---|---|
-| `POST /api/traffic/factors` | 人工置位 F07 / F08 / F11 | 只记因素状态；`level / ci` 不重算，响应 `level_recomputed: false` + note |
-| `POST /api/traffic/factors/reset` | 清空人工置位 | 幂等演示复位 |
-| `POST /api/traffic/scenario` | 场景注入 F01 / F02 / F03 / F10（环境侧） | 只改环境状态与 `derived_factors`；`effects` 如实为空（判级需感知层重算） |
-| `POST /api/traffic/scenario/reset` | 清空场景注入 | 幂等演示复位 |
+| `POST /api/traffic/plan/dispatch` | 下发分流方案（渠道 + 比例）→ 回执 | **JSON 文件仓**（IKMS1H）：启动加载、写后落盘、**重启不复位** |
+| `POST /api/traffic/plan/ack` | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | 同上（回写留痕 / 审计） |
+| `POST /api/traffic/alerts/reset` | 清运行态并重放 seed、写一条 reset 审计 | 同上 |
+| `GET /api/traffic/alerts` | 告警四态（读持久化后的运行态） | 同上 |
+| `GET /api/traffic/plan/audit` | 处置闭环审计（只读辅助端点，非契约端点） | 同上 |
+| `POST /api/traffic/factors`、`/factors/reset`、`/scenario`、`/scenario/reset` | 人工置位 / 场景注入 | 进程内存（重启复位；不重算判级） |
 
-`GET /context`、`GET /factors`、`GET /segments` 会反映内存态（注入的因素带
-`injected: true / pending_recompute: true`，**绝不伪造等级变化**）。
+处置闭环运行态落盘在 `work/assembly/data/dispatch.json`（**gitignored**，见
+`work/assembly/data/.gitignore`）：schema 版本 + 每条告警的 `status / channels / dispatch_at /
+dispatch_ratio_pct / writeback` + 追加式审计（上限 1000 条，`audit_total` 仍单调累计）。
+写操作**幂等**（同告警 + 同渠道 + 同比例重复下发、同人同动作同结果重复回写 → 返回首次回执 +
+`idempotent: true`，不重复记审计）；**无下发回执不可回写、终态不可再翻转**（409）。
+**演示态、无真实下发通道**——渠道只是展示枚举，不得说成已通知到司机 / 情报板。
 
 其它只读数据：`work/twin/out/vehicles.json`（车辆）、`work/twin/out/assimilation_state.json`
 （同化状态）、`work/twin/site-ranges.json`（站点范围登记表）。
@@ -58,10 +64,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import json
 import math
+import os
 import re
 import sys
+import threading
 import traceback
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -131,8 +140,35 @@ ALERT_STATUS_INITIAL = "待认领"
 WRITEBACK_RESULTS = ("已消除", "已缓解", "未改善", "误报")
 TERMINAL_ALERT_STATUS = ("已闭环", "误报")
 
-#: 写端点（下发 / 回写）的演示态内存：接口层只读快照，重启即复位；正式落库留痕见 README §二
-_ALERT_RUNTIME: dict[str, dict[str, Any]] = {}
+# ---------------------------------------------------------------- 处置闭环持久化（IKMS1H）
+#: 运行态 JSON 文件仓（同目录 .gitignore 只放行它自己；dispatch.json 是演示运行态，不入库）
+DISPATCH_STORE_DEFAULT = ROOT / "work" / "assembly" / "data" / "dispatch.json"
+DISPATCH_SCHEMA_VERSION = 1
+#: 审计记录上限（超出只保留最近 N 条；audit_total 仍单调累计，便于「审计可重建」对账）
+DISPATCH_AUDIT_MAX = 1000
+#: 写端点统一口径：每一条下发 / 回写 / 复位响应都要写清「演示态、无真实下发通道」
+DEMO_DISPATCH_NOTE = "演示态、无真实下发通道"
+#: 初始 seed：接口层没有站点包预置下发剧本（mock 的 seedDispatch 在前端站点包 TS 里，
+#: 搬到后端等于伪造一张回执）。需要预置演示态时可在状态文件的 seed_dispatch 里声明，
+#: 再由 POST /api/traffic/alerts/reset 重放——这就是「复位即回到明确初始态」的口径。
+_ALERT_RUNTIME_SEED: dict[str, dict[str, Any]] = {}
+_STATE_PATH: Path = DISPATCH_STORE_DEFAULT
+_DISPATCH_STORE: "DispatchStore | None" = None
+#: --state-path 允许目录：运行态文件会被写、坏文件会被改名留证，必须限定在接口层自己的数据目录内，
+#: 避免误传仓库里已跟踪的文件（如 README）时被「改名留证 + 覆盖成 JSON」。
+STATE_PATH_ALLOWED_DIRS = (
+    (ROOT / "work" / "assembly" / "data").resolve(),
+    (ROOT / "work" / "assembly" / "out").resolve(),
+)
+
+
+def _audit_limit(value: Any) -> int:
+    """审计查询的生效条数：1..DISPATCH_AUDIT_MAX（与文件保留上限一致；非法值回落 50）。"""
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return 50
+    return max(1, min(DISPATCH_AUDIT_MAX, number))
 
 # ---------------------------------------------------------------- 写端点内存态（一期）
 #
@@ -252,6 +288,347 @@ def _level_name(level: int | None, fallback: Any = None) -> str:
 
 def _clamp(value: float, low: float, high: float) -> float:
     return min(high, max(low, value))
+
+
+# ---------------------------------------------------------------- 处置闭环持久化仓储（IKMS1H）
+#
+# 一期最小持久化：**JSON 文件仓**（不是 SQLite），理由：
+#   · 单进程演示后端（uvicorn 单 worker），没有并发写库需求；stdlib 零依赖、文件可读可 diff；
+#   · 状态量级小（几条告警 + 审计上限 1000 条），一次全量读写 < 1 ms，不需要事务 / 索引；
+#   · 原子落盘 = 临时文件 + os.replace，进程崩溃不会留下半截文件；
+#   · 二期换 openGauss / SQLite 时只替换本类，端点形状与审计字段不变（README §2.2 写明迁移口径）。
+
+
+class DispatchStore:
+    """处置闭环运行态：{alerts: {alert_id: runtime}, audit: [...], seed_dispatch, 计数}。
+
+    读写都在同一把线程锁内：写端点既有 `async def`（事件循环线程）也有 `def`（线程池），
+    必须保证「读-改-写-落盘」不交错；落盘失败返回 ok=False，调用方如实 500 + note，不静默吞。
+    """
+
+    def __init__(self, path: Path | str) -> None:
+        self.path = Path(path)
+        self._lock = threading.Lock()
+        self.state = self._load()
+
+    # ---------- 生命周期
+
+    def _empty_state(self) -> dict[str, Any]:
+        return {
+            "schema_version": DISPATCH_SCHEMA_VERSION,
+            "is_simulated": True,
+            "note": DEMO_DISPATCH_NOTE + "；运行态随本文件持久化（重启不复位）",
+            "updated_at": _now_iso(),
+            "alerts": copy.deepcopy(_ALERT_RUNTIME_SEED),
+            "seed_dispatch": copy.deepcopy(_ALERT_RUNTIME_SEED),
+            "audit": [],
+            "audit_seq": 0,
+            "audit_total": 0,
+            "reset_count": 0,
+        }
+
+    def _load(self) -> dict[str, Any]:
+        if not self.path.is_file():
+            return self._empty_state()
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            self._quarantine(f"读取处置运行态失败：{exc}")
+            return self._empty_state()
+        if not isinstance(payload, dict) or payload.get("schema_version") != DISPATCH_SCHEMA_VERSION:
+            self._quarantine(
+                f"处置运行态 schema_version 不是 {DISPATCH_SCHEMA_VERSION}（旧版 / 被手改坏）"
+            )
+            return self._empty_state()
+        state = self._empty_state()
+        for key in ("alerts", "seed_dispatch"):
+            value = payload.get(key)
+            if isinstance(value, dict):
+                state[key] = {
+                    str(alert_id): copy.deepcopy(runtime)
+                    for alert_id, runtime in value.items()
+                    if isinstance(runtime, dict)
+                }
+        audit = payload.get("audit")
+        if isinstance(audit, list):
+            state["audit"] = [record for record in audit if isinstance(record, dict)][-DISPATCH_AUDIT_MAX:]
+        for key in ("audit_seq", "audit_total", "reset_count"):
+            value = payload.get(key)
+            if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                state[key] = value
+        if isinstance(payload.get("updated_at"), str):
+            state["updated_at"] = payload["updated_at"]
+        return state
+
+    def _quarantine(self, reason: str) -> None:
+        """坏文件改名留证后按初始态启动（不静默覆盖，审计可追溯）。"""
+        backup = self.path.with_name(self.path.name + ".corrupt-" + _now().strftime("%Y%m%d-%H%M%S"))
+        try:
+            self.path.replace(backup)
+            shown = backup.relative_to(ROOT) if backup.is_relative_to(ROOT) else backup.name
+            _warn(f"{reason}；已改名留证 {shown}，按初始态启动")
+        except OSError as exc:
+            _warn(f"{reason}；且无法改名留证（{exc}），按初始态启动")
+
+    def _commit(self, state: dict[str, Any]) -> bool:
+        """先原子落盘、成功后才替换内存态（写失败时内存与磁盘都保持旧状态）。"""
+        state["updated_at"] = _now_iso()
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp.open("w", encoding="utf-8", newline="\n") as handle:
+                json.dump(state, handle, ensure_ascii=False, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp, self.path)
+        except OSError as exc:
+            _warn(f"处置运行态落盘失败：{exc}")
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+            return False
+        self.state = state
+        return True
+
+    # ---------- 读
+
+    def relative_path(self) -> str:
+        try:
+            return self.path.resolve().relative_to(ROOT).as_posix()
+        except ValueError:
+            return self.path.name
+
+    def snapshot(self) -> dict[str, Any]:
+        with self._lock:
+            return copy.deepcopy(self.state)
+
+    def get_alert(self, alert_id: str) -> dict[str, Any]:
+        with self._lock:
+            runtime = (self.state.get("alerts") or {}).get(alert_id)
+            return copy.deepcopy(runtime) if isinstance(runtime, dict) else {}
+
+    def all_alerts(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return copy.deepcopy(self.state.get("alerts") or {})
+
+    def audit_total(self) -> int:
+        with self._lock:
+            return int(self.state.get("audit_total") or 0)
+
+    def reset_count(self) -> int:
+        with self._lock:
+            return int(self.state.get("reset_count") or 0)
+
+    def audit_records(self, limit: int = 50,
+                      alert_id: str | None = None) -> tuple[list[dict[str, Any]], int]:
+        """返回 (最近 limit 条, 过滤后**未截断**总数)。limit 允许 1..DISPATCH_AUDIT_MAX（=1000）。"""
+        with self._lock:
+            records = [record for record in (self.state.get("audit") or []) if isinstance(record, dict)]
+        if alert_id:
+            records = [record for record in records if record.get("alert_id") == alert_id]
+        matched_total = len(records)
+        effective = _audit_limit(limit)
+        return copy.deepcopy(records[-effective:]), matched_total
+
+    # ---------- 写（全部走「拷贝 → 改 → 落盘 → 替换」）
+
+    def _append_audit(self, state: dict[str, Any], record: dict[str, Any]) -> int:
+        seq = int(state.get("audit_seq") or 0) + 1
+        state["audit_seq"] = seq
+        state["audit_total"] = int(state.get("audit_total") or 0) + 1
+        audit = state.setdefault("audit", [])
+        audit.append({"seq": seq, "at": _now_stamp(), **record})
+        if len(audit) > DISPATCH_AUDIT_MAX:
+            state["audit"] = audit[-DISPATCH_AUDIT_MAX:]
+        return seq
+
+    @staticmethod
+    def _conflict(code: str, message: str) -> dict[str, Any]:
+        """锁内不变量冲突：调用方转 409，且**不落盘、不改内存**（防端点锁外校验后的并发窗口）。"""
+        return {"ok": False, "conflict": code, "message": message}
+
+    def record_dispatch(self, alert_id: str, segment_id: str | None, channel: str,
+                        ratio_pct: float, operator: str | None) -> dict[str, Any]:
+        with self._lock:
+            state = copy.deepcopy(self.state)
+            alerts = state.setdefault("alerts", {})
+            runtime = alerts.get(alert_id) if isinstance(alerts.get(alert_id), dict) else {}
+            # 锁内不变量复查（端点的终态校验在锁外，这里防并发窗口）：终态一律不可再下发
+            if runtime.get("status") in TERMINAL_ALERT_STATUS:
+                return self._conflict(
+                    "ALERT_TERMINAL",
+                    f"终态告警不可再下发: {alert_id}({runtime.get('status')})",
+                )
+            # 幂等窗口 = 下发后、回写前：同告警 + 同渠道 + 同比例重复下发 → 回首次回执，不重复审计
+            same_dispatch = (
+                runtime.get("status") == "处置中"
+                and runtime.get("channels") == [channel]
+                and _num(runtime.get("dispatch_ratio_pct")) == ratio_pct
+                and bool(runtime.get("dispatch_at"))
+                and not runtime.get("writeback")
+            )
+            if same_dispatch:
+                return {
+                    "ok": True,
+                    "idempotent": True,
+                    "runtime": copy.deepcopy(runtime),
+                    "audit_seq": runtime.get("dispatch_audit_seq"),
+                }
+            seq = self._append_audit(state, {
+                "action": "dispatch",
+                "alert_id": alert_id,
+                "segment_id": segment_id,
+                "channel": channel,
+                "ratio_pct": ratio_pct,
+                "operator": operator,
+                "result": None,
+                "status_after": "处置中",
+            })
+            runtime.update({
+                "alert_id": alert_id,
+                "segment_id": segment_id,
+                "status": "处置中",
+                "channels": [channel],
+                "dispatch_at": _now_stamp(),
+                "dispatch_ratio_pct": ratio_pct,
+                "dispatch_operator": operator,
+                "dispatch_audit_seq": seq,
+            })
+            alerts[alert_id] = runtime
+            if not self._commit(state):
+                return {"ok": False, "error": "落盘失败"}
+            return {"ok": True, "idempotent": False, "runtime": copy.deepcopy(runtime), "audit_seq": seq}
+
+    def record_ack(self, alert_id: str, segment_id: str | None, operator: str, action: str,
+                   result: str, new_status: str) -> dict[str, Any]:
+        with self._lock:
+            state = copy.deepcopy(self.state)
+            alerts = state.setdefault("alerts", {})
+            runtime = alerts.get(alert_id) if isinstance(alerts.get(alert_id), dict) else {}
+            writeback = runtime.get("writeback") if isinstance(runtime.get("writeback"), dict) else {}
+            # 幂等回放：回写内容（人 / 动作 / 结果）完全一致 → 回既有回执，不重复审计
+            if (
+                writeback
+                and writeback.get("operator") == operator
+                and writeback.get("action") == action
+                and writeback.get("result") == result
+                and bool(writeback.get("at"))
+            ):
+                return {
+                    "ok": True,
+                    "idempotent": True,
+                    "runtime": copy.deepcopy(runtime),
+                    "audit_seq": writeback.get("audit_seq"),
+                }
+            # 锁内不变量复查（端点的校验在锁外，这里防并发窗口）：
+            # ① 终态不可翻转（只允许上面的同人同动作同结果幂等回放）；
+            # ② 无下发回执不可回写（并发的 reset 可能已把运行态清空）。
+            if runtime.get("status") in TERMINAL_ALERT_STATUS:
+                return self._conflict(
+                    "ALERT_TERMINAL",
+                    f"终态告警不可再回写: {alert_id}({runtime.get('status')})",
+                )
+            if not runtime.get("dispatch_at") or not runtime.get("channels"):
+                return self._conflict(
+                    "ACK_NO_DISPATCH",
+                    f"告警尚未下发(无派发回执),不可回写: {alert_id}",
+                )
+            seq = self._append_audit(state, {
+                "action": "ack",
+                "alert_id": alert_id,
+                "segment_id": segment_id,
+                "channel": None,
+                "ratio_pct": None,
+                "operator": operator,
+                "operator_action": action,
+                "result": result,
+                "status_after": new_status,
+            })
+            runtime.update({
+                "alert_id": alert_id,
+                "segment_id": segment_id,
+                "status": new_status,
+                "writeback": {
+                    "operator": operator,
+                    "action": action,
+                    "result": result,
+                    "at": _now_stamp(),
+                    "audit_seq": seq,
+                },
+            })
+            alerts[alert_id] = runtime
+            if not self._commit(state):
+                return {"ok": False, "error": "落盘失败"}
+            return {"ok": True, "idempotent": False, "runtime": copy.deepcopy(runtime), "audit_seq": seq}
+
+    def reset(self) -> dict[str, Any]:
+        with self._lock:
+            state = copy.deepcopy(self.state)
+            alerts = state.get("alerts") if isinstance(state.get("alerts"), dict) else {}
+            cleared = len(alerts)
+            seed = state.get("seed_dispatch") if isinstance(state.get("seed_dispatch"), dict) else {}
+            state["alerts"] = copy.deepcopy(seed)
+            seq = self._append_audit(state, {
+                "action": "reset",
+                "alert_id": None,
+                "segment_id": None,
+                "channel": None,
+                "ratio_pct": None,
+                "operator": None,
+                "result": None,
+                "status_after": "initial",
+                "cleared_alerts": cleared,
+                "seed_alerts": len(seed),
+            })
+            state["reset_count"] = int(state.get("reset_count") or 0) + 1
+            if not self._commit(state):
+                return {"ok": False, "error": "落盘失败"}
+            return {
+                "ok": True,
+                "cleared_alerts": cleared,
+                "seed_alerts": len(seed),
+                "reset_count": state["reset_count"],
+                "audit_seq": seq,
+            }
+
+
+def resolve_state_path(raw: Path | str) -> Path:
+    """把 `--state-path` 解析成**安全路径**：只允许 work/assembly/{data,out} 下的 .json 文件。
+
+    运行态文件会被写、坏文件会被改名留证，所以必须拒绝仓库里其它位置（尤其已跟踪文件 /
+    非 .json 路径），否则误传 README 之类时会被改名覆盖。校验失败抛 ValueError，由 CLI 清晰退出。
+    """
+    candidate = Path(raw)
+    if not candidate.is_absolute():
+        candidate = ROOT / candidate
+    try:
+        resolved = candidate.resolve()
+    except OSError as exc:  # 路径不可解析（盘符不存在等）
+        raise ValueError(f"无法解析路径 {str(raw)!r}：{exc}") from exc
+    if resolved.suffix.lower() != ".json":
+        raise ValueError(f"运行态文件必须是 .json（收到 {str(raw)!r}）")
+    if not any(resolved.is_relative_to(directory) for directory in STATE_PATH_ALLOWED_DIRS):
+        allowed = " / ".join(directory.relative_to(ROOT).as_posix() for directory in STATE_PATH_ALLOWED_DIRS)
+        raise ValueError(f"运行态文件只允许放在 {allowed} 下（收到 {str(raw)!r}）")
+    return resolved
+
+
+def configure_dispatch_store(path: Path | str) -> None:
+    """切换运行态文件路径（CLI / 自检用；默认 work/assembly/data/dispatch.json）。"""
+    global _STATE_PATH, _DISPATCH_STORE
+    candidate = Path(path)
+    _STATE_PATH = candidate if candidate.is_absolute() else (ROOT / candidate)
+    _DISPATCH_STORE = None
+
+
+def get_dispatch_store() -> DispatchStore:
+    """懒加载单例：第一次读写时加载状态文件（main / --check 会显式预热，等于「启动时加载」）。"""
+    global _DISPATCH_STORE
+    if _DISPATCH_STORE is None:
+        _DISPATCH_STORE = DispatchStore(_STATE_PATH)
+    return _DISPATCH_STORE
 
 
 # ---------------------------------------------------------------- 站点包（stations/*.json）
@@ -1085,7 +1462,7 @@ def _derive_alerts(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         segment_id = str(record.get("segment_id"))
         alert_id = f"AL-{segment_id}"
-        runtime = _ALERT_RUNTIME.get(alert_id) or {}
+        runtime = get_dispatch_store().get_alert(alert_id)
         alert: dict[str, Any] = {
             "alert_id": alert_id,
             "segment_id": segment_id,
@@ -1100,7 +1477,7 @@ def _derive_alerts(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
                 if isinstance(factor, dict) and factor.get("factor_id")
             ],
         }
-        for optional in ("channels", "dispatch_at", "dispatch_ratio_pct", "writeback"):
+        for optional in ("channels", "dispatch_at", "dispatch_ratio_pct", "dispatch_operator", "writeback"):
             if runtime.get(optional) is not None:
                 alert[optional] = runtime[optional]
         alerts.append(alert)
@@ -1110,17 +1487,22 @@ def _derive_alerts(snapshot: dict[str, Any]) -> list[dict[str, Any]]:
 
 def build_alerts(snapshot: dict[str, Any]) -> dict[str, Any]:
     alerts = _derive_alerts(snapshot)
-    payload: dict[str, Any] = {
+    store = get_dispatch_store()
+    note = (
+        f"告警运行态持久化在 {store.relative_path()}（{DEMO_DISPATCH_NOTE}；重启不复位）；"
+        "复位走 POST /api/traffic/alerts/reset（重放 seed_dispatch 并写一条 reset 审计）。"
+    )
+    if not alerts:
+        note += (
+            " 当前快照没有达到告警档（level ≥ 3）的路段：告警由 segments 快照派生，"
+            "接口层不编造告警记录 / 首次观测时间。"
+        )
+    return {
         "ts": snapshot["payload"]["ts"],
         "is_simulated": True,
         "alerts": alerts,
+        "note": note,
     }
-    if not alerts:
-        payload["note"] = (
-            "当前快照没有达到告警档（level ≥ 3）的路段：告警由 segments 快照派生，"
-            "接口层不编造告警记录 / 首次观测时间。"
-        )
-    return payload
 
 
 def _find_alert(alert_id: str) -> dict[str, Any] | None:
@@ -1646,9 +2028,10 @@ app = FastAPI(
     title="hubflow 接口层 /api/traffic/*",
     description=(
         "只读快照（契约 §七）；所有响应 is_simulated=true；数据源三层回落；"
-        "写端点（人工置位 / 场景注入）一期为进程内存态、重启复位、不重算判级。"
+        "处置闭环（下发 / 回执 / 回写）运行态持久化在 work/assembly/data/dispatch.json（重启不复位）；"
+        "人工置位 / 场景注入为进程内存态、不重算判级。"
     ),
-    version="1.1",
+    version="1.2",
 )
 
 
@@ -1870,46 +2253,77 @@ async def api_locate(request: Request) -> JSONResponse:
 
 @app.post("/api/traffic/plan/dispatch")
 async def api_plan_dispatch(request: Request) -> JSONResponse:
+    """下发分流方案 → 回执（演示态、无真实下发通道）；回执持久化，重启不复位。"""
     body = await _read_body(request)
     alert_id = body.get("alert_id")
     channel = body.get("channel")
     ratio_pct = _num(body.get("ratio_pct"))
     if not isinstance(alert_id, str) or not alert_id or not isinstance(channel, str) or not channel \
             or ratio_pct is None:
-        return _error(400, "DISPATCH_INVALID", "下发参数不完整(需 alert_id/channel/ratio_pct)")
+        return _error(400, "DISPATCH_INVALID", "下发参数不完整(需 alert_id/channel/ratio_pct)",
+                      note=DEMO_DISPATCH_NOTE)
     alert = _find_alert(alert_id)
     if alert is None:
-        return _error(404, CODE_ALERT_NOT_FOUND, f"告警不存在: {alert_id}")
+        return _error(404, CODE_ALERT_NOT_FOUND, f"告警不存在: {alert_id}", note=DEMO_DISPATCH_NOTE)
     segment_id = body.get("segment_id")
     if isinstance(segment_id, str) and segment_id and segment_id != alert.get("segment_id"):
         return _error(
             400, "ALERT_SEGMENT_MISMATCH",
             f"路段不匹配: {alert_id} 属于 {alert.get('segment_id')},收到 {segment_id}",
+            note=DEMO_DISPATCH_NOTE,
         )
     if ratio_pct <= 0 or ratio_pct > 100:
-        return _error(400, "DISPATCH_INVALID", f"分流比例须在 (0, 100]: {ratio_pct:g}")
+        return _error(400, "DISPATCH_INVALID", f"分流比例须在 (0, 100]: {ratio_pct:g}",
+                      note=DEMO_DISPATCH_NOTE)
     if alert.get("status") in TERMINAL_ALERT_STATUS:
-        return _error(409, "ALERT_TERMINAL", f"终态告警不可再下发: {alert_id}({alert.get('status')})")
-    at = _now_stamp()
-    _ALERT_RUNTIME[alert_id] = {
-        "status": "处置中",
-        "channels": [channel],
-        "dispatch_at": at,
-        "dispatch_ratio_pct": ratio_pct,
-    }
+        return _error(
+            409, "ALERT_TERMINAL",
+            f"终态告警不可再下发: {alert_id}({alert.get('status')})",
+            note="终态（已闭环 / 误报）不允许再改写；如需重新处置请先 POST /api/traffic/alerts/reset 复位演示态。"
+                 + DEMO_DISPATCH_NOTE,
+        )
+    operator = body.get("operator") if isinstance(body.get("operator"), str) and body.get("operator") else None
+    store = get_dispatch_store()
+    result = store.record_dispatch(alert_id, alert.get("segment_id") or segment_id, channel, ratio_pct, operator)
+    if not result.get("ok"):
+        if result.get("conflict"):
+            # 锁内不变量冲突（并发下状态已变）：如实 409，本次不落盘、不写审计
+            return _error(
+                409, str(result["conflict"]), str(result.get("message") or "并发状态冲突"),
+                note="并发下运行态已发生变化（终态 / 已复位），本次操作未生效。" + DEMO_DISPATCH_NOTE,
+            )
+        return _error(
+            500, "PERSIST_FAILED",
+            "处置回执落盘失败：检查 work/assembly/data/ 是否可写",
+            note="本次下发未生效（内存态与磁盘均保持原状）。" + DEMO_DISPATCH_NOTE,
+        )
+    runtime = result["runtime"]
+    idempotent = bool(result.get("idempotent"))
     receipt = {
         "alert_id": alert_id,
-        "channel": channel,
-        "ratio_pct": ratio_pct,
+        # 回执字段与前端 DispatchReceipt 同形；persisted / idempotent / audit_seq / store_path 是诊断附加字段
+        "channel": (runtime.get("channels") or [channel])[0],
+        "ratio_pct": _num(runtime.get("dispatch_ratio_pct")),
         "receipt": f"{channel}已确认",
-        "at": at,
+        "at": runtime.get("dispatch_at"),
         "is_simulated": True,
+        "persisted": True,
+        "idempotent": idempotent,
+        "dispatch_operator": runtime.get("dispatch_operator"),
+        "audit_seq": result.get("audit_seq"),
+        "store_path": store.relative_path(),
+        "note": (
+            ("重复下发（同告警、同渠道、同比例）：按幂等返回首次回执，不重复写审计。" if idempotent
+             else "回执已写入持久化运行态（重启不复位）。")
+            + DEMO_DISPATCH_NOTE + "。"
+        ),
     }
-    return _json(receipt, source="demo-runtime")
+    return _json(receipt, source="dispatch-store")
 
 
 @app.post("/api/traffic/plan/ack")
 async def api_plan_ack(request: Request) -> JSONResponse:
+    """处置回写（认领人 / 动作 / 结果四选一）→ 状态流转；留痕持久化，重启不复位。"""
     body = await _read_body(request)
     alert_id = body.get("alert_id")
     operator = body.get("operator")
@@ -1917,50 +2331,147 @@ async def api_plan_ack(request: Request) -> JSONResponse:
     result = body.get("result")
     if not isinstance(alert_id, str) or not alert_id or not isinstance(operator, str) or not operator \
             or not isinstance(action, str) or not action or not isinstance(result, str) or not result:
-        return _error(400, "ACK_INVALID", "回写参数不完整(需 alert_id/operator/action/result)")
+        return _error(400, "ACK_INVALID", "回写参数不完整(需 alert_id/operator/action/result)",
+                      note=DEMO_DISPATCH_NOTE)
     if result not in WRITEBACK_RESULTS:
-        return _error(400, "ACK_INVALID", f"结果须为四选一({' / '.join(WRITEBACK_RESULTS)}): {result}")
+        return _error(400, "ACK_INVALID",
+                      f"结果须为四选一({' / '.join(WRITEBACK_RESULTS)}): {result}",
+                      note=DEMO_DISPATCH_NOTE)
     alert = _find_alert(alert_id)
     if alert is None:
-        return _error(404, CODE_ALERT_NOT_FOUND, f"告警不存在: {alert_id}")
+        return _error(404, CODE_ALERT_NOT_FOUND, f"告警不存在: {alert_id}", note=DEMO_DISPATCH_NOTE)
     segment_id = body.get("segment_id")
     if isinstance(segment_id, str) and segment_id and segment_id != alert.get("segment_id"):
         return _error(
             400, "ALERT_SEGMENT_MISMATCH",
             f"路段不匹配: {alert_id} 属于 {alert.get('segment_id')},收到 {segment_id}",
+            note=DEMO_DISPATCH_NOTE,
         )
-    runtime = _ALERT_RUNTIME.get(alert_id) or {}
+    store = get_dispatch_store()
+    runtime = store.get_alert(alert_id)
     status = runtime.get("status") or alert.get("status")
-    if status in TERMINAL_ALERT_STATUS:
-        return _error(409, "ALERT_TERMINAL", f"终态告警不可再回写: {alert_id}({status})")
+    writeback = runtime.get("writeback") if isinstance(runtime.get("writeback"), dict) else {}
+    duplicate = bool(
+        writeback
+        and writeback.get("operator") == operator
+        and writeback.get("action") == action
+        and writeback.get("result") == result
+    )
+    # TC-07 顺序硬约束：终态不可再翻转；无下发回执不可回写。幂等回放优先于终态拒绝（重复提交同一回写不算「翻转」）。
+    if status in TERMINAL_ALERT_STATUS and not duplicate:
+        return _error(
+            409, "ALERT_TERMINAL",
+            f"终态告警不可再回写: {alert_id}({status})",
+            note="终态（已闭环 / 误报）不可翻转；如需重新处置请先 POST /api/traffic/alerts/reset 复位演示态。"
+                 + DEMO_DISPATCH_NOTE,
+        )
     if not runtime.get("dispatch_at") or not runtime.get("channels"):
-        return _error(409, "ACK_NO_DISPATCH", f"告警尚未下发(无派发回执),不可回写: {alert_id}")
+        return _error(
+            409, "ACK_NO_DISPATCH",
+            f"告警尚未下发(无派发回执),不可回写: {alert_id}",
+            note="TC-07 闭环顺序：必须先有下发回执，才能回写处置结果。" + DEMO_DISPATCH_NOTE,
+        )
     if result == "误报":
         new_status = "误报"
     elif result == "未改善":
         new_status = "处置中"
     else:
         new_status = "已闭环"
-    at = _now_stamp()
-    runtime.update({
-        "status": new_status,
-        "writeback": {"operator": operator, "action": action, "result": result, "at": at},
-    })
-    _ALERT_RUNTIME[alert_id] = runtime
+    store_result = store.record_ack(
+        alert_id, alert.get("segment_id") or segment_id, operator, action, result, new_status
+    )
+    if not store_result.get("ok"):
+        if store_result.get("conflict"):
+            # 锁内不变量冲突（并发下状态已变）：如实 409，本次不落盘、不写审计
+            return _error(
+                409, str(store_result["conflict"]), str(store_result.get("message") or "并发状态冲突"),
+                note="并发下运行态已发生变化（终态 / 已复位），本次回写未生效。" + DEMO_DISPATCH_NOTE,
+            )
+        return _error(
+            500, "PERSIST_FAILED",
+            "回写留痕落盘失败：检查 work/assembly/data/ 是否可写",
+            note="本次回写未生效（内存态与磁盘均保持原状）。" + DEMO_DISPATCH_NOTE,
+        )
+    final_runtime = store_result["runtime"]
+    final_writeback = final_runtime.get("writeback") if isinstance(final_runtime.get("writeback"), dict) else {}
+    idempotent = bool(store_result.get("idempotent"))
     receipt = {
         "alert_id": alert_id,
-        "status": new_status,
-        "result": result,
-        "at": at,
+        "status": final_runtime.get("status"),
+        "result": final_writeback.get("result", result),
+        "at": final_writeback.get("at"),
         "is_simulated": True,
+        "persisted": True,
+        "idempotent": idempotent,
+        "operator": final_writeback.get("operator"),
+        "operator_action": final_writeback.get("action"),
+        "audit_seq": store_result.get("audit_seq"),
+        "store_path": store.relative_path(),
+        "note": (
+            ("重复回写（同人、同动作、同结果）：按幂等返回既有回执，不重复写审计。" if idempotent
+             else "回写留痕已写入持久化运行态（谁 / 何时 / 做了什么 / 结果齐全；重启不复位）。")
+            + DEMO_DISPATCH_NOTE + "。"
+        ),
     }
-    return _json(receipt, source="demo-runtime")
+    return _json(receipt, source="dispatch-store")
 
 
 @app.post("/api/traffic/alerts/reset")
 def api_alerts_reset() -> JSONResponse:
-    _ALERT_RUNTIME.clear()
-    return _json({"reset": True, "is_simulated": True}, source="demo-runtime")
+    """清空处置运行态并重放 seed_dispatch，写一条 reset 审计（演示复位，可重复调用）。"""
+    store = get_dispatch_store()
+    result = store.reset()
+    if not result.get("ok"):
+        return _error(
+            500, "PERSIST_FAILED",
+            "复位落盘失败：检查 work/assembly/data/ 是否可写",
+            note="本次复位未生效（内存态与磁盘均保持原状）。" + DEMO_DISPATCH_NOTE,
+        )
+    payload = {
+        "reset": True,
+        "is_simulated": True,
+        "cleared_alerts": result["cleared_alerts"],
+        "seed_alerts": result["seed_alerts"],
+        "reset_count": result["reset_count"],
+        "audit_seq": result["audit_seq"],
+        "persisted": True,
+        "store_path": store.relative_path(),
+        "note": (
+            "已清空处置闭环运行态并重放 seed_dispatch（接口层默认 seed 为空 → 所有派生告警回「待认领」）；"
+            "本次 reset 已写入审计留痕。" + DEMO_DISPATCH_NOTE + "；"
+            "持久化文件重启不复位，需要再 reset 才会清。"
+        ),
+    }
+    return _json(payload, source="dispatch-store")
+
+
+@app.get("/api/traffic/plan/audit")
+def api_plan_audit(limit: int = Query(default=50),
+                   alert_id: str | None = Query(default=None)) -> JSONResponse:
+    """处置闭环审计（只读辅助端点，非契约端点）：每次 dispatch / ack / reset 追加一条。"""
+    store = get_dispatch_store()
+    effective_limit = _audit_limit(limit)
+    records, matched_total = store.audit_records(limit=effective_limit, alert_id=alert_id)
+    payload = {
+        "ts": _now_iso(),
+        "is_simulated": True,
+        "records": records,
+        # limit 只截断 records：total 是过滤后**未截断**总数，returned 是本次返回条数
+        "total": matched_total,
+        "returned": len(records),
+        "limit": effective_limit,
+        "limit_max": DISPATCH_AUDIT_MAX,
+        "audit_total": store.audit_total(),
+        "reset_count": store.reset_count(),
+        "store_path": store.relative_path(),
+        "note": (
+            "处置闭环审计（只读辅助端点，非契约端点；limit 允许 1~"
+            f"{DISPATCH_AUDIT_MAX}，默认 50）：records 为最近 limit 条、total 为过滤后未截断总数、"
+            "returned 为本次返回条数；每条记录含 alert_id / action / channel / ratio_pct / operator / result / at；"
+            + DEMO_DISPATCH_NOTE + "。"
+        ),
+    }
+    return _json(payload, source="dispatch-store")
 
 
 @app.post("/api/traffic/factors/reset")
@@ -2234,8 +2745,20 @@ def print_data_check() -> int:
     assimilation = build_assimilation()
     print(f"同化断面：{len(assimilation['records'])} 条（boundary {assimilation['counts']['boundary']} / internal {assimilation['counts']['internal']}）")
     print(f"告警（从快照派生）：{len(build_alerts(snapshot)['alerts'])} 条")
+    store = get_dispatch_store()
+    state_exists = "存在" if store.path.is_file() else "尚未创建（首次写入时生成）"
+    print(f"处置闭环运行态（持久化）：{store.relative_path()}（{state_exists}）")
     print(
-        "写端点内存态（--check 是新进程，恒为空；起服务后重启即复位）："
+        f"  已落盘告警运行态 {len(store.all_alerts())} 条 · 审计 {store.audit_total()} 条"
+        f"（保留最近 {DISPATCH_AUDIT_MAX} 条）· 复位 {store.reset_count()} 次"
+    )
+    for alert_id, runtime in list(store.all_alerts().items())[:6]:
+        print(
+            f"  - {alert_id}: {runtime.get('status')} · 渠道 {runtime.get('channels')} · "
+            f"比例 {runtime.get('dispatch_ratio_pct')} · 回写 {bool(runtime.get('writeback'))}"
+        )
+    print(
+        "写端点内存态（factors / scenario 仍是进程内存；--check 是新进程，恒为空）："
         f"人工置位 {len(_MANUAL_FACTORS)} 条 · 场景注入 {'已注入' if _scenario_injected() else '未注入'}"
     )
     print()
@@ -2244,18 +2767,61 @@ def print_data_check() -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="hubflow 接口层：/api/traffic/*（只读快照，契约 §七）")
+    parser = argparse.ArgumentParser(
+        description="hubflow 接口层：/api/traffic/*（只读快照 + 处置闭环持久化，契约 §七）"
+    )
     parser.add_argument("--host", default="127.0.0.1", help="监听地址（默认 127.0.0.1）")
     parser.add_argument("--port", type=int, default=8000, help="端口（默认 8000，前端 VITE_API_BASE 指向这里）")
     parser.add_argument("--log-level", default="info", help="uvicorn 日志级别")
-    parser.add_argument("--check", action="store_true", help="只打印数据源解析结果，不启动服务")
+    parser.add_argument("--check", action="store_true",
+                        help="只打印数据源 / 处置运行态解析结果，不启动服务")
+    parser.add_argument(
+        "--state-path",
+        default=DISPATCH_STORE_DEFAULT.relative_to(ROOT).as_posix(),
+        help=(
+            "处置闭环运行态 JSON 路径（默认 work/assembly/data/dispatch.json；相对路径按仓库根解析）。"
+            "安全校验：只允许 work/assembly/data/ 或 work/assembly/out/ 下的 .json，"
+            "其它位置（尤其已跟踪文件）直接报错退出，不做改名 / 覆盖"
+        ),
+    )
+    parser.add_argument("--reset-state", action="store_true",
+                        help="复位处置运行态（重放 seed_dispatch）并写一条 reset 审计后退出（不起服务）")
     args = parser.parse_args()
+
+    try:
+        state_path = resolve_state_path(args.state_path)
+    except ValueError as exc:
+        allowed = " / ".join(directory.relative_to(ROOT).as_posix() for directory in STATE_PATH_ALLOWED_DIRS)
+        print(f"参数错误：--state-path {exc}", file=sys.stderr)
+        print(f"  允许目录：{allowed}（只接受 .json 文件；不会对其它路径做改名 / 覆盖）", file=sys.stderr)
+        return 2
+    configure_dispatch_store(state_path)
+    store = get_dispatch_store()  # 启动时加载：坏文件改名留证、按初始态启动
+
+    if args.reset_state:
+        result = store.reset()
+        if not result.get("ok"):
+            print("复位失败：处置运行态落盘失败（检查 work/assembly/data/ 是否可写）", file=sys.stderr)
+            return 1
+        print(f"已复位处置闭环运行态：{store.relative_path()}")
+        print(
+            f"  cleared_alerts={result['cleared_alerts']} · seed_alerts={result['seed_alerts']} · "
+            f"reset_count={result['reset_count']} · audit_seq={result['audit_seq']}"
+        )
+        print(f"  审计总数 {store.audit_total()} 条（reset 已留痕）；{DEMO_DISPATCH_NOTE}")
+        return 0
     if args.check:
         return print_data_check()
+
     print(f"接口层 traffic.py → http://{args.host}:{args.port}", flush=True)
     print("  口径：只读快照 / 所有响应 is_simulated=true / 数据源三层回落（缺文件不 500）", flush=True)
     print("  路线：真网产物 out/real/routes.json 优先，缺失回退样例 out/routes.json", flush=True)
-    print("  写端点：人工置位 / 场景注入为进程内存态（重启复位），接口层不重算判级", flush=True)
+    print(
+        f"  处置闭环（持久化）：{store.relative_path()} 已加载 {len(store.all_alerts())} 条告警运行态"
+        f" / {store.audit_total()} 条审计（重启不复位）",
+        flush=True,
+    )
+    print("  写端点：factors / scenario 为进程内存态（重启复位），接口层不重算判级", flush=True)
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
     return 0
 
