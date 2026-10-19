@@ -39,6 +39,7 @@ import {
   type LineLayerSpecification,
   type MapMouseEvent,
   type StyleSpecification,
+  type SymbolLayerSpecification,
 } from 'maplibre-gl'
 // ⚠️ 必须显式指定 worker 地址，否则**生产构建底图空白**（实测踩过）：
 //   MapLibre 的矢量瓦片解析跑在独立 worker 里（508 KB），主包按
@@ -73,6 +74,14 @@ import {
 } from '../../../shared/cameras'
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import { basemapEnabled } from '../../../shared/settings'
+// IKOQEJ：方向标记（只读 enriched 字段；不是判级/契约数据）
+import {
+  bearingDeg,
+  directionKindOf,
+  directionOf,
+  pointAtFraction,
+  type DirectionKind,
+} from '../../../shared/directions'
 import {
   FLOW_BANDS,
   FLOW_COLOR_NOTE,
@@ -130,6 +139,18 @@ const BASEMAP_TILES_TIMEOUT_MS = 8000
 const BASEMAP_PROBE_TIMEOUT_MS = 1500
 
 const SRC = 'hubflow-route'
+// IKOQEJ · 方向标记：独立 GeoJSON 点源 + canvas 生成的图标（不依赖字体 glyph ——
+// 底图挂掉走本地兜底样式时也能画，不会只剩一根无方向的线）
+const DIR_SRC = 'hubflow-direction'
+const LAYER_DIRECTION = `${DIR_SRC}-marker`
+const DIR_ICON_PREFIX = 'hubflow-dir-'
+/** 方向语义色（与拥堵等级色 / 品牌蓝 / 路线三态色都不撞）：只表示方向，不表示拥堵 */
+const DIR_COLORS: Record<DirectionKind, string> = {
+  forward: '#1D5FD8',
+  backward: '#B45309',
+  bidirectional: '#6D28D9',
+  unknown: '#8B8B8B',
+}
 const LAYER_HEAT = `${SRC}-heat`
 const LAYER_CASING = `${SRC}-casing`
 const LAYER_LINE = `${SRC}-line`
@@ -289,6 +310,92 @@ function heatOf(seg: DemoSegment): number {
   if (!rec || !ciAvailable(rec)) return 0
   const v = Math.min(CI_MAX, Math.max(0, rec.ci as number))
   return Math.round((0.1 + (v / CI_MAX) * 0.5) * 100) / 100
+}
+
+/**
+ * 方向标记 GeoJSON（IKOQEJ）：每段一个点（折线中段），带图标名与旋转角。
+ *   · forward/backward → 单箭头（沿走向旋转；backward 加 180°）；
+ *   · bidirectional → 双向箭头（双头，沿走向旋转，表达"有来有回"）；
+ *   · 未标定 → 灰色「?」（不画真箭头，避免把缺字段读成单向）。
+ * 字段只读自站点包（enriched 生成物），不参与判级 / 路线。
+ */
+function directionGeoJson(): FeatureCollection {
+  const features = net.map((seg) => {
+    const kind = directionKindOf(directionOf(seg.segment_id))
+    const bearing = bearingDeg(seg.coords)
+    const rotate = kind === 'backward' ? (bearing + 180) % 360 : bearing
+    const [lon, lat] = pointAtFraction(seg.coords, 0.5)
+    return {
+      type: 'Feature' as const,
+      properties: {
+        segment_id: seg.segment_id,
+        dir_kind: kind,
+        icon: DIR_ICON_PREFIX + kind,
+        rotate,
+      },
+      geometry: { type: 'Point' as const, coordinates: [lon, lat] },
+    }
+  })
+  return { type: 'FeatureCollection', features }
+}
+
+/** 用 canvas 生成方向图标（ImageData，不需要字体 glyph 资源） */
+function directionIconImage(kind: DirectionKind): ImageData {
+  const size = 64
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return new ImageData(size, size)
+  const glyph = kind === 'bidirectional' ? '↕' : kind === 'unknown' ? '?' : '↑'
+  ctx.clearRect(0, 0, size, size)
+  ctx.font = 'bold 44px "Segoe UI Symbol", "Noto Sans Symbols", system-ui, sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  // 白色描边画两遍：压在任意路网色上都能看清
+  ctx.lineWidth = 8
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.96)'
+  ctx.strokeText(glyph, size / 2, size / 2 + 2)
+  ctx.fillStyle = DIR_COLORS[kind]
+  ctx.fillText(glyph, size / 2, size / 2 + 2)
+  return ctx.getImageData(0, 0, size, size)
+}
+
+/** 把四个方向图标注册进当前样式（换样式后要重新注册 —— setStyle 会清空 image 资源） */
+function addDirectionImages(map: MapLibreMap): void {
+  for (const kind of ['forward', 'backward', 'bidirectional', 'unknown'] as DirectionKind[]) {
+    const name = DIR_ICON_PREFIX + kind
+    if (!map.hasImage(name)) map.addImage(name, directionIconImage(kind))
+  }
+}
+
+/** 方向标记图层（symbol + icon，无 text/glyphs 依赖；随地图旋转对齐） */
+function directionLayerSpec(): SymbolLayerSpecification {
+  return {
+    id: LAYER_DIRECTION,
+    type: 'symbol',
+    source: DIR_SRC,
+    layout: {
+      'icon-image': ['get', 'icon'],
+      'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
+      'icon-rotate': ['get', 'rotate'],
+      'icon-rotation-alignment': 'map',
+      'icon-allow-overlap': true,
+      'icon-ignore-placement': true,
+    },
+  }
+}
+
+/** 建图 / 换样式后把方向源与图层挂上（源/图层存在则跳过；图标缺则补） */
+function addDirectionLayers(map: MapLibreMap): void {
+  addDirectionImages(map)
+  if (!map.getSource(DIR_SRC)) {
+    map.addSource(DIR_SRC, { type: 'geojson', data: directionGeoJson() })
+  }
+  if (!map.getLayer(LAYER_DIRECTION)) {
+    const before = map.getLayer(LAYER_ROUTE_ALT_HALO) ? LAYER_ROUTE_ALT_HALO : undefined
+    map.addLayer(directionLayerSpec(), before)
+  }
 }
 
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
@@ -463,6 +570,8 @@ function addRouteLayers(map: MapLibreMap): void {
   if (map.getSource(SRC)) return
   map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
   for (const spec of lineLayerSpecs()) map.addLayer(spec)
+  // IKOQEJ：方向标记画在路网之上、路线之下（路线语义仍是最上层）
+  addDirectionLayers(map)
 }
 
 // ---- 摄像头布点 ----
@@ -577,10 +686,18 @@ function fitToNetwork(map: MapLibreMap): void {
  * 合成后再切，路网在整份样式里，从一开始就在。
  */
 function mergedStyle(remote: StyleSpecification): StyleSpecification {
+  // 方向标记插在路线图层之前（与建图时的顺序一致：路网 → 方向标 → 路线 → 选中）
+  const own: (LineLayerSpecification | SymbolLayerSpecification)[] = [...lineLayerSpecs()]
+  const at = own.findIndex((layer) => layer.id === LAYER_ROUTE_ALT_HALO)
+  own.splice(at < 0 ? own.length : at, 0, directionLayerSpec())
   return {
     ...remote,
-    sources: { ...(remote.sources ?? {}), [SRC]: { type: 'geojson', data: routeGeoJson() } },
-    layers: [...(remote.layers ?? []), ...lineLayerSpecs()],
+    sources: {
+      ...(remote.sources ?? {}),
+      [SRC]: { type: 'geojson', data: routeGeoJson() },
+      [DIR_SRC]: { type: 'geojson', data: directionGeoJson() },
+    },
+    layers: [...(remote.layers ?? []), ...own],
   }
 }
 
@@ -717,6 +834,10 @@ async function waitForBasemapTiles(
 
 /** 数据/选中/路线变化后，把视图状态贴回图层（换样式之后也要重贴一次） */
 function applyViewState(map: MapLibreMap): void {
+  // 换样式会清空 image 资源：先把方向图标补回去，再更新方向源
+  addDirectionImages(map)
+  const dirSrc = map.getSource(DIR_SRC) as GeoJSONSource | undefined
+  if (dirSrc) void dirSrc.setData(directionGeoJson())
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
@@ -986,6 +1107,15 @@ onUnmounted(() => {
 
     <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级） -->
     <div v-if="legend" class="legend">
+      <!-- IKOQEJ · 方向标记图例：两种颜色模式都有（方向标不随拥堵/流量换色） -->
+      <div class="lg-title">方向标记（只读 enriched）</div>
+      <div class="lg-row">
+        <span class="dir-mark" :style="{ color: '#1D5FD8' }">↑</span>单向 ·
+        <span class="dir-mark both" :style="{ color: '#6D28D9' }">↕</span>双向（左右两向）·
+        <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
+      </div>
+      <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，非实测）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
+      <div class="lg-sep" />
       <template v-if="isFlow">
         <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>
         <div v-for="band in FLOW_BANDS" :key="band.band" class="lg-row">
@@ -1198,6 +1328,22 @@ onUnmounted(() => {
   border-radius: 50%;
   margin-right: 7px;
   display: inline-block;
+}
+/* IKOQEJ · 方向标记图例的字符图标（与地图 canvas 图标同款字符/颜色） */
+.lg-row .dir-mark {
+  width: 13px;
+  height: 13px;
+  margin: 0 3px 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  flex: 0 0 auto;
+}
+.lg-row .dir-mark:first-child {
+  margin-left: 0;
 }
 .lg-row.ts {
   color: #999999;

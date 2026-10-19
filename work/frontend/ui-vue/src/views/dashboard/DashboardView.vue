@@ -40,6 +40,16 @@ import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shar
 import { basemapEnabled } from '../../shared/settings'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
+// IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成字段；缺值→未标定，不编）
+import {
+  continuityOf,
+  directionKindOf,
+  directionLabel,
+  directionOf,
+  directionSourceLabel,
+  lanesOf,
+  oppositeOf,
+} from '../../shared/directions'
 import { activePack, activePackKey, packItems, switchPack } from '../../station-packs/index'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
@@ -394,6 +404,36 @@ const selectedName = computed<string>(() => {
   const id = selectedId.value
   if (!id) return '—'
   return demoSegment(id)?.name ?? selected.value?.segment_id ?? id
+})
+
+// ---------- IKOQEJ：方向 / 车道 / 对向 / 贯通（只读站点包字段，非契约、不参与判级） ----------
+const segDirection = computed(() => directionOf(selectedId.value ?? ''))
+const segDirectionKind = computed(() => directionKindOf(segDirection.value))
+const segDirectionLabel = computed(() => directionLabel(segDirectionKind.value))
+const segDirectionSource = computed(() => directionSourceLabel(segDirection.value))
+const segLanes = computed(() => lanesOf(segDirection.value))
+const segContinuity = computed(() => continuityOf(segDirection.value))
+const segOpposite = computed(() => oppositeOf(segDirection.value))
+/** 对向段是否在当前前端站点包里（GZ enriched 708 段 > 前端 433 段时，部分对向段尚未同步） */
+const segOppositePresent = computed(() => Boolean(segOpposite.value && demoSegment(segOpposite.value)))
+/** 浮牌里的短口径（方向 / 车道 / 对向 / 贯通），字段缺省一律「未标定」 */
+const segContinuityChip = computed<string>(() => {
+  if (segContinuity.value.state !== 'pending') return segContinuity.value.label
+  const gap = segDirection.value?.continuity?.gap_to_next_m
+  return typeof gap === 'number' && Number.isFinite(gap)
+    ? `贯通性待核(gap ${gap} m)`
+    : '贯通性待核(gap 未标定)'
+})
+const segDirectionChip = computed<string>(() => {
+  const parts = [
+    `方向 ${segDirectionKind.value === 'unknown' ? '未标定' : segDirectionLabel.value.replace(/（.*）/, '')}`,
+    `车道 ${segLanes.value.text}`,
+  ]
+  if (segOpposite.value) {
+    parts.push(`对向 ${segOpposite.value}${segOppositePresent.value ? '' : '(待同步)'}`)
+  }
+  parts.push(segContinuityChip.value)
+  return parts.join(' · ')
 })
 
 /** 默认选中:非陈旧路段里 level 最高者(同档取 x 大者);无可用则退回首条 */
@@ -987,21 +1027,23 @@ const mapChip = computed<string>(() => {
   // 而是「演示摄像头（复用样本视频）」；源台账有的写「源台账 N 路」以示这只是初始映射。
   const camCount = cameraCountOf(id)
   const cam = camCount > 0 ? `源台账摄像头 ${camCount} 路` : '演示摄像头（复用样本视频）'
+  // IKOQEJ：方向 / 车道 / 对向 / 贯通（缺值「未标定」，只展示不判级）
+  const dir = segDirectionChip.value
   const s = selected.value
   const flow = isFlow.value
   if (flow) {
     // 纯车流量版（IKNB9G）：浮牌只报 q 与流量档位，不写等级/CI（避免把流量读成拥堵结论）
-    if (!s) return `${id} 无流量记录 · ${cam}`
+    if (!s) return `${id} 无流量记录 · ${cam} · ${dir}`
     const band = flowBandOf(s)
     const qText = band ? `q ${fmt(s.q_vph, 0)} 辆/h` : FLOW_UNAVAILABLE_LABEL
-    return `${s.segment_id} ${band ? band.name : FLOW_UNAVAILABLE_LABEL} · ${qText} · ${cam}（流量版：仅按 q 分档）`
+    return `${s.segment_id} ${band ? band.name : FLOW_UNAVAILABLE_LABEL} · ${qText} · ${cam}（流量版：仅按 q 分档）· ${dir}`
   }
-  if (!s) return `${id} 无路况记录 · ${cam}`
+  if (!s) return `${id} 无路况记录 · ${cam} · ${dir}`
   const v = pair.value?.slots.find((x) => x.source === 'video')
   const t = pair.value?.slots.find((x) => x.source === 'twin')
   const vx = v?.record?.x
   const tx = t?.record?.x
-  const head = `${s.segment_id} ${levelName(s)} · ${cam}`
+  const head = `${s.segment_id} ${levelName(s)} · ${cam} · ${dir}`
   if (v?.available === true && typeof vx === 'number' && typeof tx === 'number') {
     return `${head} · x ${vx} / ${tx}`
   }
@@ -1599,6 +1641,63 @@ function onCommandChanged(): void {
                     ? detailSummary
                     : '该路段在当前快照里没有运行指标（段号未被感知 / 孪生产物覆盖）——不显示等级，按数据不可用灰档处理（TC-11）。'
                 }}
+              </div>
+
+              <!-- IKOQEJ · 方向 / 车道 / 对向 / 贯通（只读站点包 enriched 生成字段；
+                   非契约、不参与判级；缺值如实「—/未标定」，贯通性待核只提示不改网络） -->
+              <div class="dir-block">
+                <div class="sec-head">
+                  方向 / 车道 / 贯通<span class="sub-tag">{{ segDirectionLabel }}</span>
+                  <span class="td-chip" :class="{ warn: segContinuity.state === 'pending' }">
+                    {{ segContinuity.label }}
+                  </span>
+                </div>
+                <div class="dir-kv">
+                  <span class="k">方向</span>
+                  <span class="v">
+                    <b>{{ segDirectionLabel }}</b>
+                    <span class="dir-src">来源 {{ segDirectionSource }}</span>
+                  </span>
+                </div>
+                <div class="dir-kv">
+                  <span class="k">车道（前 / 后 / 共）</span>
+                  <span class="v">
+                    <span class="td-mono">{{ segLanes.text }}</span>
+                    <span class="dir-src">来源 {{ segLanes.source }}</span>
+                  </span>
+                </div>
+                <div class="dir-kv">
+                  <span class="k">对向段</span>
+                  <span class="v">
+                    <button
+                      v-if="segOpposite && segOppositePresent"
+                      type="button"
+                      class="dir-link"
+                      :title="`跳转到对向段 ${segOpposite}`"
+                      @click="onSelect(segOpposite)"
+                    >
+                      {{ segOpposite }} ↗
+                    </button>
+                    <template v-else-if="segOpposite">
+                      {{ segOpposite }}
+                      <span class="dir-src">不在当前路网（前端站点包待同步，暂不可跳转）</span>
+                    </template>
+                    <span v-else>—</span>
+                    <span class="dir-src">enriched 推导</span>
+                  </span>
+                </div>
+                <div class="dir-kv">
+                  <span class="k">贯通性</span>
+                  <span class="v">
+                    <span class="dir-cont" :class="segContinuity.tone">{{ segContinuity.label }}</span>
+                    <span class="dir-detail">{{ segContinuity.detail }}</span>
+                  </span>
+                </div>
+                <p class="dir-note">
+                  方向 / 车道 / 对向 / 贯通来自站点包<b>只读字段</b>（tools/gen_station_directions.py 从 enriched 生成）：
+                  方向来自 OSM oneway，车道多为默认演示值——<b>不是实测车道/实测方向</b>；缺值一律「—/未标定」；
+                  贯通性待核只提示，不改路网。
+                </p>
               </div>
 
               <!-- ① 关联摄像头（Issue IKMS18）：该段登记摄像头 + 感知服务真实帧预览 / 如实空窗 -->
@@ -2217,6 +2316,71 @@ function onCommandChanged(): void {
   margin-top: 3px;
   font-size: 11px;
   color: var(--td-text-color-secondary);
+}
+/* IKOQEJ · 方向 / 车道 / 对向 / 贯通（只读 enriched 字段；缺值「—/未标定」） */
+.dir-block {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--td-component-stroke);
+}
+.dir-kv {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+.dir-kv .k {
+  flex: 0 0 106px;
+  color: var(--td-text-color-secondary);
+}
+.dir-kv .v {
+  flex: 1;
+  min-width: 0;
+  color: var(--td-text-color-primary);
+  word-break: break-all;
+}
+.dir-src {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+  font-weight: 400;
+}
+.dir-link {
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  color: var(--td-brand-color);
+  cursor: pointer;
+}
+.dir-link:hover {
+  text-decoration: underline;
+}
+.dir-cont {
+  font-weight: 600;
+}
+.dir-cont.ok {
+  color: var(--td-success-color);
+}
+.dir-cont.warn {
+  color: var(--td-warning-color);
+}
+.dir-cont.muted {
+  color: var(--td-text-color-placeholder);
+  font-weight: 400;
+}
+.dir-detail {
+  margin-left: 6px;
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+}
+.dir-note {
+  margin: 4px 0 2px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
 }
 /* 大号 CI(原 /heat 右栏;CI 只展示不判级) */
 .ci-head {

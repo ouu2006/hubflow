@@ -1040,6 +1040,66 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 | 页面文案（IKNC4J 已落实） | 摄像头卡显示「**演示摄像头 N 路 / 演示复用视频**」；感知页页头已改为「模拟识别（演示）· 视频链路（YOLO 仅项目代号）」；本 README 只登记口径 |
 | 不造假 | 全部 mock/复用；不写实测/实时/现场；不声称真实摄像头/视频已接入；真实接入归 **IKMHMX** |
 
+## 二十、方向 / 车道 / 对向 / 贯通可视化（Issue IKOQEJ，2026-10-19）
+
+> 来源：IKNB9H 数据层/引擎已有方向/车道/贯通字段，但前端未可视化；业主 2026-10-18：
+> 「道路有来有回、左右车道要标记进路段数据；路线方向不能只靠人看」。本单只补**前端展示**，
+> **不改路网/引擎/数据/判定/契约/stations**。
+
+### 20.1 数据来源与生成器（只读）
+
+| 项 | 说明 |
+|---|---|
+| 数据源 | `work/twin/netpack/network_junction.enriched.json`（Z，61 段）/ `work/twin/netpack/guangzhounan/network_junction.enriched.json`（GZ，**enriched 708 段**；IKOQEI 把 GZ 范围 800→1000 m）的 `edges[]`：`direction` / `lanes_forward/backward/total` / `opposite_segment_id` / `continuity` / `field_sources` |
+| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **433/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
+| 生成器 | `work/frontend/tools/gen_station_directions.py`（**只读 enriched**，绝不改它）；`--check` 可校验生成物是否与 enriched 同步 |
+| 生成物 | `src/station-packs/stationZ.directions.generated.ts` / `stationGZ.directions.generated.ts`（`Record<segment_id, PackSegmentDirection>`，一段一行） |
+| 类型 | `station-packs/types.ts` 新增 `PackSegmentDirection` / `PackContinuity`；`StationPack.segmentDirections?`（缺省=老包未标定） |
+| 口径 | **不是契约字段、不进接口、不参与判级/路线计算**；页面只展示。方向来自 OSM `oneway`，车道多为 enriched `default/derived`（默认演示值）——**不宣称真实车道/方向来自实测**；缺值一律「—/未标定」 |
+
+重跑：`python work/frontend/tools/gen_station_directions.py`（GZ enriched 由拓扑任务维护；`--check` 用于校验）。
+
+### 20.2 展示
+
+- **地图方向标**（`MapLibreViewer.vue`，canvas 生成图标，**不依赖字体 glyph**，底图挂掉走兜底样式也能画）：
+  - 单向（`forward`/`backward`）：单箭头沿路段走向旋转（反向 +180°），蓝 `#1D5FD8` / 琥珀 `#B45309`；
+  - 双向（`bidirectional`）：**双头箭头**（沿走向，表达左右两向）紫 `#6D28D9`；
+  - 未标定：灰色「?」，**不画真箭头**（不把缺字段读成单向）；
+  - 每段折线中段一个方向标；图例压缩为一行（↑单向 / ↕双向 / ?未标定）+ 说明「方向来自 OSM oneway + 只读 enriched（演示标注，非实测）」；
+  - 换样式/底图回退时重新注册图标并更新方向源（`applyViewState`）。
+- **右栏「路段信息」新增「方向 / 车道 / 贯通」块**（浮牌同步简洁版）：方向（含来源）、车道「前 / 后 / 共」（缺值「—」+ 来源）、
+  对向段（有值时**可点击跳转**到对向段）、贯通性（贯通 / **贯通性待核** / 未标定 + 断口 gap 说明）；
+  底部注明「不是实测车道/实测方向；贯通性待核只提示，不改路网」。
+- **浮牌**：`方向 · 车道 · 对向 · 贯通` 与既有等级/摄像头/x 同屏，缺省「未标定」。
+- C-2 既有元素一项不删；颜色模式（IKNB9G）、路线、摄像头卡、CI、热力等原样保留。
+
+### 20.3 实测与截图（2026-10-19）
+
+- Z 站（61 段）：双向 33 / 单向正向 28 / 反向 0；`continuity.tail_connected=false` 6 段。
+  - `#/dashboard?segment=SZ-018`（双向）→ 地图双头紫色方向标 + 详情「双向（左右两向）」；
+  - `#/dashboard?segment=SZ-001`（单向正向、尾端未贯通）→ 详情「贯通性待核（gap 0 m，节点/相切待核）」；
+  - `#/dashboard?segment=SZ-002`（单向、车道 5/0/5）→ 详情「车道（前 / 后 / 共）5 / 0 / 5 · 来源 默认演示值」；
+- GZ 站（前端网络 433 段；enriched 708 段中 433 段有交集）：双向 15 / 单向正向 418；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
+  其余 275 段 enriched 段号（GZ-434…GZ-708）待前端站点包同步后才会出现方向字段。
+- 截图（不入库）：`D:\hubflow\_scratch\ikoqej\`：
+  `Z-bidirectional-SZ-018.png`、`Z-oneway-tailgap-SZ-001.png`、`Z-oneway-lanes-SZ-002.png`、
+  `Z-opposite-SZ-013.png`（对向段跳转）、`GZ-bidirectional-GZ-146.png`、`GZ-lanes-GZ-075.png`、
+  `remote-Z-SZ-002.png`（remote 模式）。
+- mock（5180/5181：Z / GZ）与 remote（5182，接口 8000）均不崩：方向/车道来自前端站点包，不依赖后端接口。
+- 门禁：`npm run build` exit 0；`python scripts/doc_gate.py` 8/8。
+
+### 20.4 遗留 / 说明
+
+1. **Z21 旧包**没有方向字段（enriched 只覆盖现行 Z/GZ）→ 地图画灰色「?」、详情「未标定」，不编数据。
+2. 车道数多数为 `null`（enriched 里 OSM 没查到 lanes，按默认/推导口径）→ 页面如实「—」并标来源；
+   真实车道标定不在本单。
+3. 方向标是**每段一个**（中段位置），不做逐车道级箭头/车道线渲染；双向语义用双头箭头表达。
+4. 对向段跳转只切换大屏选中段（同一页），不改路线/判级；对向字段 Z 8 段 / GZ 13 段有值（enriched derived）；
+   GZ 部分对向段号落在 434+（前端包尚未同步）→ 详情显示段号 +「不在当前路网（前端站点包待同步，暂不可跳转）」，不做假跳转。
+5. **GZ 前端站点包待同步**：enriched 已 708 段（IKOQEI，范围 1000 m），前端 `stationGZ.network.ts` 仍 433 段；
+   本单只生成 433 段交集字段，待前端包同步后重跑生成器即可覆盖新增段（`--check` 校验）。
+
+
 
 
 

@@ -93,6 +93,8 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append("// 全段确定性演示基线（每段 level>=1，不灰档）；GZ 未接摄像头登记表，channels 为空、全段按等级上色。")
     lines.append("")
     lines.append("import { STATION_GZ_SEGMENTS } from './stationGZ.network.ts'")
+    # IKOQEJ：方向/车道/对向/贯通字段（只读 enriched 生成物；不改判级/契约）
+    lines.append("import { STATION_GZ_DIRECTIONS } from './stationGZ.directions.generated.ts'")
     lines.append(
         "import type { PackAlertBase, PackDiversion, PackRecommend, PackSection, "
         "PackSegmentBase, StationPack } from './types.ts'"
@@ -238,6 +240,8 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append(f"    segment_count: {seg_count},")
     lines.append("  },")
     lines.append("  segments: STATION_GZ_SEGMENTS,")
+    # IKOQEJ：enriched 只读生成的方向/车道/贯通字段（路由网展示用，非契约）
+    lines.append("  segmentDirections: STATION_GZ_DIRECTIONS,")
     lines.append("  source: {")
     lines.append("    osm: true,")
     lines.append(f"    label: {_ts_str(f'{site_name} OSM 真路网（Overpass 切片，演示范围 {range_m} m）')},")

@@ -39,6 +39,45 @@ export interface PackSegment {
   coords: [number, number][]
 }
 
+/**
+ * 路段贯通性（Issue IKOQEJ；只读 enriched 字段，**不是契约字段、不参与判级**）。
+ * 全部可为 null：老包 / 未标定 = 页面如实显示「— / 未标定」，不编。
+ */
+export interface PackContinuity {
+  head_connected: boolean | null
+  tail_connected: boolean | null
+  /** 断口到下一段的距离（米）；0 m 断口也要如实展示，不当"已贯通" */
+  gap_to_next_m: number | null
+  gap_to_next_node: string | null
+  gap_to_next_segment_id: string | null
+  chain_id: string | null
+  chain_name: string | null
+}
+
+/**
+ * 路段方向 / 车道 / 对向 / 贯通字段（Issue IKOQEJ）。
+ *
+ * 来源：`work/frontend/tools/gen_station_directions.py` 只读解析
+ * `work/twin/netpack/…/network_junction.enriched.json` 生成的前端站点包字段；
+ * **不是契约字段，不进接口、不参与判级/路线计算**。
+ * `field_sources` 保留 enriched 的字段来源（osm / derived / default），页面如实标注，
+ * 不宣称"真实车道数/真实方向来自实测"；缺值保持 null → 页面显示「—/未标定」。
+ */
+export interface PackSegmentDirection {
+  /** forward = 沿 coords 起点→终点单向；backward = 反向单向；bidirectional = 双向 */
+  direction: 'forward' | 'backward' | 'bidirectional' | null
+  lanes_forward: number | null
+  lanes_backward: number | null
+  lanes_total: number | null
+  /** 对向段段号（enriched 推导字段；null = 未标定） */
+  opposite_segment_id: string | null
+  oneway: string | null
+  u_turn_allowed: boolean | null
+  continuity: PackContinuity
+  /** 字段来源（如 direction=osm / lanes_forward=default / opposite_segment_id=derived） */
+  field_sources?: Record<string, string>
+}
+
 /** 检测断面(契约 `points.json` 的 detector 类点位;`role` 与 `sumo_edge_id` 是数据同化的前提) */
 export interface PackSection {
   point_id: string
@@ -234,6 +273,11 @@ export interface StationPack {
 
   // ---- 路网与标注 ----
   segments: PackSegment[]
+  /**
+   * 路段方向 / 车道 / 对向 / 贯通字段（Issue IKOQEJ；只读生成物，非契约）。
+   * 缺省 / 键缺失 = 该段未标定（页面显示「—/未标定」，不编真实车道）。
+   */
+  segmentDirections?: Record<string, PackSegmentDirection>
   /** 底图来源口径(页面水印用);`osm` 为真时触发 OSM 署名义务 */
   source: { osm: boolean; label: string; attribution?: string }
   sections: PackSection[]
