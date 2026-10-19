@@ -8,7 +8,7 @@
 | `reroute_max`(每车最多改道次数) | `stations/thresholds.json` 的 `decision` 组 |
 | `hysteresis`(切换滞回,收益不到就不改) | 同上 |
 | `recompute_period_s`(检查周期,由 run.py 的周期调度使用) | 同上 |
-| 再疏导触发阈值 `REROUTE_TH`(ETA 增加超过多少才考虑改道) | **站点包 decision 组尚无独立键**(手册标【待标定】);本实现以同组的 `eps_harm_s` 代用 —— 两者同为"ETA 增加量(秒)"阈值。待池·P 标定后由开发B 在站点包补键,本文件再改读新键 |
+| 再疏导触发阈值 `REROUTE_TH`(ETA 增加超过多少才考虑改道) | `stations/thresholds.json` 的 `decision` 组独立键 `reroute_threshold_s`(T2 新增,占位值 30 待池·P 标定);旧站点包缺键时回落 `eps_harm_s`(见 `reroute_threshold_s` docstring) |
 | `k_candidates` / `max_path_overlap`(备用路径生成) | 同上 |
 
 三个条件**同时**满足才改:
@@ -42,11 +42,13 @@ import reserve
 def reroute_threshold_s(params: dict[str, Any]) -> float:
     """再疏导触发阈值(秒):"ETA 增加超过多少才考虑改道"。
 
-    ⚠️ 手册 §7.7 把 `REROUTE_TH` 标为【待标定】,但站点包 `decision` 组目前**没有这个键**。
-    为了不在代码里写死一个数字(`docs/开发规范.md` 全仓铁律),这里**代用同组的
-    `eps_harm_s`** —— 它同样是"ETA 增加量(秒)"口径的【待标定】阈值。站点包补键后,
-    这里应改为优先读 `params["reroute_th_s"]`、缺键再回退(见 work/engine/DESIGN.md 的申报)。
+    优先读站点包 `decision` 组的 `reroute_threshold_s`(T2 新增键);**缺键才回落**
+    `eps_harm_s` —— 兼容尚未补键的旧站点包(两者同为"ETA 增加量(秒)"口径的
+    【待标定】阈值)。**站点包补键后不再回落**;若两键都在但取值不同,以
+    `reroute_threshold_s` 为准(它是再疏导专属阈值,`eps_harm_s` 管不伤害前车)。
     """
+    if "reroute_threshold_s" in params:
+        return float(params["reroute_threshold_s"])
     return float(params["eps_harm_s"])
 
 

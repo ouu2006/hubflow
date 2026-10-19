@@ -1037,7 +1037,7 @@ def attach_route_lengths(requests: list[dict[str, Any]], graph: network.Graph) -
     enriched = 0
     for request in requests:
         routes: list[dict[str, Any]] = []
-        for key in ("arrival_route", "departure_route"):
+        for key in ("arrival_route", "departure_route", "pickup_route"):
             route = request.get(key)
             if isinstance(route, dict):
                 routes.append(route)
@@ -1067,7 +1067,7 @@ def assert_segment_namespace(requests: list[dict[str, Any]], seg_prefix: str) ->
     seen: set[str] = set()
     for request in requests:
         locations = [request.get("location") or {}]
-        routes = [request.get("arrival_route"), request.get("departure_route")]
+        routes = [request.get("arrival_route"), request.get("departure_route"), request.get("pickup_route")]
         routes.extend(request.get("alternatives") or [])
         rejected = ((request.get("capacity_shortage") or {}).get("rejected_candidates")) or []
         routes.extend(rejected)
@@ -1102,7 +1102,7 @@ def count_route_segments(requests: list[dict[str, Any]], seg_prefix: str) -> dic
     od_with_alternative = 0
     od_with_reservation = 0
     for request in requests:
-        routes = [request.get("arrival_route"), request.get("departure_route")]
+        routes = [request.get("arrival_route"), request.get("departure_route"), request.get("pickup_route")]
         alternatives = request.get("alternatives") or []
         routes.extend(alternatives)
         for route in routes:
