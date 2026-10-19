@@ -841,6 +841,6 @@ python work/twin/netpack/tools/selftest_topology.py
 |---|---|---|
 | 1 | **N-006 是派生边界**：原 `boundary=false`（无向度数 2），有向入度 0，距锚点约 507 m（范围 500 m） | 按有向出入度标 `boundary_role=entry` 并登记派生边界；**原文件不改**，人工可复核 |
 | 2 | **主干道"路口终止"两处**（鼎湖大道 N-005 / N-008） | 报 `main_road_gap` WARN + 最近同名候选（57.3 m / 63.6 m）；可能是真实终点或切片/命名截断，**不自动写图**，不硬判 FAIL |
-| 3 | **广州南站（IKNB9F）** | 等其生成 `network_junction.json` 后，用同一套命令 `--site-id <gz>` 跑；本轮不碰多站单/station pack |
+| 3 | **广州南站（IKNB9F / IKOQEI）** | 已扩演示范围 1000 m 重建（708 段）并补 `topology_boundary_mode=range_clipped` 边界分类；GZ `check_topology` **FAIL 0 / WARN 128**（断头/不可达逐条分类有证据）；Z 站报告/enriched 逐字节不变 |
 | 4 | **`left_turn_allowed` 不参与算路** | OSM 切片没有 turn restriction 数据；强行禁左会引入无依据的断连，只做字段/报告 |
 | 5 | **双向段两向共用同一容量** | OSM 没有 `lanes:forward/backward`；不拆车道、不编数，引擎 meta 已写明 |
