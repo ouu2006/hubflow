@@ -119,7 +119,8 @@ def _point_on_edge(edge: dict, frac: float) -> tuple[float, float]:
     """在真网路段折线上按弧长占比取一点（返回 WGS-84 经纬度）。
 
     只做**折线上的线性插值**，不把点移出折线：站点包 Z 的既有口径就是「坐标取对应路段
-    折线上的演示点」。用平面近似算弧长（公里级范围内足够），插值结果必然落在折线上。
+    折线上的演示点」。用平面近似算弧长（公里级范围内足够）：经度 1° ≈ 111320 m × cos(纬度)
+    （111320 m 是赤道处每度经度长度），纬度 1° ≈ 111000 m。插值结果必然落在折线上。
     """
     coords = [tuple(map(float, pair)) for pair in (edge.get("coords") or [])]
     if len(coords) < 2:
@@ -131,7 +132,7 @@ def _point_on_edge(edge: dict, frac: float) -> tuple[float, float]:
     total = 0.0
     for index in range(len(coords) - 1):
         (lon1, lat1), (lon2, lat2) = coords[index], coords[index + 1]
-        dx = (lon2 - lon1) * 102000.0 * math.cos(math.radians((lat1 + lat2) / 2.0))
+        dx = (lon2 - lon1) * 111320.0 * math.cos(math.radians((lat1 + lat2) / 2.0))
         dy = (lat2 - lat1) * 111000.0
         step = math.hypot(dx, dy)
         seg_len.append(step)
