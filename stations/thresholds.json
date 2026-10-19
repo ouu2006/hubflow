@@ -104,13 +104,14 @@
     "confidence": 0.9
   },
   "decision": {
-    "param_version": "v0-demo",
+    "param_version": "v0-demo.1",
     "calibrated_at": "2026-10-13",
     "sample_days": 0,
     "alpha": 0.15,
     "beta": 4.0,
     "x_safe": 0.85,
     "eps_harm_s": 30,
+    "reroute_threshold_s": 30,
     "k_candidates": 3,
     "max_path_overlap": 0.7,
     "hysteresis": 0.1,
