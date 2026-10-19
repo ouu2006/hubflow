@@ -129,7 +129,7 @@ def every_60s():
 HMM-lite 匹配），但 **TC-18 验收证据阻塞**——缺 `work/twin/out/latest/vehicles.json`
 （W1 真孪生快照）、SUMO/TraCI 不可用、统一图无 WGS-84 几何（`map_ingest.py` Issue #37
 未做）。样例口径 3/3 只证明链路通，**不得当 TC-18 通过**；dev-debug 口径 σ=20 m = 0.7901
-（自造夹具，同样不得当验收）。解除条件见 `hubflow-handoff/T4-locate.md` §5。
+（自造夹具，同样不得当验收）。解除条件见 T4 验收记录（交接目录，未随 PR 入库） §5。
 校验入口：`python work/engine/locate_check.py --vehicles <快照> --network sample --sigmas 10,20,30 --seed 42`。
 
 **两期用同一个函数形状，一期只换输入。**

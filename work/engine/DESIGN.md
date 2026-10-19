@@ -411,7 +411,7 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
 
 > 集成分支 `feat/engine-closeout`：merge commit `8a88019`（A）→ `6b77f95`（C）→ `8a45c21`（B），
 > 全部 `--no-ff`、零冲突。相对 T0_SHA `fe4f915` 共 10 文件 +2002/−40。
-> 逐任务证据见 `hubflow-handoff/` 下 T1/T2/T3/T3-fix/T4/T5/T7 报告与 `t*-verify/`。
+> 逐任务证据见 本批交接目录下的 T1/T2/T3/T3-fix/T4/T5/T7 报告与 `t*-verify/`（交接目录未随 PR 入库）。
 
 ## 二十五、逐任务实现记录
 
@@ -499,7 +499,7 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
 
 ### T7 TC-14 接口草案（Agent D 只写，零提交）
 
-- **交付**：`hubflow-handoff/T7-tc14.md` 一页纸九节（目标三组/模式开关 none·fastest·
+- **交付**：TC-14 接口一页纸（交接目录，未随 PR 入库） 一页纸九节（目标三组/模式开关 none·fastest·
   cooperative/每拍输入文件快照/引擎输出信封/注入点 TraCI `setRoute`/节奏 SUMO 1s·决策
   60s/确定性固定 seed/分工/开放问题）。**只写约定，不接闭环**。
 - **遗留**：开放问题（快照原子性、暂停恢复、失败回退、三组世界重置）需 A/队长拍板，
@@ -513,4 +513,4 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
 - 合并后基线复核：routes 双信封与 T0 逐字节一致；run_log 剔除 `stations_dir` 后仅
   T2 预见的两处（`reroute_threshold_s` 新键 + `param_version` 值），其余零差异。
 - 验收矩阵 12 条与已知红灯（check_thresholds 预期 exit 1、TC-17② 样例/GZ 均 FAIL、
-  TC-18 证据阻塞）见 `hubflow-handoff/T6-integration.md`。
+  TC-18 证据阻塞）见 本批 T6 集成报告（交接目录，未随 PR 入库）。
