@@ -1194,7 +1194,7 @@ const RECOMMEND: PackRecommend = {
     STATION_GZ_SEGMENTS[1].segment_id,
   ],
   arrival_eta_min: 4.2,
-  arrival_dropoff_point: 'GZ-DROP-EAST',
+  arrival_dropoff_point: 'GZ-DROP-01',
   arrival_walk_min: 1.6,
   departure_segments: [STATION_GZ_SEGMENTS[2].segment_id],
   departure_eta_min: 3.1,
@@ -1235,8 +1235,66 @@ export const STATION_GZ: StationPack = {
     attribution: '© OpenStreetMap contributors · ODbL 1.0',
   },
   sections: BOUNDARY_SECTIONS,
-  dropoffs: [],
-  zones: [],
+  // 落客点 / 候客区（语义取自广州南站公开资料；坐标取真网路段折线上的演示点，
+  // 不是踏勘点位。真实点位归 IKMHMX）
+  dropoffs: [
+    {
+      id: 'GZ-DROP-01',
+      name: '东出发平台落客区（演示点）',
+      lon: 113.2665195,
+      lat: 22.9913493,
+    },
+    {
+      id: 'GZ-DROP-02',
+      name: '西出发平台落客区（演示点）',
+      lon: 113.262142,
+      lat: 22.990344,
+    },
+    {
+      id: 'GZ-DROP-03',
+      name: 'P3 快速接送区落客点·南站南路（演示点）',
+      lon: 113.2654254,
+      lat: 22.9893754,
+    },
+    {
+      id: 'GZ-DROP-04',
+      name: 'P1 快速接送区落客点·南站南路（演示点）',
+      lon: 113.265812,
+      lat: 22.9898123,
+    },
+    {
+      id: 'GZ-DROP-05',
+      name: 'P5 快速接送区落客点·南站北路（演示点）',
+      lon: 113.2647576,
+      lat: 22.9944433,
+    },
+  ],
+  zones: [
+    {
+      id: 'GZ-ZONE-01',
+      name: '东广场网约车上客区（演示点·荣诚西四街折线）',
+      lon: 113.2696091,
+      lat: 22.9897426,
+    },
+    {
+      id: 'GZ-ZONE-02',
+      name: '东广场出租车场上客区（演示点）',
+      lon: 113.269953,
+      lat: 22.9906308,
+    },
+    {
+      id: 'GZ-ZONE-03',
+      name: 'P9–P10 网约车蓄车听单区（演示点·南站南路西段）',
+      lon: 113.2643174,
+      lat: 22.988692,
+    },
+    {
+      id: 'GZ-ZONE-04',
+      name: 'P8 停车场 C 区·旅游大巴上客点（演示点·南站北路）',
+      lon: 113.2672426,
+      lat: 22.9957847,
+    },
+  ],
   stations: [
     {
       id: 'guangzhounan',
