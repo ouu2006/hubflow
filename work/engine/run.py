@@ -126,6 +126,19 @@ def load_points(stations_dir: Path) -> list[dict[str, Any]]:
     return points
 
 
+def _adjacent_sections(
+    graph: network.Graph,
+    node_id: str,
+    path: list[str],
+) -> set[str]:
+    """节点处的"相邻路段"口径(DESIGN.md 十二节):到达路径经过的边的 `section` +
+    该节点所有出边的 `section` —— 落客/上客点可能登记在驶离该节点的那条路上。"""
+    sections = {str(graph.edge(eid).get("section")) for eid in path}
+    for edge_id in graph.out_edges(node_id):
+        sections.add(str(graph.edge(edge_id).get("section")))
+    return sections
+
+
 def stop_point_of(
     points: list[dict[str, Any]],
     graph: network.Graph,
@@ -143,11 +156,32 @@ def stop_point_of(
     if node_type not in DRIVER_TYPE_BY_STOP:
         return None
 
-    sections = {str(graph.edge(eid).get("section")) for eid in path}
-    for edge_id in graph.out_edges(node_id):
-        sections.add(str(graph.edge(edge_id).get("section")))
+    sections = _adjacent_sections(graph, node_id, path)
     for point in points:
         if point.get("type") == node_type and str(point.get("segment_id")) in sections:
+            return point
+    return None
+
+
+def pickup_point_for_d3(
+    points: list[dict[str, Any]],
+    graph: network.Graph,
+    node_id: str,
+    path: list[str],
+) -> dict[str, Any] | None:
+    """D3 上客点(TC-12):`type == "pickup"` 的点位里,选登记在**到达终点相邻路段**上的那个。
+
+    与 `stop_point_of()` 同一套"相邻路段"口径(`_adjacent_sections`),但不按终点节点类型
+    收窄 —— D3 的到达终点可以是路口等任意类型。候选按 `point_id` 升序排序保证确定性;
+    查不到返回 None(调用方跳过该 OD 的 D3 请求并留痕,不按坐标凑点)。
+    """
+    sections = _adjacent_sections(graph, node_id, path)
+    candidates = sorted(
+        (point for point in points if str(point.get("type")) == "pickup"),
+        key=lambda point: str(point.get("point_id")),
+    )
+    for point in candidates:
+        if str(point.get("segment_id")) in sections:
             return point
     return None
 
@@ -525,6 +559,265 @@ def build_request(
     return request
 
 
+# ============================================================================
+# TC-12 / D3(--d3):往返代表请求的 pickup_route 做实
+#
+# 口径(契约变更 v2.4,`docs/数据契约.md` §2.2 由 C 落笔):
+#   - `pickup_route` 仅 D3 出现,形状 = `arrival_route` 镜像:
+#     {"path_id","segments","eta_min","pickup_point","walk_min"};
+#   - 上客点 = `type=="pickup"` 点位按 `point_id` 升序、取登记在**到达终点相邻路段**
+#     (`_adjacent_sections`,与 `stop_point_of()` 同口径)上的第一个;
+#   - `pickup_route` 从到达终点所在路段算到点位所在路段;`departure_route` 从该路段
+#     算到 `exit_node`;三段都 `walk_slots` 进预约表,`slots_reserved` 按**唯一
+#     `(segment, slot)` 格子**计数,`harm_check` 对全部格子算;
+#   - 默认关闭;`--compare --d3` 直接报错退出(避免扰动 TC-17 车辆群);
+#   - 是否生成以 `demand.json` 的 `mix.driver_type_ratio` 中 D3 `ratio > 0` 为依据,
+#     确定性、不随机;真网 `points=[]` → 跳过并在 run_log 写
+#     `d3_skipped: no_pickup_point`(不按坐标映射点位、不编 `pickup_point`);
+#   - **representative 口径(契约 v2.4,开发B 裁定 2026-10-19,方案 B)**:D3 是说明性
+#     代表样例,请求体带 `representative: true`;`reservation.harm_check` 只作展示、
+#     不作准入判据,下游不得把 `passed=false` 的 D3 当可执行推荐;
+#   - **备选例外(契约 §2.2)**:上客候选仅 1 个(相邻路段 type=pickup 点位全集,数据
+#     推导)时输出 `no_alternative: true` + `no_alternative_reason`,不硬凑等价备选。
+# ============================================================================
+
+
+def d3_ratio(demand: dict[str, Any]) -> float:
+    """`demand.json` 的 `mix.driver_type_ratio` 里 D3 的占比(缺 mix / 缺 D3 → 0.0)。"""
+    mix = demand.get("mix") if isinstance(demand, dict) else None
+    for item in (mix or {}).get("driver_type_ratio") or []:
+        if str(item.get("driver_type")) == "D3":
+            return float(item.get("ratio") or 0.0)
+    return 0.0
+
+
+def d3_pickup_edges(
+    graph: network.Graph,
+    node_id: str,
+    pickup_point: dict[str, Any],
+    path: list[str],
+) -> list[str] | None:
+    """上客段的边序列:从到达终点走到上客点所在路段。
+
+    - 点位登记在**驶离终点的边**上(样例 `OD-02`:`P-02` 挂 `SEG-004`,`E-004` 出边)→ 取该出边;
+    - 点位登记在**到达路径的最后一条边**上(车此刻就在该路段上)→ 取该边;
+    - 其余(点位在未走过的入边路段等,构造不出"从终点走到该路段"的边序列)→ None,
+      调用方跳过该 OD 的 D3 请求并留痕,不按坐标硬凑。
+    """
+    target_segment = str(pickup_point.get("segment_id"))
+    for edge_id in graph.out_edges(node_id):
+        if str(graph.edge(edge_id).get("section")) == target_segment:
+            return [edge_id]
+    last_edge = path[-1] if path else None
+    if last_edge is not None and str(graph.edge(last_edge).get("section")) == target_segment:
+        return [last_edge]
+    return None
+
+
+def _build_d3_request(
+    base: dict[str, Any],
+    od: dict[str, Any],
+    graph: network.Graph,
+    segments_state: dict[str, dict[str, Any]],
+    params: dict[str, Any],
+    points: list[dict[str, Any]],
+    index: int,
+    ts: str,
+    table: reserve.SlotTable,
+    request_id_prefix: str,
+) -> dict[str, Any] | None:
+    """为一个 OD 构造 1 个 D3 代表请求;构造不出(无到达段 / 无相邻上客点)返回 None。
+
+    `arrival_route` 照旧(沿用同 OD 普通请求的到达段);`pickup_route` /
+    `departure_route` 按上方口径新算;三段合并走 `walk_slots`,唯一格子计数,
+    `harm_check` 对全部格子算(约束① 同式;D3 代表流未建租约,约束② 无前车可伤)。
+    """
+    arrival = base.get("arrival_route")
+    if not isinstance(arrival, dict):
+        return None
+    od_id = str(od.get("od_id") or f"OD-{index:02d}")
+    dst = str(od["to_node"])
+    arrival_edges = [str(edge_id) for edge_id in (arrival.get("edges") or [])]
+    pickup_point = pickup_point_for_d3(points, graph, dst, arrival_edges)
+    if pickup_point is None:
+        return None
+    pickup_edges = d3_pickup_edges(graph, dst, pickup_point, arrival_edges)
+    if pickup_edges is None:
+        return None
+
+    # 上客候选数(数据推导,no_alternative 的判据):相邻路段上 type=pickup 的点位**全集**。
+    # pickup_point_for_d3 用同一套相邻路段口径但只返回首个(point_id 升序);这里专为数个数。
+    adjacent_sections = _adjacent_sections(graph, dst, arrival_edges)
+    pickup_candidates = sorted(
+        (
+            point
+            for point in points
+            if str(point.get("type")) == "pickup"
+            and str(point.get("segment_id")) in adjacent_sections
+        ),
+        key=lambda point: str(point.get("point_id")),
+    )
+    no_alternative = len(pickup_candidates) == 1
+    no_alternative_reason = (
+        f"D3 上客候选仅 1 个(相邻路段上 type=pickup 点位仅 "
+        f"{pickup_candidates[0].get('point_id')}/{pickup_candidates[0].get('segment_id')}),"
+        "无第二备选"
+        if no_alternative
+        else None
+    )
+
+    # 离站段:从上客点所在路段(其下游节点)算到 exit_node(复用既有"同节点 → 无需离站"口径)
+    departure_edges: list[str] = []
+    departure_note: str | None = None
+    exit_node = od.get("exit_node")
+    pickup_end_node = str(graph.edge(pickup_edges[-1]).get("to"))
+    if not exit_node:
+        departure_note = "离站路线未计算:od[] 缺 exit_node(契约 6.3)"
+    elif str(exit_node) not in graph.node_ids:
+        departure_note = f"离站路线未计算:exit_node={exit_node!r} 不在路网 nodes 里"
+    elif str(exit_node) == pickup_end_node:
+        departure_note = "上客路段终点即 exit_node,无需离站路线"
+    else:
+        weight = network.make_weight_fn(graph, segments_state, params)
+        dep = candidates.select_candidates(
+            graph, pickup_end_node, str(exit_node), k=1, max_overlap=1.0, weight=weight
+        )
+        if dep:
+            departure_edges = list(dep[0])
+        else:
+            departure_note = f"离站路线未计算:{pickup_end_node} → {exit_node} 之间无可行路径"
+
+    # 三段合并成一条连通边序列走 walk_slots(pickup 段首边与到达段末边相同时不重复计)
+    combined_edges = list(arrival_edges)
+    if not (combined_edges and pickup_edges[0] == combined_edges[-1]):
+        combined_edges.extend(pickup_edges)
+    combined_edges.extend(departure_edges)
+    start_epoch_s = reserve.iso_to_epoch_s(ts)
+    cells, pickup_eta_s = reserve.walk_slots(table, combined_edges, start_epoch_s, extra=1.0)
+    unique_cells = sorted(set(cells))
+    harm = reserve.harm_check(table, unique_cells, {}, params)
+    table.reserve(unique_cells)
+
+    pickup_segment = str(graph.edge(pickup_edges[-1]).get("section"))
+    arrival_last_segment = str(graph.edge(arrival_edges[-1]).get("section")) if arrival_edges else None
+    departure_route = None
+    if departure_edges:
+        dep_eta_s = reserve.walk_slots(table, departure_edges, start_epoch_s, extra=0.0)[1]
+        departure_route = {
+            "path_id": f"{od_id}-DK",
+            "segments": _segments_of(graph, departure_edges),
+            "edges": departure_edges,
+            "eta_min": round(dep_eta_s / 60.0, 2),
+        }
+
+    why = (
+        f"D3 往返代表请求:到达 {dst} 后接上客段 —— 上客点 {pickup_point.get('point_id')}"
+        f"(挂 {pickup_segment},按相邻路段口径自 type=pickup 点位中依 point_id 选定);"
+        f"pickup_route 从到达终点所在路段({arrival_last_segment})算到点位所在路段"
+        f"({pickup_segment}),ETA {round(pickup_eta_s / 60.0, 2)} 分钟;"
+    )
+    if departure_route is not None:
+        why += f"departure_route 从该路段算到 exit_node(ETA {departure_route['eta_min']} 分钟);"
+    elif departure_note:
+        why += departure_note + ";"
+    why += (
+        f"三段合计唯一预约格子 {len(unique_cells)} 个"
+        f"(slots_reserved 按唯一 (segment, slot) 计),harm_check "
+        f"{'通过' if harm['passed'] else '未过'}(最大时段饱和度 {harm['max_slot_x']})。"
+    )
+    # 契约 v2.4 裁定(开发B 2026-10-19,方案 B):D3 是 representative 说明性代表样例,
+    # harm_check 只作展示、不作准入判据 —— 如实写进 why,下游不得把 passed=false 的
+    # D3 请求当可执行推荐;备选不足(候选数=1,数据推导)同样如实标注,不硬凑备选。
+    why += (
+        "⚠️ 本请求是 representative 说明性代表样例:reservation.harm_check 只作展示、"
+        "不作为准入判据,不得当可执行推荐。"
+    )
+    if no_alternative:
+        why += f"备选不足:{no_alternative_reason}。"
+
+    request: dict[str, Any] = {
+        "request_id": f"{request_id_prefix}-D3-{index:04d}",
+        "session_id": f"{base.get('session_id')}-d3",
+        "od_id": od_id,
+        "driver_type": "D3",
+        # 契约 v2.4(开发B 裁定 2026-10-19,方案 B):D3 = representative 说明性代表样例
+        "representative": True,
+        "parking_mode": SAMPLE_PARKING_MODE,
+        "location": dict(base.get("location") or {}),
+        "pickup_route": {
+            "path_id": f"{od_id}-PK",
+            "segments": _segments_of(graph, pickup_edges),
+            "eta_min": round(pickup_eta_s / 60.0, 2),
+            "pickup_point": str(pickup_point.get("point_id")),
+            "walk_min": SAMPLE_WALK_MIN,
+        },
+        "arrival_route": dict(arrival),
+        "departure_route": departure_route,
+        "alternatives": [],
+        "reservation": {
+            "slots_reserved": len(unique_cells),
+            "lease_expire_s": int(params["lease_expire_s"]),
+            "harm_check": harm,
+        },
+        "reroute": {"count": 0, "reason": None},
+        "quota": None,
+        "factors_note": base.get("factors_note"),
+        "why": why,
+        "is_simulated": True,
+    }
+    # 契约 §2.2 唯一例外:上客候选仅 1 个(数据推导)时**才**输出这两个键,不硬凑等价备选
+    if no_alternative:
+        request["no_alternative"] = True
+        request["no_alternative_reason"] = no_alternative_reason
+    return request
+
+
+def append_d3_requests(
+    requests: list[dict[str, Any]],
+    od_pairs: list[dict[str, Any]],
+    graph: network.Graph,
+    segments_state: dict[str, dict[str, Any]],
+    params: dict[str, Any],
+    points: list[dict[str, Any]],
+    ts: str,
+    request_id_prefix: str,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """对每个 OD 追加 1 个 D3 代表请求(确定性:OD 顺序 + point_id 升序,不随机)。
+
+    追加到 `requests` 尾部,返回 `(d3_requests, skipped_od_ids)`;个别 OD 构造不出
+    (无到达段 / 相邻路段上无 type=pickup 点位)时跳过该 OD 并把 od_id 记入
+    `skipped_od_ids` 留痕,不编点位。是否生成由 `d3_ratio(demand) > 0` 决定(调用方判)。
+    """
+    table = reserve.SlotTable(graph, segments_state, params)
+    d3_requests: list[dict[str, Any]] = []
+    skipped_od_ids: list[str] = []
+    for index, od in enumerate(od_pairs, start=1):
+        base = requests[index - 1] if index - 1 < len(requests) else None
+        od_id = str(od.get("od_id") or f"OD-{index:02d}")
+        d3 = (
+            _build_d3_request(
+                base,
+                od,
+                graph,
+                segments_state,
+                params,
+                points,
+                index,
+                ts,
+                table,
+                request_id_prefix,
+            )
+            if isinstance(base, dict)
+            else None
+        )
+        if d3 is not None:
+            d3_requests.append(d3)
+        else:
+            skipped_od_ids.append(od_id)
+    requests.extend(d3_requests)
+    return d3_requests, skipped_od_ids
+
+
 def run_sample(cfg: dict[str, Any]) -> int:
     """用 samples/ + stations/thresholds.json 走完整链路,不依赖上游、不依赖 SUMO。"""
     dataset = _load_sample_dataset(cfg)
@@ -535,6 +828,7 @@ def run_sample(cfg: dict[str, Any]) -> int:
     # 点位表也读站点包:终点要折成**点位 id**(Issue #94 第①条),引擎里不许写站点相关的字符串常量
     points = dataset["points"]
     od_pairs = dataset["od_pairs"]
+    demand = dataset["demand"]
     now_ts = dataset["ts"]
 
     network.ensure_out_dir(out_dir)
@@ -543,6 +837,23 @@ def run_sample(cfg: dict[str, Any]) -> int:
         build_request(od, graph, segments_state, params, points, i + 1, now_ts)
         for i, od in enumerate(od_pairs)
     ]
+    # TC-12 / D3:默认关闭;开启后按 demand 的 D3 占比对每个 OD 追加 1 个代表请求
+    d3_log: dict[str, Any] = {}
+    if cfg.get("d3"):
+        d3_log = {"d3_enabled": True}
+        if d3_ratio(demand) > 0.0:
+            d3_requests, skipped_od_ids = append_d3_requests(
+                requests, od_pairs, graph, segments_state, params, points, now_ts, "REQ-SAMPLE"
+            )
+            d3_log["d3_requests"] = len(d3_requests)
+            if skipped_od_ids:
+                d3_log["d3_skipped"] = "no_adjacent_pickup_point"
+                d3_log["d3_skipped_od_ids"] = skipped_od_ids
+            else:
+                d3_log["d3_skipped"] = None
+        else:
+            d3_log["d3_requests"] = 0
+            d3_log["d3_skipped"] = "d3_ratio_zero"
 
     routes = {
         "ts": now_ts,
@@ -566,6 +877,7 @@ def run_sample(cfg: dict[str, Any]) -> int:
         "node_count": len(graph.node_ids),
         "edge_count": len(graph._edges),  # noqa: SLF001 —— 只读计数,给日志看
         "od_count": len(od_pairs),
+        **d3_log,
         "requests_with_alternative": sum(
             1 for r in requests if len(r.get("alternatives") or []) >= 2
         ),
@@ -658,6 +970,28 @@ def run_real(cfg: dict[str, Any]) -> int:
             )
         )
 
+    # TC-12 / D3:真网站点包 `points=[]` 是既有口径 —— 无上客点位即跳过并留痕,
+    # 不按坐标映射点位、不编 pickup_point;点位非空时与样例同一套追加逻辑。
+    d3_log: dict[str, Any] = {}
+    if cfg.get("d3"):
+        d3_log = {"d3_enabled": True}
+        if not points:
+            d3_log["d3_requests"] = 0
+            d3_log["d3_skipped"] = "no_pickup_point"
+        elif d3_ratio(dataset["demand"]) > 0.0:
+            d3_requests, skipped_od_ids = append_d3_requests(
+                requests, od_pairs, graph, segments_state, params, points, now_ts, "REQ-REAL"
+            )
+            d3_log["d3_requests"] = len(d3_requests)
+            if skipped_od_ids:
+                d3_log["d3_skipped"] = "no_adjacent_pickup_point"
+                d3_log["d3_skipped_od_ids"] = skipped_od_ids
+            else:
+                d3_log["d3_skipped"] = None
+        else:
+            d3_log["d3_requests"] = 0
+            d3_log["d3_skipped"] = "d3_ratio_zero"
+
     # 段号命名空间硬校验 + 长度补齐 + 方向/车道 legs（真网产物专属，样例基线不做，保持逐字节不变）
     length_enriched = realnet.attach_route_lengths(requests, graph)
     topology_enriched = realnet.attach_route_topology(requests, graph)
@@ -695,6 +1029,7 @@ def run_real(cfg: dict[str, Any]) -> int:
         "node_count": len(graph.node_ids),
         "edge_count": len(graph._edges),  # noqa: SLF001 —— 只读计数,给日志看
         "od_count": len(od_pairs),
+        **d3_log,
         "demand_vph_per_od": float(cfg.get("demand_vph") or realnet.DEMO_DEMAND_VPH),
         "requests_with_alternative": stats["od_with_alternative"],
         "requests_with_reservation": stats["od_with_reservation"],
@@ -1945,6 +2280,15 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         help="三组对照:① 不推荐 ② 此刻最快 ③ 协同推荐(TC-17 举证);可与 --sample 或 --network real 同用",
     )
     parser.add_argument(
+        "--d3",
+        action="store_true",
+        dest="d3",
+        help=(
+            "TC-12:对每个 OD 追加 1 个 D3(往返)代表请求,做实 pickup_route 与三段预约;"
+            "默认关闭;与 --compare 互斥(避免扰动 TC-17 车辆群);真网点位缺失时跳过并留痕"
+        ),
+    )
+    parser.add_argument(
         "--network",
         choices=("sample", "real"),
         default=None,
@@ -2009,6 +2353,11 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         raise SystemExit(
             "--sample 与 --network real 互斥:样例基线(7 节点 SEG-###)与站点真网是两张网"
         )
+    if ns.compare and ns.d3:
+        raise SystemExit(
+            "--compare 与 --d3 互斥:--compare 的三组对照(TC-17 车辆群)不注入 D3 代表请求;"
+            "请单独用 --sample --d3 或 --network real --d3"
+        )
     if ns.out_dir:
         # 显式传参优先:调用方要写哪就写哪(--out 的约定不变)
         out_dir = Path(ns.out_dir)
@@ -2035,6 +2384,7 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         "demand_vph": ns.demand_vph,
         "sample": ns.sample,
         "compare": ns.compare,
+        "d3": ns.d3,
         "out_dir": out_dir,
         "samples_dir": Path(ns.samples_dir),
         "stations_dir": Path(ns.stations_dir),
