@@ -11,6 +11,9 @@
 口径（与 stationZ.ts 一致）：
 
 - **几何是 OSM 真值**；路况指标一律是**演示数据（模拟）**，不是实测；
+- **落客点 / 候客区**语义取自广州南站公开资料（政府官网 / 铁路官方 / 主流媒体，整理时点
+  2026-10），坐标取真网对应路段折线上的**演示点**，每条名称标「（演示点）」；
+  真实踏勘点位归 IKMHMX，本包不冒充实测；
 - 全段确定性演示基线：每段 level ∈ 1~4（**不出现灰档**），数值由段序号/段长确定性派生，
   同一输入重跑逐字节一致；标 `derive` 说明来源；
 - GZ 暂无摄像头登记 → `channels: []`、`colorPolicy: 'all'`（全段按等级上色，不是只有摄像头段）；
@@ -27,8 +30,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
+from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT / "work/twin") not in sys.path:
@@ -53,6 +58,42 @@ LEVEL_TRIGGERED = {1: ["x"], 2: ["x", "v"], 3: ["x", "L_q"], 4: ["v", "L_q"]}
 LEVEL_CI = {1: 34, 2: 55, 3: 73, 4: 88}
 DEMO_DERIVE = "演示基线（确定性派生，不是实测；GZ 站点包演示数据）"
 
+# ---- 落客点 / 候客区（语义取自广州南站公开资料；坐标取真网折线演示点，不是踏勘点位）----
+#
+# 语义来源：广州南站停车接客点 / 候车点公开资料（政府官网、铁路官方、主流媒体；整理时点
+# 2026-10）。该资料给的是**功能与方位描述**（哪个停车场是快速接送区、哪个是网约车上客区、
+# 出哪个门最近），**不含任何经纬度**；而 OSM 切片里没有 `amenity=parking` 面、也没有站房
+# 轮廓，所以坐标只能照站点包 Z 的既有口径「取对应路段折线上的演示点」。
+#
+# 每条 = (id, 名称, 所在真网段, 段内弧长占比)。名称一律带「（演示点）」：
+# 真实踏勘点位归 IKMHMX，本包不冒充实测。
+#
+# 名称里的停车场编号（P1/P3/P5/P8/P9-P10）与「快速接送区 / 网约车上客区 / 出租车上客区 /
+# 旅游大巴上客点」的对应关系来自公开资料；**公开资料给出的桥柱锚点（南4/南10/北10/北4）
+# 未提供可换算的坐标**，故本表只按「所在道路」落线，不宣称精确到某根桥柱。
+LANDMARKS: list[tuple[str, str, str, float]] = [
+    # 落客点（送客下车）—— 手册 §「送客 = 起点 → 落客点 → 离站段」
+    # 东/西出发平台：公开资料「二层只有东平台落客、三层只有西平台落客，均即停即走」
+    # （该条资料自带【待核实】标注：未在官方原文直接搜到层位对应关系，仅间接佐证两个平台都存在）
+    ("GZ-DROP-01", "东出发平台落客区·二层（演示点）", "GZ-041", 0.55),
+    ("GZ-DROP-02", "西出发平台落客区·三层（演示点）", "GZ-451", 0.50),
+    # 快速接送区（收费复函名单 P1/P3/P5；官方文件称「快速接送区」，导航仍多称「快速接客区」）
+    ("GZ-DROP-03", "P3 快速接送区落客点·南站南路（演示点）", "GZ-076", 0.50),
+    ("GZ-DROP-04", "P1 快速接送区落客点·南站南路（演示点）", "GZ-075", 0.72),
+    ("GZ-DROP-05", "P5 快速接送区落客点·南站北路（演示点）", "GZ-053", 0.50),
+    # 候客区 / 蓄车区 / 上客点（接客不做在站口，而在候客区/蓄车区）
+    # 网约车 2026-10-15 新规：须先进 P9–P10 蓄车听单，接单后凭订单 30 分钟内到东广场上客区
+    ("GZ-ZONE-01", "东广场网约车上客区（演示点·荣诚西四街折线）", "GZ-557", 0.50),
+    # 公开资料给的官方地址是「东广场荣诚西三街」，但本 OSM 切片只有荣诚西一/四/五街，
+    # 无「荣诚西三街」——坐标取最近可用的荣诚西四街折线，名称里如实标出来，不写成西三街。
+    ("GZ-ZONE-02", "东广场出租车场上客区（演示点）", "GZ-556", 0.50),
+    ("GZ-ZONE-03", "P9–P10 网约车蓄车听单区（演示点·南站南路西段）", "GZ-076", 0.95),
+    ("GZ-ZONE-04", "P8 停车场 C 区·旅游大巴上客点（演示点·南站北路）", "GZ-058", 0.50),
+]
+
+#: 推荐路线的落客点（送客默认落在东出发平台；须是上面 LANDMARKS 里的落客点 id）
+RECOMMEND_DROPOFF = "GZ-DROP-01"
+
 
 def _ts_str(value: str) -> str:
     """TS 单引号字符串（转义反斜杠/单引号）。"""
@@ -65,6 +106,39 @@ def _num(value: float, digits: int = 1) -> str:
     if rounded == int(rounded):
         return str(int(rounded))
     return f"{rounded:.{digits}f}".rstrip("0").rstrip(".")
+
+
+def _point_on_edge(edge: dict, frac: float) -> tuple[float, float]:
+    """在真网路段折线上按弧长占比取一点（返回 WGS-84 经纬度）。
+
+    只做**折线上的线性插值**，不把点移出折线：站点包 Z 的既有口径就是「坐标取对应路段
+    折线上的演示点」。用平面近似算弧长（公里级范围内足够），插值结果必然落在折线上。
+    """
+    coords = [tuple(map(float, pair)) for pair in (edge.get("coords") or [])]
+    if len(coords) < 2:
+        raise SystemExit(
+            f"路段 {edge.get('segment_id')} 的 coords 少于 2 点，无法取演示点位（不编造坐标）"
+        )
+    ratio = min(1.0, max(0.0, float(frac)))
+    seg_len: list[float] = []
+    total = 0.0
+    for index in range(len(coords) - 1):
+        (lon1, lat1), (lon2, lat2) = coords[index], coords[index + 1]
+        dx = (lon2 - lon1) * 102000.0 * math.cos(math.radians((lat1 + lat2) / 2.0))
+        dy = (lat2 - lat1) * 111000.0
+        step = math.hypot(dx, dy)
+        seg_len.append(step)
+        total += step
+    target = total * ratio
+    walked = 0.0
+    for index, step in enumerate(seg_len):
+        if walked + step >= target or index == len(seg_len) - 1:
+            local = 0.0 if step <= 0 else (target - walked) / step
+            local = min(1.0, max(0.0, local))
+            (lon1, lat1), (lon2, lat2) = coords[index], coords[index + 1]
+            return (lon1 + (lon2 - lon1) * local, lat1 + (lat2 - lat1) * local)
+        walked += step
+    return coords[-1]
 
 
 def build_ts(site: dict, network: dict) -> str:
@@ -82,6 +156,29 @@ def build_ts(site: dict, network: dict) -> str:
         for edge in edges
         if node_boundary.get(str(edge.get("from"))) or node_boundary.get(str(edge.get("to")))
     ]
+
+    # ---- 落客点 / 候客区：把 LANDMARKS 解析成带坐标的记录（段不存在就直接退出，不猜）----
+    edges_by_segment = {str(edge.get("segment_id")): edge for edge in edges}
+    marks: list[dict[str, Any]] = []
+    for mark_id, mark_name, segment_id, frac in LANDMARKS:
+        mark_edge = edges_by_segment.get(segment_id)
+        if mark_edge is None:
+            raise SystemExit(
+                f"落客点/候客区 {mark_id} 指向的真网段 {segment_id} 不存在于 GZ 真网产物："
+                "不生成站点包（换段请改 LANDMARKS 并重跑 build_junction_pack.py）"
+            )
+        lon, lat = _point_on_edge(mark_edge, frac)
+        if not (-180.0 <= lon <= 180.0 and -90.0 <= lat <= 90.0):
+            raise SystemExit(f"落客点/候客区 {mark_id} 取到非法经纬度：不生成站点包")
+        marks.append(
+            {"id": mark_id, "name": mark_name, "segment_id": segment_id, "lon": lon, "lat": lat}
+        )
+    dropoff_marks = [mark for mark in marks if mark["id"].startswith("GZ-DROP-")]
+    zone_marks = [mark for mark in marks if mark["id"].startswith("GZ-ZONE-")]
+    if not any(mark["id"] == RECOMMEND_DROPOFF for mark in dropoff_marks):
+        raise SystemExit(
+            f"RECOMMEND_DROPOFF={RECOMMEND_DROPOFF} 不在落客点清单里：推荐路线会指向不存在的点位"
+        )
 
     lines: list[str] = []
     lines.append(f"// 站点包 {PACK_KEY} ·「{site_name} · OSM 真路网」演示站（Issue IKNB9F）")
@@ -200,7 +297,7 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append("    STATION_GZ_SEGMENTS[1].segment_id,")
     lines.append("  ],")
     lines.append("  arrival_eta_min: 4.2,")
-    lines.append("  arrival_dropoff_point: 'GZ-DROP-EAST',")
+    lines.append(f"  arrival_dropoff_point: {_ts_str(RECOMMEND_DROPOFF)},")
     lines.append("  arrival_walk_min: 1.6,")
     lines.append("  departure_segments: [STATION_GZ_SEGMENTS[2].segment_id],")
     lines.append("  departure_eta_min: 3.1,")
@@ -248,8 +345,26 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append(f"    attribution: {_ts_str('© OpenStreetMap contributors · ODbL 1.0')},")
     lines.append("  },")
     lines.append("  sections: BOUNDARY_SECTIONS,")
-    lines.append("  dropoffs: [],")
-    lines.append("  zones: [],")
+    lines.append("  // 落客点 / 候客区（语义取自广州南站公开资料；坐标取真网路段折线上的演示点，")
+    lines.append("  // 不是踏勘点位。真实点位归 IKMHMX）")
+    lines.append("  dropoffs: [")
+    for mark in dropoff_marks:
+        lines.append("    {")
+        lines.append(f"      id: {_ts_str(mark['id'])},")
+        lines.append(f"      name: {_ts_str(mark['name'])},")
+        lines.append(f"      lon: {_num(mark['lon'], 7)},")
+        lines.append(f"      lat: {_num(mark['lat'], 7)},")
+        lines.append("    },")
+    lines.append("  ],")
+    lines.append("  zones: [")
+    for mark in zone_marks:
+        lines.append("    {")
+        lines.append(f"      id: {_ts_str(mark['id'])},")
+        lines.append(f"      name: {_ts_str(mark['name'])},")
+        lines.append(f"      lon: {_num(mark['lon'], 7)},")
+        lines.append(f"      lat: {_num(mark['lat'], 7)},")
+        lines.append("    },")
+    lines.append("  ],")
     lines.append("  stations: [")
     lines.append("    {")
     lines.append(f"      id: {_ts_str(str(site['site_id']))},")
