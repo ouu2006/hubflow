@@ -18,8 +18,9 @@
 
 ## 备注
 
-- 广州南站（IKNB9F）尚未合入 enriched 图：本轮**不碰 station pack / 多站单**；等 IKNB9F 合并后
-  用同一套命令跑 `--site-id <gz>` 即可（本脚本只认站点登记表）。
+- 广州南站（IKNB9F）的 enriched 图/报告已由 IKNC4J 补齐（见 netpack/README §5.6）；本脚本仍以
+  Z 站为主站自检，GZ 用同一套命令单独跑 `topology.py --site-id guangzhounan` +
+  `tools/check_topology.py --site-id guangzhounan`（本脚本只认站点登记表，换站不改代码）。
 - 自检证据写 `work/twin/netpack/topology_selftest.json`（脚本产物，不含时间戳）。
 """
 
@@ -442,8 +443,8 @@ def main() -> int:
         "passed": not failures,
         "notes": [
             "全部检查真实调用脚本 / 引擎 / 校验器，不靠人工看图；证据为脚本产物。",
-            "广州南站（IKNB9F）尚未合入 enriched 图：等其生成后用同一套命令跑 "
-            "`topology.py --site-id <gz>` + `check_topology.py --site-id <gz>`；本轮不碰 station pack。",
+            "广州南站（IKNB9F）enriched 图与报告已由 IKNC4J 补齐（433 段）；GZ 用同一套命令 "
+            "`topology.py --site-id guangzhounan` + `check_topology.py --site-id guangzhounan` 单独跑。",
             "样例基线 sha256 是改动前冻结值，用来证明 --sample 逐字节不变。",
         ],
     }
