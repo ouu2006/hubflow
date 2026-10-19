@@ -1240,13 +1240,13 @@ export const STATION_GZ: StationPack = {
   dropoffs: [
     {
       id: 'GZ-DROP-01',
-      name: '东出发平台落客区·二层（演示点）',
+      name: '东出发平台落客区（演示点）',
       lon: 113.2665024,
       lat: 22.9913825,
     },
     {
       id: 'GZ-DROP-02',
-      name: '西出发平台落客区·三层（演示点）',
+      name: '西出发平台落客区（演示点）',
       lon: 113.2621417,
       lat: 22.9903444,
     },
