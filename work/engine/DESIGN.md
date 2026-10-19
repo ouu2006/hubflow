@@ -406,3 +406,111 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
 7. **`reserve.py` 的 `+inf` 守卫**只影响"突发封路"演示路径，常规推荐/预约/对照数值不变（样例 sha 可证）。
 
 
+
+# 附：决策线收尾实现记录（T1–T7，2026-10-19；由 Agent E 集成时归并）
+
+> 集成分支 `feat/engine-closeout`：merge commit `8a88019`（A）→ `6b77f95`（C）→ `8a45c21`（B），
+> 全部 `--no-ff`、零冲突。相对 T0_SHA `fe4f915` 共 10 文件 +2002/−40。
+> 逐任务证据见 `hubflow-handoff/` 下 T1/T2/T3/T3-fix/T4/T5/T7 报告与 `t*-verify/`。
+
+## 二十五、逐任务实现记录
+
+### T2 阈值卫生与标定预案（commit `cc856f9`，分支 feat/engine-a）
+
+- **改了什么**：`stations/thresholds.json` decision 组新增 `reroute_threshold_s: 30`
+  （**占位值，待池·P 标定**，与 `eps_harm_s` 同量级）+ `param_version` 升 `v0-demo.1`；
+  `reroute.py` 的 `reroute_threshold_s(params)` 改为优先读新键、缺键回落 `eps_harm_s`
+  （docstring 写明"站点包补键后不再回落"）；新增只读机检 `check_thresholds.py` 与
+  扫描器 `calibration_scan.py`。
+- **口径**：不改任何判定值（`x_safe`/`eps_harm_s`/`level_bounds`/`alpha`/`beta` 一字未动）。
+- **真实证据数字**：`check_thresholds.py` 如实报 `x_safe=0.85 > 判级橙档 0.8`（FAIL，
+  退出码 1，**预期红**）；`calibration_scan.py` 4 组网格（`x_safe∈{0.80,0.85} ×
+  eps∈{30,45}`）× sample/real 双跑 8 行全真跑——结论：**0.80 三项判据全过；0.85 在
+  sample 网第 2 项（无新增橙/红）必过不了**（新增 SEG-001），真网上 0.85 能过；
+  **eps 30→45 对三项判据无影响**（样例/真网两组内 eps 变化判据全同）。
+  基线：`routes.json` 双信封逐字节不变；`run_log` 仅 `decision_params_used` 增
+  `reroute_threshold_s` 键与 `param_version` 值变化（+33 B，卡片预见例外）。
+- **遗留**：`x_safe` 与判级橙档的结构性矛盾留池·P（IKMHMX）标定同桌解决；
+  `reroute_threshold_s=30` 为占位值；契约 §6.3 补键名待 C 落笔（Issue 草稿见 T2 报告 §4）。
+
+### T3 TC-12 D3 pickup_route + T3 修复（commit `77aa20e` + `94cba2e`，分支 feat/engine-b）
+
+- **改了什么**：`run.py` 新增 `--d3`（默认关）为每个 OD 构造 1 个 D3 往返代表请求
+  （`pickup_route`/`departure_route` 三段走 `walk_slots`）；T3 修复在
+  `_build_d3_request()` 加 `representative: true`、候选数=1 时输出
+  `no_alternative: true` + `no_alternative_reason`，`why` 如实写明代表性与备选不足。
+- **口径（开发B 裁定，方案 B）**：D3 是 **representative 说明性代表样例**，
+  `reservation.harm_check` 只作展示、**不作准入判据**——下游不得把 `passed=false`
+  的 D3 请求当可执行推荐（契约 v2.4 待 C 落笔，原文见 T3-fix 报告 §4）。
+  `no_alternative` 的候选数**由数据推导**（相邻路段 `type=pickup` 点位全集计数），
+  不写死字符串。
+- **真实证据数字**：样例 D3 请求 `pickup_point="P-02"`（真点位 id）、`slots_reserved=3`、
+  `harm_check.passed=false`（`max_slot_x=0.9333`，失败格子在到达段 SEG-003——数据事实，
+  不绕开）；`--sample --d3` 两遍 sha 一致（`b2043b09…`/`b91d6b48…`）；
+  `--compare --d3` 互斥拒绝（exit 1）；真网 `points=[]` → `d3_skipped: no_pickup_point`
+  （`d3_requests: 0`，不编点位）；默认路径 `--d3` 关闭零执行（基线四产物逐字节不变）。
+- **遗留**：契约 v2.4 落笔（C）；D3 候选 ≥2 时的备选生成（二期，由 representative 口径兜底）。
+
+### T4 locate TC-18（commit `87dd59c`，分支 feat/engine-c）
+
+- **改了什么**：`locate.py` 从 W0 空壳变为可运行实现（真值直读 + σ 噪声 HMM-lite 匹配，
+  +591/−11）；新增校验入口 `locate_check.py`（+546）。**未接入 `run.py` 主链**
+  （`grep locate run.py` 零命中），合入对基线零影响（合并后实测四产物不变）。
+- **口径**：不编坐标（样例图无锚点 → σ 档 `unavailable/geometry_frame_mismatch`，
+  不当 0 分）；不得用样例 3/3 或自造夹具冒充 TC-18 验收证据。
+- **真实证据数字**：样例口径 ① `truth_match_rate=1.0`（3/3，仅证链路通）；
+  dev-debug 口径（自造夹具，61 车）① 61/61、② σ=10 m 0.8398 / σ=20 m **0.7901** /
+  σ=30 m 0.7624（均 < 0.90 门槛）。
+- **阻塞（如实记录）**：TC-18 **无验收证据**——`work/twin/out/latest/vehicles.json`
+  不存在、SUMO/TraCI 不可用、统一图无 WGS-84 几何（`map_ingest.py` Issue #37 未做）。
+  解除条件：装 SUMO 1.28 → `loop.py --duration 3900 --seed 42` → `map_ingest #37`
+  → 重跑 `locate_check.py --network real`（责任：开发A/开发B，见 Issue 草稿 d）。
+
+### T5 predict L0（commit `3ac593b`，分支 feat/engine-a）
+
+- **改了什么**：`predict.py` 实现纯函数 `l0_record(segment)`（`h15=h30={q_vph 当前值,
+  level 当前值}`）与 `build_snapshot(segments_path)`（读 `segments[]` 快照、沿用输入
+  `ts`/`is_simulated`、按 `segment_id` 排序、**不写 `segments.json`**）；原 W0 骨架
+  `predict(segment_id, horizon_min)` 零调用方且无法离全局状态实现，保留公开名**清晰报错**
+  并指向新入口（docstring 已说明）；`attach_pred` 转可用实现（契约第一节
+  `segments.pred` 形状，签名变更已在 T5 报告申报）。新增 `predict_cli.py`
+  （`--segments` 必填、不存在即退出不猜路径；`--out` 默认 `out/latest/predict.json`）。
+- **口径**：L0=当前值保持；**不引入模型、不报任何精度数字**。
+- **真实证据数字**：`predict_cli.py` 两遍 sha 一致（`ff247819…`，17 segments）；
+  字段机检：段键恰 `h15/h30/segment_id`、顶层恰五键、零精度字段；缺文件 exit 2；
+  基线四产物不变。
+- **遗留**：`predict.json` 是 gitignore 运行产物（CI/演示需先跑 CLI 生成）；
+  HTTP 合并规格已给 C（T5 报告 §4），端点不归本线。
+
+### T1 GZ 708 冒烟（Agent D 只读，零提交；分支 feat/engine-d 停在 T0_SHA）
+
+- **结论**：`python work/engine/run.py --network real --site-id guangzhounan` **可跑**
+  （两遍 sha 一致；退出码 0；无崩溃/超时）。产物落 `out/real/sites/guangzhounan/`。
+- **真实证据数字**：`segments_read=708`（=登记表 `seg_target`）/ 453 节点 / 91 OD /
+  备选 ≥2 的 OD 46 / 带预约请求 91（`harm_check.passed` 91/91）/ `od_derivation.skipped=4`
+  （全部"进场边界不可达"，有原因）；段号命名空间纯 `GZ-###`（0 个 `SZ-###`）；
+  需求来源 `demo_assumption`（`DEMO_DEMAND_VPH=600`，非实测）。
+- **遗留/发现**：① TC-17② 在 GZ 上同样 FAIL（新增 8 个橙/红段 GZ-016/213/220/388/
+  461/474/534/552）——根因与样例一致（`x_safe=0.85` > 橙档 0.8），**跨站一致的结构性
+  冲突，非 GZ 特有 bug**；② 拓扑 7 项 FAIL（`exit_without_entry` 1 / `node_cannot_reach_exit`
+  2 / `segment_uncovered` 4；非法路线 0；段覆盖 704/708）属真网几何质量，找 IKMHMX/池·S；
+  ③ 限速 708/708 回落 defaults、车道数仅 16 段有值（692 段 null）、容量 692 段回落
+  defaults——全部逐边登记 `param_source`，真值等 T2 核对表/IKMHMX。
+
+### T7 TC-14 接口草案（Agent D 只写，零提交）
+
+- **交付**：`hubflow-handoff/T7-tc14.md` 一页纸九节（目标三组/模式开关 none·fastest·
+  cooperative/每拍输入文件快照/引擎输出信封/注入点 TraCI `setRoute`/节奏 SUMO 1s·决策
+  60s/确定性固定 seed/分工/开放问题）。**只写约定，不接闭环**。
+- **遗留**：开放问题（快照原子性、暂停恢复、失败回退、三组世界重置）需 A/队长拍板，
+  不能由引擎侧单方面决定。
+
+## 二十六、集成侧记录（Agent E）
+
+- 合并顺序 a→c→b 全部 `--no-ff`、零冲突（C 的 `docs/任务记录.md` 台账 1 行无冲突方，
+  直接进入）；每步 `py_compile`/`--sample`（routes `c375d902…` 逐字节不变）/`doc_gate`
+  8/8 当场验证通过。
+- 合并后基线复核：routes 双信封与 T0 逐字节一致；run_log 剔除 `stations_dir` 后仅
+  T2 预见的两处（`reroute_threshold_s` 新键 + `param_version` 值），其余零差异。
+- 验收矩阵 12 条与已知红灯（check_thresholds 预期 exit 1、TC-17② 样例/GZ 均 FAIL、
+  TC-18 证据阻塞）见 `hubflow-handoff/T6-integration.md`。

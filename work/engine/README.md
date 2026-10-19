@@ -55,6 +55,7 @@
 | **预约租约** | `T_lease` | **90 s** | 未确认采纳即释放 |
 | **周期重算** | `ΔT` | **60 s** | 用**实测流量**（不是发放量）刷新预约表 |
 | **不伤害上限** | `EPS_HARM` | **30 s**【待标定】 | 前车 ETA 允许被后车增加的上限 |
+| **再疏导触发阈值** | `REROUTE_TH` | **30 s**【待标定】 | ETA 增加超过多少才考虑改道；站点包 decision 组独立键 `reroute_threshold_s`（T2 补键，占位值待池·P 标定；`reroute.py` 优先读它、缺键回落 `eps_harm_s`） |
 | **时段饱和度上限** | `X_SAFE` | **0.85**【待标定】 | 任一 `(路段, 时段)` 的饱和度上限 |
 | **切换滞回** | `h` | **10%** | 改道收益不到 10% 就不改，防抖 |
 | **每车最多改道次数** | — | **2 次** | 超过不再改道 |
@@ -124,6 +125,13 @@ def every_60s():
 
 ## 三、定位与地图匹配（`locate.py`）
 
+**实现状态（T4，2026-10-19）**：`locate.py` 已从 W0 空壳变为可运行实现（真值直读 + σ 噪声
+HMM-lite 匹配），但 **TC-18 验收证据阻塞**——缺 `work/twin/out/latest/vehicles.json`
+（W1 真孪生快照）、SUMO/TraCI 不可用、统一图无 WGS-84 几何（`map_ingest.py` Issue #37
+未做）。样例口径 3/3 只证明链路通，**不得当 TC-18 通过**；dev-debug 口径 σ=20 m = 0.7901
+（自造夹具，同样不得当验收）。解除条件见 `hubflow-handoff/T4-locate.md` §5。
+校验入口：`python work/engine/locate_check.py --vehicles <快照> --network sample --sigmas 10,20,30 --seed 42`。
+
 **两期用同一个函数形状，一期只换输入。**
 
 ```text
@@ -152,7 +160,7 @@ locate(session_id, position, heading, ts) → {
 
 | 项 | 一期 | 二期 |
 |---|---|---|
-| 做什么 | **只做接口 + L0 保底实现**，用孪生数据跑通链路 | L1 机器学习回归（数据满 4 周）→ L2 时空图（数据满 3 个月） |
+| 做什么 | **L0 已实现（T5，2026-10-19）**：`predict.py` 纯函数 `l0_record`/`build_snapshot` + `predict_cli.py` 产 `out/latest/predict.json`（gitignore 产物，两遍 sha 一致；不写 `segments.json`、不报精度） | L1 机器学习回归（数据满 4 周）→ L2 时空图（数据满 3 个月） |
 | 输出 | 每条路段未来 **15 / 30 分钟**的流量与等级，写进 `segments.pred`，`model = "L0"` | 5 / 15 / 30 / 60 分钟，`model = "L1"` / `"L2"` |
 | 精度 | **不报任何精度数字**，标 `is_simulated` | 15 分钟 MAPE ≤ 15%、30 分钟 ≤ 20%、预测等级一致率 ≥ 80%【待标定】 |
 | 喂给谁 | 演示链路 + 管理端"预测展示" | **填进时段预约表的 `background[seg][slot]`** ——"前后车都不受影响"在真实场景里靠它 |
@@ -235,7 +243,18 @@ python work/engine/run.py --network real --site-id <登记表里的 site_id>
 # 样例基线(逐字节不变,对照/演示用)
 python work/engine/run.py --sample
 python work/engine/run.py --sample --compare
+# D3 往返代表请求(仅样例;真网 points=[] 时跳过并留痕 d3_skipped: no_pickup_point)
+python work/engine/run.py --sample --d3
+# 阈值卫生机检(只读;当前站点包预期退出码 1 —— x_safe=0.85 > 判级橙档 0.8,如实报违规)
+python work/engine/check_thresholds.py
+# 一期 L0 预测(当前值保持):读 segments 快照 → out/latest/predict.json(不写 segments.json)
+python work/engine/predict_cli.py --segments work/engine/samples/segments_sample.json
 ```
+
+> **GZ 冒烟结论（T1，2026-10-19）**：`python work/engine/run.py --network real --site-id guangzhounan`
+> 可跑（两遍 sha 一致；`segments_read=708` / 453 节点 / 91 OD；产物落
+> `out/real/sites/guangzhounan/`）。TC-17② 在 GZ 上同样 FAIL（新增 8 个橙/红段），
+> 根因与样例一致（`x_safe=0.85` > 橙档 0.8），属已知结构性冲突，见 Issue（阈值标定）。
 
 > **真网两种 mode 的产物目录是分开的**（IKMS11 独立审查整改）：默认模式 → `out/real/`，
 > `--compare` → `out/real/compare/`。**不能共用同一个 `routes.json` 路径**——否则后跑覆盖前者，
