@@ -1174,7 +1174,7 @@ python work/twin/netpack/check_site_ranges.py
 python scripts/doc_gate.py
 ```
 
-- `--check` ✅ 一致；`check_station_data.py` 退出 0（GZ 712 段包络 lon 113.25810~113.28058 /
+- `--check` ✅ 一致；`check_station_data.py` 退出 0（GZ 708 段包络 lon 113.25810~113.28058 /
   lat 22.97869~22.99891，9 个点位全部在内、最大离线距 **0.004 m**、坐标无重合）。
 - 反向测试两条（都按预期报错、随后还原）：把推荐落客点改回 `'GZ-DROP-EAST'` → 报「悬空引用」；
   把 `GZ-DROP-01` 名称里的「（演示点）」去掉 → 报「疑似冒充真实点位」。
