@@ -689,11 +689,20 @@ def _build_d3_request(
 
     # 三段合并成一条连通边序列走 walk_slots(pickup 段首边与到达段末边相同时不重复计)
     combined_edges = list(arrival_edges)
-    if not (combined_edges and pickup_edges[0] == combined_edges[-1]):
+    shared_edge = bool(combined_edges) and pickup_edges[0] == combined_edges[-1]
+    if not shared_edge:
         combined_edges.extend(pickup_edges)
     combined_edges.extend(departure_edges)
     start_epoch_s = reserve.iso_to_epoch_s(ts)
-    cells, pickup_eta_s = reserve.walk_slots(table, combined_edges, start_epoch_s, extra=1.0)
+    cells, _combined_eta_s, edge_times = reserve.walk_slots_detail(
+        table, combined_edges, start_epoch_s, extra=1.0
+    )
+    # `pickup_route.eta_min` 是**上客段单段** ETA(与 `arrival_route.eta_min` 同口径,
+    # 契约 v2.4 补登):从合并路径的逐边服务时间里取上客段那几条边求和;与到达段
+    # 共用同一首边时该边已计入到达段,不重复计。预约格仍按三段合并路径计。
+    pickup_offset = len(arrival_edges)
+    pickup_edge_count = len(pickup_edges) - (1 if shared_edge else 0)
+    pickup_eta_s = sum(edge_times[pickup_offset : pickup_offset + pickup_edge_count])
     unique_cells = sorted(set(cells))
     harm = reserve.harm_check(table, unique_cells, {}, params)
     table.reserve(unique_cells)
@@ -970,14 +979,21 @@ def run_real(cfg: dict[str, Any]) -> int:
             )
         )
 
-    # TC-12 / D3:真网站点包 `points=[]` 是既有口径 —— 无上客点位即跳过并留痕,
-    # 不按坐标映射点位、不编 pickup_point;点位非空时与样例同一套追加逻辑。
+    # TC-12 / D3:真网站点包 `points=[]` 是既有口径(点位归 IKMHMX / 池·S 踏勘),
+    # 无上客点位即跳过并留痕,不按坐标映射点位、不编 pickup_point。
+    # 现状(独立审查整改):真网 `dataset["demand"]` 只有 {"od","note"}(无 mix),
+    # 且 `points` 恒空,所以下面的 append 分支**当前不可达**;保留它是为点位/需求
+    # 结构补齐后复用样例同一套 `append_d3_requests` —— 同时用 `d3_note` 明示
+    # "真网一期不支持 D3",不让 run_log 看起来像"真网会生成 D3"。
     d3_log: dict[str, Any] = {}
     if cfg.get("d3"):
-        d3_log = {"d3_enabled": True}
+        d3_log = {"d3_enabled": True, "d3_requests": 0}
         if not points:
-            d3_log["d3_requests"] = 0
             d3_log["d3_skipped"] = "no_pickup_point"
+            d3_log["d3_note"] = (
+                "真网一期站点包无上客点位(points=[]),D3 不支持;"
+                "点位到位后走样例同一套追加逻辑"
+            )
         elif d3_ratio(dataset["demand"]) > 0.0:
             d3_requests, skipped_od_ids = append_d3_requests(
                 requests, od_pairs, graph, segments_state, params, points, now_ts, "REQ-REAL"
@@ -989,8 +1005,8 @@ def run_real(cfg: dict[str, Any]) -> int:
             else:
                 d3_log["d3_skipped"] = None
         else:
-            d3_log["d3_requests"] = 0
             d3_log["d3_skipped"] = "d3_ratio_zero"
+            d3_log["d3_note"] = "真网 demand 无 mix.driver_type_ratio,D3 占比视为 0"
 
     # 段号命名空间硬校验 + 长度补齐 + 方向/车道 legs（真网产物专属，样例基线不做，保持逐字节不变）
     length_enriched = realnet.attach_route_lengths(requests, graph)

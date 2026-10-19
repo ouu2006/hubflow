@@ -431,7 +431,7 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
   基线：`routes.json` 双信封逐字节不变；`run_log` 仅 `decision_params_used` 增
   `reroute_threshold_s` 键与 `param_version` 值变化（+33 B，卡片预见例外）。
 - **遗留**：`x_safe` 与判级橙档的结构性矛盾留池·P（IKMHMX）标定同桌解决；
-  `reroute_threshold_s=30` 为占位值；契约 §6.3 补键名待 C 落笔（Issue 草稿见 T2 报告 §4）。
+  `reroute_threshold_s=30` 为占位值；契约 §6.3 补键名已在本 PR 落笔（《数据契约》v2.4 §十.5）。
 
 ### T3 TC-12 D3 pickup_route + T3 修复（commit `77aa20e` + `94cba2e`，分支 feat/engine-b）
 
@@ -441,7 +441,8 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
   `no_alternative: true` + `no_alternative_reason`，`why` 如实写明代表性与备选不足。
 - **口径（开发B 裁定，方案 B）**：D3 是 **representative 说明性代表样例**，
   `reservation.harm_check` 只作展示、**不作准入判据**——下游不得把 `passed=false`
-  的 D3 请求当可执行推荐（契约 v2.4 待 C 落笔，原文见 T3-fix 报告 §4）。
+  的 D3 请求当可执行推荐（契约 v2.4 已在本 PR 落笔，见《数据契约》§十.2/§十.3；
+  原文见 T3-fix 报告 §4）。
   `no_alternative` 的候选数**由数据推导**（相邻路段 `type=pickup` 点位全集计数），
   不写死字符串。
 - **真实证据数字**：样例 D3 请求 `pickup_point="P-02"`（真点位 id）、`slots_reserved=3`、
@@ -449,12 +450,15 @@ release_expired(table, leases, now_ts)            # 多一个 table:释放时要
   不绕开）；`--sample --d3` 两遍 sha 一致（`b2043b09…`/`b91d6b48…`）；
   `--compare --d3` 互斥拒绝（exit 1）；真网 `points=[]` → `d3_skipped: no_pickup_point`
   （`d3_requests: 0`，不编点位）；默认路径 `--d3` 关闭零执行（基线四产物逐字节不变）。
-- **遗留**：契约 v2.4 落笔（C）；D3 候选 ≥2 时的备选生成（二期，由 representative 口径兜底）。
+- **独立审查整改（PR !69）**：`pickup_route.eta_min` 由三段累计改为**上客段单段**
+  （与 `arrival_route.eta_min` 同口径；样例 0.92 → 0.38 min）；真网 run_log 增
+  `d3_note` 明示一期不支持 D3；`realnet.py` 的长度补齐 / 段号校验覆盖 `pickup_route`。
+- **遗留**：契约 v2.4 已在本 PR 落笔（《数据契约》§十）；D3 候选 ≥2 时的备选生成（二期，由 representative 口径兜底）。
 
 ### T4 locate TC-18（commit `87dd59c`，分支 feat/engine-c）
 
 - **改了什么**：`locate.py` 从 W0 空壳变为可运行实现（真值直读 + σ 噪声 HMM-lite 匹配，
-  +591/−11）；新增校验入口 `locate_check.py`（+546）。**未接入 `run.py` 主链**
+  +591/−11；匹配器实现为**逐点贪心 + 上一时刻转移先验**，非 Viterbi 回溯，描述已校正）；新增校验入口 `locate_check.py`（+546）。**未接入 `run.py` 主链**
   （`grep locate run.py` 零命中），合入对基线零影响（合并后实测四产物不变）。
 - **口径**：不编坐标（样例图无锚点 → σ 档 `unavailable/geometry_frame_mismatch`，
   不当 0 分）；不得用样例 3/3 或自造夹具冒充 TC-18 验收证据。

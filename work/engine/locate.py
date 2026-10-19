@@ -479,7 +479,7 @@ def match_sequence(
     *,
     first_edge_id: str | None = None,
 ) -> list[dict[str, Any]]:
-    """HMM-lite:把一个点串顺序吸附到 `geometry`(Viterbi,只用标准库)。
+    """HMM-lite:把一个点串顺序吸附到 `geometry`(逐点贪心 + 上一时刻转移先验,无 Viterbi 回溯;只用标准库)。
 
     每个点给 `{x, y, heading?}`(局部米制平面)。返回与点串等长的结果列表:
 
