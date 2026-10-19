@@ -161,7 +161,7 @@ python work/twin/netpack/tools/selftest_topology.py
 
 | 产物 | 内容 |
 |---|---|
-| `network_junction.enriched.json` | **Z 站 61 段** / **GZ 站 433 段**（`guangzhounan/`）全量方向/车道/贯通性 + `field_sources`；**不覆盖原 JSON** |
+| `network_junction.enriched.json` | **Z 站 61 段** / **GZ 站 708 段**（`guangzhounan/`，1000 m 范围）全量方向/车道/贯通性 + `field_sources` + （仅 GZ）`boundary_classification`；**不覆盖原 JSON** |
 | `topology_report.json` | schema / 边界角色 / 单向贯通 / 双向配对 / 主干道截断 / 有向可达性 / U-turn 逐项判据与失败明细 |
 | `topology_selftest.json` | 自检证据：Z 站全量、两个反例 FAIL、引擎两遍一致、样例/W1/接口只读不退化、doc_gate 8/8 |
 
@@ -205,11 +205,15 @@ python work/twin/netpack/tools/selftest_topology.py
 
 ### 5.6 范围与遗留
 
-- **广州南站（IKNB9F）已补跑（IKNC4J）**：GZ 真网 433 段 →
-  `topology.py --site-id guangzhounan` 产出 `guangzhounan/network_junction.enriched.json`（433 段 / 290 节点；`--check` 与重算逐字节一致）；
-  `tools/check_topology.py --site-id guangzhounan` 产出 `guangzhounan/topology_report.json`（entries 34 / exits 30）。
-  ⚠️ **GZ 报告 FAIL 36 / WARN 72**：10 处 `oneway_tail_without_successor`（5 个非边界断头 N-010 / N-102 / N-151 / N-236 / N-254）+ 26 条 `reachability`（9 节点 + 17 段不可达），全部落在 **800 m 演示范围裁剪边界**（单向路在范围边界被截断、裁剪后 raw `boundary` 未重标）——**如实登记为已知数据边界，不改判据、不造假**；修法随 IKNAUQ 范围/边界口径强化（裁剪后重算 boundary）或放宽范围后复验。Z 站 enriched/report 不受影响（仍 FAIL 0 / WARN 2、逐字节不变）。
-  引擎 `--site-id guangzhounan` 已优先读 enriched（`topology_source=enriched`）。
+- **广州南站（IKNB9F / IKNC4J / IKOQEI）**：GZ 真网演示范围 **800 m → 1000 m**（IKOQEI 扩范围复验；1000 m 圆完全落在既有 ±0.012 度 OSM 拉取 bbox 内，未重拉切片；1100–1200 m 会让 enriched 超过仓库 2 MiB 单文件门禁且不能进一步减少断头，故取 1000 m）→ **708 段 / 453 节点**（两次生成 sha 一致）。
+  `topology.py --site-id guangzhounan` → `guangzhounan/network_junction.enriched.json`（`--check` 与重算逐字节一致；节点带 `boundary_classification` / 最近连接候选，`enrichment.findings.boundary_classifications` 逐条登记）；
+  `tools/check_topology.py --site-id guangzhounan` → `guangzhounan/topology_report.json`：**FAIL 0 / WARN 128**（报告 sha `0e4f7370…`，可复跑一致）。WARN 中与本次修复直接相关的是：
+  - `oneway_successor` WARN 4：GZ-005/GZ-150/GZ-199/GZ-584 尾部断头，逐条分类 `terminal_dead_end`；
+  - `reachability` WARN 7：N-158/N-328 `terminal_dead_end`、N-447 `crop_boundary`、GZ-005/GZ-150/GZ-199/GZ-584 `boundary_spur`（均附原因 + 最近连接候选 + `range_expandable`）；
+  - 其余 WARN（main_road_gap 109 / bidirectional_pairing 6 / boundary_roles 2）为既有判据的核对项。
+  **不是白名单 PASS**：分类由 `topology.py`/`check_topology.py` 的 `topology_boundary_mode="range_clipped"` 规则生成（crop_boundary / terminal_dead_end / boundary_spur / isolated_component），Z 站不启用该模式（enriched/report 逐字节不变）。
+  引擎 `--site-id guangzhounan` 已优先读 enriched（`topology_source=enriched`，91 requests / 311 routes）。
+  ⚠️ 遗留：前端 GZ 站点包（`stationGZ.ts/.network.ts`，原 800 m/433 段）本轮不改前端，待前端单按新登记表重生成；登记表 `out_ts`/`station_pack_ts` 暂指 netpack 生成物（`check_site_ranges` 三方一致通过）。
 - `left_turn_allowed` 目前只做**字段与报告**，不参与算路（OSM 切片没有 turn restriction 数据，
   强行禁左会引入无依据的断连）；U-turn 已真正参与引擎算路。
 - 本目录所有 JSON 都是**脚本产物**，不许手改；改规则就改 `topology.py` 再重跑。

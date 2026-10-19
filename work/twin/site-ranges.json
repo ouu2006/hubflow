@@ -37,9 +37,9 @@
       "site_id": "guangzhounan",
       "site_name": "广州南站",
       "anchor_lonlat": [113.269, 22.989],
-      "range_m": 800,
+      "range_m": 1000,
       "pull_bbox": [113.257, 22.977, 113.281, 23.001],
-      "seg_target": 433,
+      "seg_target": 708,
       "seg_prefix": "GZ",
       "snap_m": 30,
       "junction_tol_m": 2,
@@ -48,17 +48,18 @@
       "bridge_seg_count": 10,
       "osm_file": "work/twin/netpack/osm/guangzhounan.osm",
       "out_json": "work/twin/netpack/guangzhounan/network_junction.json",
-      "out_ts": "work/frontend/ui-vue/src/station-packs/stationGZ.network.ts",
+      "out_ts": "work/twin/netpack/guangzhounan/stationGZ.network.ts",
       "ts_export": "STATION_GZ_SEGMENTS",
-      "station_pack_ts": "work/frontend/ui-vue/src/station-packs/stationGZ.network.ts",
-      "station_pack_meta_ts": "work/frontend/ui-vue/src/station-packs/stationGZ.ts",
+      "station_pack_ts": "work/twin/netpack/guangzhounan/stationGZ.network.ts",
+      "station_pack_meta_ts": "work/twin/netpack/guangzhounan/stationGZ.ts",
       "station_pack_key": "GZ",
       "twin_out_dir": "work/twin/out/sites/guangzhounan",
       "engine_out_dir": "work/engine/out/real/sites/guangzhounan",
       "range_source": "manual",
-      "decided_by": "IKNB9F / 业主 2026-10-18「先行适配广州南站」：以车站锚点 113.269,22.989 为中心、拉取 +/-0.012 度站区 OSM；演示范围 800 m（站区密集路网取 800 m 半径；拉取 bbox 仍为 +/-0.012 度）为人工给定，不是官方划定",
-      "date": "2026-10-18",
-      "evidence": "OSM 切片 work/twin/netpack/osm/guangzhounan.osm（Overpass overpass-api.de，2026-10-18，c OpenStreetMap contributors ODbL）；范围不是官方划定、不报精度数字；段数目标由脚本实际产出后回填（见 out_json.stats）"
+      "topology_boundary_mode": "range_clipped",
+      "decided_by": "IKNB9F / 业主 2026-10-18「先行适配广州南站」：以车站锚点 113.269,22.989 为中心、拉取 +/-0.012 度站区 OSM；演示范围初定 800 m（人工给定，不是官方划定）。IKOQEI / 2026-10-19：独立复审发现 800 m 裁剪边界造成 GZ 拓扑单向断头 10 处、不可达 26 处；沿同一锚点把演示范围扩到 1000 m（1000 m 圆完全落在既有 +/-0.012 度 OSM 拉取 bbox 内，无需重拉切片；1100–1200 m 会使 enriched 产物超过仓库 2 MiB 单文件门禁且不能进一步减少断头，故取 1000 m）",
+      "date": "2026-10-18（范围 800 m）/ 2026-10-19 复验扩到 1000 m（IKOQEI）",
+      "evidence": "OSM 切片 work/twin/netpack/osm/guangzhounan.osm（Overpass overpass-api.de，2026-10-18，© OpenStreetMap contributors ODbL；实际切片 bbox 113.2534–113.2978 / 22.9428–23.0112，完整覆盖 1000 m 演示圆）；范围不是官方划定、不报精度数字；段数目标由脚本实际产出后回填（800 m→433 段 / 1000 m→708 段，两次生成一致）；IKOQEI 扩范围后重跑 topology.py/check_topology.py：GZ check_topology FAIL 0 / WARN 128（断头/不可达逐条分类见 guangzhounan/topology_report.json）；范围复验后前端 GZ 站点包（stationGZ*.ts）仍为 800 m/433 段，需前端单按本登记表重生成（本轮不改前端）"
     }
   ]
 }

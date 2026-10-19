@@ -448,6 +448,110 @@ def derive_node_roles(
     return roles
 
 
+
+def classify_boundary_nodes(
+    nodes: list[dict[str, Any]],
+    roles: dict[str, dict[str, Any]],
+    site: dict[str, Any] | None,
+) -> dict[str, dict[str, Any]]:
+    """范围裁剪站点的边界断头/孤立支路分类（Issue IKOQEI，仅 ``range_clipped`` 站点启用）。
+
+    只做**分类与证据**，不改变 ``boundary_role``（校验口径仍按有向出入度）：
+    - 非边界出度 0 且距锚点 >= 90% 登记半径 → ``crop_boundary``（裁剪边界，道路可能在范围外延续）；
+    - 非边界出度 0 且位于站区内部 → ``terminal_dead_end``（OSM 内无延续车行 way，疑为场区/内部道路终端
+      或未合并连接；给出最近连接候选，需人工核对，不白名单放行）；
+    - 无任何可通行边的节点 → ``isolated_component``。
+    返回 ``node_id -> 分类证据``；未启用（如 Z 站）返回空字典，保证既有产物逐字节不变。
+    """
+    mode = str((site or {}).get("topology_boundary_mode") or "")
+    if mode != "range_clipped":
+        return {}
+    anchor = (site or {}).get("anchor_lonlat")
+    range_m = (site or {}).get("range_m")
+    nodes_by_id = {str(n.get("node_id") or n.get("id")): n for n in nodes}
+    classified: dict[str, dict[str, Any]] = {}
+    for node_id, role in roles.items():
+        if role.get("boundary_role") not in ("dead_end", "isolated"):
+            continue
+        node = nodes_by_id.get(node_id) or {}
+        distance_m: float | None = None
+        if (
+            anchor
+            and node.get("lon") is not None
+            and node.get("lat") is not None
+            and len(anchor) >= 2
+        ):
+            distance_m = round(
+                haversine_m(float(anchor[0]), float(anchor[1]), float(node["lon"]), float(node["lat"])),
+                1,
+            )
+        near_fence = (
+            None if distance_m is None or not range_m else bool(distance_m >= float(range_m) * 0.9)
+        )
+        if role.get("boundary_role") == "dead_end" and near_fence:
+            classification = "crop_boundary"
+            reason = (
+                f"非边界断头节点距锚点 {distance_m} m，位于登记半径 {range_m} m 的 90% 外："
+                "该单向路在范围边界被截断、道路可能在范围外继续；按边界断头分类（需扩范围或人工核对），"
+                "不作为 oneway_successor FAIL"
+            )
+            range_expandable = True
+        elif role.get("boundary_role") == "dead_end":
+            classification = "terminal_dead_end"
+            reason = (
+                f"非边界断头节点距锚点 {distance_m} m，位于站区内部：该节点在任何车行方向都没有可通行后继"
+                "（OSM 切片内无延续车行 way，疑为场区/内部道路终端或近邻节点未合并）；"
+                "按边界断头分类并保留最近连接候选，需人工核对（内部道路数据归 IKMHMX），不作为 FAIL"
+            )
+            range_expandable = False
+        else:
+            classification = "isolated_component"
+            reason = (
+                f"节点距锚点 {distance_m} m 且没有任何可通行遍历边（isolated）："
+                "范围裁剪或 OSM 连接缺失导致的孤立支路；按孤立支路分类登记，需核对上游连接"
+            )
+            range_expandable = bool(near_fence)
+        candidates: list[dict[str, Any]] = []
+        if node.get("lon") is not None and node.get("lat") is not None:
+            for other_id, other in nodes_by_id.items():
+                if other_id == node_id or other.get("lon") is None or other.get("lat") is None:
+                    continue
+                distance = haversine_m(
+                    float(node["lon"]), float(node["lat"]), float(other["lon"]), float(other["lat"])
+                )
+                if distance > 300:
+                    continue
+                other_role = roles.get(other_id, {})
+                if not (
+                    other_role.get("boundary_effective")
+                    or int(other_role.get("in_degree") or 0) > 0
+                    and int(other_role.get("out_degree") or 0) > 0
+                ):
+                    continue
+                candidates.append(
+                    {
+                        "node_id": other_id,
+                        "distance_m": round(distance, 1),
+                        "boundary_role": other_role.get("boundary_role"),
+                    }
+                )
+            candidates.sort(key=lambda item: (item["distance_m"], item["node_id"]))
+        classified[node_id] = {
+            "classification": classification,
+            "reason": reason,
+            "boundary_role": role.get("boundary_role"),
+            "in_degree": role.get("in_degree"),
+            "out_degree": role.get("out_degree"),
+            "distance_to_anchor_m": distance_m,
+            "near_registered_range": near_fence,
+            "range_expandable": range_expandable,
+            "nearest_connection_candidates": candidates[:3],
+            "lon": node.get("lon"),
+            "lat": node.get("lat"),
+        }
+    return classified
+
+
 def _traversal_record(
     edge: dict[str, Any],
     *,
@@ -885,6 +989,23 @@ def enrich(
         if not bool(node.get("boundary")) and node["boundary_role"] in ("entry", "exit", "both")
     ]
 
+    # 范围裁剪站点的边界断头/孤立支路分类（Issue IKOQEI；只对 range_clipped 站点启用）
+    boundary_classifications: list[dict[str, Any]] = []
+    boundary_mode = str((site or {}).get("topology_boundary_mode") or "")
+    if boundary_mode == "range_clipped":
+        classified_nodes = classify_boundary_nodes(enriched_nodes, roles, site)
+        for node in enriched_nodes:
+            node_id = str(node.get("node_id") or node.get("id"))
+            info = classified_nodes.get(node_id)
+            if not info:
+                continue
+            node["boundary_classification"] = info["classification"]
+            node["boundary_classification_reason"] = info["reason"]
+            node["boundary_distance_m"] = info["distance_to_anchor_m"]
+            node["boundary_near_fence"] = info["near_registered_range"]
+            node["nearest_connection_candidates"] = info["nearest_connection_candidates"]
+            boundary_classifications.append({"node_id": node_id, **info})
+
     total_lanes_known = sum(1 for edge in enriched_edges if edge["lanes_total"] is not None)
     payload_out = {
         key: value for key, value in payload.items() if key not in ("nodes", "edges")
@@ -953,6 +1074,12 @@ def enrich(
             "main_road_gap_candidates": main_gap_candidates,
         },
     }
+    if boundary_classifications:
+        # 仅 range_clipped 站点追加（Z 站无该字段，产物逐字节不变）
+        enrichment = payload_out["enrichment"]
+        enrichment["boundary_mode"] = boundary_mode
+        enrichment["counts"]["boundary_classifications"] = len(boundary_classifications)
+        enrichment["findings"]["boundary_classifications"] = boundary_classifications
     return payload_out
 
 

@@ -442,6 +442,167 @@ def check_boundary_roles(payload: dict[str, Any], traversal: list[dict[str, Any]
     return _result("boundary_roles", failures, warnings, details)
 
 
+
+# ============================================================================
+# 范围裁剪站点（range_clipped）的断头 / 不可达分类（Issue IKOQEI；Z 站不启用）
+# ============================================================================
+
+
+def _is_range_clipped(site: dict[str, Any] | None) -> bool:
+    return str((site or {}).get("topology_boundary_mode") or "") == "range_clipped"
+
+
+def _site_anchor_range(site: dict[str, Any] | None) -> tuple[Any, float | None]:
+    anchor = (site or {}).get("anchor_lonlat")
+    if not isinstance(anchor, (list, tuple)) or len(anchor) < 2:
+        anchor = None
+    range_m = (site or {}).get("range_m")
+    return anchor, (float(range_m) if range_m else None)
+
+
+def _node_distance_m(node: dict[str, Any], site: dict[str, Any] | None) -> float | None:
+    anchor, _ = _site_anchor_range(site)
+    if not anchor or node.get("lon") is None or node.get("lat") is None:
+        return None
+    return round(
+        topology.haversine_m(float(anchor[0]), float(anchor[1]), float(node["lon"]), float(node["lat"])),
+        1,
+    )
+
+
+def _nearest_connections(payload: dict[str, Any], node_id: str, max_m: float = 300.0) -> list[dict[str, Any]]:
+    nodes = {str(n.get("node_id") or n.get("id")): n for n in payload.get("nodes") or []}
+    node = nodes.get(node_id) or {}
+    if node.get("lon") is None or node.get("lat") is None:
+        return []
+    found: list[dict[str, Any]] = []
+    for other_id, other in nodes.items():
+        if other_id == node_id or other.get("lon") is None or other.get("lat") is None:
+            continue
+        distance = topology.haversine_m(
+            float(node["lon"]), float(node["lat"]), float(other["lon"]), float(other["lat"])
+        )
+        if distance > max_m:
+            continue
+        found.append(
+            {
+                "node_id": other_id,
+                "distance_m": round(distance, 1),
+                "boundary_role": other.get("boundary_role"),
+            }
+        )
+    found.sort(key=lambda item: (item["distance_m"], item["node_id"]))
+    return found[:3]
+
+
+def _classify_unreachable_node(
+    payload: dict[str, Any],
+    node: dict[str, Any],
+    roles: dict[str, dict[str, Any]],
+    site: dict[str, Any] | None,
+) -> dict[str, Any]:
+    node_id = str(node.get("node_id") or node.get("id"))
+    classification = node.get("boundary_classification")
+    reason = node.get("boundary_classification_reason")
+    distance = _node_distance_m(node, site)
+    _, range_m = _site_anchor_range(site)
+    role = roles.get(node_id) or {}
+    if not classification:
+        if role.get("boundary_role") == "isolated":
+            classification = "isolated_component"
+            reason = "节点没有任何可通行遍历边（isolated）；范围裁剪或 OSM 连接缺失导致，需核对上游连接"
+        elif distance is not None and range_m and distance >= range_m * 0.9:
+            classification = "crop_boundary"
+            reason = (
+                f"节点距锚点 {distance} m（>= 登记半径 {range_m} m 的 90%），位于范围裁剪边界："
+                "道路可能在范围外延续，需扩范围或人工核对该边界"
+            )
+        else:
+            classification = "boundary_spur"
+            reason = f"节点距锚点 {distance} m，处于有向不可达支路（多为单向断头/上游缺失）：需核对上游车道或扩范围"
+    candidates = node.get("nearest_connection_candidates") or _nearest_connections(payload, node_id)
+    return {
+        "classification": classification,
+        "reason": reason,
+        "distance_to_anchor_m": distance,
+        "nearest_connection_candidates": candidates,
+        "range_expandable": classification == "crop_boundary",
+    }
+
+
+def _weak_components(traversal: list[dict[str, Any]]) -> dict[str, Any]:
+    parent: dict[str, str] = {}
+
+    def find(item: str) -> str:
+        parent.setdefault(item, item)
+        while parent[item] != item:
+            parent[item] = parent[parent[item]]
+            item = parent[item]
+        return item
+
+    def union(left: str, right: str) -> None:
+        root_left, root_right = find(left), find(right)
+        if root_left != root_right:
+            parent[root_left] = root_right
+
+    for item in traversal:
+        union(str(item["from"]), str(item["to"]))
+    return {node: find(node) for node in list(parent)}
+
+
+def _classify_unreachable_segment(
+    segment_id: str,
+    edge: dict[str, Any],
+    payload: dict[str, Any],
+    nodes_by_id: dict[str, dict[str, Any]],
+    roles: dict[str, dict[str, Any]],
+    site: dict[str, Any] | None,
+    weak_components: dict[str, Any],
+    boundary_components: set[Any],
+) -> dict[str, Any]:
+    endpoints = [str(edge.get("from")), str(edge.get("to"))]
+    for node_id in endpoints:
+        node = nodes_by_id.get(node_id) or {}
+        classification = node.get("boundary_classification")
+        if classification:
+            return {
+                "classification": "boundary_spur",
+                "cause": classification,
+                "reason": (
+                    f"段所在支路端点 {node_id} 已分类为 {classification}："
+                    f"{node.get('boundary_classification_reason') or ''}"
+                ),
+                "nearest_connection_candidates": node.get("nearest_connection_candidates")
+                or _nearest_connections(payload, node_id),
+                "distance_to_anchor_m": node.get("boundary_distance_m"),
+                "range_expandable": classification == "crop_boundary",
+            }
+    component = weak_components.get(endpoints[0])
+    if component is not None and component not in boundary_components:
+        return {
+            "classification": "isolated_component",
+            "cause": "weak_component_without_boundary",
+            "reason": (
+                "段所在弱连通分量内没有任何 entry/exit 边界：范围裁剪后的孤立支路"
+                "（全量 OSM 下可能连通，扩范围或补上游数据后复验）"
+            ),
+            "nearest_connection_candidates": _nearest_connections(payload, endpoints[0]),
+            "distance_to_anchor_m": None,
+            "range_expandable": True,
+        }
+    return {
+        "classification": "boundary_spur",
+        "cause": "directed_unreachable",
+        "reason": (
+            "段与主路网弱连通但不在任何『进场→离场』有向路径上"
+            "（单向断头/上游缺失/裁剪边界），需核对上游车道或扩范围"
+        ),
+        "nearest_connection_candidates": _nearest_connections(payload, endpoints[0]),
+        "distance_to_anchor_m": None,
+        "range_expandable": False,
+    }
+
+
 # ============================================================================
 # 3) one-way successor（核心 FAIL 规则）
 # ============================================================================
@@ -451,12 +612,18 @@ def check_oneway_successor(
     payload: dict[str, Any],
     traversal: list[dict[str, Any]],
     roles: dict[str, dict[str, Any]],
+    site: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
     outgoing, by_id = topology.build_adjacency(traversal)
+    gated = _is_range_clipped(site)
+    nodes_by_id = {
+        str(n.get("node_id") or n.get("id")): n for n in payload.get("nodes") or []
+    }
     checked = 0
     boundary_terminated = 0
+    classified_tails = 0
     for edge in payload.get("edges") or []:
         direction = str(edge.get("direction"))
         if direction not in ("forward", "reverse"):
@@ -474,6 +641,26 @@ def check_oneway_successor(
             if candidate["segment_id"] != segment_id
         ]
         if not successors:
+            classified = nodes_by_id.get(tail) if gated else None
+            if classified is not None and classified.get("boundary_classification"):
+                classified_tails += 1
+                warnings.append(
+                    _finding(
+                        "boundary_tail_classified",
+                        f"{segment_id}（{direction}）行车末端 {tail} 没有可通行后继，"
+                        f"已按 {classified['boundary_classification']} 分类（边界断头有证据，不作为 FAIL）",
+                        segment_id=segment_id,
+                        tail_node=tail,
+                        direction=direction,
+                        classification=classified["boundary_classification"],
+                        reason=classified.get("boundary_classification_reason"),
+                        distance_to_anchor_m=classified.get("boundary_distance_m"),
+                        nearest_connection_candidates=classified.get(
+                            "nearest_connection_candidates"
+                        ),
+                    )
+                )
+                continue
             failures.append(
                 _finding(
                     "oneway_tail_without_successor",
@@ -488,6 +675,13 @@ def check_oneway_successor(
         "boundary_terminated": boundary_terminated,
         "rule": "非边界单向段的行车末端必须有可通行后继（排除自身反向）；边界/派生边界除外",
     }
+    if gated:
+        details["classified_boundary_tails"] = classified_tails
+        details["classify_rule"] = (
+            "range_clipped 站点：非边界断头节点若已由 topology.py 分类"
+            "（crop_boundary / terminal_dead_end / isolated_component）并附证据，降级 WARN；"
+            "其余非边界断头仍 FAIL"
+        )
     return _result("oneway_successor", failures, warnings, details)
 
 
@@ -810,9 +1004,25 @@ def check_reachability(
     traversal: list[dict[str, Any]],
     roles: dict[str, dict[str, Any]],
     allow: dict[str, Any],
+    site: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
     warnings: list[dict[str, Any]] = []
+    gated = _is_range_clipped(site)
+    nodes_by_id = {
+        str(n.get("node_id") or n.get("id")): n for n in payload.get("nodes") or []
+    }
+    weak_components: dict[str, Any] = {}
+    boundary_components: set[Any] = set()
+    if gated:
+        weak_components = _weak_components(traversal)
+        for component_node, component in weak_components.items():
+            role = roles.get(component_node) or {}
+            if role.get("boundary_effective"):
+                boundary_components.add(component)
+    classified_nodes = 0
+    classified_segments = 0
+    classified_boundaries = 0
     entries, exits = topology.entry_exit_nodes(roles)
     if not entries:
         failures.append(_finding("no_entry", "没有 boundary 入（entry）节点，无法校验可达性"))
@@ -842,25 +1052,35 @@ def check_reachability(
             if exit_node != entry and exit_node in reachable[entry]
         ]
         if not targets:
-            failures.append(
-                _finding(
-                    "entry_without_exit",
-                    f"进场边界 {entry} 到任何离场边界都没有完整有向路径",
-                    node_id=entry,
-                )
+            finding = _finding(
+                "entry_without_exit",
+                f"进场边界 {entry} 到任何离场边界都没有完整有向路径",
+                node_id=entry,
             )
+            if gated:
+                info = _classify_unreachable_node(payload, nodes_by_id.get(entry) or {}, roles, site)
+                finding.update(info)
+                warnings.append(finding)
+                classified_boundaries += 1
+            else:
+                failures.append(finding)
     for exit_node in exits:
         sources = [
             entry for entry in entries if entry != exit_node and exit_node in reachable[entry]
         ]
         if not sources:
-            failures.append(
-                _finding(
-                    "exit_unreachable",
-                    f"离场边界 {exit_node} 从任何进场边界都不可达",
-                    node_id=exit_node,
-                )
+            finding = _finding(
+                "exit_unreachable",
+                f"离场边界 {exit_node} 从任何进场边界都不可达",
+                node_id=exit_node,
             )
+            if gated:
+                info = _classify_unreachable_node(payload, nodes_by_id.get(exit_node) or {}, roles, site)
+                finding.update(info)
+                warnings.append(finding)
+                classified_boundaries += 1
+            else:
+                failures.append(finding)
 
     unreachable_nodes = [node_id for node_id in node_ids if node_id not in reachable_union]
     not_coreachable_nodes = [node_id for node_id in node_ids if node_id not in coreachable_union]
@@ -873,6 +1093,12 @@ def check_reachability(
         if node_id in allowed_nodes:
             finding["whitelisted"] = allow.get("file")
             warnings.append(finding)
+        elif gated:
+            finding.update(
+                _classify_unreachable_node(payload, nodes_by_id.get(node_id) or {}, roles, site)
+            )
+            warnings.append(finding)
+            classified_nodes += 1
         else:
             failures.append(finding)
     for node_id in not_coreachable_nodes:
@@ -884,6 +1110,12 @@ def check_reachability(
         if node_id in allowed_nodes:
             finding["whitelisted"] = allow.get("file")
             warnings.append(finding)
+        elif gated:
+            finding.update(
+                _classify_unreachable_node(payload, nodes_by_id.get(node_id) or {}, roles, site)
+            )
+            warnings.append(finding)
+            classified_nodes += 1
         else:
             failures.append(finding)
 
@@ -906,6 +1138,21 @@ def check_reachability(
             if segment_id in allowed_segments:
                 finding["whitelisted"] = allow.get("file")
                 warnings.append(finding)
+            elif gated:
+                finding.update(
+                    _classify_unreachable_segment(
+                        segment_id,
+                        edge,
+                        payload,
+                        nodes_by_id,
+                        roles,
+                        site,
+                        weak_components,
+                        boundary_components,
+                    )
+                )
+                warnings.append(finding)
+                classified_segments += 1
             else:
                 failures.append(finding)
 
@@ -970,6 +1217,17 @@ def check_reachability(
             "所有节点/段必须在某条『入→出』路径上，否则 FAIL（可列白名单，须给理由）"
         ),
     }
+    if gated:
+        details["boundary_mode"] = "range_clipped"
+        details["classified_unreachable"] = {
+            "nodes": classified_nodes,
+            "segments": classified_segments,
+            "boundaries": classified_boundaries,
+        }
+        details["classify_rule"] = (
+            "range_clipped 站点：不可达节点/段/边界按 boundary_spur / isolated_component / "
+            "crop_boundary 分类并附原因与最近连接候选（不是白名单 PASS）；Z 站不启用"
+        )
     return _result("reachability", failures, warnings, {**details, "matrix": matrix})
 
 
@@ -1183,6 +1441,7 @@ def run_checks(
     all_pairs: bool,
     candidate_tol_m: float,
     check_freshness: bool = True,
+    site: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     traversal = topology.build_traversal(payload)
     # 校验一律用**从遍历图重算**的角色，不信任 enriched 里可能过期的 boundary_role；
@@ -1194,11 +1453,11 @@ def run_checks(
     if check_freshness:
         checks["schema"] = _with_freshness(checks["schema"], payload, raw_path)
     checks["boundary_roles"] = check_boundary_roles(payload, traversal, roles)
-    checks["oneway_successor"] = check_oneway_successor(payload, traversal, roles)
+    checks["oneway_successor"] = check_oneway_successor(payload, traversal, roles, site=site)
     checks["bidirectional_pairing"] = check_bidirectional_pairing(payload, traversal)
     main_result, candidates = check_main_road_gap(payload, traversal, roles, candidate_tol_m)
     checks["main_road_gap"] = main_result
-    checks["reachability"] = check_reachability(payload, traversal, roles, allow)
+    checks["reachability"] = check_reachability(payload, traversal, roles, allow, site=site)
     checks["u_turn"] = check_u_turn(
         payload,
         traversal,
@@ -1541,6 +1800,7 @@ def main(argv: list[str] | None = None) -> int:
         # 按站放报告（IKNC4J）：默认 = enriched 同目录，Z/ GZ 各一份、互不覆盖
         output = graph_path.parent / DEFAULT_REPORT_NAME
     allow, _ = load_allow_unreachable(args.allow_unreachable)
+    site = topology.pick_site(args.site_id, config)
     payload = load_graph(graph_path)
     report = run_checks(
         payload,
@@ -1551,6 +1811,7 @@ def main(argv: list[str] | None = None) -> int:
         all_pairs=args.all_pairs,
         candidate_tol_m=args.candidate_tol_m,
         check_freshness=bool(args.graph is None or args.raw),
+        site=site,
     )
     write_report(report, output)
     if not args.quiet:
