@@ -573,7 +573,12 @@ def build_request(
 #   - 默认关闭;`--compare --d3` 直接报错退出(避免扰动 TC-17 车辆群);
 #   - 是否生成以 `demand.json` 的 `mix.driver_type_ratio` 中 D3 `ratio > 0` 为依据,
 #     确定性、不随机;真网 `points=[]` → 跳过并在 run_log 写
-#     `d3_skipped: no_pickup_point`(不按坐标映射点位、不编 `pickup_point`)。
+#     `d3_skipped: no_pickup_point`(不按坐标映射点位、不编 `pickup_point`);
+#   - **representative 口径(契约 v2.4,开发B 裁定 2026-10-19,方案 B)**:D3 是说明性
+#     代表样例,请求体带 `representative: true`;`reservation.harm_check` 只作展示、
+#     不作准入判据,下游不得把 `passed=false` 的 D3 当可执行推荐;
+#   - **备选例外(契约 §2.2)**:上客候选仅 1 个(相邻路段 type=pickup 点位全集,数据
+#     推导)时输出 `no_alternative: true` + `no_alternative_reason`,不硬凑等价备选。
 # ============================================================================
 
 
@@ -640,6 +645,27 @@ def _build_d3_request(
     if pickup_edges is None:
         return None
 
+    # 上客候选数(数据推导,no_alternative 的判据):相邻路段上 type=pickup 的点位**全集**。
+    # pickup_point_for_d3 用同一套相邻路段口径但只返回首个(point_id 升序);这里专为数个数。
+    adjacent_sections = _adjacent_sections(graph, dst, arrival_edges)
+    pickup_candidates = sorted(
+        (
+            point
+            for point in points
+            if str(point.get("type")) == "pickup"
+            and str(point.get("segment_id")) in adjacent_sections
+        ),
+        key=lambda point: str(point.get("point_id")),
+    )
+    no_alternative = len(pickup_candidates) == 1
+    no_alternative_reason = (
+        f"D3 上客候选仅 1 个(相邻路段上 type=pickup 点位仅 "
+        f"{pickup_candidates[0].get('point_id')}/{pickup_candidates[0].get('segment_id')}),"
+        "无第二备选"
+        if no_alternative
+        else None
+    )
+
     # 离站段:从上客点所在路段(其下游节点)算到 exit_node(复用既有"同节点 → 无需离站"口径)
     departure_edges: list[str] = []
     departure_note: str | None = None
@@ -699,12 +725,23 @@ def _build_d3_request(
         f"(slots_reserved 按唯一 (segment, slot) 计),harm_check "
         f"{'通过' if harm['passed'] else '未过'}(最大时段饱和度 {harm['max_slot_x']})。"
     )
+    # 契约 v2.4 裁定(开发B 2026-10-19,方案 B):D3 是 representative 说明性代表样例,
+    # harm_check 只作展示、不作准入判据 —— 如实写进 why,下游不得把 passed=false 的
+    # D3 请求当可执行推荐;备选不足(候选数=1,数据推导)同样如实标注,不硬凑备选。
+    why += (
+        "⚠️ 本请求是 representative 说明性代表样例:reservation.harm_check 只作展示、"
+        "不作为准入判据,不得当可执行推荐。"
+    )
+    if no_alternative:
+        why += f"备选不足:{no_alternative_reason}。"
 
-    return {
+    request: dict[str, Any] = {
         "request_id": f"{request_id_prefix}-D3-{index:04d}",
         "session_id": f"{base.get('session_id')}-d3",
         "od_id": od_id,
         "driver_type": "D3",
+        # 契约 v2.4(开发B 裁定 2026-10-19,方案 B):D3 = representative 说明性代表样例
+        "representative": True,
         "parking_mode": SAMPLE_PARKING_MODE,
         "location": dict(base.get("location") or {}),
         "pickup_route": {
@@ -728,6 +765,11 @@ def _build_d3_request(
         "why": why,
         "is_simulated": True,
     }
+    # 契约 §2.2 唯一例外:上客候选仅 1 个(数据推导)时**才**输出这两个键,不硬凑等价备选
+    if no_alternative:
+        request["no_alternative"] = True
+        request["no_alternative_reason"] = no_alternative_reason
+    return request
 
 
 def append_d3_requests(
