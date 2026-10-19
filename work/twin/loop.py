@@ -63,8 +63,8 @@ DRIVER_SPEED_FACTORS = {"D1": 1.0, "D2": 0.95, "D3": 0.9}
 #: 站点包缺该字段时的兜底值(仍属演示值)
 FALLBACK_CONFIDENCE = 0.75
 
-#: 全路段背景车流（Issue IKNAUH，**演示假设**）：每 60 s 窗口在每条 `SZ-###` 段上放 1 辆背景车，
-#: 把 61 段全部铺上指标（大屏不再 46 段灰档）。
+#: 全路段背景车流（Issue IKNAUH，**演示假设**）：每 60 s 窗口在每条真网段（`<seg_prefix>-###`）上
+#: 放 1 辆背景车，把该站全部段铺上指标（大屏不再灰档）。段号前缀 / 段数按站点真网产物现取，脚本不写死。
 #: **确定性**：固定偏移 / 固定路线 / 固定 seed，不随机、不读系统时钟。
 BACKGROUND_SOURCE = "demo_uniform"
 BACKGROUND_VEHICLE_PREFIX = "bg"
@@ -81,17 +81,20 @@ BACKGROUND_FINAL_OFFSET_MOD_S = 10
 BACKGROUND_TOPUP_GRACE_S = 10
 BACKGROUND_TOPUP_MAX_ATTEMPTS = 2
 
-#: 背景车流口径说明（写进产物：segments_twin / twin_timeseries / run_log）
-BACKGROUND_NOTE = (
-    "全路段演示背景车流（background_source=demo_uniform，演示假设，不是实际需求）："
-    "每 60 s 在每个 SZ-### 段上放 1 辆背景车，用于把 61 段全铺上指标；"
-    "固定偏移/固定路线/固定 seed，不随机、不读系统时钟；背景车是环境车流，不进 D1/D2/D3 车辆清单"
-)
+#: 背景车流口径说明（写进产物：run_log.background）——**按站动态生成**（IKNC4J）：
+#: 段号前缀 / 段数 / 站名从本次真网产物取，不写死 `SZ-###` 或 61 段。
+def _background_note(seg_prefix: str, segments_total: int, site_name: str = "") -> str:
+    scope = f"{site_name} 的 {seg_prefix}-###" if seg_prefix else "各站"
+    return (
+        "全路段演示背景车流（background_source=demo_uniform，演示假设，不是实际需求）："
+        f"每 60 s 在 {scope} 段上放 1 辆背景车，用于把 {segments_total} 段全铺上指标；"
+        "固定偏移/固定路线/固定 seed，不随机、不读系统时钟；背景车是环境车流，不进 D1/D2/D3 车辆清单"
+    )
 
 #: 快照指标字段口径(写进 run_log / twin_timeseries,自描述、可复核)
 METRIC_FORMULAS = {
     "q_vph": (
-        "60 s 窗口内进入该段（含反向补边 SZ-###_rev）的车辆数 / window_sec × 3600；"
+        "60 s 窗口内进入该段（含反向补边 _rev）的车辆数 / window_sec × 3600；"
         "逐秒订阅 TraCI 的 LAST_STEP_VEHICLE_ID_LIST，按车辆首次出现在该边的时刻计数"
     ),
     "v_kmh": (
@@ -494,7 +497,7 @@ def _run_twin_simulation(
         route_ids.append(route_id)
 
     # ---- 全路段背景车流（IKNAUH，demo_uniform）：每段一条**单段直行**路线
-    # 覆盖车流只从本段起点直行通过本段后离场（不做跨段路径）：这样 61 段每窗口都有进车、
+    # 覆盖车流只从本段起点直行通过本段后离场（不做跨段路径）：这样每段每窗口都有进车、
     # 又不会把额外流量灌到下游出口/瓶颈造成拥堵（背景车流是演示假设，不代表真实出行链）。
     segment_index = {segment_id: index for index, segment_id in enumerate(segment_ids)}
     background_route_ids: dict[str, str] = {}
@@ -516,7 +519,7 @@ def _run_twin_simulation(
         for index, segment_id in enumerate(segment_ids):
             for seq in range(BACKGROUND_PER_SEGMENT_PER_WINDOW):
                 if is_final_window:
-                    # 收尾窗口：61 段背景车在窗口前 10 s 内放完，保证最后一帧 61/61 有数据
+                    # 收尾窗口：全部段背景车在窗口前 10 s 内放完，保证最后一帧全段有数据
                     offset = (index + seq) % BACKGROUND_FINAL_OFFSET_MOD_S
                 else:
                     offset = (
@@ -600,11 +603,11 @@ def _run_twin_simulation(
                 pending.append((depart_s, driver_type))
 
     def take_snapshot(step_no: int, window_s: int, final: bool = False) -> None:
-        """聚合一次快照：61 段四项指标 + 判级 + 车辆清单（最后一帧写 vehicles.json）。
+        """聚合一次快照：全段四项指标 + 判级 + 车辆清单（最后一帧写 vehicles.json）。
 
         指标是**60 s 窗口统计**（与契约 `window_sec` 语义一致）：`q` 数窗口进车数、`v` 车辆-时间加权
         平均车速、`k` 窗口平均车辆数/长度、`L_q` 窗口内逐秒 halting 最大值折算。窗口内确实无车时
-        才给 `v=null` 并降级（不编数），这样背景车流铺满后 61 段都能聚合出指标。
+        才给 `v=null` 并降级（不编数），这样背景车流铺满后全段都能聚合出指标。
         """
         nonlocal vehicles_skipped_internal, background_observed_max, background_pending_observed_max
         ts = _sim_iso(cfg.base_ts, step_no)
@@ -958,7 +961,12 @@ def _write_twin_artifacts(
     final_ts = result["final_ts"]
     snapshots = result["snapshots"]
     points = len(result["segment_ts"])
-    # 61 段覆盖统计（IKNAUH）：每段 65 点里有多少点是 q/v/k/L_q/level 全有效的点
+    # 按站动态上下文（IKNC4J）：段号前缀 / 段数 / 站名全部来自本次真网产物，不写死 SZ-### / 61 段
+    segment_ids_sorted = sorted(result["timeseries"])
+    segments_total = len(segment_ids_sorted)
+    seg_prefix = segment_ids_sorted[0].split("-", 1)[0] if segment_ids_sorted else ""
+    site_name = str(net_build.get("site_name") or cfg.site or cfg.site_id or "")
+    # 全段覆盖统计（IKNAUH）：每段 points 点里有多少点是 q/v/k/L_q/level 全有效的点
     coverage: list[dict[str, Any]] = []
     for segment_id in sorted(result["timeseries"]):
         series = result["timeseries"][segment_id]
@@ -992,7 +1000,8 @@ def _write_twin_artifacts(
         "level_positive_final": level_positive_final,
         "note": (
             "有效点 = q_vph/v_kmh/k_vpk/L_q_m 均为数值且 level>0；背景车流（demo_uniform）"
-            "把每段每个窗口都铺上车辆，故理论上 61 段 65/65 点有效（窗口内确实无车时才降级）"
+            f"把 {site_name} 的 {segments_total} 段（{seg_prefix}-###）每个窗口都铺上车辆，"
+            f"故理论上 {segments_total} 段 {points}/{points} 点有效（窗口内确实无车时才降级）"
         ),
     }
     segments_payload = {
@@ -1005,7 +1014,8 @@ def _write_twin_artifacts(
             "真孪生主循环最后一帧快照（演示数据（模拟），不是采集数据）："
             "指标是 60 s 窗口统计（q=窗口进车数折算、v=车辆-时间加权平均车速、k=窗口平均车辆数/长度、"
             "L_q=窗口内最大排队）；全路段背景车流 background_source=demo_uniform（演示假设，不是实际需求），"
-            "使 61 段都有指标；窗口内确实无车的路段才 v_kmh=null / level=0（数据不可用），不编数"
+            f"使 {site_name} 的 {segments_total} 段（{seg_prefix}-###）都有指标；"
+            "窗口内确实无车的路段才 v_kmh=null / level=0（数据不可用），不编数"
         ),
         "segments": result["final_segments"],
     }
@@ -1033,7 +1043,8 @@ def _write_twin_artifacts(
         "background_source": BACKGROUND_SOURCE,
         "note": (
             f"每段 {points} 点时序（演示数据（模拟））：由真孪生主循环每 60 s 快照累积（60 s 窗口统计），"
-            "供 M1-2 孪生侧举证；全路段背景车流为 demo_uniform 演示假设，不是实际需求；视频侧 ≥60 点不在本产物内"
+            f"站点 {site_name} · {seg_prefix}-### · {segments_total} 段；供 M1-2 孪生侧举证；"
+            "全路段背景车流为 demo_uniform 演示假设，不是实际需求；视频侧 ≥60 点不在本产物内"
         ),
         "points": points,
         "point_ts": result["segment_ts"],
@@ -1137,7 +1148,7 @@ def _write_twin_artifacts(
         "background": {
             "source": BACKGROUND_SOURCE,
             "is_demo_assumption": True,
-            "note": BACKGROUND_NOTE,
+            "note": _background_note(seg_prefix, segments_total, site_name),
             "route_mode": result["background"]["route_mode"],
             "per_segment_per_window": result["background"]["per_segment_per_window"],
             "windows": result["background"]["windows"],

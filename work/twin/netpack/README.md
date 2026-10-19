@@ -161,7 +161,7 @@ python work/twin/netpack/tools/selftest_topology.py
 
 | 产物 | 内容 |
 |---|---|
-| `network_junction.enriched.json` | 61 段全量方向/车道/贯通性 + `field_sources`；**不覆盖原 JSON** |
+| `network_junction.enriched.json` | **Z 站 61 段** / **GZ 站 433 段**（`guangzhounan/`）全量方向/车道/贯通性 + `field_sources`；**不覆盖原 JSON** |
 | `topology_report.json` | schema / 边界角色 / 单向贯通 / 双向配对 / 主干道截断 / 有向可达性 / U-turn 逐项判据与失败明细 |
 | `topology_selftest.json` | 自检证据：Z 站全量、两个反例 FAIL、引擎两遍一致、样例/W1/接口只读不退化、doc_gate 8/8 |
 
@@ -205,8 +205,11 @@ python work/twin/netpack/tools/selftest_topology.py
 
 ### 5.6 范围与遗留
 
-- **广州南站（IKNB9F）**：等多站单生成 `network_junction.json` 后，用同一套命令
-  `topology.py --site-id <gz>` + `check_topology.py --site-id <gz>` 跑；本轮**不碰 station pack / 多站单**。
+- **广州南站（IKNB9F）已补跑（IKNC4J）**：GZ 真网 433 段 →
+  `topology.py --site-id guangzhounan` 产出 `guangzhounan/network_junction.enriched.json`（433 段 / 290 节点；`--check` 与重算逐字节一致）；
+  `tools/check_topology.py --site-id guangzhounan` 产出 `guangzhounan/topology_report.json`（entries 34 / exits 30）。
+  ⚠️ **GZ 报告 FAIL 36 / WARN 72**：10 处 `oneway_tail_without_successor`（5 个非边界断头 N-010 / N-102 / N-151 / N-236 / N-254）+ 26 条 `reachability`（9 节点 + 17 段不可达），全部落在 **800 m 演示范围裁剪边界**（单向路在范围边界被截断、裁剪后 raw `boundary` 未重标）——**如实登记为已知数据边界，不改判据、不造假**；修法随 IKNAUQ 范围/边界口径强化（裁剪后重算 boundary）或放宽范围后复验。Z 站 enriched/report 不受影响（仍 FAIL 0 / WARN 2、逐字节不变）。
+  引擎 `--site-id guangzhounan` 已优先读 enriched（`topology_source=enriched`）。
 - `left_turn_allowed` 目前只做**字段与报告**，不参与算路（OSM 切片没有 turn restriction 数据，
   强行禁左会引入无依据的断连）；U-turn 已真正参与引擎算路。
 - 本目录所有 JSON 都是**脚本产物**，不许手改；改规则就改 `topology.py` 再重跑。

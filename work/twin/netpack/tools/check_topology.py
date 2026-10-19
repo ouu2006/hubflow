@@ -1512,7 +1512,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--out",
         default=None,
-        help=f"报告输出路径（缺省 work/twin/netpack/{DEFAULT_REPORT_NAME}）",
+        help=(
+            f"报告输出路径（缺省：enriched 图同目录的 {DEFAULT_REPORT_NAME}；"
+            "Z 站 = work/twin/netpack/，GZ 站 = work/twin/netpack/guangzhounan/）"
+        ),
     )
     parser.add_argument("--routes", default=None, help="引擎 routes.json（校验路线方向/非法掉头）")
     parser.add_argument("--allow-unreachable", default=None, help="不可达白名单 JSON（nodes/segments/reason）")
@@ -1532,7 +1535,11 @@ def main(argv: list[str] | None = None) -> int:
         raw_path = Path(args.raw) if args.raw else None
     else:
         graph_path, raw_path = default_paths(args.site_id, config)
-    output = Path(args.out) if args.out else NETPACK / DEFAULT_REPORT_NAME
+    if args.out:
+        output = Path(args.out)
+    else:
+        # 按站放报告（IKNC4J）：默认 = enriched 同目录，Z/ GZ 各一份、互不覆盖
+        output = graph_path.parent / DEFAULT_REPORT_NAME
     allow, _ = load_allow_unreachable(args.allow_unreachable)
     payload = load_graph(graph_path)
     report = run_checks(

@@ -303,7 +303,7 @@ onUnmounted(() => {
     active="perception"
     :station="stationName"
     :ts="snapshotTs"
-    title="感知层 · YOLO 视频链路 + 环境上下文"
+    title="感知层 · 模拟识别（演示）· 视频链路（YOLO 仅项目代号）+ 环境上下文"
     :subtitle="subLine"
   >
     <template #headRight>

@@ -173,7 +173,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
 export const STATION_Z21: StationPack = {
   key: 'Z21',
   label: 'Z21 · 旧 21 段',
-  note: '旧 21 段过渡几何（按路名归并，IKMDKY 切换前）· 只摄像头段上色 · 6 路摄像头（视频留空窗）',
+  note: '旧 21 段过渡几何（按路名归并，IKMDKY 切换前）· 源台账 6 路摄像头 / 一期演示 21 路（mock 复用样本视频）',
   station: {
     station_id: 'ZQNZ',
     name: '肇庆东站',

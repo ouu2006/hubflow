@@ -18,7 +18,7 @@
   python work/engine/run.py --sample              # 对照组基线(此刻最快)
   python work/engine/run.py --sample --compare    # ①不推荐 / ②此刻最快 / ③协同推荐 三组对照
   python work/engine/run.py --sample --out /tmp/x --samples ... --stations ...
-  python work/engine/run.py --network real        # 真网(SZ-### 61 段)协同推荐,写 out/real/,**不动样例 out/**
+  python work/engine/run.py --network real        # 真网(站点登记表:段号前缀/段数)协同推荐,写 out/real/,**不动样例 out/**
   python work/engine/run.py --network real --compare   # 真网三组对照(TC-17 数据),写 out/real/compare/
   python work/engine/run.py --network real --site-id <登记表里的 site_id> --segments <上游 segments 快照路径>
   # 站点/真网路径由 work/twin/site-ranges.json 登记表决定(不写死在代码里);换站只改登记表 + --site-id
@@ -78,13 +78,16 @@ COMPARE_GUIDED_COMMON_NOTE = (
     "只统计被引导车辆自身 ETA(不含背景车流),按 TC-17 评测协议的共同车辆群口径;"
     "样例路网上两组差异很小(被逼绕行的 OD-02 与避开的拥堵基本抵消),单列作参考"
 )
-#: 真网(非样例)产物信封说明
-REAL_ROUTES_SCHEMA_NOTE = (
-    "真网 routes:requests[] 每个元素就是 POST /api/traffic/route/recommend 的响应体形状"
-    "(契约第二节);段号全部来自真网命名空间(SZ-###),路线对象额外带 length_m 可回溯到 "
-    "network.segments[] 的逐段长度;network / od_derivation / segments_source 三块是可追溯元数据,"
-    "不属于单次响应体,接口层不透出"
-)
+#: 真网(非样例)产物信封说明（IKNC4J：段号前缀按站点登记表现取，不写死 SZ-###）
+def real_routes_schema_note(seg_prefix: str, site_name: str = "") -> str:
+    prefix = f"{seg_prefix}-###" if seg_prefix else "<seg_prefix>-###"
+    where = f"{site_name} 真网" if site_name else "真网"
+    return (
+        f"{where} routes:requests[] 每个元素就是 POST /api/traffic/route/recommend 的响应体形状"
+        f"(契约第二节);段号全部来自真网命名空间({prefix}),路线对象额外带 length_m 可回溯到 "
+        "network.segments[] 的逐段长度;network / od_derivation / segments_source 三块是可追溯元数据,"
+        "不属于单次响应体,接口层不透出"
+    )
 #: 真网 `--compare` 的对照场景说明
 REAL_COMPARE_SCENARIO_NOTE = (
     "① 不推荐 / ② 此刻最快 / ③ 协同推荐在同一份真网拓扑、同一份 segments 输入、"
@@ -161,7 +164,7 @@ def load_samples(samples_dir: Path) -> dict[str, dict[str, Any]]:
 
 
 # ============================================================================
-# 数据装载:--sample(7 节点样例网 SEG-###)/ --network real(真网 SZ-###)
+# 数据装载:--sample(7 节点样例网 SEG-###)/ --network real(站点登记表真网,段号前缀见 seg_prefix)
 #
 # 两套输入**只在装载这一步分流**;后面的候选生成 / 时段预约 / 不伤害 / 再疏导 / --compare
 # 完全共用同一套函数(不按数据 source 分支)。dataset 把两边的差异收进元数据块,
@@ -321,8 +324,8 @@ def _load_real_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
         "od_pairs": od_pairs,
         "segments_payload": {"ts": base_ts, "window_sec": window_sec},
         "ts": base_ts,
-        "schema_note": REAL_ROUTES_SCHEMA_NOTE,
-        "compare_schema_note": REAL_ROUTES_SCHEMA_NOTE,
+        "schema_note": real_routes_schema_note(net_meta["seg_prefix"], net_meta["site_name"]),
+        "compare_schema_note": real_routes_schema_note(net_meta["seg_prefix"], net_meta["site_name"]),
         "log_source_fields": {
             "site_id": net_meta["site_id"],
             "network_file": net_meta["network_file"],
@@ -586,7 +589,7 @@ def run_sample(cfg: dict[str, Any]) -> int:
 
 
 # ============================================================================
-# --network real:真网(SZ-### 61 段)协同推荐入口
+# --network real:真网(站点登记表,段号前缀/段数按站点)协同推荐入口
 #
 # 与 --sample 的区别只在**输入来源**:
 #   · --sample  = 7 节点 SEG-### 样例网的**对照组基线**(reservation 恒为 null,不许改);
@@ -720,7 +723,8 @@ def run_real(cfg: dict[str, Any]) -> int:
         "param_source_counts": dataset["network_block"]["param_source_counts"],
         "written_bytes": written,
         "note": (
-            "真网协同推荐:段号一律 SZ-###(来自站点范围登记表的 seg_prefix),"
+            f"真网协同推荐:段号一律 {dataset['seg_prefix']}-###"
+            f"（来自站点范围登记表的 seg_prefix，本站 {dataset['network_block']['site_name']}）,"
             "routes.json 的 network.segments[] 给出逐段 length_m/from-to/param_source;"
             "segments_source 如实记录上游快照命中/降级情况;参数全部读 stations/thresholds.json"
         ),
@@ -1673,7 +1677,7 @@ def _load_optional_json(path: Path) -> dict[str, Any] | None:
 def run_compare(cfg: dict[str, Any]) -> int:
     """--compare:同一份输入跑 ① 不推荐 / ② 此刻最快 / ③ 协同推荐,输出 TC-17 三组对比数据。
 
-    `--network real` 时同一套机制在真网(SZ-### 61 段)上跑;数据只换装载层,机制不按 source 分支。
+    `--network real` 时同一套机制在真网(站点登记表:段号前缀/段数按站点)上跑;数据只换装载层,机制不按 source 分支。
     """
     dataset = _load_dataset(cfg)
     out_dir: Path = cfg["out_dir"]
@@ -1945,7 +1949,7 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         choices=("sample", "real"),
         default=None,
         help=(
-            "数据来源:sample=7 节点样例网(SEG-###)/ real=站点登记表里的真网(SZ-### 61 段);"
+            "数据来源:sample=7 节点样例网(SEG-###)/ real=站点登记表里的真网(段号前缀/段数按站点);"
             "缺省 None 时需显式 --sample 或 --network real(不改变旧行为)"
         ),
     )
@@ -2003,7 +2007,7 @@ def parse_args(argv: list[str] | None = None) -> dict[str, Any]:
         )
     if chosen_network == "real" and ns.sample:
         raise SystemExit(
-            "--sample 与 --network real 互斥:样例基线(7 节点 SEG-###)与真网(SZ-###)是两张网"
+            "--sample 与 --network real 互斥:样例基线(7 节点 SEG-###)与站点真网是两张网"
         )
     if ns.out_dir:
         # 显式传参优先:调用方要写哪就写哪(--out 的约定不变)
@@ -2044,7 +2048,7 @@ def main(argv: list[str] | None = None) -> int:
     if cfg["network"] is None:
         raise NotImplementedError(
             "请显式选择数据来源:--sample(7 节点样例网对照基线)或 --network real"
-            "(站点登记表里的真网,61 段 SZ-###)。真网入口不再依赖 SUMO;用法见 work/engine/README.md"
+            "(站点登记表里的真网,段号前缀/段数按站点)。真网入口不再依赖 SUMO;用法见 work/engine/README.md"
         )
     if cfg["compare"]:
         return run_compare(cfg)
