@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""IKM4TE 自检：站点包 Z 的 mock 数据「能指回本站路网、形状自洽、口径如实」。
+"""IKM4TE 自检：站点包 Z 的 mock 数据 + GZ 点位「能指回本站路网、形状自洽、口径如实」。
 
 跑（仓库根）：
     python work/frontend/scripts/check_station_data.py
@@ -11,7 +11,9 @@
   ② 断面 role 自洽：boundary/internal 都有；assimilation 里 internal 一律 enabled=false（TC-20 第②项）；
   ③ 告警四态齐全；seedDispatch 的 key 必须是已存在的 alert_id；
   ④ 分流建议引用的目标段存在；场景因素编号合法（F01~F14）；
-  ⑤ mock 数据必须带「演示 / 候选 / 待冻结 / 模拟」字样（口径红线：不冒充真实数据）。
+  ⑤ mock 数据必须带「演示 / 候选 / 待冻结 / 模拟」字样（口径红线：不冒充真实数据）；
+  ⑥ 广州南站（GZ）点位：数量恰为 5 落客点 + 4 候客/上客区、id 前缀正确、名称带演示标记、
+     坐标落在本站路网包络内、坐标不重合、推荐落客点非悬空（IKM4TE，只校验点位，不套 Z 站九项）。
 """
 
 from __future__ import annotations
@@ -24,11 +26,16 @@ ROOT = Path(__file__).resolve().parents[3]
 NET_TS = ROOT / "work/frontend/ui-vue/src/station-packs/stationZ.network.ts"
 PACK_TS = ROOT / "work/frontend/ui-vue/src/station-packs/stationZ.ts"
 GEN_TS = ROOT / "work/frontend/ui-vue/src/station-packs/cameraChannels.generated.ts"
+# 广州南站（IKNB9F / 本单补点位）：只校验点位，不套 Z 站那九项（GZ 包没有 Z 站的告警/分流语义）
+GZ_NET_TS = ROOT / "work/frontend/ui-vue/src/station-packs/stationGZ.network.ts"
+GZ_PACK_TS = ROOT / "work/frontend/ui-vue/src/station-packs/stationGZ.ts"
 
 MOCK_MARKERS = ("演示", "候选", "待冻结", "模拟", "mock", "DEMO")
 SCENARIO_KEYS = {"baseline", "rain-peak", "fog-night", "train-burst", "accident-loop"}
 ENV_FACTORS = {"F01", "F02", "F03", "F10"}
 STATUSES = ("待认领", "处置中", "已闭环", "误报")
+# GZ 点位数量（IKM4TE 完成判定：5 落客点 + 4 候客/上客区；删点/漏解析必须报错，不能 fail-open）
+EXPECTED_GZ_MARKS = {"dropoffs": 5, "zones": 4}
 
 
 def block(text: str, field: str) -> str:
@@ -163,12 +170,87 @@ def main() -> int:
     if bad:
         errors.append(f"cameraChannels.generated.ts 段号悬空：{bad}")
 
+    # ⑩ 广州南站（GZ）点位自检：id 唯一 · 名称带演示标记 · 坐标落在这个包自己的路网范围内 · 无重合
+    #    为什么不复用 ①~⑧：GZ 包还没有 Z 站那套 alerts / diversion / assimilation 演示骨架，
+    #    套上去只会得到「GZ 缺告警」这种与本单无关的噪声。这里只钉点位这一件事。
+    if not GZ_PACK_TS.exists() or not GZ_NET_TS.exists():
+        errors.append("GZ 站点包文件缺失（stationGZ.ts / stationGZ.network.ts）")
+    else:
+        gz_pack = GZ_PACK_TS.read_text(encoding="utf-8")
+        gz_net = GZ_NET_TS.read_text(encoding="utf-8")
+        gz_ids = set(re.findall(r"segment_id:\s*'(GZ-\d+)'", gz_net))
+        print(f"[GZ 路网] {len(gz_ids)} 段")
+        # 路网经纬度包络（点位必须落在范围内，防止手滑写到别的城市）
+        pts = [
+            (float(lon), float(lat))
+            for lon, lat in re.findall(r"\[\s*([\d.]+),\s*([\d.]+)\s*\]", gz_net)
+        ]
+        if not pts:
+            errors.append("GZ 路网里没解析到任何坐标，无法核对点位范围")
+        else:
+            lons = [p[0] for p in pts]
+            lats = [p[1] for p in pts]
+            lon_min, lon_max = min(lons), max(lons)
+            lat_min, lat_max = min(lats), max(lats)
+            print(f"[GZ 范围] lon {lon_min:.5f}~{lon_max:.5f} · lat {lat_min:.5f}~{lat_max:.5f}")
+        gz_coords: dict[str, list[str]] = {}
+        gz_mark_count = {"dropoffs": 0, "zones": 0}
+        for field in ("dropoffs", "zones"):
+            blk = block(gz_pack, field)
+            marks = re.findall(
+                # \bid 防止误匹配 segment_id；name 允许 TS 转义引号（\' / \\）
+                r"\bid:\s*'([^']+)',\s*\n\s*name:\s*'((?:[^'\\]|\\.)*)',\s*\n\s*lon:\s*([\d.]+),\s*\n\s*lat:\s*([\d.]+),",
+                blk,
+            )
+            gz_mark_count[field] = len(marks)
+            print(f"[GZ 点位] {field}: {len(marks)} 条（应为 {EXPECTED_GZ_MARKS[field]} 条）")
+            if len(marks) != EXPECTED_GZ_MARKS[field]:
+                errors.append(
+                    f"GZ {field} 应为 {EXPECTED_GZ_MARKS[field]} 条，实际 {len(marks)} 条"
+                    "（本单要求 5 落客点 + 4 候客/上客区；删点 / 漏解析都必须报错）"
+                )
+            seen_ids: set[str] = set()
+            prefix = "GZ-DROP-" if field == "dropoffs" else "GZ-ZONE-"
+            for mark_id, mark_name, lon_s, lat_s in marks:
+                if mark_id in seen_ids:
+                    errors.append(f"GZ {field} 点位 id 重复：{mark_id}")
+                seen_ids.add(mark_id)
+                if not mark_id.startswith(prefix):
+                    errors.append(f"GZ {field} 点位 id {mark_id} 未用 {prefix} 前缀")
+                if not any(m in mark_name for m in MOCK_MARKERS):
+                    errors.append(
+                        f"GZ {field} 点位 {mark_id} 的名称里找不到「演示」标记，疑似冒充真实点位：{mark_name}"
+                    )
+                lon, lat = float(lon_s), float(lat_s)
+                gz_coords.setdefault(f"{lon},{lat}", []).append(mark_id)
+                if pts and not (lon_min <= lon <= lon_max and lat_min <= lat <= lat_max):
+                    errors.append(
+                        f"GZ {field} 点位 {mark_id} 坐标落在本站路网范围外（{lon},{lat}）：疑似写错站"
+                    )
+        for coord, ids in gz_coords.items():
+            if len(ids) > 1:
+                errors.append(f"GZ 点位坐标重合（图上会叠在一起）：{coord} → {ids}")
+        # 推荐路线指向的落客点必须真实存在（本单前它是悬空的 'GZ-DROP-EAST'）
+        ref = re.search(r"arrival_dropoff_point:\s*'([^']+)'", gz_pack)
+        if not ref:
+            errors.append("GZ 站点包缺 arrival_dropoff_point")
+        else:
+            ref_id = ref.group(1)
+            defined = set(re.findall(r"id:\s*'(GZ-DROP-[^']+)'", block(gz_pack, "dropoffs")))
+            print(f"[GZ 推荐] arrival_dropoff_point = {ref_id}")
+            if ref_id not in defined:
+                errors.append(
+                    f"GZ arrival_dropoff_point={ref_id} 不在 dropoffs 里（悬空引用，前端会显示空窗）："
+                    f"已定义 {sorted(defined)}"
+                )
+
     if errors:
         print(f"\n❌ 自检失败：{len(errors)} 项")
         for e in errors:
             print(f"   ❌ {e}")
         return 1
-    print("\n✅ 站点包 Z mock 数据自检通过：段号零悬空 · 断面 role 自洽 · 告警四态齐 · 分流/场景可解析 · mock 标记齐全")
+    print("\n✅ 站点包自检通过（Z mock + GZ 点位）：段号零悬空 · 断面 role 自洽 · 告警四态齐 · "
+          "分流/场景可解析 · mock 标记齐全 · GZ 恰 5 落客点 + 4 候客/上客区且坐标落在本站包络内")
     return 0
 
 
