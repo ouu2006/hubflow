@@ -14,6 +14,8 @@
 // 本单不判定主干 / 分支；走廊落位另开单。
 
 import { STATION_Z_SEGMENTS } from './stationZ.network.ts'
+// IKOQEJ：方向/车道/对向/贯通字段（由 tools/gen_station_directions.py 只读 enriched 生成）
+import { STATION_Z_DIRECTIONS } from './stationZ.directions.generated.ts'
 import { CAMERA_CHANNELS } from './cameraChannels.generated.ts'
 import type { PackSegmentBase, StationPack } from './types.ts'
 
@@ -202,6 +204,8 @@ export const STATION_Z: StationPack = {
   },
 
   segments: STATION_Z_SEGMENTS,
+  // IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成；非契约、不参与判级）
+  segmentDirections: STATION_Z_DIRECTIONS,
 
   // 真 OSM 几何 → 触发 OSM 署名义务（条款核实 E-11 / E-13）
   source: {
