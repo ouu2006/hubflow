@@ -7,6 +7,7 @@
 // 全段确定性演示基线（每段 level>=1，不灰档）；GZ 未接摄像头登记表，channels 为空、全段按等级上色。
 
 import { STATION_GZ_SEGMENTS } from './stationGZ.network.ts'
+import { STATION_GZ_DIRECTIONS } from './stationGZ.directions.generated.ts'
 import type { PackAlertBase, PackDiversion, PackRecommend, PackSection, PackSegmentBase, StationPack } from './types.ts'
 
 const LEVEL_CYCLE = [1, 2, 1, 3, 2, 1, 2, 4, 1, 2, 3, 1] as const
@@ -1227,6 +1228,7 @@ export const STATION_GZ: StationPack = {
     segment_count: 708,
   },
   segments: STATION_GZ_SEGMENTS,
+  segmentDirections: STATION_GZ_DIRECTIONS,
   source: {
     osm: true,
     label: '广州南站 OSM 真路网（Overpass 切片，演示范围 1000 m）',

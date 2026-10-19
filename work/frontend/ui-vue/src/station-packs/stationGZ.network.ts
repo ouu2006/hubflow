@@ -9,7 +9,7 @@ import type { PackSegment } from './types.ts'
 export const STATION_GZ_SEGMENTS: PackSegment[] = [
   {
     segment_id: 'GZ-001',
-    name: '三坊路（N-263→N-209）',
+    name: '三坊路（N-366→N-291）',
     kind: 'main',
     coords: [
           [113.2749876, 22.9895275],
@@ -21,7 +21,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
   },
   {
     segment_id: 'GZ-002',
-    name: '三坊路（N-196→N-151）',
+    name: '三坊路（N-277→N-225）',
     kind: 'main',
     coords: [
           [113.2716495, 22.9940576],
@@ -35,7 +35,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
   },
   {
     segment_id: 'GZ-003',
-    name: '三坊路（N-160→N-202）',
+    name: '三坊路（N-234→N-283）',
     kind: 'main',
     coords: [
           [113.2695882, 22.9966996],
@@ -48,7 +48,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
   },
   {
     segment_id: 'GZ-004',
-    name: '三坊路（N-249→N-265）',
+    name: '三坊路（N-348→N-368）',
     kind: 'main',
     coords: [
           [113.2739988, 22.9910831],
@@ -58,7 +58,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
   },
   {
     segment_id: 'GZ-005',
-    name: '三坊路（N-213→N-236）',
+    name: '三坊路（N-295→N-328）',
     kind: 'main',
     coords: [
           [113.2723347, 22.9934159],
@@ -67,7 +67,21 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
   },
   {
     segment_id: 'GZ-006',
-    name: '三坊路（N-268→N-280）',
+    name: '三坊路（N-199→N-234）',
+    kind: 'main',
+    coords: [
+          [113.2679123, 22.9966956],
+          [113.2682128, 22.9968108],
+          [113.2683937, 22.9968478],
+          [113.2686560, 22.9968630],
+          [113.2689968, 22.9968425],
+          [113.2693102, 22.9967834],
+          [113.2695882, 22.9966996]
+    ],
+  },
+  {
+    segment_id: 'GZ-007',
+    name: '三坊路（N-371→N-395）',
     kind: 'main',
     coords: [
           [113.2752413, 22.9891291],
@@ -76,8 +90,24 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-007',
-    name: '三坊路（N-282→N-270）',
+    segment_id: 'GZ-008',
+    name: '三坊路（N-225→N-192）',
+    kind: 'main',
+    coords: [
+          [113.2690948, 22.9966554],
+          [113.2689678, 22.9966860],
+          [113.2686354, 22.9967079],
+          [113.2684556, 22.9966941],
+          [113.2683039, 22.9966627],
+          [113.2681502, 22.9966353],
+          [113.2679954, 22.9965782],
+          [113.2678484, 22.9965139],
+          [113.2677564, 22.9964673]
+    ],
+  },
+  {
+    segment_id: 'GZ-009',
+    name: '三坊路（N-401→N-374）',
     kind: 'main',
     coords: [
           [113.2761565, 22.9882010],
@@ -85,8 +115,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-008',
-    name: '三坊路（N-288→N-285）',
+    segment_id: 'GZ-010',
+    name: '三坊路（N-412→N-421）',
+    kind: 'main',
+    coords: [
+          [113.2766416, 22.9875798],
+          [113.2767847, 22.9874892],
+          [113.2772821, 22.9872169]
+    ],
+  },
+  {
+    segment_id: 'GZ-011',
+    name: '三坊路（N-414→N-406）',
     kind: 'main',
     coords: [
           [113.2767181, 22.9877075],
@@ -94,8 +134,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-009',
-    name: '三坊路（N-283→N-286）',
+    segment_id: 'GZ-012',
+    name: '三坊路（N-402→N-411）',
     kind: 'main',
     coords: [
           [113.2762019, 22.9879645],
@@ -103,8 +143,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-010',
-    name: '三坊路（N-204→N-198）',
+    segment_id: 'GZ-013',
+    name: '三坊路（N-422→N-417）',
+    kind: 'main',
+    coords: [
+          [113.2773351, 22.9873330],
+          [113.2768877, 22.9876047]
+    ],
+  },
+  {
+    segment_id: 'GZ-014',
+    name: '三坊路（N-286→N-279）',
     kind: 'main',
     coords: [
           [113.2719898, 22.9936082],
@@ -112,8 +161,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-011',
-    name: '三坊路（N-270→N-266）',
+    segment_id: 'GZ-015',
+    name: '三坊路（N-374→N-369）',
     kind: 'main',
     coords: [
           [113.2754386, 22.9891972],
@@ -122,8 +171,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-012',
-    name: '三坊路（N-264→N-268）',
+    segment_id: 'GZ-016',
+    name: '三坊路（N-367→N-371）',
     kind: 'main',
     coords: [
           [113.2750395, 22.9894525],
@@ -131,8 +180,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-013',
-    name: '三坊路（N-203→N-207）',
+    segment_id: 'GZ-017',
+    name: '三坊路（N-285→N-289）',
     kind: 'main',
     coords: [
           [113.2719452, 22.9939529],
@@ -140,8 +189,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-014',
-    name: '三坊路（N-202→N-203）',
+    segment_id: 'GZ-018',
+    name: '三坊路（N-192→N-199）',
+    kind: 'main',
+    coords: [
+          [113.2677564, 22.9964673],
+          [113.2679123, 22.9966956]
+    ],
+  },
+  {
+    segment_id: 'GZ-019',
+    name: '三坊路（N-283→N-285）',
     kind: 'main',
     coords: [
           [113.2717992, 22.9941615],
@@ -149,8 +207,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-015',
-    name: '三坊路（N-210→N-213）',
+    segment_id: 'GZ-020',
+    name: '三坊路（N-292→N-295）',
     kind: 'main',
     coords: [
           [113.2721923, 22.9936142],
@@ -158,8 +216,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-016',
-    name: '三坊路（N-209→N-205）',
+    segment_id: 'GZ-021',
+    name: '三坊路（N-291→N-287）',
     kind: 'main',
     coords: [
           [113.2721947, 22.9933376],
@@ -167,8 +225,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-017',
-    name: '三坊路（N-265→N-264）',
+    segment_id: 'GZ-022',
+    name: '三坊路（N-417→N-414）',
+    kind: 'main',
+    coords: [
+          [113.2768877, 22.9876047],
+          [113.2767181, 22.9877075]
+    ],
+  },
+  {
+    segment_id: 'GZ-023',
+    name: '三坊路（N-368→N-367）',
     kind: 'main',
     coords: [
           [113.2751106, 22.9896159],
@@ -176,8 +243,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-018',
-    name: '三坊路（N-266→N-263）',
+    segment_id: 'GZ-024',
+    name: '三坊路（N-369→N-366）',
     kind: 'main',
     coords: [
           [113.2751723, 22.9895414],
@@ -185,8 +252,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-019',
-    name: '三坊路（N-285→N-282）',
+    segment_id: 'GZ-025',
+    name: '三坊路（N-406→N-401）',
     kind: 'main',
     coords: [
           [113.2762826, 22.9880864],
@@ -194,8 +261,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-020',
-    name: '三坊路（N-280→N-283）',
+    segment_id: 'GZ-026',
+    name: '三坊路（N-395→N-402）',
     kind: 'main',
     coords: [
           [113.2760734, 22.9880632],
@@ -203,8 +270,35 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-021',
-    name: '三坊路（N-205→N-204）',
+    segment_id: 'GZ-027',
+    name: '三坊路（N-421→N-423）',
+    kind: 'main',
+    coords: [
+          [113.2772821, 22.9872169],
+          [113.2774239, 22.9871415]
+    ],
+  },
+  {
+    segment_id: 'GZ-028',
+    name: '三坊路（N-427→N-422）',
+    kind: 'main',
+    coords: [
+          [113.2774704, 22.9872616],
+          [113.2773351, 22.9873330]
+    ],
+  },
+  {
+    segment_id: 'GZ-029',
+    name: '三坊路（N-423→N-427）',
+    kind: 'main',
+    coords: [
+          [113.2774239, 22.9871415],
+          [113.2774704, 22.9872616]
+    ],
+  },
+  {
+    segment_id: 'GZ-030',
+    name: '三坊路（N-287→N-286）',
     kind: 'main',
     coords: [
           [113.2720527, 22.9935251],
@@ -212,8 +306,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-022',
-    name: '三坊路（N-207→N-210）',
+    segment_id: 'GZ-031',
+    name: '三坊路（N-289→N-292）',
     kind: 'main',
     coords: [
           [113.2721322, 22.9936979],
@@ -221,8 +315,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-023',
-    name: '三坊路（N-198→N-196）',
+    segment_id: 'GZ-032',
+    name: '三坊路（N-279→N-277）',
     kind: 'main',
     coords: [
           [113.2716876, 22.9940011],
@@ -230,8 +324,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-024',
-    name: '三坊路（N-286→N-287）',
+    segment_id: 'GZ-033',
+    name: '三坊路（N-411→N-412）',
     kind: 'main',
     coords: [
           [113.2765908, 22.9876242],
@@ -239,8 +333,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-025',
-    name: '三坊路辅道（N-180→N-168）',
+    segment_id: 'GZ-034',
+    name: '三坊路辅道（N-256→N-242）',
     kind: 'main',
     coords: [
           [113.2709099, 22.9948658],
@@ -250,8 +344,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-026',
-    name: '三坊路辅道（N-174→N-185）',
+    segment_id: 'GZ-035',
+    name: '三坊路辅道（N-248→N-261）',
     kind: 'main',
     coords: [
           [113.2704221, 22.9961272],
@@ -259,8 +353,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-027',
-    name: '三坊路辅道（N-185→N-202）',
+    segment_id: 'GZ-036',
+    name: '三坊路辅道（N-261→N-283）',
     kind: 'main',
     coords: [
           [113.2711798, 22.9951146],
@@ -269,8 +363,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-028',
-    name: '三坊路辅道（N-196→N-180）',
+    segment_id: 'GZ-037',
+    name: '三坊路辅道（N-277→N-256）',
     kind: 'main',
     coords: [
           [113.2716495, 22.9940576],
@@ -279,8 +373,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-029',
-    name: '三坊路辅道（N-168→N-151）',
+    segment_id: 'GZ-038',
+    name: '三坊路辅道（N-242→N-225）',
     kind: 'main',
     coords: [
           [113.2700115, 22.9960384],
@@ -292,8 +386,22 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-030',
-    name: '三坊路辅道（N-202→N-196）',
+    segment_id: 'GZ-039',
+    name: '三坊路辅道（N-234→N-248）',
+    kind: 'main',
+    coords: [
+          [113.2695882, 22.9966996],
+          [113.2698542, 22.9966011],
+          [113.2700341, 22.9965129],
+          [113.2701596, 22.9964059],
+          [113.2702686, 22.9963105],
+          [113.2703377, 22.9962400],
+          [113.2704221, 22.9961272]
+    ],
+  },
+  {
+    segment_id: 'GZ-040',
+    name: '三坊路辅道（N-283→N-277）',
     kind: 'main',
     coords: [
           [113.2717992, 22.9941615],
@@ -301,8 +409,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-031',
-    name: '东出发平台（N-060→N-142）',
+    segment_id: 'GZ-041',
+    name: '东出发平台（N-105→N-216）',
     kind: 'main',
     coords: [
           [113.2646298, 22.9938289],
@@ -328,8 +436,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-032',
-    name: '东出发平台（N-091→N-062）',
+    segment_id: 'GZ-042',
+    name: '东出发平台（N-139→N-107）',
     kind: 'main',
     coords: [
           [113.2662688, 22.9955875],
@@ -339,8 +447,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-033',
-    name: '东出发平台（N-062→N-060）',
+    segment_id: 'GZ-043',
+    name: '东出发平台（N-107→N-105）',
     kind: 'main',
     coords: [
           [113.2647596, 22.9945970],
@@ -354,7 +462,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-034',
+    segment_id: 'GZ-044',
     name: '主干道',
     kind: 'main',
     coords: [
@@ -384,8 +492,66 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-035',
-    name: '南站北路（N-002→N-050）',
+    segment_id: 'GZ-045',
+    name: '兴业大道西（N-408→N-448）',
+    kind: 'main',
+    coords: [
+          [113.2764767, 22.9838738],
+          [113.2767271, 22.9837188],
+          [113.2770406, 22.9835674],
+          [113.2773676, 22.9834199],
+          [113.2776077, 22.9833335],
+          [113.2779347, 22.9832369],
+          [113.2784793, 22.9831241],
+          [113.2784793, 22.9831241],
+          [113.2787835, 22.9830790],
+          [113.2790636, 22.9830547]
+    ],
+  },
+  {
+    segment_id: 'GZ-046',
+    name: '兴业大道西（N-433→N-415）',
+    kind: 'main',
+    coords: [
+          [113.2779673, 22.9834791],
+          [113.2776285, 22.9835783],
+          [113.2773179, 22.9836937],
+          [113.2770446, 22.9838069],
+          [113.2767270, 22.9839746]
+    ],
+  },
+  {
+    segment_id: 'GZ-047',
+    name: '兴业大道西（N-415→N-405）',
+    kind: 'main',
+    coords: [
+          [113.2767270, 22.9839746],
+          [113.2764222, 22.9841476],
+          [113.2762677, 22.9842545]
+    ],
+  },
+  {
+    segment_id: 'GZ-048',
+    name: '兴业大道西（N-399→N-408）',
+    kind: 'main',
+    coords: [
+          [113.2761524, 22.9841105],
+          [113.2763110, 22.9839874],
+          [113.2764767, 22.9838738]
+    ],
+  },
+  {
+    segment_id: 'GZ-049',
+    name: '兴业大道西（N-405→N-399）',
+    kind: 'main',
+    coords: [
+          [113.2762677, 22.9842545],
+          [113.2761524, 22.9841105]
+    ],
+  },
+  {
+    segment_id: 'GZ-050',
+    name: '南站北路（N-019→N-091）',
     kind: 'main',
     coords: [
           [113.2602911, 22.9917914],
@@ -399,8 +565,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-036',
-    name: '南站北路（N-013→N-043）',
+    segment_id: 'GZ-051',
+    name: '南站北路（N-040→N-083）',
     kind: 'main',
     coords: [
           [113.2618108, 22.9929945],
@@ -408,8 +574,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-037',
-    name: '南站北路（N-074→N-104）',
+    segment_id: 'GZ-052',
+    name: '南站北路（N-120→N-160）',
     kind: 'main',
     coords: [
           [113.2654301, 22.9952068],
@@ -419,8 +585,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-038',
-    name: '南站北路（N-050→N-072）',
+    segment_id: 'GZ-053',
+    name: '南站北路（N-091→N-117）',
     kind: 'main',
     coords: [
           [113.2642266, 22.9941818],
@@ -431,8 +597,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-039',
-    name: '南站北路（N-086→N-107）',
+    segment_id: 'GZ-054',
+    name: '南站北路（N-133→N-163）',
     kind: 'main',
     coords: [
           [113.2661343, 22.9952378],
@@ -441,8 +607,39 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-040',
-    name: '南站北路（N-107→N-117）',
+    segment_id: 'GZ-055',
+    name: '南站北路（N-177→N-199）',
+    kind: 'main',
+    coords: [
+          [113.2672940, 22.9963679],
+          [113.2674262, 22.9964422],
+          [113.2677187, 22.9966172],
+          [113.2679123, 22.9966956]
+    ],
+  },
+  {
+    segment_id: 'GZ-056',
+    name: '南站北路（N-023→N-032）',
+    kind: 'main',
+    coords: [
+          [113.2607613, 22.9923532],
+          [113.2609627, 22.9924792],
+          [113.2613464, 22.9927123]
+    ],
+  },
+  {
+    segment_id: 'GZ-057',
+    name: '南站北路（N-017→N-023）',
+    kind: 'main',
+    coords: [
+          [113.2601956, 22.9919946],
+          [113.2602332, 22.9920229],
+          [113.2607613, 22.9923532]
+    ],
+  },
+  {
+    segment_id: 'GZ-058',
+    name: '南站北路（N-163→N-182）',
     kind: 'main',
     coords: [
           [113.2669324, 22.9957528],
@@ -453,8 +650,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-041',
-    name: '南站北路（N-066→N-074）',
+    segment_id: 'GZ-059',
+    name: '南站北路（N-111→N-120）',
     kind: 'main',
     coords: [
           [113.2649092, 22.9948900],
@@ -462,8 +659,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-042',
-    name: '南站北路（N-072→N-081）',
+    segment_id: 'GZ-060',
+    name: '南站北路（N-032→N-040）',
+    kind: 'main',
+    coords: [
+          [113.2613464, 22.9927123],
+          [113.2618108, 22.9929945]
+    ],
+  },
+  {
+    segment_id: 'GZ-061',
+    name: '南站北路（N-117→N-127）',
     kind: 'main',
     coords: [
           [113.2652773, 22.9947244],
@@ -471,8 +677,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-043',
-    name: '南站北路（N-048→N-057）',
+    segment_id: 'GZ-062',
+    name: '南站北路（N-089→N-100）',
     kind: 'main',
     coords: [
           [113.2641523, 22.9944051],
@@ -480,8 +686,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-044',
-    name: '南站北路（N-081→N-086）',
+    segment_id: 'GZ-063',
+    name: '南站北路（N-127→N-133）',
     kind: 'main',
     coords: [
           [113.2657539, 22.9949866],
@@ -489,8 +695,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-045',
-    name: '南站北路（N-057→N-066）',
+    segment_id: 'GZ-064',
+    name: '南站北路（N-192→N-181）',
+    kind: 'main',
+    coords: [
+          [113.2677564, 22.9964673],
+          [113.2673776, 22.9962181]
+    ],
+  },
+  {
+    segment_id: 'GZ-065',
+    name: '南站北路（N-009→N-014）',
+    kind: 'main',
+    coords: [
+          [113.2596646, 22.9915572],
+          [113.2599651, 22.9918421]
+    ],
+  },
+  {
+    segment_id: 'GZ-066',
+    name: '南站北路（N-100→N-111）',
     kind: 'main',
     coords: [
           [113.2645600, 22.9946577],
@@ -498,8 +722,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-046',
-    name: '南站北路（N-043→N-047）',
+    segment_id: 'GZ-067',
+    name: '南站北路（N-083→N-088）',
     kind: 'main',
     coords: [
           [113.2637580, 22.9941698],
@@ -508,8 +732,57 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-047',
-    name: '南站北路（N-047→N-048）',
+    segment_id: 'GZ-068',
+    name: '南站北路（N-181→N-172）',
+    kind: 'main',
+    coords: [
+          [113.2673776, 22.9962181],
+          [113.2673167, 22.9961716],
+          [113.2672543, 22.9961555],
+          [113.2671871, 22.9961555],
+          [113.2671278, 22.9961671],
+          [113.2670927, 22.9961948]
+    ],
+  },
+  {
+    segment_id: 'GZ-069',
+    name: '南站北路（N-006→N-009）',
+    kind: 'main',
+    coords: [
+          [113.2594215, 22.9913895],
+          [113.2596646, 22.9915572]
+    ],
+  },
+  {
+    segment_id: 'GZ-070',
+    name: '南站北路（N-015→N-019）',
+    kind: 'main',
+    coords: [
+          [113.2600397, 22.9916611],
+          [113.2602911, 22.9917914]
+    ],
+  },
+  {
+    segment_id: 'GZ-071',
+    name: '南站北路（N-014→N-017）',
+    kind: 'main',
+    coords: [
+          [113.2599651, 22.9918421],
+          [113.2601956, 22.9919946]
+    ],
+  },
+  {
+    segment_id: 'GZ-072',
+    name: '南站北路（N-172→N-177）',
+    kind: 'main',
+    coords: [
+          [113.2670927, 22.9961948],
+          [113.2672940, 22.9963679]
+    ],
+  },
+  {
+    segment_id: 'GZ-073',
+    name: '南站北路（N-088→N-089）',
     kind: 'main',
     coords: [
           [113.2640405, 22.9943412],
@@ -517,8 +790,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-048',
-    name: '南站南路（N-001→N-018）',
+    segment_id: 'GZ-074',
+    name: '南站南路（N-001→N-048）',
     kind: 'main',
     coords: [
           [113.2581022, 22.9861688],
@@ -532,8 +805,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-049',
-    name: '南站南路（N-035→N-100）',
+    segment_id: 'GZ-075',
+    name: '南站南路（N-072→N-153）',
     kind: 'main',
     coords: [
           [113.2633299, 22.9882321],
@@ -544,8 +817,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-050',
-    name: '南站南路（N-098→N-049）',
+    segment_id: 'GZ-076',
+    name: '南站南路（N-148→N-090）',
     kind: 'main',
     coords: [
           [113.2666489, 22.9901444],
@@ -554,8 +827,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-051',
-    name: '南站南路（N-173→N-139）',
+    segment_id: 'GZ-077',
+    name: '南站南路（N-247→N-213）',
     kind: 'main',
     coords: [
           [113.2703045, 22.9915009],
@@ -571,8 +844,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-052',
-    name: '南站南路（N-020→N-003）',
+    segment_id: 'GZ-078',
+    name: '南站南路（N-051→N-020）',
     kind: 'main',
     coords: [
           [113.2623595, 22.9874382],
@@ -582,8 +855,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-053',
-    name: '南站南路（N-193→N-175）',
+    segment_id: 'GZ-079',
+    name: '南站南路（N-274→N-249）',
     kind: 'main',
     coords: [
           [113.2715937, 22.9932324],
@@ -596,8 +869,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-054',
-    name: '南站南路（N-161→N-192）',
+    segment_id: 'GZ-080',
+    name: '南站南路（N-235→N-273）',
     kind: 'main',
     coords: [
           [113.2697449, 22.9928741],
@@ -610,8 +883,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-055',
-    name: '南站南路（N-103→N-136）',
+    segment_id: 'GZ-081',
+    name: '南站南路（N-159→N-210）',
     kind: 'main',
     coords: [
           [113.2668729, 22.9905020],
@@ -621,8 +894,19 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-056',
-    name: '南站南路（N-139→N-115）',
+    segment_id: 'GZ-082',
+    name: '南站南路（N-020→N-004）',
+    kind: 'main',
+    coords: [
+          [113.2603304, 22.9868069],
+          [113.2601830, 22.9867654],
+          [113.2600852, 22.9867346],
+          [113.2587409, 22.9862767]
+    ],
+  },
+  {
+    segment_id: 'GZ-083',
+    name: '南站南路（N-213→N-179）',
     kind: 'main',
     coords: [
           [113.2684742, 22.9912957],
@@ -631,8 +915,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-057',
-    name: '南站南路（N-244→N-219）',
+    segment_id: 'GZ-084',
+    name: '南站南路（N-342→N-301）',
     kind: 'main',
     coords: [
           [113.2736610, 22.9945594],
@@ -642,8 +926,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-058',
-    name: '南站南路（N-042→N-026）',
+    segment_id: 'GZ-085',
+    name: '南站南路（N-079→N-057）',
     kind: 'main',
     coords: [
           [113.2636803, 22.9882920],
@@ -654,8 +938,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-059',
-    name: '南站南路（N-136→N-156）',
+    segment_id: 'GZ-086',
+    name: '南站南路（N-210→N-230）',
     kind: 'main',
     coords: [
           [113.2683273, 22.9914922],
@@ -663,8 +947,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-060',
-    name: '南站南路（N-217→N-233）',
+    segment_id: 'GZ-087',
+    name: '南站南路（N-299→N-323）',
     kind: 'main',
     coords: [
           [113.2725644, 22.9939699],
@@ -672,8 +956,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-061',
-    name: '南站南路（N-049→N-042）',
+    segment_id: 'GZ-088',
+    name: '南站南路（N-090→N-079）',
     kind: 'main',
     coords: [
           [113.2641943, 22.9886161],
@@ -681,8 +965,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-062',
-    name: '南站南路（N-030→N-035）',
+    segment_id: 'GZ-089',
+    name: '南站南路（N-062→N-072）',
     kind: 'main',
     coords: [
           [113.2628270, 22.9879045],
@@ -692,8 +976,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-063',
-    name: '南站南路（N-205→N-193）',
+    segment_id: 'GZ-090',
+    name: '南站南路（N-287→N-274）',
     kind: 'main',
     coords: [
           [113.2720527, 22.9935251],
@@ -702,8 +986,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-064',
-    name: '南站南路（N-192→N-204）',
+    segment_id: 'GZ-091',
+    name: '南站南路（N-273→N-286）',
     kind: 'main',
     coords: [
           [113.2715558, 22.9933351],
@@ -711,8 +995,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-065',
-    name: '南站南路（N-233→N-243）',
+    segment_id: 'GZ-092',
+    name: '南站南路（N-323→N-341）',
     kind: 'main',
     coords: [
           [113.2731795, 22.9943571],
@@ -720,8 +1004,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-066',
-    name: '南站南路（N-207→N-217）',
+    segment_id: 'GZ-093',
+    name: '南站南路（N-289→N-299）',
     kind: 'main',
     coords: [
           [113.2721322, 22.9936979],
@@ -729,8 +1013,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-067',
-    name: '南站南路（N-156→N-162）',
+    segment_id: 'GZ-094',
+    name: '南站南路（N-230→N-236）',
     kind: 'main',
     coords: [
           [113.2693823, 22.9921516],
@@ -738,8 +1022,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-068',
-    name: '南站南路（N-219→N-210）',
+    segment_id: 'GZ-095',
+    name: '南站南路（N-301→N-292）',
     kind: 'main',
     coords: [
           [113.2725724, 22.9938566],
@@ -747,8 +1031,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-069',
-    name: '南站南路（N-250→N-244）',
+    segment_id: 'GZ-096',
+    name: '南站南路（N-349→N-342）',
     kind: 'main',
     coords: [
           [113.2740296, 22.9947818],
@@ -756,8 +1040,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-070',
-    name: '南站南路（N-243→N-248）',
+    segment_id: 'GZ-097',
+    name: '南站南路（N-341→N-347）',
     kind: 'main',
     coords: [
           [113.2736110, 22.9946312],
@@ -765,8 +1049,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-071',
-    name: '南站南路（N-115→N-110）',
+    segment_id: 'GZ-098',
+    name: '南站南路（N-179→N-167）',
     kind: 'main',
     coords: [
           [113.2673522, 22.9905561],
@@ -774,8 +1058,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-072',
-    name: '南站南路（N-024→N-030）',
+    segment_id: 'GZ-099',
+    name: '南站南路（N-055→N-062）',
     kind: 'main',
     coords: [
           [113.2625150, 22.9877171],
@@ -784,8 +1068,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-073',
-    name: '南站南路（N-105→N-098）',
+    segment_id: 'GZ-100',
+    name: '南站南路（N-161→N-148）',
     kind: 'main',
     coords: [
           [113.2668936, 22.9902976],
@@ -793,8 +1077,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-074',
-    name: '南站南路（N-026→N-020）',
+    segment_id: 'GZ-101',
+    name: '南站南路（N-057→N-051）',
     kind: 'main',
     coords: [
           [113.2625788, 22.9876139],
@@ -803,8 +1087,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-075',
-    name: '南站南路（N-018→N-024）',
+    segment_id: 'GZ-102',
+    name: '南站南路（N-048→N-055）',
     kind: 'main',
     coords: [
           [113.2622722, 22.9875845],
@@ -813,8 +1097,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-076',
-    name: '南站南路（N-162→N-166）',
+    segment_id: 'GZ-103',
+    name: '南站南路（N-236→N-240）',
     kind: 'main',
     coords: [
           [113.2698117, 22.9924200],
@@ -822,8 +1106,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-077',
-    name: '南站南路（N-204→N-207）',
+    segment_id: 'GZ-104',
+    name: '南站南路（N-347→N-351）',
+    kind: 'main',
+    coords: [
+          [113.2739747, 22.9948576],
+          [113.2741315, 22.9949563]
+    ],
+  },
+  {
+    segment_id: 'GZ-105',
+    name: '南站南路（N-353→N-349）',
+    kind: 'main',
+    coords: [
+          [113.2741879, 22.9948774],
+          [113.2740296, 22.9947818]
+    ],
+  },
+  {
+    segment_id: 'GZ-106',
+    name: '南站南路（N-286→N-289）',
     kind: 'main',
     coords: [
           [113.2719898, 22.9936082],
@@ -831,8 +1133,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-078',
-    name: '南站南路（N-210→N-205）',
+    segment_id: 'GZ-107',
+    name: '南站南路（N-292→N-287）',
     kind: 'main',
     coords: [
           [113.2721923, 22.9936142],
@@ -840,8 +1142,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-079',
-    name: '南站南路（N-110→N-105）',
+    segment_id: 'GZ-108',
+    name: '南站南路（N-167→N-161）',
     kind: 'main',
     coords: [
           [113.2670094, 22.9903654],
@@ -849,8 +1151,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-080',
-    name: '南站南路（N-100→N-103）',
+    segment_id: 'GZ-109',
+    name: '南站南路（N-153→N-159）',
     kind: 'main',
     coords: [
           [113.2667734, 22.9904320],
@@ -858,8 +1160,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-081',
-    name: '双涌路（N-256→N-199）',
+    segment_id: 'GZ-110',
+    name: '南站南路（N-351→N-353）',
+    kind: 'main',
+    coords: [
+          [113.2741315, 22.9949563],
+          [113.2741879, 22.9948774]
+    ],
+  },
+  {
+    segment_id: 'GZ-111',
+    name: '双涌路（N-357→N-280）',
     kind: 'main',
     coords: [
           [113.2743133, 22.9862855],
@@ -874,8 +1185,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-082',
-    name: '双涌路（N-201→N-261）',
+    segment_id: 'GZ-112',
+    name: '双涌路（N-282→N-363）',
     kind: 'main',
     coords: [
           [113.2717813, 22.9839615],
@@ -889,8 +1200,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-083',
-    name: '双涌路（N-146→N-197）',
+    segment_id: 'GZ-113',
+    name: '双涌路（N-220→N-278）',
     kind: 'main',
     coords: [
           [113.2687487, 22.9820942],
@@ -898,8 +1209,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-084',
-    name: '双涌路（N-194→N-145）',
+    segment_id: 'GZ-114',
+    name: '双涌路（N-275→N-219）',
     kind: 'main',
     coords: [
           [113.2716177, 22.9839747],
@@ -907,8 +1218,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-085',
-    name: '双涌路（N-280→N-257）',
+    segment_id: 'GZ-115',
+    name: '双涌路（N-395→N-358）',
     kind: 'main',
     coords: [
           [113.2760734, 22.9880632],
@@ -927,8 +1238,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-086',
-    name: '双涌路（N-262→N-278）',
+    segment_id: 'GZ-116',
+    name: '双涌路（N-365→N-392）',
     kind: 'main',
     coords: [
           [113.2749160, 22.9858242],
@@ -941,8 +1252,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-087',
-    name: '双涌路（N-125→N-143）',
+    segment_id: 'GZ-117',
+    name: '双涌路（N-137→N-102）',
+    kind: 'main',
+    coords: [
+          [113.2661961, 22.9806662],
+          [113.2654146, 22.9801794],
+          [113.2645936, 22.9796680]
+    ],
+  },
+  {
+    segment_id: 'GZ-118',
+    name: '双涌路（N-194→N-217）',
     kind: 'main',
     coords: [
           [113.2677962, 22.9814935],
@@ -951,8 +1272,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-088',
-    name: '双涌路（N-140→N-131）',
+    segment_id: 'GZ-119',
+    name: '双涌路（N-129→N-151）',
+    kind: 'main',
+    coords: [
+          [113.2658840, 22.9803045],
+          [113.2667211, 22.9808159]
+    ],
+  },
+  {
+    segment_id: 'GZ-120',
+    name: '双涌路（N-214→N-204）',
     kind: 'main',
     coords: [
           [113.2685680, 22.9821335],
@@ -961,8 +1291,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-089',
-    name: '双涌路（N-278→N-283）',
+    segment_id: 'GZ-121',
+    name: '双涌路（N-186→N-174）',
+    kind: 'main',
+    coords: [
+          [113.2676400, 22.9815427],
+          [113.2671802, 22.9812699]
+    ],
+  },
+  {
+    segment_id: 'GZ-122',
+    name: '双涌路（N-392→N-402）',
     kind: 'main',
     coords: [
           [113.2759062, 22.9875512],
@@ -970,8 +1309,44 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-090',
-    name: '双涌路（N-261→N-262）',
+    segment_id: 'GZ-123',
+    name: '双涌路（N-166→N-146）',
+    kind: 'main',
+    coords: [
+          [113.2670065, 22.9811404],
+          [113.2665923, 22.9809019]
+    ],
+  },
+  {
+    segment_id: 'GZ-124',
+    name: '双涌路（N-176→N-187）',
+    kind: 'main',
+    coords: [
+          [113.2672610, 22.9811706],
+          [113.2676557, 22.9814087]
+    ],
+  },
+  {
+    segment_id: 'GZ-125',
+    name: '双涌路（N-146→N-137）',
+    kind: 'main',
+    coords: [
+          [113.2665923, 22.9809019],
+          [113.2661961, 22.9806662]
+    ],
+  },
+  {
+    segment_id: 'GZ-126',
+    name: '双涌路（N-151→N-170）',
+    kind: 'main',
+    coords: [
+          [113.2667211, 22.9808159],
+          [113.2670843, 22.9810378]
+    ],
+  },
+  {
+    segment_id: 'GZ-127',
+    name: '双涌路（N-363→N-365）',
     kind: 'main',
     coords: [
           [113.2748213, 22.9855713],
@@ -979,8 +1354,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-091',
-    name: '双涌路（N-257→N-256）',
+    segment_id: 'GZ-128',
+    name: '双涌路（N-204→N-195）',
+    kind: 'main',
+    coords: [
+          [113.2680227, 22.9818001],
+          [113.2678016, 22.9816601]
+    ],
+  },
+  {
+    segment_id: 'GZ-129',
+    name: '双涌路（N-358→N-357）',
     kind: 'main',
     coords: [
           [113.2744247, 22.9864931],
@@ -988,8 +1372,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-092',
-    name: '双涌路（N-282→N-280）',
+    segment_id: 'GZ-130',
+    name: '双涌路（N-170→N-176）',
+    kind: 'main',
+    coords: [
+          [113.2670843, 22.9810378],
+          [113.2672610, 22.9811706]
+    ],
+  },
+  {
+    segment_id: 'GZ-131',
+    name: '双涌路（N-174→N-166）',
+    kind: 'main',
+    coords: [
+          [113.2671802, 22.9812699],
+          [113.2670065, 22.9811404]
+    ],
+  },
+  {
+    segment_id: 'GZ-132',
+    name: '双涌路（N-401→N-395）',
     kind: 'main',
     coords: [
           [113.2761565, 22.9882010],
@@ -997,8 +1399,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-093',
-    name: '双涌路（N-283→N-285）',
+    segment_id: 'GZ-133',
+    name: '双涌路（N-187→N-194）',
+    kind: 'main',
+    coords: [
+          [113.2676557, 22.9814087],
+          [113.2677962, 22.9814935]
+    ],
+  },
+  {
+    segment_id: 'GZ-134',
+    name: '双涌路（N-402→N-406）',
     kind: 'main',
     coords: [
           [113.2762019, 22.9879645],
@@ -1006,8 +1417,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-094',
-    name: '双涌路（N-145→N-140）',
+    segment_id: 'GZ-135',
+    name: '双涌路（N-219→N-214）',
     kind: 'main',
     coords: [
           [113.2687042, 22.9821701],
@@ -1015,8 +1426,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-095',
-    name: '双涌路（N-197→N-201）',
+    segment_id: 'GZ-136',
+    name: '双涌路（N-278→N-282）',
     kind: 'main',
     coords: [
           [113.2716670, 22.9838956],
@@ -1024,8 +1435,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-096',
-    name: '双涌路（N-143→N-146）',
+    segment_id: 'GZ-137',
+    name: '双涌路（N-217→N-220）',
     kind: 'main',
     coords: [
           [113.2686655, 22.9820012],
@@ -1033,8 +1444,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-097',
-    name: '双涌路（N-199→N-194）',
+    segment_id: 'GZ-138',
+    name: '双涌路（N-280→N-275）',
     kind: 'main',
     coords: [
           [113.2717223, 22.9840374],
@@ -1042,8 +1453,133 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-098',
-    name: '支路（N-055→N-102）',
+    segment_id: 'GZ-139',
+    name: '双涌路（N-195→N-190）',
+    kind: 'main',
+    coords: [
+          [113.2678016, 22.9816601],
+          [113.2677162, 22.9815966]
+    ],
+  },
+  {
+    segment_id: 'GZ-140',
+    name: '双涌路（N-190→N-186）',
+    kind: 'main',
+    coords: [
+          [113.2677162, 22.9815966],
+          [113.2676400, 22.9815427]
+    ],
+  },
+  {
+    segment_id: 'GZ-141',
+    name: '大洲路（N-003→N-028）',
+    kind: 'main',
+    coords: [
+          [113.2586586, 22.9856253],
+          [113.2589460, 22.9854696],
+          [113.2593293, 22.9853093],
+          [113.2596085, 22.9852650],
+          [113.2601718, 22.9852181],
+          [113.2604474, 22.9851913],
+          [113.2609721, 22.9850831]
+    ],
+  },
+  {
+    segment_id: 'GZ-142',
+    name: '大洲路（N-021→N-002）',
+    kind: 'main',
+    coords: [
+          [113.2607184, 22.9850134],
+          [113.2604549, 22.9850585],
+          [113.2601283, 22.9850950],
+          [113.2597445, 22.9851154],
+          [113.2595426, 22.9851434],
+          [113.2593623, 22.9851734],
+          [113.2591437, 22.9852611],
+          [113.2589292, 22.9853497],
+          [113.2587245, 22.9854564],
+          [113.2585632, 22.9855446]
+    ],
+  },
+  {
+    segment_id: 'GZ-143',
+    name: '大洲路（N-030→N-021）',
+    kind: 'main',
+    coords: [
+          [113.2612029, 22.9848869],
+          [113.2609399, 22.9849543],
+          [113.2607184, 22.9850134]
+    ],
+  },
+  {
+    segment_id: 'GZ-144',
+    name: '大洲路（N-028→N-035）',
+    kind: 'main',
+    coords: [
+          [113.2609721, 22.9850831],
+          [113.2614182, 22.9849434]
+    ],
+  },
+  {
+    segment_id: 'GZ-145',
+    name: '大洲路（N-035→N-030）',
+    kind: 'main',
+    coords: [
+          [113.2614182, 22.9849434],
+          [113.2612029, 22.9848869]
+    ],
+  },
+  {
+    segment_id: 'GZ-146',
+    name: '康鸿三街',
+    kind: 'main',
+    coords: [
+          [113.2654140, 22.9817290],
+          [113.2637627, 22.9806888]
+    ],
+  },
+  {
+    segment_id: 'GZ-147',
+    name: '康鸿二街（N-119→N-137）',
+    kind: 'main',
+    coords: [
+          [113.2654140, 22.9817290],
+          [113.2661961, 22.9806662]
+    ],
+  },
+  {
+    segment_id: 'GZ-148',
+    name: '康鸿二街（N-104→N-119）',
+    kind: 'main',
+    coords: [
+          [113.2646342, 22.9827887],
+          [113.2654140, 22.9817290]
+    ],
+  },
+  {
+    segment_id: 'GZ-149',
+    name: '支路（N-026→N-037）',
+    kind: 'main',
+    coords: [
+          [113.2608148, 22.9930039],
+          [113.2603798, 22.9936314],
+          [113.2603108, 22.9937335],
+          [113.2603108, 22.9937335],
+          [113.2602527, 22.9938578],
+          [113.2602244, 22.9940248],
+          [113.2602292, 22.9941259],
+          [113.2602705, 22.9942577],
+          [113.2603303, 22.9943483],
+          [113.2604228, 22.9944421],
+          [113.2612031, 22.9949292],
+          [113.2612031, 22.9949292],
+          [113.2614659, 22.9951745],
+          [113.2616491, 22.9953204]
+    ],
+  },
+  {
+    segment_id: 'GZ-150',
+    name: '支路（N-098→N-158）',
     kind: 'main',
     coords: [
           [113.2645278, 22.9878986],
@@ -1065,8 +1601,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-099',
-    name: '支路（N-290→N-271）',
+    segment_id: 'GZ-151',
+    name: '支路（N-426→N-376）',
     kind: 'main',
     coords: [
           [113.2774556, 22.9907131],
@@ -1079,8 +1615,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-100',
-    name: '支路（N-274→N-289）',
+    segment_id: 'GZ-152',
+    name: '支路（N-385→N-416）',
     kind: 'main',
     coords: [
           [113.2756536, 22.9899799],
@@ -1093,8 +1629,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-101',
-    name: '支路（N-142→N-171）',
+    segment_id: 'GZ-153',
+    name: '支路（N-216→N-245）',
     kind: 'main',
     coords: [
           [113.2686568, 22.9914997],
@@ -1110,8 +1646,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-102',
-    name: '支路（N-260→N-242）',
+    segment_id: 'GZ-154',
+    name: '支路（N-362→N-337）',
     kind: 'main',
     coords: [
           [113.2747296, 22.9892590],
@@ -1119,8 +1655,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-103',
-    name: '支路（N-240→N-258）',
+    segment_id: 'GZ-155',
+    name: '支路（N-335→N-360）',
     kind: 'main',
     coords: [
           [113.2734496, 22.9885477],
@@ -1128,8 +1664,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-104',
-    name: '支路（N-051→N-067）',
+    segment_id: 'GZ-156',
+    name: '支路（N-092→N-112）',
     kind: 'main',
     coords: [
           [113.2642411, 22.9881383],
@@ -1137,8 +1673,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-105',
-    name: '支路（N-048→N-039）',
+    segment_id: 'GZ-157',
+    name: '支路（N-089→N-076）',
     kind: 'main',
     coords: [
           [113.2641523, 22.9944051],
@@ -1150,8 +1686,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-106',
-    name: '支路（N-063→N-077）',
+    segment_id: 'GZ-158',
+    name: '支路（N-108→N-123）',
     kind: 'main',
     coords: [
           [113.2647815, 22.9828971],
@@ -1165,8 +1701,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-107',
-    name: '支路（N-068→N-064）',
+    segment_id: 'GZ-159',
+    name: '支路（N-113→N-109）',
     kind: 'main',
     coords: [
           [113.2650688, 22.9837996],
@@ -1182,8 +1718,34 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-108',
-    name: '支路（N-082→N-087）',
+    segment_id: 'GZ-160',
+    name: '支路（N-096→N-080）',
+    kind: 'main',
+    coords: [
+          [113.2644784, 22.9828454],
+          [113.2642973, 22.9827430],
+          [113.2641596, 22.9826655],
+          [113.2640861, 22.9826380],
+          [113.2639917, 22.9826279],
+          [113.2639010, 22.9826452],
+          [113.2637976, 22.9826832],
+          [113.2637374, 22.9827243],
+          [113.2636998, 22.9827930]
+    ],
+  },
+  {
+    segment_id: 'GZ-161',
+    name: '支路（N-081→N-094）',
+    kind: 'main',
+    coords: [
+          [113.2637361, 22.9821640],
+          [113.2638215, 22.9822805],
+          [113.2644096, 22.9826850]
+    ],
+  },
+  {
+    segment_id: 'GZ-162',
+    name: '支路（N-128→N-134）',
     kind: 'main',
     coords: [
           [113.2658465, 22.9830947],
@@ -1201,8 +1763,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-109',
-    name: '支路（N-104→N-091）',
+    segment_id: 'GZ-163',
+    name: '支路（N-160→N-139）',
     kind: 'main',
     coords: [
           [113.2668804, 22.9960321],
@@ -1210,8 +1772,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-110',
-    name: '支路（N-265→N-274）',
+    segment_id: 'GZ-164',
+    name: '支路（N-368→N-385）',
     kind: 'main',
     coords: [
           [113.2751106, 22.9896159],
@@ -1220,8 +1782,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-111',
-    name: '支路（N-094→N-108）',
+    segment_id: 'GZ-165',
+    name: '支路（N-143→N-164）',
     kind: 'main',
     coords: [
           [113.2664322, 22.9839645],
@@ -1229,8 +1791,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-112',
-    name: '支路（N-258→N-263）',
+    segment_id: 'GZ-166',
+    name: '支路（N-360→N-366）',
     kind: 'main',
     coords: [
           [113.2745980, 22.9892851],
@@ -1238,8 +1800,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-113',
-    name: '支路（N-242→N-230）',
+    segment_id: 'GZ-167',
+    name: '支路（N-337→N-320）',
     kind: 'main',
     coords: [
           [113.2735128, 22.9884755],
@@ -1247,8 +1809,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-114',
-    name: '支路（N-229→N-240）',
+    segment_id: 'GZ-168',
+    name: '支路（N-316→N-335）',
     kind: 'main',
     coords: [
           [113.2730947, 22.9883156],
@@ -1256,8 +1818,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-115',
-    name: '支路（N-271→N-266）',
+    segment_id: 'GZ-169',
+    name: '支路（N-376→N-369）',
     kind: 'main',
     coords: [
           [113.2755025, 22.9897507],
@@ -1265,8 +1827,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-116',
-    name: '支路（N-264→N-260）',
+    segment_id: 'GZ-170',
+    name: '支路（N-367→N-362）',
     kind: 'main',
     coords: [
           [113.2750395, 22.9894525],
@@ -1275,8 +1837,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-117',
-    name: '支路（N-064→N-053）',
+    segment_id: 'GZ-171',
+    name: '支路（N-109→N-096）',
     kind: 'main',
     coords: [
           [113.2647851, 22.9830366],
@@ -1284,8 +1846,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-118',
-    name: '支路（N-090→N-094）',
+    segment_id: 'GZ-172',
+    name: '支路（N-138→N-143）',
     kind: 'main',
     coords: [
           [113.2662166, 22.9838230],
@@ -1293,8 +1855,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-119',
-    name: '支路（N-226→N-229）',
+    segment_id: 'GZ-173',
+    name: '支路（N-312→N-316）',
     kind: 'main',
     coords: [
           [113.2728830, 22.9881837],
@@ -1302,8 +1864,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-120',
-    name: '支路（N-050→N-048）',
+    segment_id: 'GZ-174',
+    name: '支路（N-091→N-089）',
     kind: 'main',
     coords: [
           [113.2642266, 22.9941818],
@@ -1313,8 +1875,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-121',
-    name: '支路（N-171→N-172）',
+    segment_id: 'GZ-175',
+    name: '支路（N-094→N-104）',
+    kind: 'main',
+    coords: [
+          [113.2644096, 22.9826850],
+          [113.2646342, 22.9827887]
+    ],
+  },
+  {
+    segment_id: 'GZ-176',
+    name: '支路（N-245→N-246）',
     kind: 'main',
     coords: [
           [113.2701152, 22.9919174],
@@ -1322,8 +1893,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-122',
-    name: '支路（N-230→N-227）',
+    segment_id: 'GZ-177',
+    name: '支路（N-320→N-313）',
     kind: 'main',
     coords: [
           [113.2731428, 22.9882314],
@@ -1331,8 +1902,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-123',
-    name: '支路（N-077→N-082）',
+    segment_id: 'GZ-178',
+    name: '支路（N-123→N-128）',
     kind: 'main',
     coords: [
           [113.2656632, 22.9829581],
@@ -1340,8 +1911,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-124',
-    name: '支路（N-266→N-264）',
+    segment_id: 'GZ-179',
+    name: '支路（N-104→N-108）',
+    kind: 'main',
+    coords: [
+          [113.2646342, 22.9827887],
+          [113.2647815, 22.9828971]
+    ],
+  },
+  {
+    segment_id: 'GZ-180',
+    name: '支路（N-369→N-367）',
     kind: 'main',
     coords: [
           [113.2751723, 22.9895414],
@@ -1349,8 +1929,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-125',
-    name: '支路（N-087→N-090）',
+    segment_id: 'GZ-181',
+    name: '支路（N-134→N-138）',
     kind: 'main',
     coords: [
           [113.2661420, 22.9837622],
@@ -1358,8 +1938,25 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-126',
-    name: '明盛二路（N-146→N-178）',
+    segment_id: 'GZ-182',
+    name: '明盛二路（N-254→N-217）',
+    kind: 'main',
+    coords: [
+          [113.2709015, 22.9796166],
+          [113.2707532, 22.9795940],
+          [113.2706325, 22.9796150],
+          [113.2705832, 22.9796496],
+          [113.2705258, 22.9797222],
+          [113.2704369, 22.9798739],
+          [113.2702959, 22.9800128],
+          [113.2700524, 22.9802781],
+          [113.2689254, 22.9816961],
+          [113.2686655, 22.9820012]
+    ],
+  },
+  {
+    segment_id: 'GZ-183',
+    name: '明盛二路（N-220→N-253）',
     kind: 'main',
     coords: [
           [113.2687487, 22.9820942],
@@ -1372,8 +1969,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-127',
-    name: '明盛二路（N-145→N-111）',
+    segment_id: 'GZ-184',
+    name: '明盛二路（N-219→N-168）',
     kind: 'main',
     coords: [
           [113.2687042, 22.9821701],
@@ -1381,8 +1978,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-128',
-    name: '明盛二路（N-108→N-140）',
+    segment_id: 'GZ-185',
+    name: '明盛二路（N-164→N-214）',
     kind: 'main',
     coords: [
           [113.2669613, 22.9842589],
@@ -1390,8 +1987,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-129',
-    name: '明盛二路（N-109→N-083）',
+    segment_id: 'GZ-186',
+    name: '明盛二路（N-165→N-130）',
     kind: 'main',
     coords: [
           [113.2670048, 22.9844303],
@@ -1404,8 +2001,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-130',
-    name: '明盛二路（N-088→N-106）',
+    segment_id: 'GZ-187',
+    name: '明盛二路（N-135→N-162）',
     kind: 'main',
     coords: [
           [113.2661564, 22.9854127],
@@ -1413,8 +2010,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-131',
-    name: '明盛二路（N-073→N-088）',
+    segment_id: 'GZ-188',
+    name: '明盛二路（N-118→N-135）',
     kind: 'main',
     coords: [
           [113.2653348, 22.9862132],
@@ -1425,8 +2022,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-132',
-    name: '明盛二路（N-143→N-145）',
+    segment_id: 'GZ-189',
+    name: '明盛二路（N-217→N-219）',
     kind: 'main',
     coords: [
           [113.2686655, 22.9820012],
@@ -1434,8 +2031,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-133',
-    name: '明盛二路（N-140→N-143）',
+    segment_id: 'GZ-190',
+    name: '明盛二路（N-214→N-217）',
     kind: 'main',
     coords: [
           [113.2685680, 22.9821335],
@@ -1443,8 +2040,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-134',
-    name: '明盛二路（N-106→N-108）',
+    segment_id: 'GZ-191',
+    name: '明盛二路（N-162→N-164）',
     kind: 'main',
     coords: [
           [113.2668957, 22.9843548],
@@ -1452,8 +2049,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-135',
-    name: '明盛二路（N-111→N-109）',
+    segment_id: 'GZ-192',
+    name: '明盛二路（N-168→N-165）',
     kind: 'main',
     coords: [
           [113.2670743, 22.9843372],
@@ -1461,8 +2058,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-136',
-    name: '明盛二路（N-145→N-146）',
+    segment_id: 'GZ-193',
+    name: '明盛二路（N-219→N-220）',
     kind: 'main',
     coords: [
           [113.2687042, 22.9821701],
@@ -1470,8 +2067,102 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-137',
-    name: '未分级道路',
+    segment_id: 'GZ-194',
+    name: '未分级道路（N-447→N-433）',
+    kind: 'main',
+    coords: [
+          [113.2788642, 22.9922557],
+          [113.2789638, 22.9912909],
+          [113.2789398, 22.9906013],
+          [113.2789123, 22.9902439],
+          [113.2788127, 22.9899244],
+          [113.2784072, 22.9893930],
+          [113.2778815, 22.9878272],
+          [113.2777837, 22.9874262],
+          [113.2777837, 22.9874262],
+          [113.2777694, 22.9873676],
+          [113.2777681, 22.9873622],
+          [113.2777131, 22.9869795],
+          [113.2776787, 22.9866473],
+          [113.2777234, 22.9858059],
+          [113.2778327, 22.9851382],
+          [113.2779777, 22.9845121],
+          [113.2780489, 22.9842822],
+          [113.2780602, 22.9841280],
+          [113.2780338, 22.9838440],
+          [113.2779673, 22.9834791]
+    ],
+  },
+  {
+    segment_id: 'GZ-195',
+    name: '未分级道路（N-334→N-440）',
+    kind: 'main',
+    coords: [
+          [113.2734348, 22.9959057],
+          [113.2735434, 22.9960145],
+          [113.2735813, 22.9960607],
+          [113.2736184, 22.9961320],
+          [113.2736580, 22.9962430],
+          [113.2736760, 22.9964143],
+          [113.2736848, 22.9965134],
+          [113.2736707, 22.9965955],
+          [113.2745886, 22.9969442],
+          [113.2752111, 22.9971891],
+          [113.2753528, 22.9972458],
+          [113.2754147, 22.9972712],
+          [113.2754794, 22.9972768],
+          [113.2755597, 22.9972713],
+          [113.2756719, 22.9972373],
+          [113.2757980, 22.9971821],
+          [113.2761250, 22.9969756],
+          [113.2764660, 22.9967047],
+          [113.2768868, 22.9962904],
+          [113.2772246, 22.9958998],
+          [113.2774952, 22.9955526],
+          [113.2776396, 22.9953314],
+          [113.2776896, 22.9951581],
+          [113.2777108, 22.9949373],
+          [113.2777526, 22.9947701],
+          [113.2778192, 22.9946525],
+          [113.2779689, 22.9944508],
+          [113.2783258, 22.9939022],
+          [113.2783424, 22.9938206],
+          [113.2783433, 22.9934969],
+          [113.2783675, 22.9934201],
+          [113.2783776, 22.9933671]
+    ],
+  },
+  {
+    segment_id: 'GZ-196',
+    name: '未分级道路（N-044→N-070）',
+    kind: 'main',
+    coords: [
+          [113.2620444, 22.9840167],
+          [113.2623120, 22.9838316],
+          [113.2626872, 22.9834029],
+          [113.2628859, 22.9829578],
+          [113.2629543, 22.9826124],
+          [113.2629543, 22.9821775],
+          [113.2627998, 22.9813057],
+          [113.2628050, 22.9810657],
+          [113.2629705, 22.9798385],
+          [113.2630935, 22.9790419]
+    ],
+  },
+  {
+    segment_id: 'GZ-197',
+    name: '未分级道路（N-016→N-044）',
+    kind: 'main',
+    coords: [
+          [113.2600735, 22.9845200],
+          [113.2610693, 22.9844148],
+          [113.2618948, 22.9841202],
+          [113.2620444, 22.9840167]
+    ],
+  },
+  {
+    segment_id: 'GZ-198',
+    name: '未分级道路（N-120→N-114）',
     kind: 'main',
     coords: [
           [113.2654301, 22.9952068],
@@ -1481,8 +2172,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-138',
-    name: '次干道（N-249→N-236）',
+    segment_id: 'GZ-199',
+    name: '次干道（N-348→N-328）',
     kind: 'main',
     coords: [
           [113.2739988, 22.9910831],
@@ -1490,8 +2181,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-139',
-    name: '次干道（N-188→N-200）',
+    segment_id: 'GZ-200',
+    name: '次干道（N-264→N-281）',
     kind: 'main',
     coords: [
           [113.2712459, 22.9904242],
@@ -1499,8 +2190,48 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-140',
-    name: '次干道（N-263→N-265）',
+    segment_id: 'GZ-201',
+    name: '次干道（N-010→N-015）',
+    kind: 'main',
+    coords: [
+          [113.2597320, 22.9914777],
+          [113.2600397, 22.9916611]
+    ],
+  },
+  {
+    segment_id: 'GZ-202',
+    name: '次干道（N-008→N-010）',
+    kind: 'main',
+    coords: [
+          [113.2594755, 22.9913212],
+          [113.2597320, 22.9914777]
+    ],
+  },
+  {
+    segment_id: 'GZ-203',
+    name: '次干道（N-172→N-160）',
+    kind: 'main',
+    coords: [
+          [113.2670927, 22.9961948],
+          [113.2668804, 22.9960321]
+    ],
+  },
+  {
+    segment_id: 'GZ-204',
+    name: '次干道（N-412→N-414）',
+    kind: 'main',
+    coords: [
+          [113.2766416, 22.9875798],
+          [113.2767047, 22.9875722],
+          [113.2767510, 22.9875863],
+          [113.2767663, 22.9876239],
+          [113.2767628, 22.9876592],
+          [113.2767181, 22.9877075]
+    ],
+  },
+  {
+    segment_id: 'GZ-205',
+    name: '次干道（N-366→N-368）',
     kind: 'main',
     coords: [
           [113.2749876, 22.9895275],
@@ -1508,8 +2239,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-141',
-    name: '次干道（N-265→N-266）',
+    segment_id: 'GZ-206',
+    name: '次干道（N-368→N-369）',
     kind: 'main',
     coords: [
           [113.2751106, 22.9896159],
@@ -1517,8 +2248,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-142',
-    name: '次干道（N-264→N-263）',
+    segment_id: 'GZ-207',
+    name: '次干道（N-367→N-366）',
     kind: 'main',
     coords: [
           [113.2750395, 22.9894525],
@@ -1526,8 +2257,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-143',
-    name: '汉溪大道西（N-228→N-284）',
+    segment_id: 'GZ-208',
+    name: '汇骏路',
+    kind: 'main',
+    coords: [
+          [113.2598266, 22.9941948],
+          [113.2607388, 22.9929501]
+    ],
+  },
+  {
+    segment_id: 'GZ-209',
+    name: '汉溪大道西（N-314→N-403）',
     kind: 'main',
     coords: [
           [113.2729789, 22.9911742],
@@ -1540,8 +2280,29 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-144',
-    name: '汉溪大道西（N-184→N-150）',
+    segment_id: 'GZ-210',
+    name: '汉溪大道西（N-450→N-398）',
+    kind: 'main',
+    coords: [
+          [113.2791855, 22.9933262],
+          [113.2783228, 22.9931613],
+          [113.2771840, 22.9929375],
+          [113.2761273, 22.9926786]
+    ],
+  },
+  {
+    segment_id: 'GZ-211',
+    name: '汉溪大道西（N-403→N-449）',
+    kind: 'main',
+    coords: [
+          [113.2762128, 22.9928341],
+          [113.2783031, 22.9932390],
+          [113.2791627, 22.9934194]
+    ],
+  },
+  {
+    segment_id: 'GZ-212',
+    name: '汉溪大道西（N-260→N-224）',
     kind: 'main',
     coords: [
           [113.2710768, 22.9896293],
@@ -1549,8 +2310,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-145',
-    name: '汉溪大道西（N-281→N-251）',
+    segment_id: 'GZ-213',
+    name: '汉溪大道西（N-398→N-350）',
     kind: 'main',
     coords: [
           [113.2761273, 22.9926786],
@@ -1562,8 +2323,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-146',
-    name: '汉溪大道西（N-084→N-122）',
+    segment_id: 'GZ-214',
+    name: '汉溪大道西（N-131→N-191）',
     kind: 'main',
     coords: [
           [113.2659229, 22.9867531],
@@ -1575,8 +2336,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-147',
-    name: '汉溪大道西（N-135→N-099）',
+    segment_id: 'GZ-215',
+    name: '汉溪大道西（N-209→N-152）',
     kind: 'main',
     coords: [
           [113.2681940, 22.9878410],
@@ -1585,8 +2346,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-148',
-    name: '汉溪大道西（N-052→N-084）',
+    segment_id: 'GZ-216',
+    name: '汉溪大道西（N-095→N-131）',
     kind: 'main',
     coords: [
           [113.2644256, 22.9862218],
@@ -1599,8 +2360,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-149',
-    name: '汉溪大道西（N-189→N-215）',
+    segment_id: 'GZ-217',
+    name: '汉溪大道西（N-266→N-297）',
     kind: 'main',
     coords: [
           [113.2712729, 22.9901019],
@@ -1609,8 +2370,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-150',
-    name: '汉溪大道西（N-211→N-184）',
+    segment_id: 'GZ-218',
+    name: '汉溪大道西（N-293→N-260）',
     kind: 'main',
     coords: [
           [113.2722821, 22.9903349],
@@ -1618,8 +2379,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-151',
-    name: '汉溪大道西（N-147→N-164）',
+    segment_id: 'GZ-219',
+    name: '汉溪大道西（N-221→N-238）',
     kind: 'main',
     coords: [
           [113.2687944, 22.9885827],
@@ -1629,8 +2390,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-152',
-    name: '汉溪大道西（N-251→N-231）',
+    segment_id: 'GZ-220',
+    name: '汉溪大道西（N-350→N-321）',
     kind: 'main',
     coords: [
           [113.2741083, 22.9916243],
@@ -1640,8 +2401,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-153',
-    name: '汉溪大道西（N-164→N-179）',
+    segment_id: 'GZ-221',
+    name: '汉溪大道西（N-238→N-255）',
     kind: 'main',
     coords: [
           [113.2699362, 22.9892916],
@@ -1649,8 +2410,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-154',
-    name: '汉溪大道西（N-231→N-211）',
+    segment_id: 'GZ-222',
+    name: '汉溪大道西（N-321→N-293）',
     kind: 'main',
     coords: [
           [113.2731453, 22.9908997],
@@ -1658,8 +2419,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-155',
-    name: '汉溪大道西（N-099→N-083）',
+    segment_id: 'GZ-223',
+    name: '汉溪大道西（N-152→N-130）',
     kind: 'main',
     coords: [
           [113.2667376, 22.9869573],
@@ -1667,8 +2428,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-156',
-    name: '汉溪大道西（N-073→N-054）',
+    segment_id: 'GZ-224',
+    name: '汉溪大道西（N-118→N-097）',
     kind: 'main',
     coords: [
           [113.2653348, 22.9862132],
@@ -1677,8 +2438,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-157',
-    name: '汉溪大道西（N-014→N-027）',
+    segment_id: 'GZ-225',
+    name: '汉溪大道西（N-041→N-058）',
     kind: 'main',
     coords: [
           [113.2618651, 22.9853639],
@@ -1688,8 +2449,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-158',
-    name: '汉溪大道西（N-028→N-015）',
+    segment_id: 'GZ-226',
+    name: '汉溪大道西（N-059→N-042）',
     kind: 'main',
     coords: [
           [113.2626934, 22.9853783],
@@ -1697,8 +2458,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-159',
-    name: '汉溪大道西（N-029→N-038）',
+    segment_id: 'GZ-227',
+    name: '汉溪大道西（N-061→N-075）',
     kind: 'main',
     coords: [
           [113.2627606, 22.9856581],
@@ -1706,8 +2467,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-160',
-    name: '汉溪大道西（N-044→N-052）',
+    segment_id: 'GZ-228',
+    name: '汉溪大道西（N-084→N-095）',
     kind: 'main',
     coords: [
           [113.2637796, 22.9860055],
@@ -1716,8 +2477,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-161',
-    name: '汉溪大道西（N-041→N-034）',
+    segment_id: 'GZ-229',
+    name: '汉溪大道西（N-078→N-067）',
     kind: 'main',
     coords: [
           [113.2636479, 22.9856673],
@@ -1726,8 +2487,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-162',
-    name: '汉溪大道西（N-083→N-073）',
+    segment_id: 'GZ-230',
+    name: '汉溪大道西（N-130→N-118）',
     kind: 'main',
     coords: [
           [113.2659216, 22.9864952],
@@ -1736,8 +2497,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-163',
-    name: '汉溪大道西（N-150→N-141）',
+    segment_id: 'GZ-231',
+    name: '汉溪大道西（N-224→N-215）',
     kind: 'main',
     coords: [
           [113.2690942, 22.9883903],
@@ -1745,8 +2506,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-164',
-    name: '汉溪大道西（N-215→N-228）',
+    segment_id: 'GZ-232',
+    name: '汉溪大道西（N-297→N-314）',
     kind: 'main',
     coords: [
           [113.2724752, 22.9908879],
@@ -1754,8 +2515,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-165',
-    name: '汉溪大道西（N-054→N-045）',
+    segment_id: 'GZ-233',
+    name: '汉溪大道西（N-097→N-086）',
     kind: 'main',
     coords: [
           [113.2645193, 22.9859104],
@@ -1764,8 +2525,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-166',
-    name: '汉溪大道西（N-128→N-137）',
+    segment_id: 'GZ-234',
+    name: '汉溪大道西（N-042→N-035）',
+    kind: 'main',
+    coords: [
+          [113.2619639, 22.9851131],
+          [113.2616740, 22.9850080],
+          [113.2614182, 22.9849434]
+    ],
+  },
+  {
+    segment_id: 'GZ-235',
+    name: '汉溪大道西（N-200→N-211）',
     kind: 'main',
     coords: [
           [113.2679473, 22.9880410],
@@ -1773,8 +2544,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-167',
-    name: '汉溪大道西（N-137→N-147）',
+    segment_id: 'GZ-236',
+    name: '汉溪大道西（N-211→N-221）',
     kind: 'main',
     coords: [
           [113.2683809, 22.9883152],
@@ -1782,8 +2553,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-168',
-    name: '汉溪大道西（N-141→N-135）',
+    segment_id: 'GZ-237',
+    name: '汉溪大道西（N-215→N-209）',
     kind: 'main',
     coords: [
           [113.2685856, 22.9881043],
@@ -1791,8 +2562,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-169',
-    name: '汉溪大道西（N-038→N-044）',
+    segment_id: 'GZ-238',
+    name: '汉溪大道西（N-036→N-041）',
+    kind: 'main',
+    coords: [
+          [113.2614539, 22.9852330],
+          [113.2618651, 22.9853639]
+    ],
+  },
+  {
+    segment_id: 'GZ-239',
+    name: '汉溪大道西（N-075→N-084）',
     kind: 'main',
     coords: [
           [113.2634615, 22.9858588],
@@ -1800,8 +2580,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-170',
-    name: '汉溪大道西（N-045→N-041）',
+    segment_id: 'GZ-240',
+    name: '汉溪大道西（N-086→N-078）',
     kind: 'main',
     coords: [
           [113.2639564, 22.9857534],
@@ -1809,8 +2589,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-171',
-    name: '汉溪大道西（N-182→N-189）',
+    segment_id: 'GZ-241',
+    name: '汉溪大道西（N-258→N-266）',
     kind: 'main',
     coords: [
           [113.2710295, 22.9899715],
@@ -1818,8 +2598,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-172',
-    name: '汉溪大道西（N-122→N-128）',
+    segment_id: 'GZ-242',
+    name: '汉溪大道西（N-191→N-200）',
     kind: 'main',
     coords: [
           [113.2677322, 22.9879140],
@@ -1828,8 +2608,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-173',
-    name: '汉溪大道西（N-031→N-028）',
+    segment_id: 'GZ-243',
+    name: '汉溪大道西（N-063→N-059）',
     kind: 'main',
     coords: [
           [113.2628965, 22.9854414],
@@ -1837,8 +2617,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-174',
-    name: '汉溪大道西（N-179→N-182）',
+    segment_id: 'GZ-244',
+    name: '汉溪大道西（N-255→N-258）',
     kind: 'main',
     coords: [
           [113.2709116, 22.9898838],
@@ -1846,8 +2626,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-175',
-    name: '汉溪大道西（N-027→N-029）',
+    segment_id: 'GZ-245',
+    name: '汉溪大道西（N-058→N-061）',
     kind: 'main',
     coords: [
           [113.2626517, 22.9856174],
@@ -1855,8 +2635,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-176',
-    name: '汉溪大道西（N-034→N-031）',
+    segment_id: 'GZ-246',
+    name: '汉溪大道西（N-067→N-063）',
     kind: 'main',
     coords: [
           [113.2630070, 22.9854758],
@@ -1864,8 +2644,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-177',
-    name: '生活性道路（N-065→N-088）',
+    segment_id: 'GZ-247',
+    name: '生活性道路（N-110→N-135）',
     kind: 'main',
     coords: [
           [113.2648076, 22.9845487],
@@ -1873,8 +2653,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-178',
-    name: '生活性道路（N-036→N-058）',
+    segment_id: 'GZ-248',
+    name: '生活性道路（N-073→N-101）',
     kind: 'main',
     coords: [
           [113.2633551, 22.9836438],
@@ -1882,8 +2662,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-179',
-    name: '生活性道路（N-059→N-066）',
+    segment_id: 'GZ-249',
+    name: '生活性道路（N-031→N-044）',
+    kind: 'main',
+    coords: [
+          [113.2612330, 22.9834415],
+          [113.2612946, 22.9833904],
+          [113.2620444, 22.9840167]
+    ],
+  },
+  {
+    segment_id: 'GZ-250',
+    name: '生活性道路（N-103→N-111）',
     kind: 'main',
     coords: [
           [113.2645929, 22.9953383],
@@ -1894,8 +2684,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-180',
-    name: '生活性道路（N-058→N-065）',
+    segment_id: 'GZ-251',
+    name: '生活性道路（N-101→N-110）',
     kind: 'main',
     coords: [
           [113.2645737, 22.9844183],
@@ -1903,8 +2693,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-181',
-    name: '石兴大道南（N-224→N-211）',
+    segment_id: 'GZ-252',
+    name: '石兴大道南（N-309→N-293）',
     kind: 'main',
     coords: [
           [113.2728413, 22.9886861],
@@ -1919,8 +2709,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-182',
-    name: '石兴大道南（N-214→N-184）',
+    segment_id: 'GZ-253',
+    name: '石兴大道南（N-296→N-260）',
     kind: 'main',
     coords: [
           [113.2724823, 22.9885084],
@@ -1933,8 +2723,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-183',
-    name: '石兴大道南（N-200→N-226）',
+    segment_id: 'GZ-254',
+    name: '石兴大道南（N-281→N-312）',
     kind: 'main',
     coords: [
           [113.2717524, 22.9896588],
@@ -1944,8 +2734,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-184',
-    name: '石兴大道南（N-134→N-153）',
+    segment_id: 'GZ-255',
+    name: '石兴大道南（N-208→N-227）',
     kind: 'main',
     coords: [
           [113.2681564, 22.9950846],
@@ -1954,8 +2744,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-185',
-    name: '石兴大道南（N-256→N-235）',
+    segment_id: 'GZ-256',
+    name: '石兴大道南（N-357→N-327）',
     kind: 'main',
     coords: [
           [113.2743133, 22.9862855],
@@ -1964,8 +2754,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-186',
-    name: '石兴大道南（N-130→N-148）',
+    segment_id: 'GZ-257',
+    name: '石兴大道南（N-202→N-222）',
     kind: 'main',
     coords: [
           [113.2679741, 22.9949402],
@@ -1973,8 +2763,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-187',
-    name: '石兴大道南（N-172→N-183）',
+    segment_id: 'GZ-258',
+    name: '石兴大道南（N-246→N-259）',
     kind: 'main',
     coords: [
           [113.2702721, 22.9917483],
@@ -1984,8 +2774,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-188',
-    name: '石兴大道南（N-191→N-215）',
+    segment_id: 'GZ-259',
+    name: '石兴大道南（N-270→N-297）',
     kind: 'main',
     coords: [
           [113.2713662, 22.9907202],
@@ -1998,8 +2788,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-189',
-    name: '石兴大道南（N-262→N-273）',
+    segment_id: 'GZ-260',
+    name: '石兴大道南（N-365→N-381）',
     kind: 'main',
     coords: [
           [113.2749160, 22.9858242],
@@ -2008,8 +2798,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-190',
-    name: '石兴大道南（N-246→N-257）',
+    segment_id: 'GZ-261',
+    name: '石兴大道南（N-345→N-358）',
     kind: 'main',
     coords: [
           [113.2738135, 22.9873252],
@@ -2019,8 +2809,20 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-191',
-    name: '石兴大道南（N-269→N-261）',
+    segment_id: 'GZ-262',
+    name: '石兴大道南（N-154→N-141）',
+    kind: 'main',
+    coords: [
+          [113.2667792, 22.9968008],
+          [113.2666326, 22.9971148],
+          [113.2665568, 22.9972827],
+          [113.2664324, 22.9975753],
+          [113.2663811, 22.9977162]
+    ],
+  },
+  {
+    segment_id: 'GZ-263',
+    name: '石兴大道南（N-373→N-363）',
     kind: 'main',
     coords: [
           [113.2754391, 22.9847842],
@@ -2029,8 +2831,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-192',
-    name: '石兴大道南（N-148→N-158）',
+    segment_id: 'GZ-264',
+    name: '石兴大道南（N-150→N-169）',
+    kind: 'main',
+    coords: [
+          [113.2666606, 22.9977991],
+          [113.2668814, 22.9973210],
+          [113.2670701, 22.9969117]
+    ],
+  },
+  {
+    segment_id: 'GZ-265',
+    name: '石兴大道南（N-222→N-232）',
     kind: 'main',
     coords: [
           [113.2689393, 22.9936253],
@@ -2038,8 +2850,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-193',
-    name: '石兴大道南（N-261→N-256）',
+    segment_id: 'GZ-266',
+    name: '石兴大道南（N-363→N-357）',
     kind: 'main',
     coords: [
           [113.2748213, 22.9855713],
@@ -2047,8 +2859,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-194',
-    name: '石兴大道南（N-153→N-161）',
+    segment_id: 'GZ-267',
+    name: '石兴大道南（N-227→N-235）',
     kind: 'main',
     coords: [
           [113.2692250, 22.9935804],
@@ -2057,8 +2869,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-195',
-    name: '石兴大道南（N-166→N-175）',
+    segment_id: 'GZ-268',
+    name: '石兴大道南（N-240→N-249）',
     kind: 'main',
     coords: [
           [113.2700044, 22.9925415],
@@ -2067,8 +2879,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-196',
-    name: '石兴大道南（N-117→N-130）',
+    segment_id: 'GZ-269',
+    name: '石兴大道南（N-182→N-202）',
     kind: 'main',
     coords: [
           [113.2675053, 22.9956266],
@@ -2076,8 +2888,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-197',
-    name: '石兴大道南（N-257→N-262）',
+    segment_id: 'GZ-270',
+    name: '石兴大道南（N-358→N-365）',
     kind: 'main',
     coords: [
           [113.2744247, 22.9864931],
@@ -2085,8 +2897,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-198',
-    name: '石兴大道南（N-121→N-134）',
+    segment_id: 'GZ-271',
+    name: '石兴大道南（N-189→N-208）',
     kind: 'main',
     coords: [
           [113.2677045, 22.9956917],
@@ -2094,8 +2906,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-199',
-    name: '石兴大道南（N-175→N-181）',
+    segment_id: 'GZ-272',
+    name: '石兴大道南（N-249→N-257）',
     kind: 'main',
     coords: [
           [113.2705070, 22.9918334],
@@ -2104,8 +2916,19 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-200',
-    name: '石兴大道南（N-181→N-191）',
+    segment_id: 'GZ-273',
+    name: '石兴大道南（N-172→N-154）',
+    kind: 'main',
+    coords: [
+          [113.2670927, 22.9961948],
+          [113.2669890, 22.9963821],
+          [113.2668201, 22.9967151],
+          [113.2667792, 22.9968008]
+    ],
+  },
+  {
+    segment_id: 'GZ-274',
+    name: '石兴大道南（N-257→N-270）',
     kind: 'main',
     coords: [
           [113.2709796, 22.9912732],
@@ -2113,8 +2936,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-201',
-    name: '石兴大道南（N-238→N-246）',
+    segment_id: 'GZ-275',
+    name: '石兴大道南（N-332→N-345）',
     kind: 'main',
     coords: [
           [113.2734121, 22.9878676],
@@ -2122,8 +2945,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-202',
-    name: '石兴大道南（N-116→N-121）',
+    segment_id: 'GZ-276',
+    name: '石兴大道南（N-181→N-189）',
     kind: 'main',
     coords: [
           [113.2673776, 22.9962181],
@@ -2131,8 +2954,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-203',
-    name: '石兴大道南（N-158→N-162）',
+    segment_id: 'GZ-277',
+    name: '石兴大道南（N-394→N-378）',
+    kind: 'main',
+    coords: [
+          [113.2759890, 22.9842457],
+          [113.2758278, 22.9844032],
+          [113.2755528, 22.9846580]
+    ],
+  },
+  {
+    segment_id: 'GZ-278',
+    name: '石兴大道南（N-232→N-236）',
     kind: 'main',
     coords: [
           [113.2694819, 22.9928757],
@@ -2140,8 +2973,29 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-204',
-    name: '石兴大道南（N-226→N-214）',
+    segment_id: 'GZ-279',
+    name: '石兴大道南（N-387→N-397）',
+    kind: 'main',
+    coords: [
+          [113.2757340, 22.9847593],
+          [113.2758040, 22.9846808],
+          [113.2759605, 22.9845403],
+          [113.2761349, 22.9843705]
+    ],
+  },
+  {
+    segment_id: 'GZ-280',
+    name: '石兴大道南（N-173→N-177）',
+    kind: 'main',
+    coords: [
+          [113.2671021, 22.9968422],
+          [113.2672465, 22.9964923],
+          [113.2672940, 22.9963679]
+    ],
+  },
+  {
+    segment_id: 'GZ-281',
+    name: '石兴大道南（N-312→N-296）',
     kind: 'main',
     coords: [
           [113.2728830, 22.9881837],
@@ -2150,8 +3004,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-205',
-    name: '石兴大道南（N-234→N-227）',
+    segment_id: 'GZ-282',
+    name: '石兴大道南（N-325→N-313）',
     kind: 'main',
     coords: [
           [113.2732514, 22.9877430],
@@ -2160,8 +3014,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-206',
-    name: '石兴大道南（N-230→N-238）',
+    segment_id: 'GZ-283',
+    name: '石兴大道南（N-320→N-332）',
     kind: 'main',
     coords: [
           [113.2731428, 22.9882314],
@@ -2170,8 +3024,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-207',
-    name: '石兴大道南（N-229→N-224）',
+    segment_id: 'GZ-284',
+    name: '石兴大道南（N-316→N-309）',
     kind: 'main',
     coords: [
           [113.2730947, 22.9883156],
@@ -2179,8 +3033,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-208',
-    name: '石兴大道南（N-169→N-172）',
+    segment_id: 'GZ-285',
+    name: '石兴大道南（N-243→N-246）',
     kind: 'main',
     coords: [
           [113.2700349, 22.9921151],
@@ -2188,8 +3042,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-209',
-    name: '石兴大道南（N-161→N-166）',
+    segment_id: 'GZ-286',
+    name: '石兴大道南（N-235→N-240）',
     kind: 'main',
     coords: [
           [113.2697449, 22.9928741],
@@ -2197,8 +3051,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-210',
-    name: '石兴大道南（N-162→N-169）',
+    segment_id: 'GZ-287',
+    name: '石兴大道南（N-236→N-243）',
     kind: 'main',
     coords: [
           [113.2698117, 22.9924200],
@@ -2206,8 +3060,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-211',
-    name: '石兴大道南（N-183→N-188）',
+    segment_id: 'GZ-288',
+    name: '石兴大道南（N-259→N-264）',
     kind: 'main',
     coords: [
           [113.2710669, 22.9906347],
@@ -2215,8 +3069,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-212',
-    name: '石兴大道南（N-226→N-230）',
+    segment_id: 'GZ-289',
+    name: '石兴大道南（N-312→N-320）',
     kind: 'main',
     coords: [
           [113.2728830, 22.9881837],
@@ -2224,8 +3078,53 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-213',
-    name: '石兴大道南（N-230→N-229）',
+    segment_id: 'GZ-290',
+    name: '石兴大道南（N-399→N-394）',
+    kind: 'main',
+    coords: [
+          [113.2761524, 22.9841105],
+          [113.2759890, 22.9842457]
+    ],
+  },
+  {
+    segment_id: 'GZ-291',
+    name: '石兴大道南（N-381→N-387）',
+    kind: 'main',
+    coords: [
+          [113.2756050, 22.9849037],
+          [113.2757340, 22.9847593]
+    ],
+  },
+  {
+    segment_id: 'GZ-292',
+    name: '石兴大道南（N-397→N-405）',
+    kind: 'main',
+    coords: [
+          [113.2761349, 22.9843705],
+          [113.2762677, 22.9842545]
+    ],
+  },
+  {
+    segment_id: 'GZ-293',
+    name: '石兴大道南（N-177→N-181）',
+    kind: 'main',
+    coords: [
+          [113.2672940, 22.9963679],
+          [113.2673776, 22.9962181]
+    ],
+  },
+  {
+    segment_id: 'GZ-294',
+    name: '石兴大道南（N-378→N-373）',
+    kind: 'main',
+    coords: [
+          [113.2755528, 22.9846580],
+          [113.2754391, 22.9847842]
+    ],
+  },
+  {
+    segment_id: 'GZ-295',
+    name: '石兴大道南（N-320→N-316）',
     kind: 'main',
     coords: [
           [113.2731428, 22.9882314],
@@ -2233,8 +3132,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-214',
-    name: '石兴大道南（N-227→N-226）',
+    segment_id: 'GZ-296',
+    name: '石兴大道南（N-313→N-312）',
     kind: 'main',
     coords: [
           [113.2729422, 22.9881120],
@@ -2242,8 +3141,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-215',
-    name: '石兴大道南（N-235→N-234）',
+    segment_id: 'GZ-297',
+    name: '石兴大道南（N-327→N-325）',
     kind: 'main',
     coords: [
           [113.2733062, 22.9876753],
@@ -2251,8 +3150,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-216',
-    name: '石山大道南（N-019→N-007）',
+    segment_id: 'GZ-298',
+    name: '石兴大道南（N-169→N-173）',
+    kind: 'main',
+    coords: [
+          [113.2670701, 22.9969117],
+          [113.2671021, 22.9968422]
+    ],
+  },
+  {
+    segment_id: 'GZ-299',
+    name: '石山大道南（N-050→N-027）',
     kind: 'main',
     coords: [
           [113.2623477, 22.9879960],
@@ -2263,8 +3171,23 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-217',
-    name: '石山大道南（N-026→N-044）',
+    segment_id: 'GZ-300',
+    name: '石山大道南（N-029→N-011）',
+    kind: 'main',
+    coords: [
+          [113.2610845, 22.9891211],
+          [113.2608215, 22.9894804],
+          [113.2605741, 22.9898005],
+          [113.2603787, 22.9900636],
+          [113.2602072, 22.9902961],
+          [113.2599928, 22.9905890],
+          [113.2598656, 22.9907706],
+          [113.2597477, 22.9909527]
+    ],
+  },
+  {
+    segment_id: 'GZ-301',
+    name: '石山大道南（N-057→N-084）',
     kind: 'main',
     coords: [
           [113.2625788, 22.9876139],
@@ -2275,8 +3198,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-218',
-    name: '石山大道南（N-017→N-008）',
+    segment_id: 'GZ-302',
+    name: '石山大道南（N-047→N-029）',
     kind: 'main',
     coords: [
           [113.2621828, 22.9876948],
@@ -2285,8 +3208,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-219',
-    name: '石山大道南（N-082→N-101）',
+    segment_id: 'GZ-303',
+    name: '石山大道南（N-128→N-156）',
     kind: 'main',
     coords: [
           [113.2658465, 22.9830947],
@@ -2295,8 +3218,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-220',
-    name: '石山大道南（N-097→N-077）',
+    segment_id: 'GZ-304',
+    name: '石山大道南（N-147→N-123）',
     kind: 'main',
     coords: [
           [113.2666204, 22.9817033],
@@ -2304,8 +3227,20 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-221',
-    name: '石山大道南（N-033→N-020）',
+    segment_id: 'GZ-305',
+    name: '石山大道南（N-013→N-025）',
+    kind: 'main',
+    coords: [
+          [113.2599132, 22.9912501],
+          [113.2603801, 22.9906042],
+          [113.2605431, 22.9903669],
+          [113.2605837, 22.9902794],
+          [113.2608077, 22.9899612]
+    ],
+  },
+  {
+    segment_id: 'GZ-306',
+    name: '石山大道南（N-066→N-051）',
     kind: 'main',
     coords: [
           [113.2629750, 22.9864490],
@@ -2318,8 +3253,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-222',
-    name: '石山大道南（N-011→N-019）',
+    segment_id: 'GZ-307',
+    name: '石山大道南（N-038→N-050）',
     kind: 'main',
     coords: [
           [113.2616974, 22.9889044],
@@ -2330,8 +3265,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-223',
-    name: '石山大道南（N-045→N-056）',
+    segment_id: 'GZ-308',
+    name: '石山大道南（N-086→N-099）',
     kind: 'main',
     coords: [
           [113.2639564, 22.9857534],
@@ -2340,8 +3275,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-224',
-    name: '石山大道南（N-058→N-046）',
+    segment_id: 'GZ-309',
+    name: '石山大道南（N-101→N-087）',
     kind: 'main',
     coords: [
           [113.2645737, 22.9844183],
@@ -2350,8 +3285,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-225',
-    name: '石山大道南（N-068→N-058）',
+    segment_id: 'GZ-310',
+    name: '石山大道南（N-113→N-101）',
     kind: 'main',
     coords: [
           [113.2650688, 22.9837996],
@@ -2359,8 +3294,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-226',
-    name: '石山大道南（N-065→N-070）',
+    segment_id: 'GZ-311',
+    name: '石山大道南（N-110→N-115）',
     kind: 'main',
     coords: [
           [113.2648076, 22.9845487],
@@ -2368,8 +3303,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-227',
-    name: '石山大道南（N-038→N-033）',
+    segment_id: 'GZ-312',
+    name: '石山大道南（N-196→N-180）',
+    kind: 'main',
+    coords: [
+          [113.2678117, 22.9800259],
+          [113.2673596, 22.9806548]
+    ],
+  },
+  {
+    segment_id: 'GZ-313',
+    name: '石山大道南（N-075→N-066）',
     kind: 'main',
     coords: [
           [113.2634615, 22.9858588],
@@ -2378,8 +3322,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-228',
-    name: '石山大道南（N-007→N-009）',
+    segment_id: 'GZ-314',
+    name: '石山大道南（N-183→N-205）',
+    kind: 'main',
+    coords: [
+          [113.2675795, 22.9807385],
+          [113.2680317, 22.9801250]
+    ],
+  },
+  {
+    segment_id: 'GZ-315',
+    name: '石山大道南（N-027→N-033）',
     kind: 'main',
     coords: [
           [113.2608789, 22.9898600],
@@ -2387,8 +3340,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-229',
-    name: '石山大道南（N-046→N-041）',
+    segment_id: 'GZ-316',
+    name: '石山大道南（N-166→N-149）',
+    kind: 'main',
+    coords: [
+          [113.2670065, 22.9811404],
+          [113.2666621, 22.9816473]
+    ],
+  },
+  {
+    segment_id: 'GZ-317',
+    name: '石山大道南（N-087→N-078）',
     kind: 'main',
     coords: [
           [113.2640334, 22.9852079],
@@ -2398,8 +3360,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-230',
-    name: '石山大道南（N-009→N-011）',
+    segment_id: 'GZ-318',
+    name: '石山大道南（N-157→N-174）',
+    kind: 'main',
+    coords: [
+          [113.2668349, 22.9817548],
+          [113.2671802, 22.9812699]
+    ],
+  },
+  {
+    segment_id: 'GZ-319',
+    name: '石山大道南（N-176→N-183）',
+    kind: 'main',
+    coords: [
+          [113.2672610, 22.9811706],
+          [113.2675795, 22.9807385]
+    ],
+  },
+  {
+    segment_id: 'GZ-320',
+    name: '石山大道南（N-033→N-038）',
     kind: 'main',
     coords: [
           [113.2613583, 22.9892930],
@@ -2407,8 +3387,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-231',
-    name: '石山大道南（N-056→N-065）',
+    segment_id: 'GZ-321',
+    name: '石山大道南（N-099→N-110）',
     kind: 'main',
     coords: [
           [113.2645415, 22.9849396],
@@ -2416,8 +3396,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-232',
-    name: '石山大道南（N-076→N-071）',
+    segment_id: 'GZ-322',
+    name: '石山大道南（N-180→N-170）',
+    kind: 'main',
+    coords: [
+          [113.2673596, 22.9806548],
+          [113.2670843, 22.9810378]
+    ],
+  },
+  {
+    segment_id: 'GZ-323',
+    name: '石山大道南（N-011→N-008）',
+    kind: 'main',
+    coords: [
+          [113.2597477, 22.9909527],
+          [113.2594755, 22.9913212]
+    ],
+  },
+  {
+    segment_id: 'GZ-324',
+    name: '石山大道南（N-122→N-116）',
     kind: 'main',
     coords: [
           [113.2655216, 22.9831632],
@@ -2425,8 +3423,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-233',
-    name: '石山大道南（N-075→N-080）',
+    segment_id: 'GZ-325',
+    name: '石山大道南（N-121→N-126）',
     kind: 'main',
     coords: [
           [113.2654583, 22.9836210],
@@ -2435,8 +3433,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-234',
-    name: '石山大道南（N-070→N-075）',
+    segment_id: 'GZ-326',
+    name: '石山大道南（N-115→N-121）',
     kind: 'main',
     coords: [
           [113.2652443, 22.9839073],
@@ -2445,8 +3443,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-235',
-    name: '石山大道南（N-071→N-068）',
+    segment_id: 'GZ-327',
+    name: '石山大道南（N-007→N-009）',
+    kind: 'main',
+    coords: [
+          [113.2594425, 22.9918310],
+          [113.2596646, 22.9915572]
+    ],
+  },
+  {
+    segment_id: 'GZ-328',
+    name: '石山大道南（N-116→N-113）',
     kind: 'main',
     coords: [
           [113.2652710, 22.9835212],
@@ -2454,8 +3461,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-236',
-    name: '石山大道南（N-044→N-045）',
+    segment_id: 'GZ-329',
+    name: '石山大道南（N-084→N-086）',
     kind: 'main',
     coords: [
           [113.2637796, 22.9860055],
@@ -2463,8 +3470,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-237',
-    name: '石山大道南（N-041→N-038）',
+    segment_id: 'GZ-330',
+    name: '石山大道南（N-010→N-013）',
+    kind: 'main',
+    coords: [
+          [113.2597320, 22.9914777],
+          [113.2599132, 22.9912501]
+    ],
+  },
+  {
+    segment_id: 'GZ-331',
+    name: '石山大道南（N-078→N-075）',
     kind: 'main',
     coords: [
           [113.2636479, 22.9856673],
@@ -2472,8 +3488,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-238',
-    name: '石山大道南（N-077→N-076）',
+    segment_id: 'GZ-332',
+    name: '石山大道南（N-123→N-122）',
     kind: 'main',
     coords: [
           [113.2656632, 22.9829581],
@@ -2481,8 +3497,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-239',
-    name: '石山大道南（N-080→N-082）',
+    segment_id: 'GZ-333',
+    name: '石山大道南（N-205→N-196）',
+    kind: 'main',
+    coords: [
+          [113.2680317, 22.9801250],
+          [113.2678117, 22.9800259]
+    ],
+  },
+  {
+    segment_id: 'GZ-334',
+    name: '石山大道南（N-126→N-128）',
     kind: 'main',
     coords: [
           [113.2657104, 22.9832688],
@@ -2490,8 +3515,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-240',
-    name: '石山大道南（N-020→N-018）',
+    segment_id: 'GZ-335',
+    name: '石山大道南（N-051→N-048）',
     kind: 'main',
     coords: [
           [113.2623595, 22.9874382],
@@ -2499,8 +3524,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-241',
-    name: '石山大道南（N-021→N-022）',
+    segment_id: 'GZ-336',
+    name: '石山大道南（N-052→N-053）',
     kind: 'main',
     coords: [
           [113.2623840, 22.9879365],
@@ -2508,8 +3533,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-242',
-    name: '石山大道南（N-018→N-017）',
+    segment_id: 'GZ-337',
+    name: '石山大道南（N-048→N-047）',
     kind: 'main',
     coords: [
           [113.2622722, 22.9875845],
@@ -2517,8 +3542,35 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-243',
-    name: '石山大道南（N-024→N-026）',
+    segment_id: 'GZ-338',
+    name: '石山大道南（N-170→N-166）',
+    kind: 'main',
+    coords: [
+          [113.2670843, 22.9810378],
+          [113.2670065, 22.9811404]
+    ],
+  },
+  {
+    segment_id: 'GZ-339',
+    name: '石山大道南（N-174→N-176）',
+    kind: 'main',
+    coords: [
+          [113.2671802, 22.9812699],
+          [113.2672610, 22.9811706]
+    ],
+  },
+  {
+    segment_id: 'GZ-340',
+    name: '石山大道南（N-025→N-027）',
+    kind: 'main',
+    coords: [
+          [113.2608077, 22.9899612],
+          [113.2608789, 22.9898600]
+    ],
+  },
+  {
+    segment_id: 'GZ-341',
+    name: '石山大道南（N-055→N-057）',
     kind: 'main',
     coords: [
           [113.2625150, 22.9877171],
@@ -2526,8 +3578,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-244',
-    name: '石山大道南（N-022→N-024）',
+    segment_id: 'GZ-342',
+    name: '石山大道南（N-009→N-010）',
+    kind: 'main',
+    coords: [
+          [113.2596646, 22.9915572],
+          [113.2597320, 22.9914777]
+    ],
+  },
+  {
+    segment_id: 'GZ-343',
+    name: '石山大道南（N-053→N-055）',
     kind: 'main',
     coords: [
           [113.2624637, 22.9878061],
@@ -2535,8 +3596,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-245',
-    name: '石山大道南（N-019→N-021）',
+    segment_id: 'GZ-344',
+    name: '石山大道南（N-050→N-052）',
     kind: 'main',
     coords: [
           [113.2623477, 22.9879960],
@@ -2544,8 +3605,46 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-246',
-    name: '石洲东路（N-289→N-279）',
+    segment_id: 'GZ-345',
+    name: '石山大道南（N-149→N-147）',
+    kind: 'main',
+    coords: [
+          [113.2666621, 22.9816473],
+          [113.2666204, 22.9817033]
+    ],
+  },
+  {
+    segment_id: 'GZ-346',
+    name: '石山大道南（N-155→N-157）',
+    kind: 'main',
+    coords: [
+          [113.2668021, 22.9817978],
+          [113.2668349, 22.9817548]
+    ],
+  },
+  {
+    segment_id: 'GZ-347',
+    name: '石山大道南（N-156→N-155）',
+    kind: 'main',
+    coords: [
+          [113.2667963, 22.9818053],
+          [113.2668021, 22.9817978]
+    ],
+  },
+  {
+    segment_id: 'GZ-348',
+    name: '石洲东路（N-418→N-432）',
+    kind: 'main',
+    coords: [
+          [113.2769322, 22.9913409],
+          [113.2772035, 22.9911239],
+          [113.2775455, 22.9908772],
+          [113.2779036, 22.9906386]
+    ],
+  },
+  {
+    segment_id: 'GZ-349',
+    name: '石洲东路（N-416→N-393）',
     kind: 'main',
     coords: [
           [113.2767402, 22.9912780],
@@ -2555,8 +3654,76 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-247',
-    name: '石洲东路（N-279→N-276）',
+    segment_id: 'GZ-350',
+    name: '石洲东路（N-404→N-418）',
+    kind: 'main',
+    coords: [
+          [113.2762629, 22.9919992],
+          [113.2765189, 22.9917258],
+          [113.2769322, 22.9913409]
+    ],
+  },
+  {
+    segment_id: 'GZ-351',
+    name: '石洲东路（N-426→N-416）',
+    kind: 'main',
+    coords: [
+          [113.2774556, 22.9907131],
+          [113.2770727, 22.9910071],
+          [113.2767402, 22.9912780]
+    ],
+  },
+  {
+    segment_id: 'GZ-352',
+    name: '石洲东路（N-445→N-444）',
+    kind: 'main',
+    coords: [
+          [113.2785925, 22.9902646],
+          [113.2788328, 22.9901749],
+          [113.2787950, 22.9900409],
+          [113.2785241, 22.9901309]
+    ],
+  },
+  {
+    segment_id: 'GZ-353',
+    name: '石洲东路（N-391→N-404）',
+    kind: 'main',
+    coords: [
+          [113.2759042, 22.9924865],
+          [113.2760814, 22.9922297],
+          [113.2762629, 22.9919992]
+    ],
+  },
+  {
+    segment_id: 'GZ-354',
+    name: '石洲东路（N-432→N-442）',
+    kind: 'main',
+    coords: [
+          [113.2779036, 22.9906386],
+          [113.2784359, 22.9903317]
+    ],
+  },
+  {
+    segment_id: 'GZ-355',
+    name: '石洲东路（N-439→N-434）',
+    kind: 'main',
+    coords: [
+          [113.2783739, 22.9902019],
+          [113.2780101, 22.9903872]
+    ],
+  },
+  {
+    segment_id: 'GZ-356',
+    name: '石洲东路（N-431→N-426）',
+    kind: 'main',
+    coords: [
+          [113.2778038, 22.9905131],
+          [113.2774556, 22.9907131]
+    ],
+  },
+  {
+    segment_id: 'GZ-357',
+    name: '石洲东路（N-393→N-388）',
     kind: 'main',
     coords: [
           [113.2759700, 22.9921248],
@@ -2564,8 +3731,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-248',
-    name: '石洲东路（N-276→N-272）',
+    segment_id: 'GZ-358',
+    name: '石洲东路（N-388→N-379）',
     kind: 'main',
     coords: [
           [113.2757618, 22.9924284],
@@ -2573,8 +3740,44 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-249',
-    name: '石洲东路（N-272→N-275）',
+    segment_id: 'GZ-359',
+    name: '石洲东路（N-386→N-391）',
+    kind: 'main',
+    coords: [
+          [113.2756970, 22.9927591],
+          [113.2759042, 22.9924865]
+    ],
+  },
+  {
+    segment_id: 'GZ-360',
+    name: '石洲东路（N-434→N-431）',
+    kind: 'main',
+    coords: [
+          [113.2780101, 22.9903872],
+          [113.2778038, 22.9905131]
+    ],
+  },
+  {
+    segment_id: 'GZ-361',
+    name: '石洲东路（N-442→N-445）',
+    kind: 'main',
+    coords: [
+          [113.2784359, 22.9903317],
+          [113.2785925, 22.9902646]
+    ],
+  },
+  {
+    segment_id: 'GZ-362',
+    name: '石洲东路（N-444→N-439）',
+    kind: 'main',
+    coords: [
+          [113.2785241, 22.9901309],
+          [113.2783739, 22.9902019]
+    ],
+  },
+  {
+    segment_id: 'GZ-363',
+    name: '石洲东路（N-379→N-386）',
     kind: 'main',
     coords: [
           [113.2755572, 22.9927044],
@@ -2582,8 +3785,41 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-250',
-    name: '石洲中路（N-267→N-254）',
+    segment_id: 'GZ-364',
+    name: '石洲中路（N-203→N-334）',
+    kind: 'main',
+    coords: [
+          [113.2679764, 22.9988919],
+          [113.2686106, 22.9989131],
+          [113.2689303, 22.9989012],
+          [113.2692479, 22.9988732],
+          [113.2695376, 22.9988198],
+          [113.2698736, 22.9987440],
+          [113.2703223, 22.9985973],
+          [113.2706413, 22.9984772],
+          [113.2709610, 22.9983285],
+          [113.2713794, 22.9980966],
+          [113.2716339, 22.9979433],
+          [113.2720163, 22.9976518],
+          [113.2723832, 22.9972678],
+          [113.2727501, 22.9968269],
+          [113.2728979, 22.9966351],
+          [113.2734348, 22.9959057]
+    ],
+  },
+  {
+    segment_id: 'GZ-365',
+    name: '石洲中路（N-317→N-284）',
+    kind: 'main',
+    coords: [
+          [113.2731025, 22.9960303],
+          [113.2722185, 22.9971966],
+          [113.2719308, 22.9974782]
+    ],
+  },
+  {
+    segment_id: 'GZ-366',
+    name: '石洲中路（N-370→N-355）',
     kind: 'main',
     coords: [
           [113.2752050, 22.9931609],
@@ -2591,8 +3827,59 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-251',
-    name: '石洲中路（N-272→N-267）',
+    segment_id: 'GZ-367',
+    name: '石洲中路（N-359→N-375）',
+    kind: 'main',
+    coords: [
+          [113.2745711, 22.9943415],
+          [113.2753478, 22.9932368],
+          [113.2753478, 22.9932368],
+          [113.2753776, 22.9931944],
+          [113.2754878, 22.9930494]
+    ],
+  },
+  {
+    segment_id: 'GZ-368',
+    name: '石洲中路（N-340→N-351）',
+    kind: 'main',
+    coords: [
+          [113.2735654, 22.9957300],
+          [113.2737719, 22.9954522],
+          [113.2741315, 22.9949563]
+    ],
+  },
+  {
+    segment_id: 'GZ-369',
+    name: '石洲中路（N-284→N-265）',
+    kind: 'main',
+    coords: [
+          [113.2719308, 22.9974782],
+          [113.2714443, 22.9978749],
+          [113.2712503, 22.9979941]
+    ],
+  },
+  {
+    segment_id: 'GZ-370',
+    name: '石洲中路（N-353→N-359）',
+    kind: 'main',
+    coords: [
+          [113.2741879, 22.9948774],
+          [113.2745711, 22.9943415]
+    ],
+  },
+  {
+    segment_id: 'GZ-371',
+    name: '石洲中路（N-344→N-331）',
+    kind: 'main',
+    coords: [
+          [113.2737682, 22.9951425],
+          [113.2736062, 22.9953658],
+          [113.2734029, 22.9956340]
+    ],
+  },
+  {
+    segment_id: 'GZ-372',
+    name: '石洲中路（N-379→N-370）',
     kind: 'main',
     coords: [
           [113.2755572, 22.9927044],
@@ -2601,8 +3888,53 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-252',
-    name: '石洲中路（N-275→N-272）',
+    segment_id: 'GZ-373',
+    name: '石洲中路（N-331→N-317）',
+    kind: 'main',
+    coords: [
+          [113.2734029, 22.9956340],
+          [113.2731025, 22.9960303]
+    ],
+  },
+  {
+    segment_id: 'GZ-374',
+    name: '石洲中路（N-355→N-349）',
+    kind: 'main',
+    coords: [
+          [113.2742439, 22.9944652],
+          [113.2740296, 22.9947818]
+    ],
+  },
+  {
+    segment_id: 'GZ-375',
+    name: '石洲中路（N-375→N-386）',
+    kind: 'main',
+    coords: [
+          [113.2754878, 22.9930494],
+          [113.2756970, 22.9927591]
+    ],
+  },
+  {
+    segment_id: 'GZ-376',
+    name: '石洲中路（N-347→N-344）',
+    kind: 'main',
+    coords: [
+          [113.2739747, 22.9948576],
+          [113.2737682, 22.9951425]
+    ],
+  },
+  {
+    segment_id: 'GZ-377',
+    name: '石洲中路（N-334→N-340）',
+    kind: 'main',
+    coords: [
+          [113.2734348, 22.9959057],
+          [113.2735654, 22.9957300]
+    ],
+  },
+  {
+    segment_id: 'GZ-378',
+    name: '石洲中路（N-386→N-379）',
     kind: 'main',
     coords: [
           [113.2756970, 22.9927591],
@@ -2610,8 +3942,39 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-253',
-    name: '石浦大道南（N-194→N-165）',
+    segment_id: 'GZ-379',
+    name: '石洲中路（N-349→N-347）',
+    kind: 'main',
+    coords: [
+          [113.2740296, 22.9947818],
+          [113.2739747, 22.9948576]
+    ],
+  },
+  {
+    segment_id: 'GZ-380',
+    name: '石浦大道南（N-329→N-382）',
+    kind: 'main',
+    coords: [
+          [113.2733915, 22.9817257],
+          [113.2737166, 22.9812982],
+          [113.2740487, 22.9808641],
+          [113.2756200, 22.9787213]
+    ],
+  },
+  {
+    segment_id: 'GZ-381',
+    name: '石浦大道南（N-377→N-326）',
+    kind: 'main',
+    coords: [
+          [113.2755187, 22.9786884],
+          [113.2738691, 22.9808405],
+          [113.2736008, 22.9811856],
+          [113.2732935, 22.9816549]
+    ],
+  },
+  {
+    segment_id: 'GZ-382',
+    name: '石浦大道南（N-275→N-239）',
     kind: 'main',
     coords: [
           [113.2716177, 22.9839747],
@@ -2620,8 +3983,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-254',
-    name: '石浦大道南（N-170→N-199）',
+    segment_id: 'GZ-383',
+    name: '石浦大道南（N-244→N-280）',
     kind: 'main',
     coords: [
           [113.2700746, 22.9862540],
@@ -2630,8 +3993,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-255',
-    name: '石浦大道南（N-112→N-128）',
+    segment_id: 'GZ-384',
+    name: '石浦大道南（N-171→N-200）',
     kind: 'main',
     coords: [
           [113.2670868, 22.9900741],
@@ -2646,8 +4009,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-256',
-    name: '石浦大道南（N-147→N-113）',
+    segment_id: 'GZ-385',
+    name: '石浦大道南（N-221→N-175）',
     kind: 'main',
     coords: [
           [113.2687944, 22.9885827],
@@ -2660,8 +4023,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-257',
-    name: '石浦大道南（N-201→N-225）',
+    segment_id: 'GZ-386',
+    name: '石浦大道南（N-282→N-311）',
     kind: 'main',
     coords: [
           [113.2717813, 22.9839615],
@@ -2671,8 +4034,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-258',
-    name: '石浦大道南（N-222→N-197）',
+    segment_id: 'GZ-387',
+    name: '石浦大道南（N-306→N-278）',
     kind: 'main',
     coords: [
           [113.2727361, 22.9824583],
@@ -2681,8 +4044,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-259',
-    name: '石浦大道南（N-152→N-167）',
+    segment_id: 'GZ-388',
+    name: '石浦大道南（N-226→N-241）',
     kind: 'main',
     coords: [
           [113.2690970, 22.9875779],
@@ -2691,8 +4054,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-260',
-    name: '石浦大道南（N-163→N-149）',
+    segment_id: 'GZ-389',
+    name: '石浦大道南（N-237→N-223）',
     kind: 'main',
     coords: [
           [113.2699212, 22.9862967],
@@ -2701,8 +4064,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-261',
-    name: '石浦大道南（N-149→N-135）',
+    segment_id: 'GZ-390',
+    name: '石浦大道南（N-223→N-209）',
     kind: 'main',
     coords: [
           [113.2690703, 22.9874250],
@@ -2717,8 +4080,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-262',
-    name: '石浦大道南（N-150→N-152）',
+    segment_id: 'GZ-391',
+    name: '石浦大道南（N-224→N-226）',
     kind: 'main',
     coords: [
           [113.2690942, 22.9883903],
@@ -2733,8 +4096,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-263',
-    name: '石浦大道南（N-105→N-112）',
+    segment_id: 'GZ-392',
+    name: '石浦大道南（N-315→N-306）',
+    kind: 'main',
+    coords: [
+          [113.2730413, 22.9820543],
+          [113.2727361, 22.9824583]
+    ],
+  },
+  {
+    segment_id: 'GZ-393',
+    name: '石浦大道南（N-311→N-318）',
+    kind: 'main',
+    coords: [
+          [113.2728662, 22.9824600],
+          [113.2731162, 22.9821076]
+    ],
+  },
+  {
+    segment_id: 'GZ-394',
+    name: '石浦大道南（N-161→N-171）',
     kind: 'main',
     coords: [
           [113.2668936, 22.9902976],
@@ -2742,8 +4123,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-264',
-    name: '石浦大道南（N-113→N-110）',
+    segment_id: 'GZ-395',
+    name: '石浦大道南（N-326→N-319）',
+    kind: 'main',
+    coords: [
+          [113.2732935, 22.9816549],
+          [113.2731409, 22.9818972]
+    ],
+  },
+  {
+    segment_id: 'GZ-396',
+    name: '石浦大道南（N-175→N-167）',
     kind: 'main',
     coords: [
           [113.2671934, 22.9901488],
@@ -2751,8 +4141,36 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-265',
-    name: '石浦大道南（N-167→N-170）',
+    segment_id: 'GZ-397',
+    name: '石浦大道南（N-324→N-329）',
+    kind: 'main',
+    coords: [
+          [113.2732194, 22.9819497],
+          [113.2733145, 22.9818153],
+          [113.2733915, 22.9817257]
+    ],
+  },
+  {
+    segment_id: 'GZ-398',
+    name: '石浦大道南（N-318→N-324）',
+    kind: 'main',
+    coords: [
+          [113.2731162, 22.9821076],
+          [113.2732194, 22.9819497]
+    ],
+  },
+  {
+    segment_id: 'GZ-399',
+    name: '石浦大道南（N-319→N-315）',
+    kind: 'main',
+    coords: [
+          [113.2731409, 22.9818972],
+          [113.2730413, 22.9820543]
+    ],
+  },
+  {
+    segment_id: 'GZ-400',
+    name: '石浦大道南（N-241→N-244）',
     kind: 'main',
     coords: [
           [113.2700075, 22.9863519],
@@ -2760,8 +4178,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-266',
-    name: '石浦大道南（N-165→N-163）',
+    segment_id: 'GZ-401',
+    name: '石浦大道南（N-239→N-237）',
     kind: 'main',
     coords: [
           [113.2699796, 22.9861993],
@@ -2769,8 +4187,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-267',
-    name: '石浦大道南（N-199→N-201）',
+    segment_id: 'GZ-402',
+    name: '石浦大道南（N-280→N-282）',
     kind: 'main',
     coords: [
           [113.2717223, 22.9840374],
@@ -2778,8 +4196,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-268',
-    name: '石浦大道南（N-197→N-194）',
+    segment_id: 'GZ-403',
+    name: '石浦大道南（N-278→N-275）',
     kind: 'main',
     coords: [
           [113.2716670, 22.9838956],
@@ -2787,8 +4205,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-269',
-    name: '石涌大道南（N-110→N-103）',
+    segment_id: 'GZ-404',
+    name: '石涌大道南（N-167→N-159）',
     kind: 'main',
     coords: [
           [113.2670094, 22.9903654],
@@ -2796,8 +4214,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-270',
-    name: '石涌大道南（N-100→N-105）',
+    segment_id: 'GZ-405',
+    name: '石涌大道南（N-153→N-161）',
     kind: 'main',
     coords: [
           [113.2667734, 22.9904320],
@@ -2805,8 +4223,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-271',
-    name: '石涌大道南（N-103→N-100）',
+    segment_id: 'GZ-406',
+    name: '石涌大道南（N-159→N-153）',
     kind: 'main',
     coords: [
           [113.2668729, 22.9905020],
@@ -2814,8 +4232,425 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-272',
-    name: '西出发平台（N-032→N-010）',
+    segment_id: 'GZ-407',
+    name: '石都北路（N-380→N-343）',
+    kind: 'main',
+    coords: [
+          [113.2755668, 22.9836651],
+          [113.2742542, 22.9827021],
+          [113.2737319, 22.9823112]
+    ],
+  },
+  {
+    segment_id: 'GZ-408',
+    name: '石都北路（N-339→N-372）',
+    kind: 'main',
+    coords: [
+          [113.2735562, 22.9824774],
+          [113.2739042, 22.9827576],
+          [113.2741995, 22.9829627],
+          [113.2753986, 22.9838190]
+    ],
+  },
+  {
+    segment_id: 'GZ-409',
+    name: '石都北路（N-268→N-304）',
+    kind: 'main',
+    coords: [
+          [113.2713130, 22.9805182],
+          [113.2713429, 22.9805543],
+          [113.2718430, 22.9810771],
+          [113.2726550, 22.9817893]
+    ],
+  },
+  {
+    segment_id: 'GZ-410',
+    name: '石都北路（N-308→N-272）',
+    kind: 'main',
+    coords: [
+          [113.2728044, 22.9816290],
+          [113.2719368, 22.9808239],
+          [113.2718845, 22.9807727],
+          [113.2715482, 22.9804430],
+          [113.2714847, 22.9803664]
+    ],
+  },
+  {
+    segment_id: 'GZ-411',
+    name: '石都北路（N-420→N-413）',
+    kind: 'main',
+    coords: [
+          [113.2772179, 22.9865206],
+          [113.2769463, 22.9856253],
+          [113.2767549, 22.9850713],
+          [113.2766539, 22.9848581]
+    ],
+  },
+  {
+    segment_id: 'GZ-412',
+    name: '石都北路（N-429→N-435）',
+    kind: 'main',
+    coords: [
+          [113.2775386, 22.9879588],
+          [113.2776972, 22.9884431],
+          [113.2780948, 22.9895551],
+          [113.2781152, 22.9896066]
+    ],
+  },
+  {
+    segment_id: 'GZ-413',
+    name: '石都北路（N-437→N-430）',
+    kind: 'main',
+    coords: [
+          [113.2782554, 22.9895671],
+          [113.2780700, 22.9890972],
+          [113.2778604, 22.9884416],
+          [113.2776991, 22.9879368]
+    ],
+  },
+  {
+    segment_id: 'GZ-414',
+    name: '石都北路（N-410→N-419）',
+    kind: 'main',
+    coords: [
+          [113.2765532, 22.9849869],
+          [113.2766381, 22.9851732],
+          [113.2770647, 22.9865643]
+    ],
+  },
+  {
+    segment_id: 'GZ-415',
+    name: '石都北路（N-397→N-410）',
+    kind: 'main',
+    coords: [
+          [113.2761349, 22.9843705],
+          [113.2763472, 22.9846376],
+          [113.2764291, 22.9847446],
+          [113.2765532, 22.9849869]
+    ],
+  },
+  {
+    segment_id: 'GZ-416',
+    name: '石都北路（N-430→N-427）',
+    kind: 'main',
+    coords: [
+          [113.2776991, 22.9879368],
+          [113.2774704, 22.9872616]
+    ],
+  },
+  {
+    segment_id: 'GZ-417',
+    name: '石都北路（N-419→N-421）',
+    kind: 'main',
+    coords: [
+          [113.2770647, 22.9865643],
+          [113.2772821, 22.9872169]
+    ],
+  },
+  {
+    segment_id: 'GZ-418',
+    name: '石都北路（N-253→N-268）',
+    kind: 'main',
+    coords: [
+          [113.2708381, 22.9800026],
+          [113.2713130, 22.9805182]
+    ],
+  },
+  {
+    segment_id: 'GZ-419',
+    name: '石都北路（N-423→N-420）',
+    kind: 'main',
+    coords: [
+          [113.2774239, 22.9871415],
+          [113.2772179, 22.9865206]
+    ],
+  },
+  {
+    segment_id: 'GZ-420',
+    name: '石都北路（N-422→N-428）',
+    kind: 'main',
+    coords: [
+          [113.2773351, 22.9873330],
+          [113.2775053, 22.9878353]
+    ],
+  },
+  {
+    segment_id: 'GZ-421',
+    name: '石都北路（N-399→N-389）',
+    kind: 'main',
+    coords: [
+          [113.2761524, 22.9841105],
+          [113.2757803, 22.9838273]
+    ],
+  },
+  {
+    segment_id: 'GZ-422',
+    name: '石都北路（N-384→N-394）',
+    kind: 'main',
+    coords: [
+          [113.2756267, 22.9839785],
+          [113.2759890, 22.9842457]
+    ],
+  },
+  {
+    segment_id: 'GZ-423',
+    name: '石都北路（N-409→N-405）',
+    kind: 'main',
+    coords: [
+          [113.2764870, 22.9845896],
+          [113.2762677, 22.9842545]
+    ],
+  },
+  {
+    segment_id: 'GZ-424',
+    name: '石都北路（N-338→N-324）',
+    kind: 'main',
+    coords: [
+          [113.2735511, 22.9821861],
+          [113.2732194, 22.9819497]
+    ],
+  },
+  {
+    segment_id: 'GZ-425',
+    name: '石都北路（N-436→N-439）',
+    kind: 'main',
+    coords: [
+          [113.2782147, 22.9898570],
+          [113.2783739, 22.9902019]
+    ],
+  },
+  {
+    segment_id: 'GZ-426',
+    name: '石都北路（N-305→N-315）',
+    kind: 'main',
+    coords: [
+          [113.2727116, 22.9818428],
+          [113.2730413, 22.9820543]
+    ],
+  },
+  {
+    segment_id: 'GZ-427',
+    name: '石都北路（N-444→N-438）',
+    kind: 'main',
+    coords: [
+          [113.2785241, 22.9901309],
+          [113.2783705, 22.9898001]
+    ],
+  },
+  {
+    segment_id: 'GZ-428',
+    name: '石都北路（N-318→N-330）',
+    kind: 'main',
+    coords: [
+          [113.2731162, 22.9821076],
+          [113.2734036, 22.9823218]
+    ],
+  },
+  {
+    segment_id: 'GZ-429',
+    name: '石都北路（N-319→N-310）',
+    kind: 'main',
+    coords: [
+          [113.2731409, 22.9818972],
+          [113.2728668, 22.9816815]
+    ],
+  },
+  {
+    segment_id: 'GZ-430',
+    name: '石都北路（N-413→N-409）',
+    kind: 'main',
+    coords: [
+          [113.2766539, 22.9848581],
+          [113.2765966, 22.9847738],
+          [113.2764870, 22.9845896]
+    ],
+  },
+  {
+    segment_id: 'GZ-431',
+    name: '石都北路（N-272→N-267）',
+    kind: 'main',
+    coords: [
+          [113.2714847, 22.9803664],
+          [113.2712934, 22.9801322]
+    ],
+  },
+  {
+    segment_id: 'GZ-432',
+    name: '石都北路（N-435→N-436）',
+    kind: 'main',
+    coords: [
+          [113.2781152, 22.9896066],
+          [113.2782147, 22.9898570]
+    ],
+  },
+  {
+    segment_id: 'GZ-433',
+    name: '石都北路（N-372→N-384）',
+    kind: 'main',
+    coords: [
+          [113.2753986, 22.9838190],
+          [113.2756267, 22.9839785]
+    ],
+  },
+  {
+    segment_id: 'GZ-434',
+    name: '石都北路（N-438→N-437）',
+    kind: 'main',
+    coords: [
+          [113.2783705, 22.9898001],
+          [113.2782554, 22.9895671]
+    ],
+  },
+  {
+    segment_id: 'GZ-435',
+    name: '石都北路（N-389→N-380）',
+    kind: 'main',
+    coords: [
+          [113.2757803, 22.9838273],
+          [113.2755668, 22.9836651]
+    ],
+  },
+  {
+    segment_id: 'GZ-436',
+    name: '石都北路（N-330→N-339）',
+    kind: 'main',
+    coords: [
+          [113.2734036, 22.9823218],
+          [113.2735562, 22.9824774]
+    ],
+  },
+  {
+    segment_id: 'GZ-437',
+    name: '石都北路（N-343→N-338）',
+    kind: 'main',
+    coords: [
+          [113.2737319, 22.9823112],
+          [113.2735511, 22.9821861]
+    ],
+  },
+  {
+    segment_id: 'GZ-438',
+    name: '石都北路（N-394→N-397）',
+    kind: 'main',
+    coords: [
+          [113.2759890, 22.9842457],
+          [113.2761349, 22.9843705]
+    ],
+  },
+  {
+    segment_id: 'GZ-439',
+    name: '石都北路（N-445→N-444）',
+    kind: 'main',
+    coords: [
+          [113.2785925, 22.9902646],
+          [113.2785241, 22.9901309]
+    ],
+  },
+  {
+    segment_id: 'GZ-440',
+    name: '石都北路（N-439→N-442）',
+    kind: 'main',
+    coords: [
+          [113.2783739, 22.9902019],
+          [113.2784359, 22.9903317]
+    ],
+  },
+  {
+    segment_id: 'GZ-441',
+    name: '石都北路（N-427→N-423）',
+    kind: 'main',
+    coords: [
+          [113.2774704, 22.9872616],
+          [113.2774239, 22.9871415]
+    ],
+  },
+  {
+    segment_id: 'GZ-442',
+    name: '石都北路（N-428→N-429）',
+    kind: 'main',
+    coords: [
+          [113.2775053, 22.9878353],
+          [113.2775386, 22.9879588]
+    ],
+  },
+  {
+    segment_id: 'GZ-443',
+    name: '石都北路（N-421→N-422）',
+    kind: 'main',
+    coords: [
+          [113.2772821, 22.9872169],
+          [113.2773351, 22.9873330]
+    ],
+  },
+  {
+    segment_id: 'GZ-444',
+    name: '石都北路（N-324→N-319）',
+    kind: 'main',
+    coords: [
+          [113.2732194, 22.9819497],
+          [113.2731409, 22.9818972]
+    ],
+  },
+  {
+    segment_id: 'GZ-445',
+    name: '石都北路（N-315→N-318）',
+    kind: 'main',
+    coords: [
+          [113.2730413, 22.9820543],
+          [113.2731162, 22.9821076]
+    ],
+  },
+  {
+    segment_id: 'GZ-446',
+    name: '石都北路（N-310→N-308）',
+    kind: 'main',
+    coords: [
+          [113.2728668, 22.9816815],
+          [113.2728044, 22.9816290]
+    ],
+  },
+  {
+    segment_id: 'GZ-447',
+    name: '石都北路（N-304→N-305）',
+    kind: 'main',
+    coords: [
+          [113.2726550, 22.9817893],
+          [113.2727116, 22.9818428]
+    ],
+  },
+  {
+    segment_id: 'GZ-448',
+    name: '聚龙新街',
+    kind: 'main',
+    coords: [
+          [113.2793600, 22.9890461],
+          [113.2791294, 22.9890728],
+          [113.2790451, 22.9890508],
+          [113.2789626, 22.9889860],
+          [113.2785893, 22.9882532],
+          [113.2784123, 22.9876902],
+          [113.2783211, 22.9872853],
+          [113.2782567, 22.9867371],
+          [113.2782406, 22.9862334],
+          [113.2782835, 22.9857346],
+          [113.2784069, 22.9850679],
+          [113.2785023, 22.9847349],
+          [113.2786430, 22.9844111],
+          [113.2793300, 22.9833254]
+    ],
+  },
+  {
+    segment_id: 'GZ-449',
+    name: '荣诚西一街',
+    kind: 'main',
+    coords: [
+          [113.2642353, 22.9969319],
+          [113.2651778, 22.9955625]
+    ],
+  },
+  {
+    segment_id: 'GZ-450',
+    name: '西出发平台（N-065→N-034）',
     kind: 'main',
     coords: [
           [113.2629291, 22.9892605],
@@ -2826,8 +4661,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-273',
-    name: '西出发平台（N-032→N-010）',
+    segment_id: 'GZ-451',
+    name: '西出发平台（N-065→N-034）',
     kind: 'main',
     coords: [
           [113.2629291, 22.9892605],
@@ -2840,8 +4675,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-274',
-    name: '西出发平台（N-055→N-032）',
+    segment_id: 'GZ-452',
+    name: '西出发平台（N-098→N-065）',
     kind: 'main',
     coords: [
           [113.2645278, 22.9878986],
@@ -2858,8 +4693,21 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-275',
-    name: '钟南大道（N-047→N-037）',
+    segment_id: 'GZ-453',
+    name: '西出发平台（N-034→N-026）',
+    kind: 'main',
+    coords: [
+          [113.2613692, 22.9914341],
+          [113.2612067, 22.9917259],
+          [113.2610966, 22.9920177],
+          [113.2610042, 22.9923765],
+          [113.2609221, 22.9926806],
+          [113.2608148, 22.9930039]
+    ],
+  },
+  {
+    segment_id: 'GZ-454',
+    name: '钟南大道（N-088→N-074）',
     kind: 'main',
     coords: [
           [113.2640405, 22.9943412],
@@ -2873,8 +4721,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-276',
-    name: '钟南大道（N-050→N-047）',
+    segment_id: 'GZ-455',
+    name: '钟南大道（N-068→N-060）',
+    kind: 'main',
+    coords: [
+          [113.2630648, 22.9956007],
+          [113.2627525, 22.9960576]
+    ],
+  },
+  {
+    segment_id: 'GZ-456',
+    name: '钟南大道（N-074→N-068）',
+    kind: 'main',
+    coords: [
+          [113.2633723, 22.9951865],
+          [113.2630648, 22.9956007]
+    ],
+  },
+  {
+    segment_id: 'GZ-457',
+    name: '钟南大道（N-091→N-088）',
     kind: 'main',
     coords: [
           [113.2642266, 22.9941818],
@@ -2884,8 +4750,55 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-277',
-    name: '韦海路（N-163→N-109）',
+    segment_id: 'GZ-458',
+    name: '雅贤一街（N-198→N-252）',
+    kind: 'main',
+    coords: [
+          [113.2678921, 22.9987489],
+          [113.2679455, 22.9979650],
+          [113.2679603, 22.9979369],
+          [113.2680112, 22.9979077],
+          [113.2680615, 22.9979074],
+          [113.2684195, 22.9979456],
+          [113.2686532, 22.9979497],
+          [113.2688393, 22.9979487],
+          [113.2690463, 22.9979264],
+          [113.2692658, 22.9979007],
+          [113.2694436, 22.9978674],
+          [113.2695985, 22.9978404],
+          [113.2697793, 22.9977853],
+          [113.2699491, 22.9977289],
+          [113.2701119, 22.9976589],
+          [113.2703021, 22.9975630],
+          [113.2705014, 22.9974405],
+          [113.2707627, 22.9972714]
+    ],
+  },
+  {
+    segment_id: 'GZ-459',
+    name: '雅贤一街（N-252→N-271）',
+    kind: 'main',
+    coords: [
+          [113.2707627, 22.9972714],
+          [113.2709362, 22.9971304],
+          [113.2711697, 22.9969296],
+          [113.2712605, 22.9968443],
+          [113.2713543, 22.9967333],
+          [113.2714030, 22.9966748]
+    ],
+  },
+  {
+    segment_id: 'GZ-460',
+    name: '雅贤二街',
+    kind: 'main',
+    coords: [
+          [113.2712503, 22.9979941],
+          [113.2707627, 22.9972714]
+    ],
+  },
+  {
+    segment_id: 'GZ-461',
+    name: '韦海路（N-237→N-165）',
     kind: 'main',
     coords: [
           [113.2699212, 22.9862967],
@@ -2896,8 +4809,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-278',
-    name: '韦海路（N-111→N-165）',
+    segment_id: 'GZ-462',
+    name: '韦海路（N-168→N-239）',
     kind: 'main',
     coords: [
           [113.2670743, 22.9843372],
@@ -2907,8 +4820,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-279',
-    name: '韦海路（N-216→N-167）',
+    segment_id: 'GZ-463',
+    name: '韦海路（N-298→N-241）',
     kind: 'main',
     coords: [
           [113.2725444, 22.9879386],
@@ -2919,8 +4832,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-280',
-    name: '韦海路（N-187→N-218）',
+    segment_id: 'GZ-464',
+    name: '韦海路（N-263→N-300）',
     kind: 'main',
     coords: [
           [113.2712217, 22.9870038],
@@ -2930,8 +4843,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-281',
-    name: '韦海路（N-085→N-070）',
+    segment_id: 'GZ-465',
+    name: '韦海路（N-132→N-115）',
     kind: 'main',
     coords: [
           [113.2661141, 22.9838919],
@@ -2944,8 +4857,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-282',
-    name: '韦海路（N-106→N-085）',
+    segment_id: 'GZ-466',
+    name: '韦海路（N-162→N-132）',
     kind: 'main',
     coords: [
           [113.2668957, 22.9843548],
@@ -2954,8 +4867,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-283',
-    name: '韦海路（N-170→N-177）',
+    segment_id: 'GZ-467',
+    name: '韦海路（N-244→N-251）',
     kind: 'main',
     coords: [
           [113.2700746, 22.9862540],
@@ -2963,8 +4876,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-284',
-    name: '韦海路（N-177→N-187）',
+    segment_id: 'GZ-468',
+    name: '韦海路（N-251→N-263）',
     kind: 'main',
     coords: [
           [113.2706906, 22.9866545],
@@ -2972,8 +4885,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-285',
-    name: '韦海路（N-218→N-227）',
+    segment_id: 'GZ-469',
+    name: '韦海路（N-300→N-313）',
     kind: 'main',
     coords: [
           [113.2725680, 22.9878803],
@@ -2982,8 +4895,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-286',
-    name: '韦海路（N-226→N-216）',
+    segment_id: 'GZ-470',
+    name: '韦海路（N-312→N-298）',
     kind: 'main',
     coords: [
           [113.2728830, 22.9881837],
@@ -2991,8 +4904,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-287',
-    name: '韦海路（N-108→N-111）',
+    segment_id: 'GZ-471',
+    name: '韦海路（N-164→N-168）',
     kind: 'main',
     coords: [
           [113.2669613, 22.9842589],
@@ -3000,8 +4913,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-288',
-    name: '韦海路（N-109→N-106）',
+    segment_id: 'GZ-472',
+    name: '韦海路（N-165→N-162）',
     kind: 'main',
     coords: [
           [113.2670048, 22.9844303],
@@ -3009,8 +4922,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-289',
-    name: '韦海路（N-165→N-170）',
+    segment_id: 'GZ-473',
+    name: '韦海路（N-239→N-244）',
     kind: 'main',
     coords: [
           [113.2699796, 22.9861993],
@@ -3018,8 +4931,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-290',
-    name: '韦海路（N-167→N-163）',
+    segment_id: 'GZ-474',
+    name: '韦海路（N-241→N-237）',
     kind: 'main',
     coords: [
           [113.2700075, 22.9863519],
@@ -3027,7 +4940,110 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-291',
+    segment_id: 'GZ-475',
+    name: '韦涌路（N-045→N-085）',
+    kind: 'main',
+    coords: [
+          [113.2620618, 22.9845193],
+          [113.2624498, 22.9842806],
+          [113.2626502, 22.9841161],
+          [113.2629244, 22.9838740],
+          [113.2630828, 22.9836904],
+          [113.2632306, 22.9834979],
+          [113.2633490, 22.9832954],
+          [113.2634628, 22.9830592],
+          [113.2635273, 22.9828643],
+          [113.2635657, 22.9826638],
+          [113.2635925, 22.9822490],
+          [113.2635657, 22.9818045],
+          [113.2635764, 22.9813946],
+          [113.2635908, 22.9809579],
+          [113.2636157, 22.9807149],
+          [113.2637495, 22.9800102],
+          [113.2637870, 22.9798574]
+    ],
+  },
+  {
+    segment_id: 'GZ-476',
+    name: '韦涌路（N-082→N-081）',
+    kind: 'main',
+    coords: [
+          [113.2637627, 22.9806888],
+          [113.2637329, 22.9809753],
+          [113.2636981, 22.9816605],
+          [113.2637361, 22.9821640]
+    ],
+  },
+  {
+    segment_id: 'GZ-477',
+    name: '韦涌路（N-073→N-056）',
+    kind: 'main',
+    coords: [
+          [113.2633551, 22.9836438],
+          [113.2632159, 22.9838290],
+          [113.2630838, 22.9839769],
+          [113.2629352, 22.9841269],
+          [113.2627719, 22.9842651],
+          [113.2625712, 22.9844004]
+    ],
+  },
+  {
+    segment_id: 'GZ-478',
+    name: '韦涌路（N-080→N-073）',
+    kind: 'main',
+    coords: [
+          [113.2636998, 22.9827930],
+          [113.2636514, 22.9830179],
+          [113.2635840, 22.9831919],
+          [113.2635212, 22.9833464],
+          [113.2634030, 22.9835675],
+          [113.2633551, 22.9836438]
+    ],
+  },
+  {
+    segment_id: 'GZ-479',
+    name: '韦涌路（N-030→N-045）',
+    kind: 'main',
+    coords: [
+          [113.2612029, 22.9848869],
+          [113.2615801, 22.9847491],
+          [113.2618270, 22.9846380],
+          [113.2620618, 22.9845193]
+    ],
+  },
+  {
+    segment_id: 'GZ-480',
+    name: '韦涌路（N-046→N-035）',
+    kind: 'main',
+    coords: [
+          [113.2621268, 22.9846093],
+          [113.2616715, 22.9848349],
+          [113.2614182, 22.9849434]
+    ],
+  },
+  {
+    segment_id: 'GZ-481',
+    name: '韦涌路（N-081→N-080）',
+    kind: 'main',
+    coords: [
+          [113.2637361, 22.9821640],
+          [113.2637414, 22.9824378],
+          [113.2637174, 22.9826778],
+          [113.2636998, 22.9827930]
+    ],
+  },
+  {
+    segment_id: 'GZ-482',
+    name: '韦涌路（N-056→N-046）',
+    kind: 'main',
+    coords: [
+          [113.2625712, 22.9844004],
+          [113.2623650, 22.9845001],
+          [113.2621268, 22.9846093]
+    ],
+  },
+  {
+    segment_id: 'GZ-483',
     name: 'AB区',
     kind: 'ramp',
     coords: [
@@ -3038,7 +5054,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-292',
+    segment_id: 'GZ-484',
     name: 'CD区',
     kind: 'ramp',
     coords: [
@@ -3049,8 +5065,131 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-293',
-    name: '停车场内部通道（N-177→N-187）',
+    segment_id: 'GZ-485',
+    name: 'motorway_link（N-441→N-364）',
+    kind: 'ramp',
+    coords: [
+          [113.2784135, 22.9941348],
+          [113.2782286, 22.9939453],
+          [113.2781226, 22.9938248],
+          [113.2779578, 22.9936363],
+          [113.2778333, 22.9935223],
+          [113.2777281, 22.9934583],
+          [113.2776310, 22.9934074],
+          [113.2775294, 22.9933669],
+          [113.2774154, 22.9933320],
+          [113.2773004, 22.9933109],
+          [113.2771741, 22.9932962],
+          [113.2770470, 22.9932870],
+          [113.2769244, 22.9932789],
+          [113.2768274, 22.9932779],
+          [113.2767199, 22.9932827],
+          [113.2766066, 22.9932936],
+          [113.2764787, 22.9933123],
+          [113.2763566, 22.9933364],
+          [113.2762388, 22.9933665],
+          [113.2761204, 22.9934020],
+          [113.2760092, 22.9934383],
+          [113.2756703, 22.9935952],
+          [113.2750026, 22.9939976],
+          [113.2748929, 22.9940850]
+    ],
+  },
+  {
+    segment_id: 'GZ-486',
+    name: 'motorway_link（N-443→N-418）',
+    kind: 'ramp',
+    coords: [
+          [113.2784735, 22.9926554],
+          [113.2783747, 22.9926780],
+          [113.2782628, 22.9927060],
+          [113.2781390, 22.9927278],
+          [113.2779820, 22.9927447],
+          [113.2778432, 22.9927554],
+          [113.2777368, 22.9927606],
+          [113.2776266, 22.9927583],
+          [113.2775385, 22.9927506],
+          [113.2774481, 22.9927347],
+          [113.2773447, 22.9927046],
+          [113.2772486, 22.9926685],
+          [113.2771547, 22.9926179],
+          [113.2770666, 22.9925682],
+          [113.2769926, 22.9925109],
+          [113.2769310, 22.9924395],
+          [113.2768357, 22.9923021],
+          [113.2767918, 22.9921672],
+          [113.2767607, 22.9920158],
+          [113.2767578, 22.9918801],
+          [113.2767831, 22.9917224],
+          [113.2768229, 22.9915784],
+          [113.2769322, 22.9913409]
+    ],
+  },
+  {
+    segment_id: 'GZ-487',
+    name: 'motorway_link（N-398→N-443）',
+    kind: 'ramp',
+    coords: [
+          [113.2761273, 22.9926786],
+          [113.2764052, 22.9927276],
+          [113.2767889, 22.9927971],
+          [113.2770044, 22.9928181],
+          [113.2774099, 22.9928324],
+          [113.2776525, 22.9928196],
+          [113.2779122, 22.9927969],
+          [113.2781660, 22.9927548],
+          [113.2784735, 22.9926554]
+    ],
+  },
+  {
+    segment_id: 'GZ-488',
+    name: 'motorway_link（N-424→N-441）',
+    kind: 'ramp',
+    coords: [
+          [113.2774150, 22.9931613],
+          [113.2777000, 22.9932878],
+          [113.2778083, 22.9933557],
+          [113.2779169, 22.9934289],
+          [113.2780111, 22.9935077],
+          [113.2780824, 22.9935853],
+          [113.2781513, 22.9936844],
+          [113.2781829, 22.9937386],
+          [113.2784135, 22.9941348]
+    ],
+  },
+  {
+    segment_id: 'GZ-489',
+    name: 'motorway_link（N-424→N-403）',
+    kind: 'ramp',
+    coords: [
+          [113.2774150, 22.9931613],
+          [113.2772792, 22.9931258],
+          [113.2771124, 22.9930837],
+          [113.2766449, 22.9929875],
+          [113.2762128, 22.9928341]
+    ],
+  },
+  {
+    segment_id: 'GZ-490',
+    name: 'motorway_link（N-364→N-359）',
+    kind: 'ramp',
+    coords: [
+          [113.2748929, 22.9940850],
+          [113.2745711, 22.9943415]
+    ],
+  },
+  {
+    segment_id: 'GZ-491',
+    name: 'motorway_link（N-403→N-398）',
+    kind: 'ramp',
+    coords: [
+          [113.2762128, 22.9928341],
+          [113.2761273, 22.9926786]
+    ],
+  },
+  {
+    segment_id: 'GZ-492',
+    name: '停车场内部通道（N-251→N-263）',
     kind: 'ramp',
     coords: [
           [113.2706906, 22.9866545],
@@ -3063,8 +5202,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-294',
-    name: '停车场内部通道（N-138→N-149）',
+    segment_id: 'GZ-493',
+    name: '停车场内部通道（N-212→N-223）',
     kind: 'ramp',
     coords: [
           [113.2684282, 22.9875802],
@@ -3076,8 +5215,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-295',
-    name: '停车场内部通道（N-190→N-177）',
+    segment_id: 'GZ-494',
+    name: '停车场内部通道（N-269→N-251）',
     kind: 'ramp',
     coords: [
           [113.2713530, 22.9868133],
@@ -3086,8 +5225,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-296',
-    name: '停车场内部通道（N-152→N-154）',
+    segment_id: 'GZ-495',
+    name: '停车场内部通道（N-226→N-228）',
     kind: 'ramp',
     coords: [
           [113.2690970, 22.9875779],
@@ -3095,8 +5234,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-297',
-    name: '停车场内部通道（N-149→N-152）',
+    segment_id: 'GZ-496',
+    name: '停车场内部通道（N-223→N-226）',
     kind: 'ramp',
     coords: [
           [113.2690703, 22.9874250],
@@ -3104,8 +5243,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-298',
-    name: '停车场内部通道（N-154→N-157）',
+    segment_id: 'GZ-497',
+    name: '停车场内部通道（N-228→N-231）',
     kind: 'ramp',
     coords: [
           [113.2692672, 22.9876747],
@@ -3113,8 +5252,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-299',
-    name: '停车场内部通道（N-157→N-159）',
+    segment_id: 'GZ-498',
+    name: '停车场内部通道（N-231→N-233）',
     kind: 'ramp',
     coords: [
           [113.2693880, 22.9877435],
@@ -3122,8 +5261,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-300',
-    name: '场区出入道（N-092→N-078）',
+    segment_id: 'GZ-499',
+    name: '场区出入道（N-140→N-124）',
     kind: 'ramp',
     coords: [
           [113.2663137, 22.9939542],
@@ -3148,8 +5287,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-301',
-    name: '场区出入道（N-009→N-005）',
+    segment_id: 'GZ-500',
+    name: '场区出入道（N-033→N-025）',
     kind: 'ramp',
     coords: [
           [113.2613583, 22.9892930],
@@ -3178,8 +5317,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-302',
-    name: '场区出入道（N-016→N-023）',
+    segment_id: 'GZ-501',
+    name: '场区出入道（N-043→N-054）',
     kind: 'ramp',
     coords: [
           [113.2619777, 22.9890854],
@@ -3208,8 +5347,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-303',
-    name: '场区出入道（N-096→N-093）',
+    segment_id: 'GZ-502',
+    name: '场区出入道（N-145→N-142）',
     kind: 'ramp',
     coords: [
           [113.2665784, 22.9941232],
@@ -3239,8 +5378,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-304',
-    name: '场区出入道（N-079→N-107）',
+    segment_id: 'GZ-503',
+    name: '场区出入道（N-125→N-163）',
     kind: 'ramp',
     coords: [
           [113.2656687, 22.9947033],
@@ -3253,8 +5392,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-305',
-    name: '场区出入道（N-012→N-009）',
+    segment_id: 'GZ-504',
+    name: '场区出入道（N-039→N-033）',
     kind: 'ramp',
     coords: [
           [113.2617378, 22.9895337],
@@ -3274,8 +5413,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-306',
-    name: '场区出入道（N-072→N-092）',
+    segment_id: 'GZ-505',
+    name: '场区出入道（N-117→N-140）',
     kind: 'ramp',
     coords: [
           [113.2652773, 22.9947244],
@@ -3288,8 +5427,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-307',
-    name: '场区出入道（N-023→N-035）',
+    segment_id: 'GZ-506',
+    name: '场区出入道（N-054→N-072）',
     kind: 'ramp',
     coords: [
           [113.2624994, 22.9884023],
@@ -3306,8 +5445,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-308',
-    name: '场区出入道（N-092→N-078）',
+    segment_id: 'GZ-507',
+    name: '场区出入道（N-140→N-124）',
     kind: 'ramp',
     coords: [
           [113.2663137, 22.9939542],
@@ -3318,8 +5457,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-309',
-    name: '场区出入道（N-016→N-023）',
+    segment_id: 'GZ-508',
+    name: '场区出入道（N-043→N-054）',
     kind: 'ramp',
     coords: [
           [113.2619777, 22.9890854],
@@ -3330,8 +5469,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-310',
-    name: '场区出入道（N-089→N-096）',
+    segment_id: 'GZ-509',
+    name: '场区出入道（N-136→N-145）',
     kind: 'ramp',
     coords: [
           [113.2661781, 22.9935659],
@@ -3345,8 +5484,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-311',
-    name: '场区出入道（N-157→N-154）',
+    segment_id: 'GZ-510',
+    name: '场区出入道（N-231→N-228）',
     kind: 'ramp',
     coords: [
           [113.2693880, 22.9877435],
@@ -3363,8 +5502,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-312',
-    name: '场区出入道（N-114→N-119）',
+    segment_id: 'GZ-511',
+    name: '场区出入道（N-178→N-185）',
     kind: 'ramp',
     coords: [
           [113.2673051, 22.9927330],
@@ -3378,8 +5517,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-313',
-    name: '场区出入道（N-011→N-016）',
+    segment_id: 'GZ-512',
+    name: '场区出入道（N-038→N-043）',
     kind: 'ramp',
     coords: [
           [113.2616974, 22.9889044],
@@ -3388,8 +5527,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-314',
-    name: '场区出入道（N-093→N-092）',
+    segment_id: 'GZ-513',
+    name: '场区出入道（N-142→N-140）',
     kind: 'ramp',
     coords: [
           [113.2663891, 22.9941329],
@@ -3397,8 +5536,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-315',
-    name: '场区出入道（N-078→N-079）',
+    segment_id: 'GZ-514',
+    name: '场区出入道（N-124→N-125）',
     kind: 'ramp',
     coords: [
           [113.2656582, 22.9946564],
@@ -3406,7 +5545,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-316',
+    segment_id: 'GZ-515',
     name: '广南快速',
     kind: 'ramp',
     coords: [
@@ -3424,8 +5563,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-317',
-    name: '服务道路（N-223→N-186）',
+    segment_id: 'GZ-516',
+    name: '服务道路（N-307→N-262）',
     kind: 'ramp',
     coords: [
           [113.2727620, 22.9923990],
@@ -3444,8 +5583,23 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-318',
-    name: '服务道路（N-134→N-168）',
+    segment_id: 'GZ-517',
+    name: '服务道路（N-383→N-340）',
+    kind: 'ramp',
+    coords: [
+          [113.2756186, 22.9947174],
+          [113.2752424, 22.9952174],
+          [113.2745645, 22.9961335],
+          [113.2744836, 22.9962002],
+          [113.2744168, 22.9962170],
+          [113.2743296, 22.9962174],
+          [113.2742165, 22.9961592],
+          [113.2735654, 22.9957300]
+    ],
+  },
+  {
+    segment_id: 'GZ-518',
+    name: '服务道路（N-208→N-242）',
     kind: 'ramp',
     coords: [
           [113.2681564, 22.9950846],
@@ -3463,8 +5617,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-319',
-    name: '服务道路（N-153→N-180）',
+    segment_id: 'GZ-519',
+    name: '服务道路（N-227→N-256）',
     kind: 'ramp',
     coords: [
           [113.2692250, 22.9935804],
@@ -3480,8 +5634,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-320',
-    name: '服务道路（N-094→N-090）',
+    segment_id: 'GZ-520',
+    name: '服务道路（N-143→N-138）',
     kind: 'ramp',
     coords: [
           [113.2664322, 22.9839645],
@@ -3498,8 +5652,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-321',
-    name: '服务道路（N-127→N-118）',
+    segment_id: 'GZ-521',
+    name: '服务道路（N-197→N-184）',
     kind: 'ramp',
     coords: [
           [113.2678100, 22.9820903],
@@ -3511,8 +5665,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-322',
-    name: '服务道路（N-096→N-130）',
+    segment_id: 'GZ-522',
+    name: '服务道路（N-425→N-390）',
+    kind: 'ramp',
+    coords: [
+          [113.2774340, 22.9953285],
+          [113.2758846, 22.9943616]
+    ],
+  },
+  {
+    segment_id: 'GZ-523',
+    name: '服务道路（N-145→N-202）',
     kind: 'ramp',
     coords: [
           [113.2665784, 22.9941232],
@@ -3524,8 +5687,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-323',
-    name: '服务道路（N-129→N-148）',
+    segment_id: 'GZ-524',
+    name: '服务道路（N-201→N-222）',
     kind: 'ramp',
     coords: [
           [113.2679574, 22.9928096],
@@ -3537,8 +5700,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-324',
-    name: '服务道路（N-195→N-208）',
+    segment_id: 'GZ-525',
+    name: '服务道路（N-276→N-290）',
     kind: 'ramp',
     coords: [
           [113.2716405, 22.9916906],
@@ -3552,8 +5715,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-325',
-    name: '服务道路（N-185→N-206）',
+    segment_id: 'GZ-526',
+    name: '服务道路（N-261→N-288）',
     kind: 'ramp',
     coords: [
           [113.2711798, 22.9951146],
@@ -3564,8 +5727,32 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-326',
-    name: '服务道路（N-081→N-093）',
+    segment_id: 'GZ-527',
+    name: '服务道路（N-271→N-248）',
+    kind: 'ramp',
+    coords: [
+          [113.2714030, 22.9966748],
+          [113.2706320, 22.9961264],
+          [113.2705270, 22.9961070],
+          [113.2704221, 22.9961272]
+    ],
+  },
+  {
+    segment_id: 'GZ-528',
+    name: '服务道路（N-288→N-317）',
+    kind: 'ramp',
+    coords: [
+          [113.2720642, 22.9957954],
+          [113.2725277, 22.9960446],
+          [113.2726694, 22.9960844],
+          [113.2728230, 22.9961078],
+          [113.2729602, 22.9960896],
+          [113.2731025, 22.9960303]
+    ],
+  },
+  {
+    segment_id: 'GZ-529',
+    name: '服务道路（N-127→N-142）',
     kind: 'ramp',
     coords: [
           [113.2657539, 22.9949866],
@@ -3574,8 +5761,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-327',
-    name: '服务道路（N-120→N-136）',
+    segment_id: 'GZ-530',
+    name: '服务道路（N-188→N-210）',
     kind: 'ramp',
     coords: [
           [113.2677005, 22.9923482],
@@ -3583,8 +5770,34 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-328',
-    name: '服务道路（N-220→N-233）',
+    segment_id: 'GZ-531',
+    name: '服务道路（N-364→N-390）',
+    kind: 'ramp',
+    coords: [
+          [113.2748929, 22.9940850],
+          [113.2751152, 22.9940248],
+          [113.2751985, 22.9940084],
+          [113.2752904, 22.9940115],
+          [113.2753985, 22.9940425],
+          [113.2758846, 22.9943616]
+    ],
+  },
+  {
+    segment_id: 'GZ-532',
+    name: '服务道路（N-284→N-271）',
+    kind: 'ramp',
+    coords: [
+          [113.2719308, 22.9974782],
+          [113.2719512, 22.9972717],
+          [113.2719152, 22.9971337],
+          [113.2718582, 22.9970206],
+          [113.2717533, 22.9969240],
+          [113.2714030, 22.9966748]
+    ],
+  },
+  {
+    segment_id: 'GZ-533',
+    name: '服务道路（N-302→N-323）',
     kind: 'ramp',
     coords: [
           [113.2725740, 22.9951379],
@@ -3592,8 +5805,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-329',
-    name: '服务道路（N-237→N-220）',
+    segment_id: 'GZ-534',
+    name: '服务道路（N-331→N-302）',
     kind: 'ramp',
     coords: [
           [113.2734029, 22.9956340],
@@ -3601,8 +5814,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-330',
-    name: '服务道路（N-206→N-220）',
+    segment_id: 'GZ-535',
+    name: '服务道路（N-288→N-302）',
     kind: 'ramp',
     coords: [
           [113.2720642, 22.9957954],
@@ -3610,8 +5823,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-331',
-    name: '服务道路（N-181→N-195）',
+    segment_id: 'GZ-536',
+    name: '服务道路（N-257→N-276）',
     kind: 'ramp',
     coords: [
           [113.2709796, 22.9912732],
@@ -3620,8 +5833,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-332',
-    name: '服务道路（N-208→N-223）',
+    segment_id: 'GZ-537',
+    name: '服务道路（N-290→N-307）',
     kind: 'ramp',
     coords: [
           [113.2721915, 22.9920387],
@@ -3630,8 +5843,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-333',
-    name: '服务道路（N-195→N-208）',
+    segment_id: 'GZ-538',
+    name: '服务道路（N-276→N-290）',
     kind: 'ramp',
     coords: [
           [113.2716405, 22.9916906],
@@ -3639,8 +5852,27 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-334',
-    name: '服务道路（N-090→N-095）',
+    segment_id: 'GZ-539',
+    name: '服务道路（N-383→N-396）',
+    kind: 'ramp',
+    coords: [
+          [113.2756186, 22.9947174],
+          [113.2761117, 22.9950337],
+          [113.2760765, 22.9950781]
+    ],
+  },
+  {
+    segment_id: 'GZ-540',
+    name: '服务道路（N-390→N-383）',
+    kind: 'ramp',
+    coords: [
+          [113.2758846, 22.9943616],
+          [113.2756186, 22.9947174]
+    ],
+  },
+  {
+    segment_id: 'GZ-541',
+    name: '服务道路（N-138→N-144）',
     kind: 'ramp',
     coords: [
           [113.2662166, 22.9838230],
@@ -3649,8 +5881,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-335',
-    name: '服务道路（N-118→N-126）',
+    segment_id: 'GZ-542',
+    name: '服务道路（N-184→N-195）',
     kind: 'ramp',
     coords: [
           [113.2675825, 22.9819504],
@@ -3658,8 +5890,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-336',
-    name: '服务道路（N-131→N-127）',
+    segment_id: 'GZ-543',
+    name: '服务道路（N-204→N-197）',
     kind: 'ramp',
     coords: [
           [113.2680227, 22.9818001],
@@ -3667,8 +5899,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-337',
-    name: '服务道路（N-139→N-144）',
+    segment_id: 'GZ-544',
+    name: '服务道路（N-213→N-218）',
     kind: 'ramp',
     coords: [
           [113.2684742, 22.9912957],
@@ -3678,8 +5910,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-338',
-    name: '服务道路（N-148→N-153）',
+    segment_id: 'GZ-545',
+    name: '服务道路（N-222→N-227）',
     kind: 'ramp',
     coords: [
           [113.2689393, 22.9936253],
@@ -3687,8 +5919,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-339',
-    name: '服务道路（N-124→N-129）',
+    segment_id: 'GZ-546',
+    name: '服务道路（N-193→N-201）',
     kind: 'ramp',
     coords: [
           [113.2677652, 22.9926156],
@@ -3696,8 +5928,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-340',
-    name: '服务道路（N-118→N-127）',
+    segment_id: 'GZ-547',
+    name: '服务道路（N-184→N-197）',
     kind: 'ramp',
     coords: [
           [113.2675825, 22.9819504],
@@ -3705,8 +5937,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-341',
-    name: '服务道路（N-136→N-139）',
+    segment_id: 'GZ-548',
+    name: '服务道路（N-210→N-213）',
     kind: 'ramp',
     coords: [
           [113.2683273, 22.9914922],
@@ -3714,8 +5946,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-342',
-    name: '服务道路（N-130→N-134）',
+    segment_id: 'GZ-549',
+    name: '服务道路（N-196→N-205）',
+    kind: 'ramp',
+    coords: [
+          [113.2678117, 22.9800259],
+          [113.2680317, 22.9801250]
+    ],
+  },
+  {
+    segment_id: 'GZ-550',
+    name: '服务道路（N-202→N-208）',
     kind: 'ramp',
     coords: [
           [113.2679741, 22.9949402],
@@ -3723,8 +5964,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-343',
-    name: '服务道路（N-093→N-096）',
+    segment_id: 'GZ-551',
+    name: '服务道路（N-142→N-145）',
     kind: 'ramp',
     coords: [
           [113.2663891, 22.9941329],
@@ -3734,8 +5975,28 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-344',
-    name: '离场通道（N-133→N-132）',
+    segment_id: 'GZ-552',
+    name: '服务道路（N-340→N-331）',
+    kind: 'ramp',
+    coords: [
+          [113.2735654, 22.9957300],
+          [113.2734029, 22.9956340]
+    ],
+  },
+  {
+    segment_id: 'GZ-553',
+    name: '瑞盈路',
+    kind: 'ramp',
+    coords: [
+          [113.2603304, 22.9868069],
+          [113.2603895, 22.9867241],
+          [113.2613336, 22.9854016],
+          [113.2614539, 22.9852330]
+    ],
+  },
+  {
+    segment_id: 'GZ-554',
+    name: '离场通道（N-207→N-206）',
     kind: 'ramp',
     coords: [
           [113.2681064, 22.9926293],
@@ -3743,8 +6004,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-345',
-    name: '离场通道（N-132→N-129）',
+    segment_id: 'GZ-555',
+    name: '离场通道（N-206→N-201）',
     kind: 'ramp',
     coords: [
           [113.2680313, 22.9927416],
@@ -3752,7 +6013,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-346',
+    segment_id: 'GZ-556',
     name: '荣诚西五街',
     kind: 'ramp',
     coords: [
@@ -3761,8 +6022,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-347',
-    name: '荣诚西四街（N-155→N-164）',
+    segment_id: 'GZ-557',
+    name: '荣诚西四街（N-229→N-238）',
     kind: 'ramp',
     coords: [
           [113.2692820, 22.9901935],
@@ -3770,8 +6031,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-348',
-    name: '荣诚西四街（N-144→N-155）',
+    segment_id: 'GZ-558',
+    name: '荣诚西四街（N-218→N-229）',
     kind: 'ramp',
     coords: [
           [113.2686758, 22.9910207],
@@ -3779,7 +6040,7 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-349',
+    segment_id: 'GZ-559',
     name: '贵宾通道',
     kind: 'ramp',
     coords: [
@@ -3796,8 +6057,24 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-350',
-    name: '连接匝道（N-251→N-183）',
+    segment_id: 'GZ-560',
+    name: '连接匝道（N-453→N-407）',
+    kind: 'ramp',
+    coords: [
+          [113.2805778, 22.9935226],
+          [113.2803561, 22.9934524],
+          [113.2801489, 22.9934121],
+          [113.2799917, 22.9933930],
+          [113.2797786, 22.9933521],
+          [113.2792045, 22.9932188],
+          [113.2786761, 22.9931107],
+          [113.2780409, 22.9929983],
+          [113.2763475, 22.9926426]
+    ],
+  },
+  {
+    segment_id: 'GZ-561',
+    name: '连接匝道（N-350→N-259）',
     kind: 'ramp',
     coords: [
           [113.2741083, 22.9916243],
@@ -3819,8 +6096,46 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-351',
-    name: '连接匝道（N-169→N-191）',
+    segment_id: 'GZ-562',
+    name: '连接匝道（N-029→N-018）',
+    kind: 'ramp',
+    coords: [
+          [113.2610845, 22.9891211],
+          [113.2609246, 22.9895090],
+          [113.2608187, 22.9896783],
+          [113.2606971, 22.9898426],
+          [113.2600830, 22.9906848],
+          [113.2600200, 22.9907760],
+          [113.2599395, 22.9909139],
+          [113.2599395, 22.9909139],
+          [113.2599035, 22.9910047],
+          [113.2598670, 22.9911111],
+          [113.2598426, 22.9912059],
+          [113.2598245, 22.9912853],
+          [113.2598149, 22.9913483],
+          [113.2598182, 22.9914330],
+          [113.2598269, 22.9914875],
+          [113.2598519, 22.9915502],
+          [113.2599222, 22.9916447],
+          [113.2600161, 22.9917300],
+          [113.2602198, 22.9918744]
+    ],
+  },
+  {
+    segment_id: 'GZ-563',
+    name: '连接匝道（N-400→N-440）',
+    kind: 'ramp',
+    coords: [
+          [113.2761547, 22.9929156],
+          [113.2764873, 22.9930049],
+          [113.2772981, 22.9931724],
+          [113.2780338, 22.9932858],
+          [113.2783776, 22.9933671]
+    ],
+  },
+  {
+    segment_id: 'GZ-564',
+    name: '连接匝道（N-243→N-270）',
     kind: 'ramp',
     coords: [
           [113.2700349, 22.9921151],
@@ -3835,8 +6150,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-352',
-    name: '连接匝道（N-274→N-252）',
+    segment_id: 'GZ-565',
+    name: '连接匝道（N-385→N-352）',
     kind: 'ramp',
     coords: [
           [113.2756536, 22.9899799],
@@ -3850,8 +6165,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-353',
-    name: '连接匝道（N-255→N-272）',
+    segment_id: 'GZ-566',
+    name: '连接匝道（N-356→N-379）',
     kind: 'ramp',
     coords: [
           [113.2742905, 22.9916256],
@@ -3867,8 +6182,19 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-354',
-    name: '连接匝道（N-267→N-253）',
+    segment_id: 'GZ-567',
+    name: '连接匝道（N-040→N-018）',
+    kind: 'ramp',
+    coords: [
+          [113.2618108, 22.9929945],
+          [113.2611583, 22.9924930],
+          [113.2606985, 22.9921945],
+          [113.2602198, 22.9918744]
+    ],
+  },
+  {
+    segment_id: 'GZ-568',
+    name: '连接匝道（N-370→N-354）',
     kind: 'ramp',
     coords: [
           [113.2752050, 22.9931609],
@@ -3881,8 +6207,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-355',
-    name: '连接匝道（N-028→N-025）',
+    segment_id: 'GZ-569',
+    name: '连接匝道（N-059→N-056）',
     kind: 'ramp',
     coords: [
           [113.2626934, 22.9853783],
@@ -3900,8 +6226,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-356',
-    name: '连接匝道（N-086→N-061）',
+    segment_id: 'GZ-570',
+    name: '连接匝道（N-133→N-106）',
     kind: 'ramp',
     coords: [
           [113.2661343, 22.9952378],
@@ -3913,8 +6239,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-357',
-    name: '连接匝道（N-253→N-228）',
+    segment_id: 'GZ-571',
+    name: '连接匝道（N-354→N-314）',
     kind: 'ramp',
     coords: [
           [113.2742015, 22.9920065],
@@ -3923,8 +6249,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-358',
-    name: '连接匝道（N-247→N-259）',
+    segment_id: 'GZ-572',
+    name: '连接匝道（N-346→N-361）',
     kind: 'ramp',
     coords: [
           [113.2738314, 22.9909295],
@@ -3935,8 +6261,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-359',
-    name: '连接匝道（N-239→N-221）',
+    segment_id: 'GZ-573',
+    name: '连接匝道（N-333→N-303）',
     kind: 'ramp',
     coords: [
           [113.2734333, 22.9920812],
@@ -3946,8 +6272,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-360',
-    name: '连接匝道（N-231→N-255）',
+    segment_id: 'GZ-574',
+    name: '连接匝道（N-321→N-356）',
     kind: 'ramp',
     coords: [
           [113.2731453, 22.9908997],
@@ -3956,8 +6282,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-361',
-    name: '连接匝道（N-276→N-279）',
+    segment_id: 'GZ-575',
+    name: '连接匝道（N-388→N-393）',
     kind: 'ramp',
     coords: [
           [113.2757618, 22.9924284],
@@ -3970,8 +6296,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-362',
-    name: '连接匝道（N-182→N-176）',
+    segment_id: 'GZ-576',
+    name: '连接匝道（N-258→N-250）',
     kind: 'ramp',
     coords: [
           [113.2710295, 22.9899715],
@@ -3983,8 +6309,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-363',
-    name: '连接匝道（N-067→N-052）',
+    segment_id: 'GZ-577',
+    name: '连接匝道（N-112→N-095）',
     kind: 'ramp',
     coords: [
           [113.2649954, 22.9870813],
@@ -4001,8 +6327,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-364',
-    name: '连接匝道（N-057→N-040）',
+    segment_id: 'GZ-578',
+    name: '连接匝道（N-100→N-077）',
     kind: 'ramp',
     coords: [
           [113.2645600, 22.9946577],
@@ -4017,8 +6343,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-365',
-    name: '连接匝道（N-037→N-043）',
+    segment_id: 'GZ-579',
+    name: '连接匝道（N-074→N-083）',
     kind: 'ramp',
     coords: [
           [113.2633723, 22.9951865],
@@ -4033,8 +6359,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-366',
-    name: '连接匝道（N-056→N-054）',
+    segment_id: 'GZ-580',
+    name: '连接匝道（N-099→N-097）',
     kind: 'ramp',
     coords: [
           [113.2645415, 22.9849396],
@@ -4049,8 +6375,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-367',
-    name: '连接匝道（N-046→N-034）',
+    segment_id: 'GZ-581',
+    name: '连接匝道（N-087→N-067）',
     kind: 'ramp',
     coords: [
           [113.2640334, 22.9852079],
@@ -4069,8 +6395,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-368',
-    name: '连接匝道（N-033→N-027）',
+    segment_id: 'GZ-582',
+    name: '连接匝道（N-066→N-058）',
     kind: 'ramp',
     coords: [
           [113.2629750, 22.9864490],
@@ -4088,8 +6414,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-369',
-    name: '连接匝道（N-084→N-067）',
+    segment_id: 'GZ-583',
+    name: '连接匝道（N-131→N-112）',
     kind: 'ramp',
     coords: [
           [113.2659229, 22.9867531],
@@ -4105,8 +6431,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-370',
-    name: '连接匝道（N-122→N-102）',
+    segment_id: 'GZ-584',
+    name: '连接匝道（N-191→N-158）',
     kind: 'ramp',
     coords: [
           [113.2677322, 22.9879140],
@@ -4114,8 +6440,22 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-371',
-    name: '连接匝道（N-061→N-074）',
+    segment_id: 'GZ-585',
+    name: '连接匝道（N-410→N-387）',
+    kind: 'ramp',
+    coords: [
+          [113.2765532, 22.9849869],
+          [113.2764410, 22.9848460],
+          [113.2763013, 22.9847028],
+          [113.2761795, 22.9846425],
+          [113.2760646, 22.9846273],
+          [113.2759046, 22.9846660],
+          [113.2757340, 22.9847593]
+    ],
+  },
+  {
+    segment_id: 'GZ-586',
+    name: '连接匝道（N-106→N-120）',
     kind: 'ramp',
     coords: [
           [113.2647501, 22.9946088],
@@ -4128,8 +6468,30 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-372',
-    name: '连接匝道（N-212→N-193）',
+    segment_id: 'GZ-587',
+    name: '连接匝道（N-076→N-069）',
+    kind: 'ramp',
+    coords: [
+          [113.2636044, 22.9952105],
+          [113.2630813, 22.9959335]
+    ],
+  },
+  {
+    segment_id: 'GZ-588',
+    name: '连接匝道（N-186→N-157）',
+    kind: 'ramp',
+    coords: [
+          [113.2676400, 22.9815427],
+          [113.2674628, 22.9814869],
+          [113.2673238, 22.9814730],
+          [113.2672048, 22.9814888],
+          [113.2670923, 22.9815533],
+          [113.2668349, 22.9817548]
+    ],
+  },
+  {
+    segment_id: 'GZ-589',
+    name: '连接匝道（N-294→N-274）',
     kind: 'ramp',
     coords: [
           [113.2723342, 22.9929700],
@@ -4145,8 +6507,35 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-373',
-    name: '连接匝道（N-219→N-221）',
+    segment_id: 'GZ-590',
+    name: '连接匝道（N-199→N-173）',
+    kind: 'ramp',
+    coords: [
+          [113.2679123, 22.9966956],
+          [113.2676791, 22.9966235],
+          [113.2675320, 22.9966131],
+          [113.2674021, 22.9966605],
+          [113.2672234, 22.9967445],
+          [113.2671021, 22.9968422]
+    ],
+  },
+  {
+    segment_id: 'GZ-591',
+    name: '连接匝道（N-049→N-068）',
+    kind: 'ramp',
+    coords: [
+          [113.2622773, 22.9957537],
+          [113.2624643, 22.9958103],
+          [113.2626219, 22.9958304],
+          [113.2627106, 22.9958310],
+          [113.2628393, 22.9957930],
+          [113.2629208, 22.9957439],
+          [113.2630648, 22.9956007]
+    ],
+  },
+  {
+    segment_id: 'GZ-592',
+    name: '连接匝道（N-301→N-303）',
     kind: 'ramp',
     coords: [
           [113.2725724, 22.9938566],
@@ -4161,8 +6550,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-374',
-    name: '连接匝道（N-121→N-123）',
+    segment_id: 'GZ-593',
+    name: '连接匝道（N-189→N-192）',
     kind: 'ramp',
     coords: [
           [113.2677045, 22.9956917],
@@ -4173,8 +6562,22 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-375',
-    name: '连接匝道（N-183→N-189）',
+    segment_id: 'GZ-594',
+    name: '连接匝道（N-149→N-146）',
+    kind: 'ramp',
+    coords: [
+          [113.2666621, 22.9816473],
+          [113.2667043, 22.9815184],
+          [113.2667335, 22.9814215],
+          [113.2667470, 22.9812893],
+          [113.2667333, 22.9811630],
+          [113.2666972, 22.9810826],
+          [113.2665923, 22.9809019]
+    ],
+  },
+  {
+    segment_id: 'GZ-595',
+    name: '连接匝道（N-259→N-266）',
     kind: 'ramp',
     coords: [
           [113.2710669, 22.9906347],
@@ -4187,8 +6590,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-376',
-    name: '连接匝道（N-253→N-241）',
+    segment_id: 'GZ-596',
+    name: '连接匝道（N-354→N-336）',
     kind: 'ramp',
     coords: [
           [113.2742015, 22.9920065],
@@ -4201,8 +6604,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-377',
-    name: '连接匝道（N-158→N-156）',
+    segment_id: 'GZ-597',
+    name: '连接匝道（N-232→N-230）',
     kind: 'ramp',
     coords: [
           [113.2694819, 22.9928757],
@@ -4214,8 +6617,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-378',
-    name: '连接匝道（N-192→N-198）',
+    segment_id: 'GZ-598',
+    name: '连接匝道（N-273→N-279）',
     kind: 'ramp',
     coords: [
           [113.2715558, 22.9933351],
@@ -4227,8 +6630,35 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-379',
-    name: '连接匝道（N-246→N-235）',
+    segment_id: 'GZ-599',
+    name: '连接匝道（N-378→N-384）',
+    kind: 'ramp',
+    coords: [
+          [113.2755528, 22.9846580],
+          [113.2756246, 22.9845549],
+          [113.2756712, 22.9844675],
+          [113.2756923, 22.9843396],
+          [113.2756935, 22.9842082],
+          [113.2756884, 22.9841300],
+          [113.2756267, 22.9839785]
+    ],
+  },
+  {
+    segment_id: 'GZ-600',
+    name: '连接匝道（N-183→N-187）',
+    kind: 'ramp',
+    coords: [
+          [113.2675795, 22.9807385],
+          [113.2675206, 22.9809319],
+          [113.2675048, 22.9810355],
+          [113.2675101, 22.9811182],
+          [113.2675505, 22.9812429],
+          [113.2676557, 22.9814087]
+    ],
+  },
+  {
+    segment_id: 'GZ-601',
+    name: '连接匝道（N-345→N-327）',
     kind: 'ramp',
     coords: [
           [113.2738135, 22.9873252],
@@ -4245,8 +6675,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-380',
-    name: '连接匝道（N-232→N-228）',
+    segment_id: 'GZ-602',
+    name: '连接匝道（N-322→N-314）',
     kind: 'ramp',
     coords: [
           [113.2731588, 22.9918234],
@@ -4259,8 +6689,37 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-381',
-    name: '连接匝道（N-212→N-223）',
+    segment_id: 'GZ-603',
+    name: '连接匝道（N-404→N-407）',
+    kind: 'ramp',
+    coords: [
+          [113.2762629, 22.9919992],
+          [113.2762195, 22.9921620],
+          [113.2761893, 22.9922616],
+          [113.2761872, 22.9923495],
+          [113.2761982, 22.9924218],
+          [113.2762320, 22.9925077],
+          [113.2763475, 22.9926426]
+    ],
+  },
+  {
+    segment_id: 'GZ-604',
+    name: '连接匝道（N-022→N-032）',
+    kind: 'ramp',
+    coords: [
+          [113.2607388, 22.9929501],
+          [113.2609319, 22.9927432],
+          [113.2609906, 22.9926987],
+          [113.2610468, 22.9926687],
+          [113.2611080, 22.9926520],
+          [113.2611675, 22.9926471],
+          [113.2612189, 22.9926562],
+          [113.2613464, 22.9927123]
+    ],
+  },
+  {
+    segment_id: 'GZ-605',
+    name: '连接匝道（N-294→N-307）',
     kind: 'ramp',
     coords: [
           [113.2723342, 22.9929700],
@@ -4268,8 +6727,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-382',
-    name: '连接匝道（N-218→N-234）',
+    segment_id: 'GZ-606',
+    name: '连接匝道（N-300→N-325）',
     kind: 'ramp',
     coords: [
           [113.2725680, 22.9878803],
@@ -4283,8 +6742,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-383',
-    name: '连接匝道（N-278→N-286）',
+    segment_id: 'GZ-607',
+    name: '连接匝道（N-392→N-411）',
     kind: 'ramp',
     coords: [
           [113.2759062, 22.9875512],
@@ -4297,8 +6756,35 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-384',
-    name: '连接匝道（N-223→N-232）',
+    segment_id: 'GZ-608',
+    name: '连接匝道（N-329→N-343）',
+    kind: 'ramp',
+    coords: [
+          [113.2733915, 22.9817257],
+          [113.2734131, 22.9818122],
+          [113.2734144, 22.9818835],
+          [113.2734312, 22.9819464],
+          [113.2735134, 22.9820801],
+          [113.2737319, 22.9823112]
+    ],
+  },
+  {
+    segment_id: 'GZ-609',
+    name: '连接匝道（N-339→N-311）',
+    kind: 'ramp',
+    coords: [
+          [113.2735562, 22.9824774],
+          [113.2733981, 22.9823923],
+          [113.2732811, 22.9823625],
+          [113.2731518, 22.9823600],
+          [113.2730622, 22.9823729],
+          [113.2729732, 22.9824012],
+          [113.2728662, 22.9824600]
+    ],
+  },
+  {
+    segment_id: 'GZ-610',
+    name: '连接匝道（N-307→N-322）',
     kind: 'ramp',
     coords: [
           [113.2727620, 22.9923990],
@@ -4309,8 +6795,21 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-385',
-    name: '连接匝道（N-231→N-247）',
+    segment_id: 'GZ-611',
+    name: '连接匝道（N-415→N-409）',
+    kind: 'ramp',
+    coords: [
+          [113.2767270, 22.9839746],
+          [113.2765620, 22.9841695],
+          [113.2765182, 22.9842726],
+          [113.2765011, 22.9843794],
+          [113.2764898, 22.9844769],
+          [113.2764870, 22.9845896]
+    ],
+  },
+  {
+    segment_id: 'GZ-612',
+    name: '连接匝道（N-321→N-346）',
     kind: 'ramp',
     coords: [
           [113.2731453, 22.9908997],
@@ -4323,8 +6822,23 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-386',
-    name: '连接匝道（N-238→N-242）',
+    segment_id: 'GZ-613',
+    name: '连接匝道（N-005→N-011）',
+    kind: 'ramp',
+    coords: [
+          [113.2590716, 22.9910540],
+          [113.2592209, 22.9910918],
+          [113.2592921, 22.9911068],
+          [113.2593734, 22.9911106],
+          [113.2594608, 22.9910937],
+          [113.2595543, 22.9910600],
+          [113.2596397, 22.9910189],
+          [113.2597477, 22.9909527]
+    ],
+  },
+  {
+    segment_id: 'GZ-614',
+    name: '连接匝道（N-332→N-337）',
     kind: 'ramp',
     coords: [
           [113.2734121, 22.9878676],
@@ -4338,8 +6852,86 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-387',
-    name: '连接匝道（N-252→N-255）',
+    segment_id: 'GZ-615',
+    name: '连接匝道（N-306→N-305）',
+    kind: 'ramp',
+    coords: [
+          [113.2727361, 22.9824583],
+          [113.2728211, 22.9822628],
+          [113.2728368, 22.9821636],
+          [113.2728309, 22.9820808],
+          [113.2727959, 22.9819990],
+          [113.2727667, 22.9819354],
+          [113.2727116, 22.9818428]
+    ],
+  },
+  {
+    segment_id: 'GZ-616',
+    name: '连接匝道（N-417→N-428）',
+    kind: 'ramp',
+    coords: [
+          [113.2768877, 22.9876047],
+          [113.2770028, 22.9875901],
+          [113.2770962, 22.9875897],
+          [113.2772069, 22.9876059],
+          [113.2772650, 22.9876390],
+          [113.2773589, 22.9876996],
+          [113.2775053, 22.9878353]
+    ],
+  },
+  {
+    segment_id: 'GZ-617',
+    name: '连接匝道（N-389→N-408）',
+    kind: 'ramp',
+    coords: [
+          [113.2757803, 22.9838273],
+          [113.2760120, 22.9838885],
+          [113.2761157, 22.9839073],
+          [113.2762409, 22.9839018],
+          [113.2764767, 22.9838738]
+    ],
+  },
+  {
+    segment_id: 'GZ-618',
+    name: '连接匝道（N-400→N-375）',
+    kind: 'ramp',
+    coords: [
+          [113.2761547, 22.9929156],
+          [113.2758623, 22.9929271],
+          [113.2757197, 22.9929354],
+          [113.2756367, 22.9929487],
+          [113.2754878, 22.9930494]
+    ],
+  },
+  {
+    segment_id: 'GZ-619',
+    name: '连接匝道（N-023→N-022）',
+    kind: 'ramp',
+    coords: [
+          [113.2607613, 22.9923532],
+          [113.2608246, 22.9924765],
+          [113.2608514, 22.9925456],
+          [113.2608648, 22.9926098],
+          [113.2608595, 22.9926908],
+          [113.2607388, 22.9929501]
+    ],
+  },
+  {
+    segment_id: 'GZ-620',
+    name: '连接匝道（N-151→N-180）',
+    kind: 'ramp',
+    coords: [
+          [113.2667211, 22.9808159],
+          [113.2668818, 22.9808411],
+          [113.2669874, 22.9808330],
+          [113.2670789, 22.9808120],
+          [113.2671827, 22.9807666],
+          [113.2673596, 22.9806548]
+    ],
+  },
+  {
+    segment_id: 'GZ-621',
+    name: '连接匝道（N-352→N-356）',
     kind: 'ramp',
     coords: [
           [113.2741517, 22.9910612],
@@ -4352,8 +6944,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-388',
-    name: '连接匝道（N-240→N-224）',
+    segment_id: 'GZ-622',
+    name: '连接匝道（N-335→N-309）',
     kind: 'ramp',
     coords: [
           [113.2734496, 22.9885477],
@@ -4366,8 +6958,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-389',
-    name: '连接匝道（N-270→N-271）',
+    segment_id: 'GZ-623',
+    name: '连接匝道（N-374→N-376）',
     kind: 'ramp',
     coords: [
           [113.2754386, 22.9891972],
@@ -4380,8 +6972,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-390',
-    name: '连接匝道（N-203→N-217）',
+    segment_id: 'GZ-624',
+    name: '连接匝道（N-285→N-299）',
     kind: 'ramp',
     coords: [
           [113.2719452, 22.9939529],
@@ -4393,8 +6985,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-391',
-    name: '连接匝道（N-232→N-241）',
+    segment_id: 'GZ-625',
+    name: '连接匝道（N-322→N-336）',
     kind: 'ramp',
     coords: [
           [113.2731588, 22.9918234],
@@ -4412,8 +7004,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-392',
-    name: '连接匝道（N-214→N-216）',
+    segment_id: 'GZ-626',
+    name: '连接匝道（N-296→N-298）',
     kind: 'ramp',
     coords: [
           [113.2724823, 22.9885084],
@@ -4425,8 +7017,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-393',
-    name: '连接匝道（N-252→N-247）',
+    segment_id: 'GZ-627',
+    name: '连接匝道（N-352→N-346）',
     kind: 'ramp',
     coords: [
           [113.2741517, 22.9910612],
@@ -4443,8 +7035,21 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-394',
-    name: '连接匝道（N-244→N-254）',
+    segment_id: 'GZ-628',
+    name: '连接匝道（N-436→N-434）',
+    kind: 'ramp',
+    coords: [
+          [113.2782147, 22.9898570],
+          [113.2782000, 22.9900161],
+          [113.2781850, 22.9900939],
+          [113.2781630, 22.9901712],
+          [113.2781232, 22.9902564],
+          [113.2780101, 22.9903872]
+    ],
+  },
+  {
+    segment_id: 'GZ-629',
+    name: '连接匝道（N-342→N-355）',
     kind: 'ramp',
     coords: [
           [113.2736610, 22.9945594],
@@ -4457,8 +7062,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-395',
-    name: '连接匝道（N-259→N-258）',
+    segment_id: 'GZ-630',
+    name: '连接匝道（N-361→N-360）',
     kind: 'ramp',
     coords: [
           [113.2746562, 22.9898305],
@@ -4472,8 +7077,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-396',
-    name: '连接匝道（N-042→N-051）',
+    segment_id: 'GZ-631',
+    name: '连接匝道（N-079→N-092）',
     kind: 'ramp',
     coords: [
           [113.2636803, 22.9882920],
@@ -4485,8 +7090,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-397',
-    name: '连接匝道（N-245→N-243）',
+    segment_id: 'GZ-632',
+    name: '连接匝道（N-344→N-341）',
     kind: 'ramp',
     coords: [
           [113.2737682, 22.9951425],
@@ -4498,8 +7103,20 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-398',
-    name: '连接匝道（N-176→N-173）',
+    segment_id: 'GZ-633',
+    name: '连接匝道（N-014→N-007）',
+    kind: 'ramp',
+    coords: [
+          [113.2599651, 22.9918421],
+          [113.2597919, 22.9917472],
+          [113.2596878, 22.9917390],
+          [113.2595586, 22.9917600],
+          [113.2594425, 22.9918310]
+    ],
+  },
+  {
+    segment_id: 'GZ-634',
+    name: '连接匝道（N-250→N-247）',
     kind: 'ramp',
     coords: [
           [113.2706239, 22.9910681],
@@ -4507,8 +7124,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-399',
-    name: '连接匝道（N-184→N-179）',
+    segment_id: 'GZ-635',
+    name: '连接匝道（N-260→N-255）',
     kind: 'ramp',
     coords: [
           [113.2710768, 22.9896293],
@@ -4521,8 +7138,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-400',
-    name: '连接匝道（N-260→N-268）',
+    segment_id: 'GZ-636',
+    name: '连接匝道（N-362→N-371）',
     kind: 'ramp',
     coords: [
           [113.2747296, 22.9892590],
@@ -4534,8 +7151,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-401',
-    name: '连接匝道（N-051→N-049）',
+    segment_id: 'GZ-637',
+    name: '连接匝道（N-092→N-090）',
     kind: 'ramp',
     coords: [
           [113.2642411, 22.9881383],
@@ -4547,8 +7164,18 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-402',
-    name: '连接匝道（N-115→N-113）',
+    segment_id: 'GZ-638',
+    name: '连接匝道（N-036→N-028）',
+    kind: 'ramp',
+    coords: [
+          [113.2614539, 22.9852330],
+          [113.2612569, 22.9851719],
+          [113.2609721, 22.9850831]
+    ],
+  },
+  {
+    segment_id: 'GZ-639',
+    name: '连接匝道（N-179→N-175）',
     kind: 'ramp',
     coords: [
           [113.2673522, 22.9905561],
@@ -4561,8 +7188,34 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-403',
-    name: '连接匝道（N-173→N-171）',
+    segment_id: 'GZ-640',
+    name: '连接匝道（N-308→N-326）',
+    kind: 'ramp',
+    coords: [
+          [113.2728044, 22.9816290],
+          [113.2730017, 22.9816907],
+          [113.2730796, 22.9816999],
+          [113.2731567, 22.9816896],
+          [113.2732270, 22.9816672],
+          [113.2732935, 22.9816549]
+    ],
+  },
+  {
+    segment_id: 'GZ-641',
+    name: '连接匝道（N-015→N-013）',
+    kind: 'ramp',
+    coords: [
+          [113.2600397, 22.9916611],
+          [113.2599456, 22.9915707],
+          [113.2599067, 22.9915071],
+          [113.2598859, 22.9914275],
+          [113.2598798, 22.9913643],
+          [113.2599132, 22.9912501]
+    ],
+  },
+  {
+    segment_id: 'GZ-642',
+    name: '连接匝道（N-247→N-245）',
     kind: 'ramp',
     coords: [
           [113.2703045, 22.9915009],
@@ -4570,8 +7223,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-404',
-    name: '连接匝道（N-259→N-263）',
+    segment_id: 'GZ-643',
+    name: '连接匝道（N-386→N-400）',
+    kind: 'ramp',
+    coords: [
+          [113.2756970, 22.9927591],
+          [113.2761547, 22.9929156]
+    ],
+  },
+  {
+    segment_id: 'GZ-644',
+    name: '连接匝道（N-407→N-391）',
+    kind: 'ramp',
+    coords: [
+          [113.2763475, 22.9926426],
+          [113.2759042, 22.9924865]
+    ],
+  },
+  {
+    segment_id: 'GZ-645',
+    name: '连接匝道（N-361→N-366）',
     kind: 'ramp',
     coords: [
           [113.2746562, 22.9898305],
@@ -4585,8 +7256,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-405',
-    name: '连接匝道（N-112→N-098）',
+    segment_id: 'GZ-646',
+    name: '连接匝道（N-171→N-148）',
     kind: 'ramp',
     coords: [
           [113.2670868, 22.9900741],
@@ -4599,8 +7270,19 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-406',
-    name: '连接匝道（N-030→N-021）',
+    segment_id: 'GZ-647',
+    name: '连接匝道（N-438→N-446）',
+    kind: 'ramp',
+    coords: [
+          [113.2783705, 22.9898001],
+          [113.2785169, 22.9899116],
+          [113.2786299, 22.9899596],
+          [113.2787780, 22.9899747]
+    ],
+  },
+  {
+    segment_id: 'GZ-648',
+    name: '连接匝道（N-062→N-052）',
     kind: 'ramp',
     coords: [
           [113.2628270, 22.9879045],
@@ -4611,8 +7293,23 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-407',
-    name: '连接匝道（N-209→N-212）',
+    segment_id: 'GZ-649',
+    name: '连接匝道（N-041→N-042）',
+    kind: 'ramp',
+    coords: [
+          [113.2618651, 22.9853639],
+          [113.2617994, 22.9853211],
+          [113.2617831, 22.9852791],
+          [113.2617778, 22.9852337],
+          [113.2617881, 22.9851905],
+          [113.2618216, 22.9851495],
+          [113.2618886, 22.9851210],
+          [113.2619639, 22.9851131]
+    ],
+  },
+  {
+    segment_id: 'GZ-650',
+    name: '连接匝道（N-291→N-294）',
     kind: 'ramp',
     coords: [
           [113.2721947, 22.9933376],
@@ -4620,8 +7317,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-408',
-    name: '连接匝道（N-221→N-213）',
+    segment_id: 'GZ-651',
+    name: '连接匝道（N-303→N-295）',
     kind: 'ramp',
     coords: [
           [113.2726398, 22.9931497],
@@ -4630,8 +7327,19 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-409',
-    name: '连接匝道（N-031→N-029）',
+    segment_id: 'GZ-652',
+    name: '连接匝道（N-069→N-071）',
+    kind: 'ramp',
+    coords: [
+          [113.2630813, 22.9959335],
+          [113.2630784, 22.9960818],
+          [113.2631119, 22.9962208],
+          [113.2631690, 22.9962871]
+    ],
+  },
+  {
+    segment_id: 'GZ-653',
+    name: '连接匝道（N-063→N-061）',
     kind: 'ramp',
     coords: [
           [113.2628965, 22.9854414],
@@ -4645,8 +7353,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-410',
-    name: '连接匝道（N-017→N-022）',
+    segment_id: 'GZ-654',
+    name: '连接匝道（N-047→N-053）',
     kind: 'ramp',
     coords: [
           [113.2621828, 22.9876948],
@@ -4661,8 +7369,21 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-411',
-    name: '连接匝道（N-063→N-064）',
+    segment_id: 'GZ-655',
+    name: '连接匝道（N-017→N-019）',
+    kind: 'ramp',
+    coords: [
+          [113.2601956, 22.9919946],
+          [113.2601306, 22.9919092],
+          [113.2601265, 22.9918619],
+          [113.2601699, 22.9918113],
+          [113.2602116, 22.9917884],
+          [113.2602911, 22.9917914]
+    ],
+  },
+  {
+    segment_id: 'GZ-656',
+    name: '连接匝道（N-108→N-109）',
     kind: 'ramp',
     coords: [
           [113.2647815, 22.9828971],
@@ -4676,8 +7397,21 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-412',
-    name: '连接匝道（N-137→N-141）',
+    segment_id: 'GZ-657',
+    name: '连接匝道（N-304→N-310）',
+    kind: 'ramp',
+    coords: [
+          [113.2726550, 22.9817893],
+          [113.2727430, 22.9818309],
+          [113.2728123, 22.9818288],
+          [113.2728576, 22.9817942],
+          [113.2728684, 22.9817487],
+          [113.2728668, 22.9816815]
+    ],
+  },
+  {
+    segment_id: 'GZ-658',
+    name: '连接匝道（N-211→N-215）',
     kind: 'ramp',
     coords: [
           [113.2683809, 22.9883152],
@@ -4689,8 +7423,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-413',
-    name: '连接匝道（N-080→N-076）',
+    segment_id: 'GZ-659',
+    name: '连接匝道（N-126→N-122）',
     kind: 'ramp',
     coords: [
           [113.2657104, 22.9832688],
@@ -4702,8 +7436,56 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-414',
-    name: '连接匝道（N-271→N-274）',
+    segment_id: 'GZ-660',
+    name: '连接匝道（N-380→N-372）',
+    kind: 'ramp',
+    coords: [
+          [113.2755668, 22.9836651],
+          [113.2755833, 22.9837172],
+          [113.2755782, 22.9837746],
+          [113.2755206, 22.9838236],
+          [113.2754585, 22.9838369],
+          [113.2753986, 22.9838190]
+    ],
+  },
+  {
+    segment_id: 'GZ-661',
+    name: '连接匝道（N-268→N-272）',
+    kind: 'ramp',
+    coords: [
+          [113.2713130, 22.9805182],
+          [113.2712960, 22.9804550],
+          [113.2713011, 22.9804132],
+          [113.2713739, 22.9803620],
+          [113.2714263, 22.9803564],
+          [113.2714847, 22.9803664]
+    ],
+  },
+  {
+    segment_id: 'GZ-662',
+    name: '连接匝道（N-169→N-154）',
+    kind: 'ramp',
+    coords: [
+          [113.2670701, 22.9969117],
+          [113.2667792, 22.9968008]
+    ],
+  },
+  {
+    segment_id: 'GZ-663',
+    name: '连接匝道（N-413→N-410）',
+    kind: 'ramp',
+    coords: [
+          [113.2766539, 22.9848581],
+          [113.2766173, 22.9848329],
+          [113.2765738, 22.9848237],
+          [113.2765398, 22.9848415],
+          [113.2765289, 22.9848838],
+          [113.2765532, 22.9849869]
+    ],
+  },
+  {
+    segment_id: 'GZ-664',
+    name: '连接匝道（N-376→N-385）',
     kind: 'ramp',
     coords: [
           [113.2755025, 22.9897507],
@@ -4711,8 +7493,66 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-415',
-    name: '连接匝道（N-189→N-182）',
+    segment_id: 'GZ-665',
+    name: '连接匝道（N-338→N-330）',
+    kind: 'ramp',
+    coords: [
+          [113.2735511, 22.9821861],
+          [113.2734880, 22.9821732],
+          [113.2734490, 22.9821760],
+          [113.2734128, 22.9822013],
+          [113.2733877, 22.9822333],
+          [113.2733859, 22.9822711],
+          [113.2734036, 22.9823218]
+    ],
+  },
+  {
+    segment_id: 'GZ-666',
+    name: '连接匝道（N-069→N-064）',
+    kind: 'ramp',
+    coords: [
+          [113.2630813, 22.9959335],
+          [113.2629208, 22.9961561]
+    ],
+  },
+  {
+    segment_id: 'GZ-667',
+    name: '连接匝道（N-019→N-015）',
+    kind: 'ramp',
+    coords: [
+          [113.2602911, 22.9917914],
+          [113.2600397, 22.9916611]
+    ],
+  },
+  {
+    segment_id: 'GZ-668',
+    name: '连接匝道（N-147→N-155）',
+    kind: 'ramp',
+    coords: [
+          [113.2666204, 22.9817033],
+          [113.2666689, 22.9816736],
+          [113.2667269, 22.9816717],
+          [113.2667782, 22.9816995],
+          [113.2668021, 22.9817443],
+          [113.2668021, 22.9817978]
+    ],
+  },
+  {
+    segment_id: 'GZ-669',
+    name: '连接匝道（N-431→N-432）',
+    kind: 'ramp',
+    coords: [
+          [113.2778038, 22.9905131],
+          [113.2778773, 22.9904924],
+          [113.2779205, 22.9905031],
+          [113.2779456, 22.9905593],
+          [113.2779300, 22.9906012],
+          [113.2779036, 22.9906386]
+    ],
+  },
+  {
+    segment_id: 'GZ-670',
+    name: '连接匝道（N-266→N-258）',
     kind: 'ramp',
     coords: [
           [113.2712729, 22.9901019],
@@ -4720,8 +7560,44 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-416',
-    name: '连接匝道（N-071→N-075）',
+    segment_id: 'GZ-671',
+    name: '连接匝道（N-096→N-094）',
+    kind: 'ramp',
+    coords: [
+          [113.2644784, 22.9828454],
+          [113.2644107, 22.9827728],
+          [113.2643659, 22.9827437],
+          [113.2643497, 22.9827111],
+          [113.2643569, 22.9826863],
+          [113.2643776, 22.9826787],
+          [113.2644096, 22.9826850]
+    ],
+  },
+  {
+    segment_id: 'GZ-672',
+    name: '连接匝道（N-381→N-373）',
+    kind: 'ramp',
+    coords: [
+          [113.2756050, 22.9849037],
+          [113.2756034, 22.9848320],
+          [113.2755897, 22.9847994],
+          [113.2755445, 22.9847723],
+          [113.2754953, 22.9847686],
+          [113.2754391, 22.9847842]
+    ],
+  },
+  {
+    segment_id: 'GZ-673',
+    name: '连接匝道（N-408→N-415）',
+    kind: 'ramp',
+    coords: [
+          [113.2764767, 22.9838738],
+          [113.2767270, 22.9839746]
+    ],
+  },
+  {
+    segment_id: 'GZ-674',
+    name: '连接匝道（N-116→N-121）',
     kind: 'ramp',
     coords: [
           [113.2652710, 22.9835212],
@@ -4733,8 +7609,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-417',
-    name: '连接匝道（N-027→N-028）',
+    segment_id: 'GZ-675',
+    name: '连接匝道（N-028→N-021）',
+    kind: 'ramp',
+    coords: [
+          [113.2609721, 22.9850831],
+          [113.2607184, 22.9850134]
+    ],
+  },
+  {
+    segment_id: 'GZ-676',
+    name: '连接匝道（N-058→N-059）',
     kind: 'ramp',
     coords: [
           [113.2626517, 22.9856174],
@@ -4742,8 +7627,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-418',
-    name: '连接匝道（N-198→N-203）',
+    segment_id: 'GZ-677',
+    name: '连接匝道（N-279→N-285）',
     kind: 'ramp',
     coords: [
           [113.2716876, 22.9940011],
@@ -4751,8 +7636,56 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-419',
-    name: '连接匝道（N-171→N-169）',
+    segment_id: 'GZ-678',
+    name: '连接匝道（N-018→N-014）',
+    kind: 'ramp',
+    coords: [
+          [113.2602198, 22.9918744],
+          [113.2599651, 22.9918421]
+    ],
+  },
+  {
+    segment_id: 'GZ-679',
+    name: '连接匝道（N-429→N-430）',
+    kind: 'ramp',
+    coords: [
+          [113.2775386, 22.9879588],
+          [113.2775533, 22.9878946],
+          [113.2775754, 22.9878771],
+          [113.2776161, 22.9878699],
+          [113.2776557, 22.9878837],
+          [113.2776991, 22.9879368]
+    ],
+  },
+  {
+    segment_id: 'GZ-680',
+    name: '连接匝道（N-420→N-419）',
+    kind: 'ramp',
+    coords: [
+          [113.2772179, 22.9865206],
+          [113.2772138, 22.9865695],
+          [113.2771876, 22.9866044],
+          [113.2771363, 22.9866197],
+          [113.2770956, 22.9866079],
+          [113.2770647, 22.9865643]
+    ],
+  },
+  {
+    segment_id: 'GZ-681',
+    name: '连接匝道（N-437→N-435）',
+    kind: 'ramp',
+    coords: [
+          [113.2782554, 22.9895671],
+          [113.2782530, 22.9896115],
+          [113.2782379, 22.9896440],
+          [113.2781865, 22.9896593],
+          [113.2781458, 22.9896475],
+          [113.2781152, 22.9896066]
+    ],
+  },
+  {
+    segment_id: 'GZ-682',
+    name: '连接匝道（N-245→N-243）',
     kind: 'ramp',
     coords: [
           [113.2701152, 22.9919174],
@@ -4760,8 +7693,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-420',
-    name: '连接匝道（N-268→N-270）',
+    segment_id: 'GZ-683',
+    name: '连接匝道（N-384→N-389）',
+    kind: 'ramp',
+    coords: [
+          [113.2756267, 22.9839785],
+          [113.2757803, 22.9838273]
+    ],
+  },
+  {
+    segment_id: 'GZ-684',
+    name: '连接匝道（N-371→N-374）',
     kind: 'ramp',
     coords: [
           [113.2752413, 22.9891291],
@@ -4769,8 +7711,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-421',
-    name: '连接匝道（N-234→N-238）',
+    segment_id: 'GZ-685',
+    name: '连接匝道（N-325→N-332）',
     kind: 'ramp',
     coords: [
           [113.2732514, 22.9877430],
@@ -4778,8 +7720,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-422',
-    name: '连接匝道（N-085→N-087）',
+    segment_id: 'GZ-686',
+    name: '连接匝道（N-157→N-149）',
+    kind: 'ramp',
+    coords: [
+          [113.2668349, 22.9817548],
+          [113.2666621, 22.9816473]
+    ],
+  },
+  {
+    segment_id: 'GZ-687',
+    name: '连接匝道（N-132→N-134）',
     kind: 'ramp',
     coords: [
           [113.2661141, 22.9838919],
@@ -4791,8 +7742,30 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-423',
-    name: '连接匝道（N-255→N-251）',
+    segment_id: 'GZ-688',
+    name: '连接匝道（N-046→N-045）',
+    kind: 'ramp',
+    coords: [
+          [113.2621268, 22.9846093],
+          [113.2620734, 22.9846153],
+          [113.2620400, 22.9846099],
+          [113.2620229, 22.9845814],
+          [113.2620292, 22.9845538],
+          [113.2620618, 22.9845193]
+    ],
+  },
+  {
+    segment_id: 'GZ-689',
+    name: '连接匝道（N-387→N-381）',
+    kind: 'ramp',
+    coords: [
+          [113.2757340, 22.9847593],
+          [113.2756050, 22.9849037]
+    ],
+  },
+  {
+    segment_id: 'GZ-690',
+    name: '连接匝道（N-356→N-350）',
     kind: 'ramp',
     coords: [
           [113.2742905, 22.9916256],
@@ -4800,8 +7773,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-424',
-    name: '连接匝道（N-213→N-209）',
+    segment_id: 'GZ-691',
+    name: '连接匝道（N-373→N-378）',
+    kind: 'ramp',
+    coords: [
+          [113.2754391, 22.9847842],
+          [113.2755528, 22.9846580]
+    ],
+  },
+  {
+    segment_id: 'GZ-692',
+    name: '连接匝道（N-295→N-291）',
     kind: 'ramp',
     coords: [
           [113.2723347, 22.9934159],
@@ -4809,8 +7791,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-425',
-    name: '连接匝道（N-277→N-276）',
+    segment_id: 'GZ-693',
+    name: '连接匝道（N-146→N-151）',
+    kind: 'ramp',
+    coords: [
+          [113.2665923, 22.9809019],
+          [113.2667211, 22.9808159]
+    ],
+  },
+  {
+    segment_id: 'GZ-694',
+    name: '连接匝道（N-391→N-388）',
     kind: 'ramp',
     coords: [
           [113.2759042, 22.9924865],
@@ -4818,8 +7809,17 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-426',
-    name: '连接匝道（N-258→N-260）',
+    segment_id: 'GZ-695',
+    name: '连接匝道（N-194→N-190）',
+    kind: 'ramp',
+    coords: [
+          [113.2677962, 22.9814935],
+          [113.2677162, 22.9815966]
+    ],
+  },
+  {
+    segment_id: 'GZ-696',
+    name: '连接匝道（N-360→N-362）',
     kind: 'ramp',
     coords: [
           [113.2745980, 22.9892851],
@@ -4827,8 +7827,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-427',
-    name: '连接匝道（N-113→N-112）',
+    segment_id: 'GZ-697',
+    name: '连接匝道（N-175→N-171）',
     kind: 'ramp',
     coords: [
           [113.2671934, 22.9901488],
@@ -4836,8 +7836,35 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-428',
-    name: '连接匝道（N-217→N-219）',
+    segment_id: 'GZ-698',
+    name: '连接匝道（N-018→N-017）',
+    kind: 'ramp',
+    coords: [
+          [113.2602198, 22.9918744],
+          [113.2601956, 22.9919946]
+    ],
+  },
+  {
+    segment_id: 'GZ-699',
+    name: '连接匝道（N-311→N-306）',
+    kind: 'ramp',
+    coords: [
+          [113.2728662, 22.9824600],
+          [113.2727361, 22.9824583]
+    ],
+  },
+  {
+    segment_id: 'GZ-700',
+    name: '连接匝道（N-326→N-329）',
+    kind: 'ramp',
+    coords: [
+          [113.2732935, 22.9816549],
+          [113.2733915, 22.9817257]
+    ],
+  },
+  {
+    segment_id: 'GZ-701',
+    name: '连接匝道（N-299→N-301）',
     kind: 'ramp',
     coords: [
           [113.2725644, 22.9939699],
@@ -4845,8 +7872,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-429',
-    name: '连接匝道（N-193→N-192）',
+    segment_id: 'GZ-702',
+    name: '连接匝道（N-274→N-273）',
     kind: 'ramp',
     coords: [
           [113.2715937, 22.9932324],
@@ -4854,8 +7881,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-430',
-    name: '连接匝道（N-242→N-240）',
+    segment_id: 'GZ-703',
+    name: '连接匝道（N-337→N-335）',
     kind: 'ramp',
     coords: [
           [113.2735128, 22.9884755],
@@ -4863,8 +7890,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-431',
-    name: '连接匝道（N-243→N-244）',
+    segment_id: 'GZ-704',
+    name: '连接匝道（N-341→N-342）',
     kind: 'ramp',
     coords: [
           [113.2736110, 22.9946312],
@@ -4872,8 +7899,26 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-432',
-    name: '连接匝道（N-216→N-218）',
+    segment_id: 'GZ-705',
+    name: '连接匝道（N-173→N-169）',
+    kind: 'ramp',
+    coords: [
+          [113.2671021, 22.9968422],
+          [113.2670701, 22.9969117]
+    ],
+  },
+  {
+    segment_id: 'GZ-706',
+    name: '连接匝道（N-305→N-304）',
+    kind: 'ramp',
+    coords: [
+          [113.2727116, 22.9818428],
+          [113.2726550, 22.9817893]
+    ],
+  },
+  {
+    segment_id: 'GZ-707',
+    name: '连接匝道（N-298→N-300）',
     kind: 'ramp',
     coords: [
           [113.2725444, 22.9879386],
@@ -4881,8 +7926,8 @@ export const STATION_GZ_SEGMENTS: PackSegment[] = [
     ],
   },
   {
-    segment_id: 'GZ-433',
-    name: '连接匝道（N-241→N-239）',
+    segment_id: 'GZ-708',
+    name: '连接匝道（N-336→N-333）',
     kind: 'ramp',
     coords: [
           [113.2734456, 22.9920695],
