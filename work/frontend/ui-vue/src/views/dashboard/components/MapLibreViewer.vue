@@ -73,7 +73,7 @@ import {
   type CameraPin,
 } from '../../../shared/cameras'
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
-import { basemapEnabled } from '../../../shared/settings'
+import { basemapEnabled, directionsVisible } from '../../../shared/settings'
 // IKOQEJ：方向标记（只读 enriched 字段；不是判级/契约数据）
 import {
   bearingDeg,
@@ -210,7 +210,11 @@ const props = withDefaults(
   },
 )
 
-const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
+const emit = defineEmits<{
+  (e: 'select', segmentId: string): void
+  /** 点了图例右上角的叉键（收起由父组件决定，因为重开的按钮在工具条上） */
+  (e: 'close-legend'): void
+}>()
 
 /** 容器**始终渲染**（不用 v-if 挂载），从根上避免「容器还没进 DOM 就初始化」那类静默失败 */
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -369,7 +373,19 @@ function addDirectionImages(map: MapLibreMap): void {
   }
 }
 
-/** 方向标记图层（symbol + icon，无 text/glyphs 依赖；随地图旋转对齐） */
+/**
+ * 方向标记图层（symbol + icon，无 text/glyphs 依赖；随地图旋转对齐）。
+ *
+ * `icon-size` 的分档（业主 2026-10-19 口径）：
+ *   业主原话是「缩小的时候箭头大小不变，结果挤在一起把地图挡住了」—— 所以这里
+ *   **低缩放要明显变小**，高缩放（≥15，拟合后的实际工作档位）维持原尺寸不再涨。
+ *   为什么不是"完全按世界坐标等比"（每 +1 档 ×2）：那样 zoom 17 时单个图标会到
+ *   100+ px，反过来把线盖死。折中成每降一档 ×0.7 左右，缩到 10 档时只剩原尺寸的 1/7。
+ *   另：`icon-allow-overlap` / `icon-ignore-placement` 保持 `true` —— 关掉会做**随机避让**，
+ *   有些路段的方向箭头会凭空消失，方向语义就不完整了（变小可以，"缺失"不行）。
+ *   `visibility` 跟着 `directionsVisible` 走：换样式重建图层时也要带上，否则关掉后
+ *   一切底图/设置就又把箭头画回来。
+ */
 function directionLayerSpec(): SymbolLayerSpecification {
   return {
     id: LAYER_DIRECTION,
@@ -377,11 +393,22 @@ function directionLayerSpec(): SymbolLayerSpecification {
     source: DIR_SRC,
     layout: {
       'icon-image': ['get', 'icon'],
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
+      'icon-size': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        10, 0.11,
+        11, 0.18,
+        12, 0.27,
+        13, 0.38,
+        14, 0.52,
+        15, 0.8,
+      ],
       'icon-rotate': ['get', 'rotate'],
       'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
+      visibility: directionsVisible.value ? 'visible' : 'none',
     },
   }
 }
@@ -396,6 +423,21 @@ function addDirectionLayers(map: MapLibreMap): void {
     const before = map.getLayer(LAYER_ROUTE_ALT_HALO) ? LAYER_ROUTE_ALT_HALO : undefined
     map.addLayer(directionLayerSpec(), before)
   }
+  applyDirectionVisibility(map)
+}
+
+/**
+ * 把「方向箭头显隐」贴到图层上。
+ * 图层还没建（或样式正在换）时**静默跳过** —— `addDirectionLayers` 会再调一次，
+ * 不需要在这里排队重试。
+ */
+function applyDirectionVisibility(map: MapLibreMap): void {
+  if (!map.getLayer(LAYER_DIRECTION)) return
+  map.setLayoutProperty(
+    LAYER_DIRECTION,
+    'visibility',
+    directionsVisible.value ? 'visible' : 'none',
+  )
 }
 
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
@@ -838,6 +880,9 @@ function applyViewState(map: MapLibreMap): void {
   addDirectionImages(map)
   const dirSrc = map.getSource(DIR_SRC) as GeoJSONSource | undefined
   if (dirSrc) void dirSrc.setData(directionGeoJson())
+  // 换样式会按 `directionLayerSpec()` 重建图层（里面已带 visibility），这里再贴一次兜底：
+  // 万一样式没换、只是数据刷新，用户刚关掉的箭头不该被这次刷新带回来。
+  applyDirectionVisibility(map)
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
@@ -1034,6 +1079,13 @@ watch(basemapEnabled, () => {
   void applyBasemap(map)
 })
 
+/** 方向箭头开关：只切图层 visibility，不动数据（关掉再开不用重建源） */
+watch(directionsVisible, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  applyDirectionVisibility(map)
+})
+
 watch(
   () => props.vehicles,
   () => {
@@ -1105,92 +1157,109 @@ onUnmounted(() => {
       {{ hoverChip }}
     </div>
 
-    <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级） -->
+    <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级）
+         面板压在地图左下角,**会挡住那一片的路网** —— 右上角给一个叉键收起来(业主 2026-10-19);
+         收起后重新打开的按钮在地图工具条「Z · 61 段」左边(DashboardView),两个方向都能回来。 -->
     <div v-if="legend" class="legend">
-      <!-- IKOQEJ · 方向标记图例：两种颜色模式都有（方向标不随拥堵/流量换色） -->
-      <div class="lg-title">方向标记（只读 enriched）</div>
-      <div class="lg-row">
-        <span class="dir-mark" :style="{ color: '#1D5FD8' }">↑</span>单向 ·
-        <span class="dir-mark both" :style="{ color: '#6D28D9' }">↕</span>双向（左右两向）·
-        <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
-      </div>
-      <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，非实测）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
-      <div class="lg-sep" />
-      <template v-if="isFlow">
-        <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>
-        <div v-for="band in FLOW_BANDS" :key="band.band" class="lg-row">
-          <span class="dot" :style="{ background: band.color }" />
-          {{ band.band }} 档 {{ band.name }} · {{ flowRangeLabel(band) }}
+      <button
+        type="button"
+        class="lg-close"
+        title="收起图例"
+        aria-label="收起图例"
+        @click="emit('close-legend')"
+      >
+        ×
+      </button>
+      <!-- 面板内容单独一层滚动：叉键钉在外层右上角，滚动时不会跟着跑掉 -->
+      <div class="lg-body">
+        <!-- IKOQEJ · 方向标记图例：两种颜色模式都有（方向标不随拥堵/流量换色） -->
+        <div class="lg-title">方向标记（只读 enriched）</div>
+        <div class="lg-row">
+          <span class="dir-mark" :style="{ color: '#1D5FD8' }">↑</span>单向 ·
+          <span class="dir-mark both" :style="{ color: '#6D28D9' }">↕</span>双向（左右两向）·
+          <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
         </div>
-        <div class="lg-row"><LevelBadge :level="1" stale />灰 = 无流量数据（缺 q / 数据陈旧），不硬填</div>
-        <div class="lg-note strong">{{ FLOW_MODE_LABEL }} · {{ FLOW_MODE_NOTE }}</div>
-        <div class="lg-note">{{ FLOW_COLOR_NOTE }}</div>
+        <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，非实测）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
+        <!-- 箭头被关掉时说明一句：否则图例上还画着三种箭头，图上却一个都没有，会以为是画丢了 -->
+        <div v-if="!directionsVisible" class="lg-note strong">当前已隐藏方向箭头（工具条「箭头」键可打开）</div>
+        <div class="lg-note">箭头随缩放变小：放大看细节，缩小只看走向，不会糊住路段线。</div>
         <div class="lg-sep" />
-        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
-          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
-        </div>
-        <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
-        <template v-if="hasRoutes">
-          <div class="lg-sep" />
-          <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
-          <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
-          <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
-          <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
-        </template>
-        <!-- 「只摄像头段上色」是拥堵版的策略；流量版对所有有 q 的段上色，这里只解释图钉语义 -->
-        <template v-if="cameraOnly">
-          <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
-          <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
-          <div class="lg-note">流量版按 q 分档上色：源台账无布点的段只要有流量数据同样上色（颜色只表示流量大小）</div>
-        </template>
-        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
-      </template>
-      <template v-else-if="isIndex">
-        <div class="lg-title">拥挤指数色阶(ci · 0~100)</div>
-        <div class="lg-ramp" :style="{ background: ciGradientCss() }" />
-        <div class="lg-scale">
-          <span v-for="b in CI_BANDS" :key="b">{{ b }}</span>
-        </div>
-        <div class="lg-note">{{ CI_BAND_NOTE }}</div>
-        <div class="lg-note strong">{{ CI_DISCLAIMER }}</div>
-        <div class="lg-sep" />
-        <div class="lg-row"><LevelBadge :level="1" stale />灰 = 数据不可用(缺 ci 或数据陈旧)</div>
-        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
-          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
-        </div>
-        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
-      </template>
-      <template v-else>
-        <div class="lg-title">四级编码(颜色 · 竖条 · 文字)</div>
-        <div class="lg-row"><LevelBadge :level="1" /></div>
-        <div class="lg-row"><LevelBadge :level="2" /></div>
-        <div class="lg-row"><LevelBadge :level="3" /></div>
-        <div class="lg-row"><LevelBadge :level="4" /></div>
-        <div class="lg-row"><LevelBadge :level="1" stale /></div>
-        <div class="lg-sep" />
-        <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
-          <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
-        </div>
-        <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
-        <template v-if="hasRoutes">
-          <div class="lg-sep" />
-          <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
-          <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
-          <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
-          <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
-        </template>
-        <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
-        <template v-if="cameraOnly">
-          <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
-          <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
-          <div class="lg-note">
-            图钉仅源台账布点（初始映射，不代表一期总数）；一期 N 段 = N 摄像头 = N 视频（mock 复用，画面见右栏路段卡）；
-            拥堵版仅源台账布点段上色。
+        <template v-if="isFlow">
+          <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>
+          <div v-for="band in FLOW_BANDS" :key="band.band" class="lg-row">
+            <span class="dot" :style="{ background: band.color }" />
+            {{ band.band }} 档 {{ band.name }} · {{ flowRangeLabel(band) }}
           </div>
+          <div class="lg-row"><LevelBadge :level="1" stale />灰 = 无流量数据（缺 q / 数据陈旧），不硬填</div>
+          <div class="lg-note strong">{{ FLOW_MODE_LABEL }} · {{ FLOW_MODE_NOTE }}</div>
+          <div class="lg-note">{{ FLOW_COLOR_NOTE }}</div>
+          <div class="lg-sep" />
+          <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+            <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+          </div>
+          <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
+          <template v-if="hasRoutes">
+            <div class="lg-sep" />
+            <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
+            <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
+            <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+            <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
+          </template>
+          <!-- 「只摄像头段上色」是拥堵版的策略；流量版对所有有 q 的段上色，这里只解释图钉语义 -->
+          <template v-if="cameraOnly">
+            <div class="lg-sep" />
+            <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
+            <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
+            <div class="lg-note">流量版按 q 分档上色：源台账无布点的段只要有流量数据同样上色（颜色只表示流量大小）</div>
+          </template>
+          <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
         </template>
-      </template>
+        <template v-else-if="isIndex">
+          <div class="lg-title">拥挤指数色阶(ci · 0~100)</div>
+          <div class="lg-ramp" :style="{ background: ciGradientCss() }" />
+          <div class="lg-scale">
+            <span v-for="b in CI_BANDS" :key="b">{{ b }}</span>
+          </div>
+          <div class="lg-note">{{ CI_BAND_NOTE }}</div>
+          <div class="lg-note strong">{{ CI_DISCLAIMER }}</div>
+          <div class="lg-sep" />
+          <div class="lg-row"><LevelBadge :level="1" stale />灰 = 数据不可用(缺 ci 或数据陈旧)</div>
+          <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+            <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+          </div>
+          <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
+        </template>
+        <template v-else>
+          <div class="lg-title">四级编码(颜色 · 竖条 · 文字)</div>
+          <div class="lg-row"><LevelBadge :level="1" /></div>
+          <div class="lg-row"><LevelBadge :level="2" /></div>
+          <div class="lg-row"><LevelBadge :level="3" /></div>
+          <div class="lg-row"><LevelBadge :level="4" /></div>
+          <div class="lg-row"><LevelBadge :level="1" stale /></div>
+          <div class="lg-sep" />
+          <div v-for="v in VEH_LEGEND" :key="v.t" class="lg-row">
+            <span class="dot" :style="{ background: v.color }" />{{ v.t }} {{ v.label }}
+          </div>
+          <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
+          <template v-if="hasRoutes">
+            <div class="lg-sep" />
+            <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
+            <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
+            <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+            <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
+          </template>
+          <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
+          <template v-if="cameraOnly">
+            <div class="lg-sep" />
+            <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
+            <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
+            <div class="lg-note">
+              图钉仅源台账布点（初始映射，不代表一期总数）；一期 N 段 = N 摄像头 = N 视频（mock 复用，画面见右栏路段卡）；
+              拥堵版仅源台账布点段上色。
+            </div>
+          </template>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -1308,13 +1377,61 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  pointer-events: none;
+  /* 面板压在地图左下角、内容比地图还高时**上半截会被地图裁掉**（原先就有这现象），
+     叉键钉在右上角就会跟着飞出去 —— 所以给它一个高度上限，滚动交给里面那层
+     `.lg-body`：面板永远落在地图内，右上角的叉键永远点得到。 */
+  max-height: calc(100% - 24px);
+  overflow: hidden;
+  /* 宽度按「紧凑面板」定住：不加这条会按最长那句说明的单行宽度把面板拉满整幅地图
+     （绝对定位元素的 shrink-to-fit 取 max-content），叉键就跑到地图中间去了。 */
+  max-width: 320px;
+  /* 整块 `auto`：叉键要能点、超高时也要能滚。代价是这块面板下方不再透传地图拖拽
+     （纯展示面板本来也不需要；地图拖拽可用地图其余部分）。 */
+  pointer-events: auto;
   z-index: 2;
 }
+/* 面板内容（可滚动的那一层）：原先直接挂在外层 flex 上的行，现在收到这一层里，
+   间距口径与外层原样一致（5px），叉键仍钉在外层右上角、不随滚动跑。 */
+.lg-body {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  /* 撑满外层可用高度并在内部滚动（叉键在外层，不参与滚动） */
+  min-height: 0;
+  overflow-y: auto;
+}
+/* 收起键：钉在面板右上角，压在 padding 上（不占文档流，故用绝对定位） */
+.lg-close {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #8b8b8b;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.lg-close:hover {
+  background: #f0f1f3;
+  color: #1a1a1a;
+}
+.lg-close:focus-visible {
+  outline: 2px solid v-bind('BRAND');
+  outline-offset: 1px;
+}
+/* 图例标题右让一点，避免顶到叉键 */
 .lg-title {
   font-size: 11px;
   color: #666666;
   margin-bottom: 1px;
+  padding-right: 20px;
 }
 .lg-row {
   display: inline-flex;

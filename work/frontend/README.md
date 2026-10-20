@@ -1196,8 +1196,132 @@ python scripts/doc_gate.py
 3. 两处 `stationGZ.ts` 必须同时更新（生成器只写 `work/twin/netpack/guangzhounan/` 那份，
    前端那份靠手工同步）——**这个不同步是历史踩过的坑**，改完务必两份 sha256 对齐。
 
+## 二十二、地图图例可收起 / 可展开（业主 2026-10-19）
 
+> 来源：业主 2026-10-19 直接提的两点 ——「我圈起来的这个方格在右上角放一个叉键，点击叉键可以关掉，
+> 这个有点挡住后面的图了，然后打开这个方格按键就放在 z·61 段的左边」。
+> 圈的那块是地图左下角的**图例面板**（.legend），它压在路网上、内容又长，
+> 想看左下角那一片的车流就得先把面板收起来。
 
+### 22.1 改了什么
 
+| 位置 | 改动 |
+|---|---|
+| src/views/dashboard/components/MapLibreViewer.vue | 图例面板 `.legend` 内首行加一个**右上角叉键**（`.lg-close`，`×`，`title` / `aria-label` 均为「收起图例」）；面板内容收进 `.lg-body` 一层（滚动发生在这一层，叉键钉在外层不跟着滚）；新增 `emit('close-legend')`（收起由父组件决定，因为重开按钮在工具条上） |
+| src/views/dashboard/DashboardView.vue | `:legend="true"` 改成 `:legend="legendVisible"`；监听 `@close-legend="setLegendVisible(false)"`；地图工具条 `.map-toolbar-right` 内、`.pack-switch` **之前**加一个「图例」按钮（`v-if="!legendVisible"`，即只在收起时出现） |
+| src/shared/settings.ts | 新增 `legendVisible: Ref<boolean>`（默认 `true`）、`setLegendVisible(on)`、存储键 `hubflow.settings.legend`；`restoreSettings()` 里一并读回（与底图开关同一体例：读不到 / 内容坏了**静默退回默认值**，不抛错） |
 
+### 22.2 两处必须解释的样式决定（不写清楚下次会被改回去）
 
+1. **`pointer-events` 从 `none` 改成 `auto`**：原先整块面板「纯展示、不挡鼠标」，`none` 下**叉键点不动**。
+   代价是这块面板下方不再透传地图拖拽 —— 纯展示面板本来也不需要，地图拖拽可用地图其余部分。
+2. **面板加了 `max-height: calc(100% - 24px)` + `max-width: 320px`**：
+   - 不加 `max-height`：面板内容比地图高时，**上半截会被地图容器 `overflow: hidden` 裁掉**（这是**改之前就有**的现象，不是本单引入），叉键钉在右上角就会跟着飞出可视区、点不到。现在超高时面板内部滚（`.lg-body` 的 `overflow-y: auto`），面板永远落在地图内。
+   - 不加 `max-width`：绝对定位元素的 shrink-to-fit 取 **max-content**，面板会按最长那句说明的单行宽度被拉满整幅地图，叉键跑到地图中间去。320 px 是「刚好容纳现有最长一行说明」的紧凑值。
+
+### 22.3 自检（本单真跑，2026-10-20）
+
+```bash
+cd work/frontend/ui-vue
+npx vue-tsc -b        # exit 0
+npx vite build        # exit 0（1712 modules，1.24 s）
+
+# 仓库门禁
+python scripts/doc_gate.py   # 8/8 通过
+```
+
+- `npx vite --port 5173` 起本机大屏（mock 模式，站点包 Z · 61 段），人工点过两个方向：
+  - 点面板右上角 × → 面板收起，工具条上「Z · 61 段」**左边**出现「图例」按钮（截图核对过位置）；
+  - 点「图例」→ 面板重新展开，「图例」按钮消失（展开时不重复出现，避免两处入口并存）。
+- 截图（不入库，本机 http://localhost:5173/#/dashboard）：收起态 / 展开态各一张，见本次交付说明。
+- 编码：三个改动文件均 **UTF-8 无 BOM、纯 LF**（settings.ts 4366 B / 102 LF、DashboardView.vue 108929 B / 2811 LF、MapLibreViewer.vue 62493 B / 1576 LF）。
+
+### 22.4 遗留 / 说明
+
+1. **只做了「收起 / 展开」，没动图例内容与位置**：面板仍是左下角、内容与文案一字未改（图例口径归 IKOQEJ）。
+2. **显隐是「记住的」**：落在 localStorage 的 hubflow.settings.legend，刷新 / 重进页面后保持上次的样子；
+   想恢复默认（展开）就点「图例」按钮，或清掉该键。
+3. **切站点包（Z⇄GZ）会整页刷新**（onPackChange 里 window.location.reload()），图例显隐跟着 localStorage 一起保持，不会退回展开。
+4. **另一套包切换器没动**：顶栏 AppShell.vue 的线路图下拉（.net-switch）与地图工具条的 .pack-switch 是两套 UI，本单只在地图工具条那套旁边加按钮。
+
+## 二十三、方向箭头随缩放变小 + 显隐开关（业主 2026-10-19）
+
+> 来源：业主 2026-10-19 口径 ——「我在缩小地图和放大地图的时候箭头的大小都是不变的，
+> 但是一旦我把地图缩小，箭头就会挤在一起，导致缩小的地图被箭头挡住，所以当地图缩小到
+> 一定大小就开始随着地图大小缩小，然后加一个可以关闭或打开的箭头的选项」。
+> 按钮位置：业主先说「就在我圈的里面」，随后改成「算了，按键你自己看着放吧」，
+> 故本单自行决定 —— 放在地图工具条 `.map-toolbar-right` 内、「图例」键之后、`.pack-switch` **之前**。
+
+### 23.1 改之前为什么会「挤成一团」
+
+`MapLibreViewer.vue` 的 `directionLayerSpec()` 原本只有两档插值：
+
+```ts
+'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
+'icon-allow-overlap': true,
+'icon-ignore-placement': true,
+```
+
+两个原因叠加：
+
+1. `icon-size` 在 zoom ≤ 12 时被 **clamp 在 0.5**，再往下缩一个像素都不减；
+2. `icon-allow-overlap` / `icon-ignore-placement` 都是 `true`，意思是**每根箭头强制画、不参与避让**。
+
+于是缩小时屏幕上的路段越来越短、箭头却维持原尺寸，密到糊成一片把路段线盖住 —— 这就是业主看到的现象。
+反过来说，这两个 `true` 不能简单改 `false`：MapLibre 的避让是**按优先级随机丢标**，
+会让部分路段的箭头凭空消失（「变小可以，缺失不行」）。
+
+### 23.2 改了什么
+
+| 位置 | 改动 |
+|---|---|
+| `src/views/dashboard/components/MapLibreViewer.vue` | `directionLayerSpec()` 的 `icon-size` 从 2 档改成 6 档：zoom 10 → 0.11、11 → 0.18、12 → 0.27、13 → 0.38、14 → 0.52、15 → 0.8（≤10 收敛 0.11 ≈ 原尺寸的 1/7，≥15 不再涨）；`layout` 末尾加 `visibility`（值取 `directionsVisible`，换样式重建图层时也带上）；新增 `applyDirectionVisibility(map)`（图层不在就静默 return）；`addDirectionLayers()` 末尾与 `applyViewState()` 刷完数据后各调一次；新增 `watch(directionsVisible)` 只切 `visibility`、不重建数据源 |
+| `src/views/dashboard/DashboardView.vue` | 工具条加「箭头」常驻按钮（`.legend-toggle` + `.on` 态，`aria-pressed` 同步），点了调 `setDirectionsVisible(!directionsVisible)`；新增 `.legend-toggle.on { border-color: v-bind('TD.brand'); color: v-bind('TD.brand') }` |
+| `src/shared/settings.ts` | 新增 `directionsVisible: Ref<boolean>`（默认 `true`）、`setDirectionsVisible(on)`、存储键 `hubflow.settings.directions`；`restoreSettings()` 加第三个 `try` 块读回（读不到 / 内容坏了静默退回默认） |
+
+图例内同时加了两行说明（在「方向标记（只读 enriched）」那一段里）：
+
+- `v-if="!directionsVisible"` 时显示「当前已隐藏方向箭头（工具条「箭头」键可打开）」——
+  否则图例上还画着三种箭头、图上却一个都没有，会被当成画丢了；
+- 常显一行「箭头随缩放变小：放大看细节，缩小只看走向，不会糊住路段线。」——把这条口径写进界面。
+
+### 23.3 缩放曲线为什么不是「世界坐标等比」
+
+最直觉的做法是让箭头跟着地图一起等比缩（MapLibre 的 zoom 每 +1 视野线性减半，等价于图标每降一档 ×2）。
+**没这么做**：等比意味着 zoom 17 时单个图标要占 100 px 以上，反而把路段线彻底盖死 ——
+业主的诉求是「缩小时别糊住地图」，不是「任何缩放级别下箭头都同比占屏」。
+
+现在的曲线是每降一档 **×0.7 左右**（0.8 → 0.52 → 0.38 → 0.27 → 0.18 → 0.11），
+低缩放时箭头小到近乎一个点、只剩颜色区分走向，放大回去立刻恢复细节。
+`icon-allow-overlap` / `icon-ignore-placement` **保持 `true` 不动**，理由见 23.1。
+
+### 23.4 自检（本单真跑，2026-10-20）
+
+```bash
+cd work/frontend/ui-vue
+npx vue-tsc -b        # exit 0
+npx vite build        # exit 0（1712 modules，957 ms）
+
+# 仓库门禁
+python scripts/doc_gate.py   # 8/8 通过
+```
+
+人工点验（本机 http://localhost:5173/#/dashboard，mock 模式，站点包 Z · 61 段）：
+
+- **缩小到 zoom ≈ 11**：原本满屏挤成一团的箭头消失，只剩零星很小的箭头，路段线不再被遮 —— 诉求①成立；
+- **点「箭头」键**：图上箭头全部消失，图例出现「当前已隐藏方向箭头（工具条「箭头」键可打开）」，按钮不再是蓝边态；
+- **再点一次**：箭头恢复显示，提示消失，按钮回到蓝边态；
+- **关掉箭头后 Ctrl+F5**：刷新后仍是隐藏态（`localStorage` 的 `hubflow.settings.directions` 生效）。
+
+编码：三个改动文件均 **UTF-8 无 BOM、纯 LF**。
+
+### 23.5 遗留 / 说明
+
+1. **只做「变小 + 可关」，没动箭头图形本身**：仍是 canvas 画的 `↑ / ↕ / ?` 三个字形（64×64，
+   `bold 44px "Segoe UI Symbol"`），颜色仍取 `DIR_COLORS`，本单没碰图标形状与配色。
+2. **显隐是「记住的」**：落在 `localStorage` 的 `hubflow.settings.directions`，刷新 / 切站点包后保持上次的样子；
+   想恢复默认（显示）就再点一次「箭头」键，或清掉该键。
+3. **`.legend-toggle` 这个类名现在被两个按钮共用**（「图例」与「箭头」）：样式上只差 `.on` 态。
+   下一单若要再加第三个小按钮，建议把类名抽成 `.map-tool` 之类的中性名字，别继续往上堆。
+4. **`icon-allow-overlap` 仍是 `true`**：低缩放时箭头彼此仍可能重叠，只是足够小、不影响看线。
+   真要彻底不重叠得改成避让 + 分级显示，那是另一单的口径（会牵到「哪些路段优先显示」的判级取舍）。

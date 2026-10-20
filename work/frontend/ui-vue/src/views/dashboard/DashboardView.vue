@@ -37,7 +37,13 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
-import { basemapEnabled } from '../../shared/settings'
+import {
+  basemapEnabled,
+  directionsVisible,
+  legendVisible,
+  setDirectionsVisible,
+  setLegendVisible,
+} from '../../shared/settings'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
 // IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成字段；缺值→未标定，不编）
@@ -1475,6 +1481,31 @@ function onCommandChanged(): void {
                 </div>
                 <!-- 路网版本切换（IKMDKY 子单①）：Z=61 段新几何 / Z21=旧 21 段对照 -->
                 <div class="map-toolbar-right">
+                  <!-- 图例重开（业主 2026-10-19）：图例面板压住地图左下角时可收起，
+                       收起后按钮就落在「Z · 61 段」左边；展开时不重复出现（面板里自带叉键） -->
+                  <button
+                    v-if="!legendVisible"
+                    type="button"
+                    class="legend-toggle"
+                    title="展开图例"
+                    aria-label="展开图例"
+                    @click="setLegendVisible(true)"
+                  >
+                    图例
+                  </button>
+                  <!-- 方向箭头显隐（业主 2026-10-19）：路网密 / 缩放小时箭头会盖住线，
+                       关掉只留路段线；低缩放已经让箭头跟着缩小，这里是"完全不看"的出口 -->
+                  <button
+                    type="button"
+                    class="legend-toggle"
+                    :class="{ on: directionsVisible }"
+                    :aria-pressed="directionsVisible"
+                    :title="directionsVisible ? '隐藏方向箭头' : '显示方向箭头'"
+                    :aria-label="directionsVisible ? '隐藏方向箭头' : '显示方向箭头'"
+                    @click="setDirectionsVisible(!directionsVisible)"
+                  >
+                    箭头
+                  </button>
                   <span class="pack-switch" role="group" aria-label="切换路网版本">
                     <button
                       v-for="p in packChoices"
@@ -1500,8 +1531,9 @@ function onCommandChanged(): void {
                   :color-mode="colorMode"
                   :ts="snapshotTs"
                   :hover-chip="mapChip"
-                  :legend="true"
+                  :legend="legendVisible"
                   @select="onSelect"
+                  @close-legend="setLegendVisible(false)"
                 />
               </div>
               <div class="map-caption">
@@ -2251,6 +2283,29 @@ function onCommandChanged(): void {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+/* 图例重开键（业主 2026-10-19）：图例收起后才出现，位置就在「Z · 61 段」左边。
+   观感与旁边的路网版本切换一致（细边小字），不复用品牌蓝实底 —— 它不是当前选中态。 */
+.legend-toggle {
+  padding: 3px 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.legend-toggle:hover {
+  color: var(--td-text-color-primary);
+}
+/* 「箭头」键的**开**态（业主 2026-10-19）：这个键常驻、表示"现在箭头是显示的"，
+   所以需要有别于「图例」键的外观；用品牌蓝细边 + 蓝字，不填实底 ——
+   填实底会和旁边 pack-switch 的"当前站点包"那个选中态撞车。 */
+.legend-toggle.on {
+  border-color: v-bind('TD.brand');
+  color: v-bind('TD.brand');
 }
 /* 路网版本切换（IKMDKY 子单①）：两段式小按钮，选中态用品牌蓝 */
 .pack-switch {
