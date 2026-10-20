@@ -314,8 +314,17 @@ function colorOf(seg: DemoSegment): string {
   return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
 }
 
-/** 热力晕染强度（仅拥堵版指数视图且 ci 可用；流量版不用 CI 热力，按色阶直读） */
+/**
+ * 热力晕染强度（**仅拥堵版指数视图**且 ci 可用；流量版、四级视图一律 0 = 不画）。
+ *
+ * ⚠️ 四级视图必须返 0（业主 2026-10-20：「每个道路都要颜色，周围还有往外衍生的一圈淡淡的颜色，
+ * 把那个去掉」）。四级色本身已经把等级说清楚了，26 px 的半透明同色宽带只是往两边漫出去的雾；
+ * 广州南站 708 段这种密度下，几百条晕染互相叠会糊成一整坨，反而看不出哪条路是什么色。
+ * `LAYER_HEAT` 的注释也写着「四级视图 heat 恒 0」，此前 `heatOf()` 少了这一条判断，
+ * 属于代码与注释不一致，这里补齐。
+ */
 function heatOf(seg: DemoSegment): number {
+  if (!isIndex.value) return 0
   if (isFlow.value) return 0
   if (!isCameraCovered(seg.segment_id)) return 0
   const rec = segById.value.get(seg.segment_id)
