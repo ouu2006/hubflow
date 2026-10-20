@@ -1275,7 +1275,7 @@ python scripts/doc_gate.py   # 8/8 通过
 
 | 位置 | 改动 |
 |---|---|
-| `src/views/dashboard/components/MapLibreViewer.vue` | `directionLayerSpec()` 的 `icon-size` 从 2 档改成 6 档：zoom 10 → 0.11、11 → 0.18、12 → 0.27、13 → 0.38、14 → 0.52、15 → 0.8（≤10 收敛 0.11 ≈ 原尺寸的 1/7，≥15 不再涨）；`layout` 末尾加 `visibility`（值取 `directionsVisible`，换样式重建图层时也带上）；新增 `applyDirectionVisibility(map)`（图层不在就静默 return）；`addDirectionLayers()` 末尾与 `applyViewState()` 刷完数据后各调一次；新增 `watch(directionsVisible)` 只切 `visibility`、不重建数据源 |
+| `src/views/dashboard/components/MapLibreViewer.vue` | `directionLayerSpec()` 的 `icon-size` 改成**指数插值三点**（`['interpolate', ['exponential', 2], ['zoom'], 12, 0.09, 15, 0.8, 18, 1]`，zoom 每降 1 档尺寸按 2² 的幂次折半），另加 `paint['icon-opacity']` 淡出（zoom 11.5 → 0、13 → 0.55、15 → 1；**光缩小不够**，61 个箭头即使各几像素，叠在同一小块上照样连成阴影，远景直接淡出）；`layout` 末尾加 `visibility`（值取 `directionsVisible`，换样式重建图层时也带上）；新增 `applyDirectionVisibility(map)`（图层不在就静默 return）；`addDirectionLayers()` 末尾与 `applyViewState()` 刷完数据后各调一次；新增 `watch(directionsVisible)` 只切 `visibility`、不重建数据源 |
 | `src/views/dashboard/DashboardView.vue` | 工具条加「箭头」常驻按钮（`.legend-toggle` + `.on` 态，`aria-pressed` 同步），点了调 `setDirectionsVisible(!directionsVisible)`；新增 `.legend-toggle.on { border-color: v-bind('TD.brand'); color: v-bind('TD.brand') }` |
 | `src/shared/settings.ts` | 新增 `directionsVisible: Ref<boolean>`（默认 `true`）、`setDirectionsVisible(on)`、存储键 `hubflow.settings.directions`；`restoreSettings()` 加第三个 `try` 块读回（读不到 / 内容坏了静默退回默认） |
 
@@ -1288,11 +1288,13 @@ python scripts/doc_gate.py   # 8/8 通过
 ### 23.3 缩放曲线为什么不是「世界坐标等比」
 
 最直觉的做法是让箭头跟着地图一起等比缩（MapLibre 的 zoom 每 +1 视野线性减半，等价于图标每降一档 ×2）。
-**没这么做**：等比意味着 zoom 17 时单个图标要占 100 px 以上，反而把路段线彻底盖死 ——
+**没第一次就这么做**：等比意味着 zoom 17 时单个图标要占 100 px 以上，反而把路段线彻底盖死 ——
 业主的诉求是「缩小时别糊住地图」，不是「任何缩放级别下箭头都同比占屏」。
 
-现在的曲线是每降一档 **×0.7 左右**（0.8 → 0.52 → 0.38 → 0.27 → 0.18 → 0.11），
-低缩放时箭头小到近乎一个点、只剩颜色区分走向，放大回去立刻恢复细节。
+第一版按每档 **×0.7** 收（0.8 → 0.52 → 0.38 → 0.27 → 0.18 → 0.11），业主当场退回「还是没变」——
+因为本站演示范围只有 500 m，缩到 zoom 11 时整张路网在屏幕上只剩几十像素，×0.7 的箭头照样比路段粗。
+最终改成 **`exponential 2` 两点式**（12 档 0.09、15 档 0.8），并且**叠上 11.5 档淡出到 0** ——
+尺寸再小也还有重叠阴影，淡出才是「不挡图」的根治；远景本来就只看路网走向，方向语义在右栏文字里始终有。
 `icon-allow-overlap` / `icon-ignore-placement` **保持 `true` 不动**，理由见 23.1。
 
 ### 23.4 自检（本单真跑，2026-10-20）
@@ -1313,6 +1315,10 @@ python scripts/doc_gate.py   # 8/8 通过
 - **再点一次**：箭头恢复显示，提示消失，按钮回到蓝边态；
 - **关掉箭头后 Ctrl+F5**：刷新后仍是隐藏态（`localStorage` 的 `hubflow.settings.directions` 生效）。
 
+像素取证（同一窗口 1400×831 预览，`windows_computer_use` 截图 + PIL 连通域按 `DIR_COLORS` 计数）：
+默认视野下箭头块最大 17×11 px，缩远后降到 4~5 px 量级并整体淡出。**注意**：箭头淡出后仍会看到
+「挤」的观感，那是下一章的**摄像头图钉**（DOM Marker，屏幕像素固定）在挡，不是箭头。
+
 编码：三个改动文件均 **UTF-8 无 BOM、纯 LF**。
 
 ### 23.5 遗留 / 说明
@@ -1325,3 +1331,49 @@ python scripts/doc_gate.py   # 8/8 通过
    下一单若要再加第三个小按钮，建议把类名抽成 `.map-tool` 之类的中性名字，别继续往上堆。
 4. **`icon-allow-overlap` 仍是 `true`**：低缩放时箭头彼此仍可能重叠，只是足够小、不影响看线。
    真要彻底不重叠得改成避让 + 分级显示，那是另一单的口径（会牵到「哪些路段优先显示」的判级取舍）。
+
+## 二十四、摄像头图钉随缩放缩小 / 淡出（业主 2026-10-19 追加）
+
+> 来源：业主 2026-10-19 同一条需求的**后半段** —— 箭头改小之后仍反馈「缩小地图后还是挤在一起，
+> 根本看不清地图」。追查发现：箭头已经不是元凶，真正盖住路网的是**摄像头图钉**。
+
+### 24.1 为什么图钉必须单独处理
+
+图钉是 `addCameraPins()` 里用 `new Marker({ element })` 造的 **DOM 元素**（`MapLibreViewer.vue`），
+不是 MapLibre 图层里的 symbol —— DOM Marker **天然不随 zoom 缩**，屏幕像素尺寸恒定。
+61 个路段几乎各挂一个 20 px 圆，缩到 zoom ≈ 11–12 时全部叠在同一小块上，把路网糊成一个点。
+这跟方向箭头（symbol 图层，改 `icon-size` 就跟着缩）是**两套机制**，必须分别处理。
+
+### 24.2 改了什么
+
+| 位置 | 改动 |
+|---|---|
+| `MapLibreViewer.vue` 模块级 | 新增 `let camPinEls: HTMLElement[] = []`（图钉外壳数组）、`let fitZoom = 14`（默认视野档，由 `fitToNetwork()` 在 `map.fitBounds()` 之后写入 `map.getZoom()`） |
+| `camPinScaleOf(zoom)` | `Math.min(1.15, Math.max(0.28, Math.pow(2, (zoom - fitZoom) * 0.36)))` —— **以默认视野档为基准**、越缩越小，不是写死 zoom 14（Z 站 500 m 与 GZ 站 1000 m 的默认档不同） |
+| `camPinOpacityOf(zoom)` | 比默认视野缩远 **1 档开始淡、1.6 档彻底淡出**：`d <= 1 → 1`、`d >= 1.6 → 0`、中间线性。61 个钉即使各 6 px 叠在同一小块上照样糊成一片，远景只看路网形状 |
+| `applyCameraPinScale(map)` | 把折算值写进每个外壳的 `--cam-pin-scale` / `--cam-pin-opacity`，并在完全透明时置 `pointer-events: none`（隐形钉不吃点击） |
+| `addCameraPins()` | 改为**两层结构**：外层 `div.cam-pin-wrap`（交给 Marker 定位）+ 内层原 `.cam-pin`（承接缩放）。**MapLibre 自己在 Marker 元素上写 `transform` 做平移，缩放必须落里层**，否则图钉会跑位 |
+| `map.on('move')` / `map.on('load')` | `move` 里 `camTick.value++` 后调一次；`load` 里 `fitToNetwork()` 之后**再调一次**（fitBounds 才刚定下默认档） |
+| CSS `:deep(.cam-pin-wrap)` / `:deep(.cam-pin)` | 外壳 `line-height: 0` 不参与缩放；里层消费 `transform: scale(var(--cam-pin-scale, 1)); transform-origin: center center; opacity: var(--cam-pin-opacity, 1)`，加 0.12s 过渡。**缩放原点必须取圆心**，否则放大时向右下漂半个身位 |
+
+### 24.3 自检（本单真跑，2026-10-20）
+
+`npx vue-tsc -b` exit 0；`npx vite build` exit 0；`python scripts/doc_gate.py` 8/8 通过。
+
+人工 + 像素取证（本机 mock 模式，Z · 61 段，Edge 窗口 3072×1824 / 预览 1400×831）：
+
+- **默认视野**：孤立图钉环 **20×20 px**（20px 圆 + 2px 描边，`scale = 1`）；
+- **滚轮缩远约 2 档**：图钉环降到 **6×7 px**，蓝色像素总量从 2528 降到 1934；
+- **再缩 1 档以上**：图钉整体淡出到 0，路网线条完整可见；
+- **放大回默认视野**：图钉淡入、尺寸恢复，编号可读。
+
+### 24.4 遗留 / 说明
+
+1. **只在「缩远」方向生效**：放大（zoom > fitZoom）时 `camPinScaleOf` 上限锁在 **1.15**，图钉最多大 15%，
+   不会跟着无限放大 —— 防止放大后一个钉占掉半屏。若需可读性更强可后续调上限。
+2. **淡出阈值是相对默认视野的**：换站点包（Z ⇄ GZ）后 `fitZoom` 会重新记录（`fitToNetwork()` 每次都写），
+   所以 GZ 站（1000 m 范围）的淡出起点会自适应，不需要单独配置。
+3. **图钉语义未变**：仍是 IKLX5Y / IKNBT2 口径的**源台账布点**（初始映射，不代表一期摄像头总数），
+   本单只改尺寸与透明度，没碰位置、编号、点击跳转。
+4. **没有独立的图钉开关**：业主只要求「别挡图」，本单用「缩远自动淡出」达成。
+   若以后要像箭头那样给一个显隐键，可复用 `settings.ts` 的同一套体例（第三个 KEY + ref + setter + restore 分支）。

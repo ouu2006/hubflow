@@ -377,12 +377,20 @@ function addDirectionImages(map: MapLibreMap): void {
  * 方向标记图层（symbol + icon，无 text/glyphs 依赖；随地图旋转对齐）。
  *
  * `icon-size` 的分档（业主 2026-10-19 口径）：
- *   业主原话是「缩小的时候箭头大小不变，结果挤在一起把地图挡住了」—— 所以这里
- *   **低缩放要明显变小**，高缩放（≥15，拟合后的实际工作档位）维持原尺寸不再涨。
- *   为什么不是"完全按世界坐标等比"（每 +1 档 ×2）：那样 zoom 17 时单个图标会到
- *   100+ px，反过来把线盖死。折中成每降一档 ×0.7 左右，缩到 10 档时只剩原尺寸的 1/7。
+ *   业主原话是「缩小的时候箭头大小不变，结果挤在一起把地图挡住了」。
+ *   **做法：以 zoom 15 为基准等比缩小** —— 用 `exponential 2` 指数插值，
+ *   即缩放每降 1 档，箭头尺寸缩到 1/2（面积缩到 1/4），与视野面积同步；
+ *   缩到 12 档只剩基准的 0.09/0.8 ≈ 1/9。
+ *   为什么必须这么快（第一版做成每档 ×0.7 被业主退回「还是没变」）：
+ *   本站演示范围只有 500 m，整张路网在 zoom 11 时屏幕上只剩几十像素，
+ *   而箭头按 0.18 还有约 12 px、条数不变 —— 一个箭头就比整张网还宽，必然糊死。
+ *   所以不是"略微变小"，而是**跟着视野等比缩**；放大回 15 档立刻恢复原尺寸。
+ *   14→15 是唯一需要显性拐点：低档靠指数曲线，15 以上到 18 缓涨到 1.0。
  *   另：`icon-allow-overlap` / `icon-ignore-placement` 保持 `true` —— 关掉会做**随机避让**，
  *   有些路段的方向箭头会凭空消失，方向语义就不完整了（变小可以，"缺失"不行）。
+ *   光缩小不够：缩到 12 档时箭头虽然只有几像素，但数量仍是 61 个，视觉上仍会连成一片
+ *   阴影，所以 `paint['icon-opacity']` 在 11.5 档淡出到 0、13 档 0.55、15 档起满不透明 ——
+ *   远景只看路网走向，近景才看方向（方向语义在右栏文字里始终有）。
  *   `visibility` 跟着 `directionsVisible` 走：换样式重建图层时也要带上，否则关掉后
  *   一切底图/设置就又把箭头画回来。
  */
@@ -393,22 +401,31 @@ function directionLayerSpec(): SymbolLayerSpecification {
     source: DIR_SRC,
     layout: {
       'icon-image': ['get', 'icon'],
+      // 12 档 0.09 → 15 档 0.8（基准），指数 2 = 每降一档折半，与视野面积同步缩
       'icon-size': [
         'interpolate',
-        ['linear'],
+        ['exponential', 2],
         ['zoom'],
-        10, 0.11,
-        11, 0.18,
-        12, 0.27,
-        13, 0.38,
-        14, 0.52,
+        12, 0.09,
         15, 0.8,
+        18, 1,
       ],
       'icon-rotate': ['get', 'rotate'],
       'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
       visibility: directionsVisible.value ? 'visible' : 'none',
+    },
+    paint: {
+      // 缩到 11.5 档彻底淡出：尺寸再小也还会有重叠阴影，淡出才是「不挡图」的根治
+      'icon-opacity': [
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        11.5, 0,
+        13, 0.55,
+        15, 1,
+      ],
     },
   }
 }
@@ -620,6 +637,49 @@ function addRouteLayers(map: MapLibreMap): void {
 
 /** 摄像头标记（重绘 / 卸载时移除） */
 let camMarkers: Marker[] = []
+/** 图钉外壳（缩放系数写在它的 CSS 变量上，Marker 自己的 transform 不被覆盖） */
+let camPinEls: HTMLElement[] = []
+
+/** 默认视野档（`fitToNetwork` 之后记下来，图钉的缩放 / 淡出都以它为基准） */
+let fitZoom = 14
+
+/**
+ * 图钉随缩放变化：**DOM Marker 不会自己缩**（它是屏幕像素尺寸），
+ * 而本站演示范围只有 500 m，滚轮缩到比默认视野更远时整张路网只剩屏幕中央一小团，
+ * 61 个 20 px 的编号钉就会糊成一圈、把路网整个盖住（业主 2026-10-19 第二次反馈）。
+ * 这里让图钉跟着地图一起缩：以「默认视野档」（`fitZoom`，fitBounds 之后的档位）为 1，
+ * 每降 1 档乘约 0.78。用相对档位而不是写死 zoom 14，是因为各站点的默认视野档不一样。
+ */
+function camPinScaleOf(zoom: number): number {
+  return Math.min(1.15, Math.max(0.28, Math.pow(2, (zoom - fitZoom) * 0.36)))
+}
+
+/**
+ * 图钉透明度：**比默认视野再缩出去 1 档就开始淡，缩 1.6 档彻底淡出**。
+ * 只缩小不够：本站 61 段几乎每段一个钉，缩远后整张网只剩屏幕中央一小团，
+ * 就算每个钉只有 6 px，61 个 6 px 圆叠在同一小块上照样糊成一片（实测过，仍然看不清路网）。
+ * 所以远景直接不画图钉 —— 那个档位本来就只是在看"路网形状"，单个摄像头的编号没有意义；
+ * 放大回默认视野就重新淡入。完全透明时同时置 `pointer-events: none`，避免隐形钉吃点击。
+ */
+function camPinOpacityOf(zoom: number): number {
+  const d = fitZoom - zoom // 比默认视野缩远了多少档
+  if (d <= 1) return 1
+  if (d >= 1.6) return 0
+  return 1 - (d - 1) / 0.6
+}
+
+/** 把当前缩放档折算成图钉的尺寸 / 透明度写进 CSS 变量（`move` / `zoom` 事件里调） */
+function applyCameraPinScale(map: MapLibreMap): void {
+  const zoom = map.getZoom()
+  const s = camPinScaleOf(zoom).toFixed(3)
+  const o = camPinOpacityOf(zoom)
+  for (const el of camPinEls) {
+    el.style.setProperty('--cam-pin-scale', s)
+    el.style.setProperty('--cam-pin-opacity', o.toFixed(3))
+    // 完全透明时不要再吃鼠标事件（否则远景点不到地图，只有一堆隐形钉在拦）
+    el.style.pointerEvents = o <= 0.02 ? 'none' : ''
+  }
+}
 /** 被悬停的摄像头（浮牌钉在图钉上方，与路段浮牌区分） */
 const pin = ref<CameraPin | null>(null)
 
@@ -634,6 +694,10 @@ const pin = ref<CameraPin | null>(null)
  */
 function addCameraPins(map: MapLibreMap): void {
   for (const p of pins) {
+    // 外壳 = Marker 自己的定位元素（MapLibre 会在它身上写 transform 做平移），
+    // 缩放变量挂在外壳上、由里层 `.cam-pin` 的 transform 消费 —— 两者不抢同一个 transform。
+    const wrap = document.createElement('div')
+    wrap.className = 'cam-pin-wrap'
     const el = document.createElement('div')
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
     el.textContent = p.cid.replace('C-', '')
@@ -649,8 +713,11 @@ function addCameraPins(map: MapLibreMap): void {
     el.addEventListener('click', () => {
       window.location.href = perceptionHref(p.source)
     })
-    camMarkers.push(new Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map))
+    wrap.appendChild(el)
+    camPinEls.push(wrap)
+    camMarkers.push(new Marker({ element: wrap }).setLngLat([p.lon, p.lat]).addTo(map))
   }
+  applyCameraPinScale(map)
 }
 
 // ---- 车辆动点（自绘视图搬来：`transform` 过渡 = 平滑移动） ----
@@ -716,6 +783,8 @@ function fitToNetwork(map: MapLibreMap): void {
     ],
     { padding: 56, duration: 0 },
   )
+  // 记下默认视野档：图钉的缩放 / 淡出都以「相对默认视野缩远了多少档」为准
+  fitZoom = map.getZoom()
 }
 
 // ---- 底图：异步、可失败、失败只丢自己 ----
@@ -1011,11 +1080,15 @@ function initMap(): void {
     addRouteLayers(map)
     addCameraPins(map)
     fitToNetwork(map)
+    // fitBounds 之后才定下默认视野档，图钉要按新基准再折算一次
+    applyCameraPinScale(map)
     ready.value = true
     // 车辆要在 ready 之后再同步（`syncVehicles` 以 ready 为前置）
     syncVehicles(map)
     map.on('move', () => {
       camTick.value++
+      // 图钉是 DOM（屏幕像素尺寸），不会跟地图自己缩 —— 每帧按当前档位折算一次
+      applyCameraPinScale(map)
     })
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
@@ -1107,6 +1180,7 @@ onUnmounted(() => {
   inflightCtrl?.abort()
   camMarkers.forEach((m) => m.remove())
   camMarkers = []
+  camPinEls = []
   vehMarkers.forEach((v) => v.marker.remove())
   vehMarkers.clear()
   mapRef.value?.remove()
@@ -1555,7 +1629,16 @@ onUnmounted(() => {
 /* 摄像头图钉（Issue IKLX5Y）：与自绘视图同款语义 ——
    实心深灰 = 有视频源；空心白底 = 未接入视频源（本期留空）。
    品牌蓝只作描边（「可操作」语义），不当填充色用。
-   Marker 的 DOM 由 document.createElement 造，不在 scoped 作用域内，故用 :deep()。 */
+   Marker 的 DOM 由 document.createElement 造，不在 scoped 作用域内，故用 :deep()。
+
+   缩放：外壳 `.cam-pin-wrap` 上挂着 `--cam-pin-scale` / `--cam-pin-opacity`（由
+   `applyCameraPinScale()` 按 zoom 写），**变换必须落在里层 `.cam-pin`**——外壳的
+   transform 是 Marker 用来定位的，覆盖掉图钉就会跑位。
+   缩放原点取圆心，否则钉子在放大时会向右下"漂"半个身位。 */
+:deep(.cam-pin-wrap) {
+  /* 外壳只负责被 Marker 定位（尺寸随里层图钉走，锚点圆心正好压在坐标上），不参与缩放 */
+  line-height: 0;
+}
 :deep(.cam-pin) {
   width: 20px;
   height: 20px;
@@ -1568,6 +1651,13 @@ onUnmounted(() => {
   text-align: center;
   cursor: pointer;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  /* 低缩放时随地图一起缩、一起淡（值由 applyCameraPinScale() 写在父级上） */
+  transform: scale(var(--cam-pin-scale, 1));
+  transform-origin: center center;
+  opacity: var(--cam-pin-opacity, 1);
+  transition:
+    transform 0.12s linear,
+    opacity 0.12s linear;
 }
 :deep(.cam-pin.empty) {
   background: #ffffff;
