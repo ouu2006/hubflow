@@ -501,6 +501,73 @@ const widthExpr = (main: number, ramp: number): ExpressionSpecification => [
   ['case', ['==', ['get', 'covered'], false], 0.55, 1],
 ]
 
+/**
+ * 路网三层的**基准线宽**（主 / 支两档，单位屏幕像素，取值对应 `fitZoom` 档）。
+ * 缩远时由 `applyLineScale()` 按档位整体折算 —— 这里只放基准值，别再散落魔法数字。
+ */
+const LINE_W_CASING: readonly [number, number] = [11, 9]
+const LINE_W_HEAT: readonly [number, number] = [26, 22]
+const LINE_W_LINE: readonly [number, number] = [5.5, 4.5]
+
+/**
+ * 线宽随缩放的系数（业主 2026-10-20 定版口径，与方向箭头同一套相对 `fitZoom` 的算法）：
+ *   - **`fitZoom` 及更近（放大）→ 恒为 1**，默认视野观感一点不动；
+ *   - **比默认视野更远 → 每降 1 档减半**（`2^-d`）。
+ *
+ * 为什么必须是 `2^-d`（等比）而不是随手拍一条缓曲线：
+ * `line-width` / `line-opacity` 的单位是**屏幕像素**，缩放时不变，而路网在屏幕上的
+ * **跨度**按 `2^-d` 缩、**面积**按 `4^-d` 缩。线宽若不跟着缩，同样的线在更小的地盘上
+ * 重叠 → 覆盖率按 `2^d` 爆，缩 2 档就是 ×4、3 档 ×8，于是「糊成一片、外面像包了层色」。
+ * 线宽严格按 `2^-d` 收，覆盖率才保持不变，缩多小都是同一张图的等比缩小版。
+ *
+ * 下限 0.15：再小下去主线不足 1 px、会被抗锯齿吃成虚影，反而不如留一根细线。
+ */
+function lineScaleOf(zoom: number): number {
+  const d = fitZoom - zoom // 比默认视野缩远了多少档（负数 = 放大）
+  if (d <= 0) return 1
+  return Math.max(0.15, Math.pow(2, -d))
+}
+
+/**
+ * 热力晕染的**额外淡出**系数：线宽已经按 `2^-d` 收过一遍，但热力是同色半透明宽带，
+ * 相邻段叠在一起仍会加深（0.1–0.6 的 opacity 叠两三层就到 0.8+）。
+ * 所以热力在「又缩」之外再按 `2^(-0.8d)` 单独压一道 —— 缩 2 档约 0.33、3 档触底 0.25。
+ *
+ * ⚠️ 下限 0.25，**不能归零**：业主明确「这个颜色不能完全去掉」，热力是拥挤指数视图的
+ * 主要读图线索，远景也要能看出哪里红。
+ */
+function heatFadeOf(zoom: number): number {
+  const d = fitZoom - zoom
+  if (d <= 0) return 1
+  return Math.max(0.25, Math.pow(2, -d * 0.8))
+}
+
+/** 上一次贴上去的线宽系数（避免每帧重建三个表达式；`force` 用于换样式后强制重贴） */
+let lastLineScale = -1
+
+/**
+ * 把当前缩放档折算成线宽 / 热力透明度贴回图层（`move` 事件里逐帧调）。
+ *
+ * `force = true` 的两个时机：① `fitZoom` 刚被 `fitToNetwork()` 改写；
+ * ② `setStyle()` 之后 —— 样式一换，paint 属性全部回到 `lineLayerSpecs()` 的基准值，
+ * 不强制重贴就会「底图加载完成那一刻线宽突然变粗」。
+ */
+function applyLineScale(map: MapLibreMap, force = false): void {
+  if (!map.getLayer(LAYER_CASING)) return
+  const zoom = map.getZoom()
+  const s = lineScaleOf(zoom)
+  if (!force && Math.abs(s - lastLineScale) < 0.004) return
+  lastLineScale = s
+  map.setPaintProperty(
+    LAYER_CASING,
+    'line-width',
+    widthExpr(LINE_W_CASING[0] * s, LINE_W_CASING[1] * s),
+  )
+  map.setPaintProperty(LAYER_HEAT, 'line-width', widthExpr(LINE_W_HEAT[0] * s, LINE_W_HEAT[1] * s))
+  map.setPaintProperty(LAYER_HEAT, 'line-opacity', ['*', ['get', 'heat'], heatFadeOf(zoom)])
+  map.setPaintProperty(LAYER_LINE, 'line-width', widthExpr(LINE_W_LINE[0] * s, LINE_W_LINE[1] * s))
+}
+
 function selectedFilter(): FilterSpecification {
   return ['==', ['get', 'segment_id'], props.selectedId ?? '']
 }
@@ -542,7 +609,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       type: 'line',
       source: SRC,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#FFFFFF', 'line-width': widthExpr(11, 9) },
+      paint: { 'line-color': '#FFFFFF', 'line-width': widthExpr(LINE_W_CASING[0], LINE_W_CASING[1]) },
     },
     // 热力晕染：只指数视图有值；四级视图 heat 恒 0，等于不画
     {
@@ -552,7 +619,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': widthExpr(26, 22),
+        'line-width': widthExpr(LINE_W_HEAT[0], LINE_W_HEAT[1]),
         'line-opacity': ['get', 'heat'],
       },
     },
@@ -563,7 +630,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': widthExpr(5.5, 4.5),
+        'line-width': widthExpr(LINE_W_LINE[0], LINE_W_LINE[1]),
         'line-opacity': ['case', ['==', ['get', 'covered'], false], 0.4, 1],
       },
     },
@@ -792,11 +859,13 @@ function fitToNetwork(map: MapLibreMap): void {
     ],
     { padding: 56, duration: 0 },
   )
-  // 记下默认视野档：图钉的缩放 / 淡出、方向箭头的基准尺寸都以「相对默认视野缩远了多少档」为准
+  // 记下默认视野档：图钉的缩放 / 淡出、方向箭头的基准尺寸、路网线宽的折算都以「相对默认视野缩远了多少档」为准
   fitZoom = map.getZoom()
   // 档位一变之前算出的箭头尺寸就过期了（图层里只存着基准值），立刻按新基准重算
   applyDirectionScale(map)
   applyCameraPinScale(map)
+  // 线宽 / 热力也是相对 fitZoom 折算的，基准一换必须强制重贴
+  applyLineScale(map, true)
 }
 
 // ---- 底图：异步、可失败、失败只丢自己 ----
@@ -966,6 +1035,8 @@ function applyViewState(map: MapLibreMap): void {
   applyDirectionVisibility(map)
   // 新建的图层里 `icon-size` 只有基准值，按当前档位重算一次真实尺寸 / 透明度
   applyDirectionScale(map)
+  // 线宽 / 热力透明度同理：`setStyle()` 后 paint 属性全部回到基准值，这里强制重贴
+  applyLineScale(map, true)
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
@@ -1101,9 +1172,11 @@ function initMap(): void {
     syncVehicles(map)
     map.on('move', () => {
       camTick.value++
-      // 图钉是 DOM（屏幕像素尺寸）、方向箭头只写了基准尺寸 —— 每帧按当前档位折算一次
+      // 图钉是 DOM（屏幕像素尺寸）、方向箭头只写了基准尺寸、路网线宽也是屏幕像素
+      // —— 每帧按当前档位折算一次
       applyCameraPinScale(map)
       applyDirectionScale(map)
+      applyLineScale(map)
     })
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
