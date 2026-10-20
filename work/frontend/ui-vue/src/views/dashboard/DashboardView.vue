@@ -581,6 +581,27 @@ const packSegmentCount = computed(() => activePack().segments.length)
 /** 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线 */
 const packSegmentIds = new Set(activePack().segments.map((s) => s.segment_id))
 
+// ---------- 落客点 / 候客区（业主 2026-10-20：先只上广州南站，别站先不动）----------
+//
+// 数据只吃**站点包**（`stationGZ.ts` 的 `dropoffs` / `zones`），不吃接口：
+//   · 接口侧 `GET /network` 对非默认站恒返回空点位表（`work/assembly/traffic.py` 如实给
+//     `points: []`，T1 点位表归池·S），拿它渲染只会在真接口模式下变成「没点位」的假空态；
+//   · 站点包里的坐标是**所在路段折线上的演示点**，不是踏勘实测 —— 卡上必须写清，不能当实测发布。
+// 开放范围先只到 GZ：Z（肇庆东）包也已有 3+2 个同类演示点，但业主这一轮只要广州南站，
+// 不擅自把别的站也放上界面；以后要开，改 `LANDMARK_ENABLED_PACKS` 一处即可。
+const LANDMARK_ENABLED_PACKS = ['GZ']
+const landmarksVisible = computed<boolean>(() => LANDMARK_ENABLED_PACKS.includes(activePack().key))
+const packDropoffs = computed(() => activePack().dropoffs)
+const packZones = computed(() => activePack().zones)
+const landmarkCount = computed<number>(() => packDropoffs.value.length + packZones.value.length)
+/** 卡脚注用的两个字段（站点包键 / 推荐的落客点），单独取成 computed，免得模板里反复调 activePack() */
+const landmarkPackKey = computed<string>(() => activePack().key)
+const landmarkArrivalDropoff = computed<string>(() => activePack().recommend.arrival_dropoff_point || '—')
+/** 经纬度展示：6 位小数 ≈ 0.1 m，够看清演示点落位，不假装更高精度 */
+function fmtLonLat(lon: number, lat: number): string {
+  return `${lon.toFixed(6)}, ${lat.toFixed(6)}`
+}
+
 // ---------- 整条路线规划（Issue IKNAUI）----------
 //
 // 入口：`GET /api/traffic/route/options`（只读辅助端点、非契约 §七）端出引擎产物的
@@ -1656,6 +1677,58 @@ function onCommandChanged(): void {
             <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
           </div>
         </section>
+        <!-- 落客点 / 候客区（业主 2026-10-20；先只上广州南站）。
+             口径三条：① 只吃站点包、不吃 /network（非默认站接口侧恒空表，见脚本注释）；
+             ② 坐标是路段折线上的**演示点**，不是实测点位，卡头必须标「演示」；
+             ③ 不画到地图上 —— 业主 2026-10-14 极简口径只管地图（DashboardView 脚本区注释原文），
+                文字卡不违反它，也不去改 MapLibreViewer。 -->
+        <section v-if="landmarksVisible && landmarkCount > 0" class="td-card landmark-card">
+          <div class="td-card-head">
+            落客点 / 候客区<span class="td-head-tag">站点包 · 演示数据</span>
+          </div>
+          <div class="td-card-body">
+            <p class="landmark-note">
+              以下点位<b>不是踏勘实测</b>：坐标按站区 OSM 路段折线取弧长落点，用来标出「落客 / 候客」这类设施的
+              <b>相对位置与语义</b>；具体到哪根桥柱、哪个车位不对应。真实点位归 IKMHMX。
+            </p>
+
+            <div class="landmark-group">
+              <div class="landmark-group-head">
+                落客点<span class="landmark-count">{{ packDropoffs.length }} 个</span>
+              </div>
+              <ul v-if="packDropoffs.length" class="landmark-list">
+                <li v-for="d in packDropoffs" :key="d.id" class="landmark-item">
+                  <span class="landmark-id td-mono">{{ d.id }}</span>
+                  <span class="landmark-name">{{ d.name }}</span>
+                  <span class="landmark-ll td-mono">{{ fmtLonLat(d.lon, d.lat) }}</span>
+                </li>
+              </ul>
+              <p v-else class="landmark-empty">该站点包未登记落客点（不补造）。</p>
+            </div>
+
+            <div class="landmark-group">
+              <div class="landmark-group-head">
+                候客 / 蓄车区<span class="landmark-count">{{ packZones.length }} 个</span>
+              </div>
+              <ul v-if="packZones.length" class="landmark-list">
+                <li v-for="z in packZones" :key="z.id" class="landmark-item">
+                  <span class="landmark-id td-mono">{{ z.id }}</span>
+                  <span class="landmark-name">{{ z.name }}</span>
+                  <span class="landmark-ll td-mono">{{ fmtLonLat(z.lon, z.lat) }}</span>
+                </li>
+              </ul>
+              <p v-else class="landmark-empty">该站点包未登记候客 / 蓄车区（不补造）。</p>
+            </div>
+
+            <p class="landmark-foot">
+              来源：站点包 <span class="td-mono">{{ landmarkPackKey }}</span> ·
+              推荐落客点
+              <span class="td-mono">{{ landmarkArrivalDropoff }}</span> ·
+              语义出处见 <span class="td-mono">docs/hubflow-data/06_站点事实_广州南站.md</span>
+            </p>
+          </div>
+        </section>
+
         <section class="td-card">
           <div class="td-card-head">
             路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? selectedId ?? '—' }}</span>
@@ -2799,6 +2872,78 @@ function onCommandChanged(): void {
   word-break: break-all;
 }
 
+/* ---------- 落客点 / 候客区（业主 2026-10-20；先只上广州南站） ---------- */
+.landmark-note {
+  margin: 0 0 7px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+.landmark-note b {
+  color: var(--td-text-color-secondary);
+}
+.landmark-group + .landmark-group {
+  margin-top: 7px;
+}
+.landmark-group-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.landmark-count {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--td-text-color-placeholder);
+}
+.landmark-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.landmark-item {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 1px 6px;
+  padding: 4px 0;
+  border-top: 1px solid var(--td-component-stroke);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.landmark-id {
+  grid-row: span 2;
+  align-self: start;
+  padding-top: 1px;
+  color: var(--td-brand-color);
+  font-size: 10px;
+  word-break: break-all;
+}
+.landmark-name {
+  color: var(--td-text-color-primary);
+}
+.landmark-ll {
+  color: var(--td-text-color-placeholder);
+  font-size: 10px;
+}
+.landmark-empty {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+.landmark-foot {
+  margin: 8px 0 0;
+  padding-top: 6px;
+  border-top: 1px solid var(--td-component-stroke);
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+  word-break: break-all;
+}
+
 /* 右栏顺序（Issue IKMS18）：点路段后**先看路段信息**（关联摄像头 / 决策计算摘要 / 直接下令），
    推荐路线卡排在其后 —— 监控管理平台的操作面板优先，不是删掉路线能力（C-2 一项不删）。
    .td-col 是 flex column，用 order 调整顺序，不改 DOM 结构。 */
@@ -2807,5 +2952,12 @@ function onCommandChanged(): void {
 }
 .col-right > .route-card {
   order: 2;
+}
+/* 落客点 / 候客区清单排最后：它是「本站有哪些设施」的背景信息，不抢点路段后要看的运行指标。
+   选择器必须写成 `.td-card.landmark-card`（两个类）：上面 `.td-card:not(.route-card)` 的
+   特异性是 3 个类，只写 `.landmark-card`（2 个类）压不过它，会掉回 order:1 跟路段信息并列。
+   与上面同一套 order 机制，不改 DOM 结构。 */
+.col-right > .td-card.landmark-card {
+  order: 3;
 }
 </style>

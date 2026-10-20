@@ -1393,3 +1393,69 @@ python scripts/doc_gate.py   # 8/8 通过
    本单只改尺寸与透明度，没碰位置、编号、点击跳转。
 4. **没有独立的图钉开关**：业主只要求「别挡图」，本单用「缩远自动淡出」达成。
    若以后要像箭头那样给一个显隐键，可复用 `settings.ts` 的同一套体例（第三个 KEY + ref + setter + restore 分支）。
+
+
+## 二十五、落客点 / 候客区上界面（业主 2026-10-20；先只上广州南站）
+
+> 来源：业主 2026-10-20 口径 —— 站点包里已经有落客点 / 候客区数据，但界面上一个都看不到，
+> 要求**先把广州南站的放出来**，别的站先不要动。
+> 前置事实：这份数据是 A 单（`!IKM4TE`）补进站点包的，入库时只到「数据层」，
+> 前端快照带上了、页面却没人消费（详见 21.5 遗留第 1 条）。
+
+### 25.1 卡在哪一层（动手前先查清的三处断点）
+
+| 层 | 现状 | 结论 |
+|---|---|---|
+| 站点包数据 | `stationGZ.ts` 有 `dropoffs` 5 个 + `zones` 4 个 | ✅ 现成，本单不动数据 |
+| 前端快照 | `mock/traffic.ts` 把 `pack.dropoffs` / `pack.zones` 映射进 `network`，真跑 `/api/traffic/network` + `X-Station-Pack: GZ` 返回 `dropoffs=5 / zones=4` | ✅ 有数据 |
+| 前端界面 | 全仓 `network.value` 只赋值不使用；`MapLibreViewer` 的 props 无点位入参 | ❌ 断点 |
+| 后端接口 | `work/assembly/traffic.py` 对**非默认站**直接给 `points: []`（note：「该站暂未登记点位表（T1 点位数据归池·S）；本接口如实返回空表」） | ❌ 断点，且不属本单领地 |
+| 引擎产物 | `work/engine/out/real/sites/guangzhounan/routes.json` 91 条请求 `dropoff_point` **全 null**（`work/engine/README.md` 规定真网无点位表就如实给 null，不补假点位） | ❌ 断点 |
+
+所以本单**只做一件事**：在右栏加一张读站点包的文字卡。地图不画（业主 2026-10-14 极简口径
+「图上只画路段线，断面 / 落客点 / 场区 / 站点不再下发地图」仍然有效，见 `DashboardView.vue` 脚本区注释），
+后端 points 表不碰（池·S 领地），引擎 null 不改（如实空窗是既定口径）。
+
+### 25.2 改了什么（单文件：`src/views/dashboard/DashboardView.vue`，+152 行）
+
+| 位置 | 改动 |
+|---|---|
+| 脚本区（`packSegmentIds` 之后） | 新增 `LANDMARK_ENABLED_PACKS = ['GZ']`（开放名单，一期只放广州南站）、`landmarksVisible`（名单内才显示）、`packDropoffs` / `packZones`（直取 `activePack()`）、`landmarkCount`、`landmarkPackKey`、`landmarkArrivalDropoff`（读 `recommend.arrival_dropoff_point`）、`fmtLonLat(lon, lat)`（6 位小数） |
+| 模板（推荐路线卡之后、路段信息卡之前） | 新增 `section.td-card.landmark-card`：卡头「落客点 / 候客区」+ `td-head-tag`「站点包 · 演示数据」；说明段明写**不是踏勘实测**；两组 `.landmark-group`（落客点 / 候客·蓄车区）各带条数，逐项列 `id` / 名称 / 经纬度；空态写「该站点包未登记…（不补造）」；卡脚标来源站点包 key、推荐落客点、语义出处 `docs/hubflow-data/06_站点事实_广州南站.md` |
+| 样式 | `.landmark-note` / `.landmark-group` / `.landmark-group-head` / `.landmark-count` / `.landmark-list` / `.landmark-item`（`grid-template-columns: 64px 1fr`，`id` 占两行）/ `.landmark-id` / `.landmark-name` / `.landmark-ll` / `.landmark-empty` / `.landmark-foot` |
+| 右栏顺序 | `.col-right > .td-card.landmark-card { order: 3 }` —— 排最后。选择器必须写**两个类**：上面 `.col-right > .td-card:not(.route-card)` 的特异性是 3 个类，只写 `.landmark-card`（2 个类）压不过它，会掉回 `order: 1` 跟路段信息并列 |
+
+三条口径写进了脚本注释，改的人不用再猜：
+
+1. **只吃站点包、不吃接口** —— 接口侧非默认站恒空表，拿它渲染只会在真接口模式下变成假空态；
+2. **坐标是路段折线上的演示点，不是实测** —— 卡上必须写清，不能当实测发布；
+3. **不画到地图** —— 业主 2026-10-14 极简口径只管地图，文字卡不违反它，也不去改 `MapLibreViewer`。
+
+### 25.3 自检（本单真跑，2026-10-20）
+
+- `npx vue-tsc -b` exit 0（`$env:PATH` 需前置 node 目录后调 `node_modules/.bin/vue-tsc.CMD`）；
+- `npx vite build` exit 0；
+- `python scripts/doc_gate.py` 8/8 通过；
+- 真机（本机 mock 模式，Edge + CDP 直读 DOM）：切到**广州南站 · 708 段**后
+  `document.querySelectorAll('.col-right > .td-card')` = `[route-card, landmark-card, td-card]`，
+  对应 computed `order` = `2 / 3 / 1`；`.landmark-card` 存在且 `innerText` 含 9 项
+  —— `GZ-DROP-01…05`（东/西出发平台、P3/P1/P5 快速接送区，坐标均为 6 位小数）+
+  `GZ-ZONE-01…04`（东广场网约车/出租车上客区、P9–P10 蓄车听单区、P8 C 区大巴上客点）；
+  分组计数 `drops = 5`、`zones = 4`；截图为证（`Page.captureScreenshot` 裁卡片本体，排版正常）。
+- 反过来验：仍在 **Z · 61 段** 时 `.landmark-card` **不在 DOM 里**（`landmarksVisible === false`），
+  证明「只上广州南站」这条限制真的生效，没顺手把肇庆东的 3+2 也放出来。
+
+### 25.4 遗留 / 说明
+
+1. **Z / Z21 没开**：Z 包也有 3 落客点 + 2 候客区（`stationZ.ts:235` 同口径演示点），
+   这一轮业主明确「别的站先不要动」，所以开放名单只有 `['GZ']`。以后要开，改
+   `LANDMARK_ENABLED_PACKS` 一处即可，界面不用动。
+2. **数据不进地图**（仍是 B 单）：要画到 `MapLibreViewer` 必须先过业主 2026-10-14 极简口径，
+   那是另一单、要业主点头。
+3. **后端 `/network?station=GZ` 仍 `dropoffs = 0`**：本单没碰 `stations/points.json`（T1 点位数据归池·S）。
+   也就是说这张卡在**真接口模式**下照样能显示（它读站点包），但接口本身仍是空表 —— 两件事互不替代。
+4. **引擎 `dropoff_point` 仍是 null**：右栏「落客」那行读的是引擎产物，真网无点位表就如实空窗，
+   按 `work/engine/README.md` 的既定口径不改。这张新卡是**另一条来源**，卡脚已标明出处。
+5. **卡不会自己滚动到底**：右栏 `.td-scroll` 的卡片顺序是 route(2) → 其他(1) → landmark(3)，
+   即路段信息卡（可达 1.6 万 px 高）在上，落客点卡排在最后。业主若要「一眼看到」，
+   可改成 `order: 0` 排最前 —— 一行改动，但会抢掉「点路段后先看运行指标」的既有优先级（IKMS18），需业主定。
