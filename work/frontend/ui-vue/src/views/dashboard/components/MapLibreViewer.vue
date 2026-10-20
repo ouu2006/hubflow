@@ -144,6 +144,14 @@ const SRC = 'hubflow-route'
 const DIR_SRC = 'hubflow-direction'
 const LAYER_DIRECTION = `${DIR_SRC}-marker`
 const DIR_ICON_PREFIX = 'hubflow-dir-'
+/**
+ * 默认视野档（`fitToNetwork()` 里 `map.fitBounds()` 之后记下真实档位）。
+ * 图钉的缩放 / 淡出、方向箭头的基准尺寸都以它为锚 —— **不能写死 zoom 14**：
+ * Z 站演示范围 500 m、GZ 站 1000 m，两者的默认视野档不是一个数。
+ */
+let fitZoom = 14
+/** 方向箭头在「默认视野档」下的基准尺寸（业主 2026-10-19：默认就固定这么大，放大不再变） */
+const DIR_ICON_BASE = 0.8
 /** 方向语义色（与拥堵等级色 / 品牌蓝 / 路线三态色都不撞）：只表示方向，不表示拥堵 */
 const DIR_COLORS: Record<DirectionKind, string> = {
   forward: '#1D5FD8',
@@ -376,21 +384,21 @@ function addDirectionImages(map: MapLibreMap): void {
 /**
  * 方向标记图层（symbol + icon，无 text/glyphs 依赖；随地图旋转对齐）。
  *
- * `icon-size` 的分档（业主 2026-10-19 口径）：
- *   业主原话是「缩小的时候箭头大小不变，结果挤在一起把地图挡住了」。
- *   **做法：以 zoom 15 为基准等比缩小** —— 用 `exponential 2` 指数插值，
- *   即缩放每降 1 档，箭头尺寸缩到 1/2（面积缩到 1/4），与视野面积同步；
- *   缩到 12 档只剩基准的 0.09/0.8 ≈ 1/9。
- *   为什么必须这么快（第一版做成每档 ×0.7 被业主退回「还是没变」）：
- *   本站演示范围只有 500 m，整张路网在 zoom 11 时屏幕上只剩几十像素，
- *   而箭头按 0.18 还有约 12 px、条数不变 —— 一个箭头就比整张网还宽，必然糊死。
- *   所以不是"略微变小"，而是**跟着视野等比缩**；放大回 15 档立刻恢复原尺寸。
- *   14→15 是唯一需要显性拐点：低档靠指数曲线，15 以上到 18 缓涨到 1.0。
+ * `icon-size`（业主 2026-10-19 第三次口径，最终定版）：
+ *   原话「让箭头的大小不要变了，就是默认值的大小固定，然后缩小地图，箭头也跟着缩小」。
+ *   即：**默认视野档（`fitZoom`）就是基准尺寸 `DIR_ICON_BASE`，放大不再变大**；
+ *   只有缩远时箭头才跟着地图一起缩。所以这里**不能再写 zoom 插值**——
+ *   插值表达式是编译期常量，锚不住 fitBounds 之后才知道的档位（各站演示范围不同：
+ *   Z 500 m / GZ 1000 m，默认档不是一个数）。尺寸改为运行时算：
+ *   见 `dirIconSizeOf()` / `applyDirectionScale()`，`move` 事件里逐帧贴回图层。
+ *   缩放比例取「每降 1 档减半」：箭头屏幕上占的是**地图比例尺**的位置，
+ *   视野每放大一倍（+1 档）同样的东西就该大一倍，反过来缩远就减半 ——
+ *   这也正是旧版 `exponential 2` 想要的效果，只是旧版顺带把「放大变大」也做了，
+ *   且锚点写死在 15 档，业主明确不要前者。
  *   另：`icon-allow-overlap` / `icon-ignore-placement` 保持 `true` —— 关掉会做**随机避让**，
  *   有些路段的方向箭头会凭空消失，方向语义就不完整了（变小可以，"缺失"不行）。
- *   光缩小不够：缩到 12 档时箭头虽然只有几像素，但数量仍是 61 个，视觉上仍会连成一片
- *   阴影，所以 `paint['icon-opacity']` 在 11.5 档淡出到 0、13 档 0.55、15 档起满不透明 ——
- *   远景只看路网走向，近景才看方向（方向语义在右栏文字里始终有）。
+ *   这里**不做透明度淡出**：业主口径是「缩小地图箭头也跟着缩小」，淡到没有就不是缩小了。
+ *   缩远后还嫌挡图，挡的其实是摄像头图钉（见第二十四章 `camPinOpacityOf`），不是箭头。
  *   `visibility` 跟着 `directionsVisible` 走：换样式重建图层时也要带上，否则关掉后
  *   一切底图/设置就又把箭头画回来。
  */
@@ -401,31 +409,13 @@ function directionLayerSpec(): SymbolLayerSpecification {
     source: DIR_SRC,
     layout: {
       'icon-image': ['get', 'icon'],
-      // 12 档 0.09 → 15 档 0.8（基准），指数 2 = 每降一档折半，与视野面积同步缩
-      'icon-size': [
-        'interpolate',
-        ['exponential', 2],
-        ['zoom'],
-        12, 0.09,
-        15, 0.8,
-        18, 1,
-      ],
+      // 只给基准值：真实尺寸由 applyDirectionScale() 按当前档位运行时刻算并覆盖
+      'icon-size': DIR_ICON_BASE,
       'icon-rotate': ['get', 'rotate'],
       'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
       visibility: directionsVisible.value ? 'visible' : 'none',
-    },
-    paint: {
-      // 缩到 11.5 档彻底淡出：尺寸再小也还会有重叠阴影，淡出才是「不挡图」的根治
-      'icon-opacity': [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        11.5, 0,
-        13, 0.55,
-        15, 1,
-      ],
     },
   }
 }
@@ -441,6 +431,8 @@ function addDirectionLayers(map: MapLibreMap): void {
     map.addLayer(directionLayerSpec(), before)
   }
   applyDirectionVisibility(map)
+  // 建图层时 `icon-size` 只写了基准值，立刻按当前档位贴一次真实值
+  applyDirectionScale(map)
 }
 
 /**
@@ -455,6 +447,26 @@ function applyDirectionVisibility(map: MapLibreMap): void {
     'visibility',
     directionsVisible.value ? 'visible' : 'none',
   )
+}
+
+/**
+ * 方向箭头在某个缩放档下的尺寸（业主 2026-10-19 定版口径）：
+ *   - **默认视野档 `fitZoom` 及更近（放大）→ 一律 `DIR_ICON_BASE`，不再变大**；
+ *   - **比默认视野更远（缩小）→ 随地图等比缩小**：每降 1 档尺寸减半。
+ * 只在下限 0.04 处截断（那时箭头已不足 3 px，本来就看不见了），
+ * **不做透明度淡出** —— 业主明确要的是「缩小时箭头跟着缩小」，淡到没有就不是缩小了。
+ * 低缩放下真正挡图的是摄像头图钉（见 `camPinOpacityOf`），不是箭头。
+ */
+function dirIconSizeOf(zoom: number): number {
+  const d = fitZoom - zoom // 比默认视野缩远了多少档（负数 = 放大）
+  if (d <= 0) return DIR_ICON_BASE
+  return Math.max(0.04, DIR_ICON_BASE * Math.pow(2, -d))
+}
+
+/** 把当前档位折算成方向箭头的尺寸贴回图层（`move` 事件里逐帧调） */
+function applyDirectionScale(map: MapLibreMap): void {
+  if (!map.getLayer(LAYER_DIRECTION)) return
+  map.setLayoutProperty(LAYER_DIRECTION, 'icon-size', dirIconSizeOf(map.getZoom()))
 }
 
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
@@ -640,9 +652,6 @@ let camMarkers: Marker[] = []
 /** 图钉外壳（缩放系数写在它的 CSS 变量上，Marker 自己的 transform 不被覆盖） */
 let camPinEls: HTMLElement[] = []
 
-/** 默认视野档（`fitToNetwork` 之后记下来，图钉的缩放 / 淡出都以它为基准） */
-let fitZoom = 14
-
 /**
  * 图钉随缩放变化：**DOM Marker 不会自己缩**（它是屏幕像素尺寸），
  * 而本站演示范围只有 500 m，滚轮缩到比默认视野更远时整张路网只剩屏幕中央一小团，
@@ -783,8 +792,11 @@ function fitToNetwork(map: MapLibreMap): void {
     ],
     { padding: 56, duration: 0 },
   )
-  // 记下默认视野档：图钉的缩放 / 淡出都以「相对默认视野缩远了多少档」为准
+  // 记下默认视野档：图钉的缩放 / 淡出、方向箭头的基准尺寸都以「相对默认视野缩远了多少档」为准
   fitZoom = map.getZoom()
+  // 档位一变之前算出的箭头尺寸就过期了（图层里只存着基准值），立刻按新基准重算
+  applyDirectionScale(map)
+  applyCameraPinScale(map)
 }
 
 // ---- 底图：异步、可失败、失败只丢自己 ----
@@ -952,6 +964,8 @@ function applyViewState(map: MapLibreMap): void {
   // 换样式会按 `directionLayerSpec()` 重建图层（里面已带 visibility），这里再贴一次兜底：
   // 万一样式没换、只是数据刷新，用户刚关掉的箭头不该被这次刷新带回来。
   applyDirectionVisibility(map)
+  // 新建的图层里 `icon-size` 只有基准值，按当前档位重算一次真实尺寸 / 透明度
+  applyDirectionScale(map)
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
@@ -1087,8 +1101,9 @@ function initMap(): void {
     syncVehicles(map)
     map.on('move', () => {
       camTick.value++
-      // 图钉是 DOM（屏幕像素尺寸），不会跟地图自己缩 —— 每帧按当前档位折算一次
+      // 图钉是 DOM（屏幕像素尺寸）、方向箭头只写了基准尺寸 —— 每帧按当前档位折算一次
       applyCameraPinScale(map)
+      applyDirectionScale(map)
     })
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
@@ -1256,7 +1271,7 @@ onUnmounted(() => {
         <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，非实测）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
         <!-- 箭头被关掉时说明一句：否则图例上还画着三种箭头，图上却一个都没有，会以为是画丢了 -->
         <div v-if="!directionsVisible" class="lg-note strong">当前已隐藏方向箭头（工具条「箭头」键可打开）</div>
-        <div class="lg-note">箭头随缩放变小：放大看细节，缩小只看走向，不会糊住路段线。</div>
+        <div class="lg-note">箭头默认档尺寸固定，缩小地图时跟着缩小，不会糊住路段线。</div>
         <div class="lg-sep" />
         <template v-if="isFlow">
           <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>

@@ -1244,13 +1244,19 @@ python scripts/doc_gate.py   # 8/8 通过
 3. **切站点包（Z⇄GZ）会整页刷新**（onPackChange 里 window.location.reload()），图例显隐跟着 localStorage 一起保持，不会退回展开。
 4. **另一套包切换器没动**：顶栏 AppShell.vue 的线路图下拉（.net-switch）与地图工具条的 .pack-switch 是两套 UI，本单只在地图工具条那套旁边加按钮。
 
-## 二十三、方向箭头随缩放变小 + 显隐开关（业主 2026-10-19）
+## 二十三、方向箭头随缩放变小 + 显隐开关（业主 2026-10-19，含 2026-10-20 三改定版）
 
 > 来源：业主 2026-10-19 口径 ——「我在缩小地图和放大地图的时候箭头的大小都是不变的，
 > 但是一旦我把地图缩小，箭头就会挤在一起，导致缩小的地图被箭头挡住，所以当地图缩小到
 > 一定大小就开始随着地图大小缩小，然后加一个可以关闭或打开的箭头的选项」。
 > 按钮位置：业主先说「就在我圈的里面」，随后改成「算了，按键你自己看着放吧」，
 > 故本单自行决定 —— 放在地图工具条 `.map-toolbar-right` 内、「图例」键之后、`.pack-switch` **之前**。
+>
+> **⚠️ 缩放曲线被业主改过三次，本文件只保留定版口径（2026-10-20）**：
+> 原话「算了，让箭头的大小不要变了，就是默认值的大小固定，然后缩小地图，箭头也跟着缩小」。
+> 即**默认视野档的尺寸固定、放大不再变大**，只有**缩远才跟着缩小**；前一版的 `icon-opacity` 淡出也一并删掉
+> （淡到看不见就不叫「跟着缩小」了，低缩放真正挡图的是第二十四章的摄像头图钉）。
+> 前两版的插值实现只在本章 23.3 留作踩坑记录，**代码里已经没有 zoom 插值**。
 
 ### 23.1 改之前为什么会「挤成一团」
 
@@ -1275,7 +1281,7 @@ python scripts/doc_gate.py   # 8/8 通过
 
 | 位置 | 改动 |
 |---|---|
-| `src/views/dashboard/components/MapLibreViewer.vue` | `directionLayerSpec()` 的 `icon-size` 改成**指数插值三点**（`['interpolate', ['exponential', 2], ['zoom'], 12, 0.09, 15, 0.8, 18, 1]`，zoom 每降 1 档尺寸按 2² 的幂次折半），另加 `paint['icon-opacity']` 淡出（zoom 11.5 → 0、13 → 0.55、15 → 1；**光缩小不够**，61 个箭头即使各几像素，叠在同一小块上照样连成阴影，远景直接淡出）；`layout` 末尾加 `visibility`（值取 `directionsVisible`，换样式重建图层时也带上）；新增 `applyDirectionVisibility(map)`（图层不在就静默 return）；`addDirectionLayers()` 末尾与 `applyViewState()` 刷完数据后各调一次；新增 `watch(directionsVisible)` 只切 `visibility`、不重建数据源 |
+| `src/views/dashboard/components/MapLibreViewer.vue` | **删除 `icon-size` 的 zoom 插值与 `paint['icon-opacity']` 淡出**（插值是编译期常量，锚不住 fitBounds 之后才知道的默认档；淡出与「跟着缩小」口径冲突）。新增模块级 `let fitZoom = 14`（`fitToNetwork()` 里 `fitBounds` 之后记下 `map.getZoom()`）与基准常量 `const DIR_ICON_BASE = 0.8`；新增 `dirIconSizeOf(zoom)` = 比默认档缩远 `d` 档就取 `max(0.04, 0.8 × 2^-d)`、**`d ≤ 0`（默认档与放大）一律 `0.8`**；新增 `applyDirectionScale(map)` 用 `setLayoutProperty(LAYER_DIRECTION, 'icon-size', …)` 逐帧贴回；`directionLayerSpec()` 里 `icon-size` 只留基准值 `DIR_ICON_BASE`；`layout` 末尾加 `visibility`（值取 `directionsVisible`，换样式重建图层时也带上）；新增 `applyDirectionVisibility(map)`（图层不在就静默 return）；调用点四处：`addDirectionLayers()` 末尾、`fitToNetwork()` 末尾、`applyViewState()` 刷完数据后、`map.on('move')` 里；新增 `watch(directionsVisible)` 只切 `visibility`、不重建数据源 |
 | `src/views/dashboard/DashboardView.vue` | 工具条加「箭头」常驻按钮（`.legend-toggle` + `.on` 态，`aria-pressed` 同步），点了调 `setDirectionsVisible(!directionsVisible)`；新增 `.legend-toggle.on { border-color: v-bind('TD.brand'); color: v-bind('TD.brand') }` |
 | `src/shared/settings.ts` | 新增 `directionsVisible: Ref<boolean>`（默认 `true`）、`setDirectionsVisible(on)`、存储键 `hubflow.settings.directions`；`restoreSettings()` 加第三个 `try` 块读回（读不到 / 内容坏了静默退回默认） |
 
@@ -1285,16 +1291,24 @@ python scripts/doc_gate.py   # 8/8 通过
   否则图例上还画着三种箭头、图上却一个都没有，会被当成画丢了；
 - 常显一行「箭头随缩放变小：放大看细节，缩小只看走向，不会糊住路段线。」——把这条口径写进界面。
 
-### 23.3 缩放曲线为什么不是「世界坐标等比」
+### 23.3 缩放曲线为什么不能写成 zoom 插值（三次改的踩坑记录）
 
 最直觉的做法是让箭头跟着地图一起等比缩（MapLibre 的 zoom 每 +1 视野线性减半，等价于图标每降一档 ×2）。
-**没第一次就这么做**：等比意味着 zoom 17 时单个图标要占 100 px 以上，反而把路段线彻底盖死 ——
+**第一次没敢这么做**：等比意味着放大时单个图标会持续变大，反而把路段线盖死 ——
 业主的诉求是「缩小时别糊住地图」，不是「任何缩放级别下箭头都同比占屏」。
 
-第一版按每档 **×0.7** 收（0.8 → 0.52 → 0.38 → 0.27 → 0.18 → 0.11），业主当场退回「还是没变」——
-因为本站演示范围只有 500 m，缩到 zoom 11 时整张路网在屏幕上只剩几十像素，×0.7 的箭头照样比路段粗。
-最终改成 **`exponential 2` 两点式**（12 档 0.09、15 档 0.8），并且**叠上 11.5 档淡出到 0** ——
-尺寸再小也还有重叠阴影，淡出才是「不挡图」的根治；远景本来就只看路网走向，方向语义在右栏文字里始终有。
+三次改动如下（前两次都作废，只留作记录）：
+
+| 次数 | 曲线 | 为什么退回 |
+|---|---|---|
+| 一 | 每档 **×0.7**（0.8 → 0.52 → 0.38 → 0.27 → 0.18 → 0.11） | 业主当场退回「还是没变」—— 本站演示范围只有 500 m，缩到 zoom 11 时整张路网在屏幕上只剩几十像素，×0.7 的箭头照样比路段粗 |
+| 二 | `exponential 2` 两点式（12 档 0.09、15 档 0.8）+ **11.5 档淡出到 0** | 业主第二次退回，并给出定版口径「默认值的大小固定，然后缩小地图，箭头也跟着缩小」：① 放大还会变大不符合「固定」；② 淡出到看不见不符合「跟着缩小」；③ 锚点写死 15 档，而各站默认档不同（Z 500 m / GZ 1000 m） |
+| 三（定版） | **运行时算**：`max(0.04, 0.8 × 2^-(fitZoom - zoom))`，`zoom ≥ fitZoom` 一律 `0.8` | — |
+
+**关键是第三次为什么必须离开样式表达式**：`icon-size` 的 `interpolate` 是编译期常量，
+而「默认视野档」要 `fitBounds` 之后才知道（各站演示范围不同）。所以尺寸改为在
+`move` 事件里用 `setLayoutProperty` 逐帧贴回 —— 基准 `fitZoom` 由 `fitToNetwork()` 写入，
+缩放比例取「每降 1 档减半」：视野每缩远一倍，同样大小的东西在屏幕上就该小一半。
 `icon-allow-overlap` / `icon-ignore-placement` **保持 `true` 不动**，理由见 23.1。
 
 ### 23.4 自检（本单真跑，2026-10-20）
@@ -1310,14 +1324,16 @@ python scripts/doc_gate.py   # 8/8 通过
 
 人工点验（本机 http://localhost:5173/#/dashboard，mock 模式，站点包 Z · 61 段）：
 
-- **缩小到 zoom ≈ 11**：原本满屏挤成一团的箭头消失，只剩零星很小的箭头，路段线不再被遮 —— 诉求①成立；
+- **默认视野**：箭头为基准尺寸，路段线可辨；
+- **滚轮缩远 1–2 档**：箭头跟着变小（不是变淡），路段线始终看得见 —— 定版诉求成立；
+- **再放大回默认档以上**：箭头尺寸**不再增大**，停在基准值；
 - **点「箭头」键**：图上箭头全部消失，图例出现「当前已隐藏方向箭头（工具条「箭头」键可打开）」，按钮不再是蓝边态；
 - **再点一次**：箭头恢复显示，提示消失，按钮回到蓝边态；
 - **关掉箭头后 Ctrl+F5**：刷新后仍是隐藏态（`localStorage` 的 `hubflow.settings.directions` 生效）。
 
 像素取证（同一窗口 1400×831 预览，`windows_computer_use` 截图 + PIL 连通域按 `DIR_COLORS` 计数）：
-默认视野下箭头块最大 17×11 px，缩远后降到 4~5 px 量级并整体淡出。**注意**：箭头淡出后仍会看到
-「挤」的观感，那是下一章的**摄像头图钉**（DOM Marker，屏幕像素固定）在挡，不是箭头。
+默认视野下紫色双向箭头最大块 10×8 px，缩远两档后降到 4~7 px。**注意**：缩远后仍会觉得「挤」，
+那是下一章的**摄像头图钉**（DOM Marker，屏幕像素固定）在挡，不是箭头。
 
 编码：三个改动文件均 **UTF-8 无 BOM、纯 LF**。
 
