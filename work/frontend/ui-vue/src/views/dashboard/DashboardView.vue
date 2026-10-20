@@ -2753,4 +2753,432 @@ function onCommandChanged(): void {
 .col-right > .route-card {
   order: 2;
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV：管理端 Web 自适应，适配 1080×1920 及以下屏幕）
+   断点统一 max-width，由大到小：1366 → 1180 → 1080 → 900 → 768 → 560。
+   1920×1080 设计稿零变化：本区块所有规则都在媒体查询内，不覆盖上面任何桌面规则。
+   分工：页面壳层（.td-page / .td-main / .td-body / .td-foot / 顶栏）由全局
+   style.css + AppShell.vue 负责；本区块只管「大屏页内部」的栏堆叠、卡片高度、
+   KPI / 地图 / 热力带 / 告警条与宽表滚动。
+   ========================================================================== */
+
+/* ---------- ≤1366：三栏仍并排（1366×768 属于该区间），只收窄左右栏 + 压缩留白 ---------- */
+@media (max-width: 1366px) {
+  /* 仅该区间固定左右栏宽：296 / 396 是 1920 设计稿值，在 1366 屏上会把弹性中栏压到
+     不足 700px。这里用 !important 压过 ElSplitter 写在 panel 上的行内 flex-basis。
+     ⚠️ 本区间（>1180 且 ≤1366）用户拖拽记忆不生效：拖拽回调仍会存宽度，但视觉宽度
+        被这两条固定 —— 属于「窄屏优先保证地图与右栏可读」的有意取舍。 */
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:first-child) {
+    flex-basis: 240px !important;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:last-child) {
+    flex-basis: 320px !important;
+  }
+  .kpi-bar {
+    margin: 10px 12px 8px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .stale-bar {
+    margin: 10px 12px 0;
+  }
+  .kpi-cell {
+    padding: 9px 12px;
+  }
+  .kpi-value {
+    font-size: 20px;
+  }
+  .band-card {
+    flex: 0 0 210px;
+  }
+  .heat-band {
+    gap: 8px;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-bar) {
+    flex-basis: 12px;
+  }
+}
+
+/* ---------- ≤1180：三栏纵向堆叠，整页文档滚动（本单主断点） ---------- */
+@media (max-width: 1180px) {
+  /* ① ElSplitter 改为纵向：bar 隐藏，panel 的「宽度」换成「整行」。
+     panel 上有组件写的行内 flex-basis（px），纵向布局下会变成「高度」，
+     必须用 !important 覆盖成 auto，否则三栏会被钉成 296 / 396 高。 */
+  .el-splitter.td-splitter {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    gap: 10px;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-bar) {
+    display: none;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-panel) {
+    flex: 0 0 auto !important;
+    width: 100%;
+    overflow: visible;
+  }
+  /* 再压一次 first/last：≤1366 区块给它们设了固定 flex-basis（那里是宽度），
+     堆叠后同一属性会变成高度，必须清回 auto（同权重、本块在后，按源顺序生效）。 */
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:first-child),
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:last-child) {
+    flex-basis: auto !important;
+  }
+  /* ② 三栏自身回到自然高度；滚动交给各卡片内部，不再出第二层纵向滚动。 */
+  .col-left,
+  .col-mid,
+  .col-right {
+    height: auto;
+    overflow: visible;
+  }
+  /* .col-right 同时挂了全局 .td-scroll（overflow-y:auto），用双类确保堆叠后不再整栏滚动。 */
+  .col-right.td-scroll {
+    overflow: visible;
+  }
+
+  /* ③ 左栏：路段监测列表给固定高度 + 内部滚动（其余卡片自然高度）。 */
+  .seg-card {
+    flex: 0 0 auto;
+    height: 420px;
+  }
+
+  /* ④ 中栏地图：按视口占比给高度，上下限防止矮屏太小 / 超长竖屏太大。 */
+  .map-card {
+    flex: 0 0 auto;
+    height: clamp(320px, 56vh, 620px);
+    min-height: 320px;
+  }
+  .map-toolbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .map-toolbar-left,
+  .map-toolbar-right {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  /* ⑤ 底部热力带：纵向堆叠；卡身不再裁剪（桌面为了一屏放下限制了 176px 高）。 */
+  .heat-band {
+    flex-direction: column;
+    gap: 10px;
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .band-card,
+  .band-card.wide {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  .band-card .td-card-body {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* ⑥ 底部告警条：允许换行，不再用 nowrap + 省略号硬挤。 */
+  .alert-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .alert-left {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    min-width: 0;
+  }
+  .alert-right {
+    margin-left: 0;
+  }
+}
+
+/* ---------- ≤1080：本单主验收尺寸（1080×1920 竖屏） ---------- */
+@media (max-width: 1080px) {
+  .kpi-bar {
+    margin: 8px 10px 8px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+  .stale-bar {
+    margin: 8px 10px 0;
+  }
+  /* 竖屏 1920 高时 56vh≈1075 会被 clamp 上限 620 截住；这里再降到 560，
+     让「地图 + 左栏列表 + 底部热力带」在竖屏首屏内更接近完整可见。 */
+  .map-card {
+    height: clamp(320px, 52vh, 560px);
+  }
+  .seg-card {
+    height: 400px;
+  }
+}
+
+/* ---------- ≤900：平板竖屏 / 手机横屏 ---------- */
+@media (max-width: 900px) {
+  /* KPI 4 格一行在 900 以下会把数字挤换行 —— 改 2×2。
+     odd 去掉左分隔线（每行首格），第 3/4 格补上分隔线。 */
+  .kpi-bar {
+    flex-wrap: wrap;
+  }
+  .kpi-cell {
+    flex: 1 1 50%;
+    max-width: 50%;
+    border-left: 1px solid var(--td-component-stroke);
+  }
+  .kpi-cell:nth-child(odd) {
+    border-left: none;
+  }
+  .kpi-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--td-component-stroke);
+  }
+  .seg-card {
+    height: 380px;
+  }
+  .map-card {
+    height: clamp(320px, 52vh, 520px);
+  }
+}
+
+/* ---------- ≤768：手机横屏 / 小平板 ---------- */
+@media (max-width: 768px) {
+  .kpi-bar {
+    margin: 8px 10px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+  .color-mode-bar {
+    margin-bottom: 8px;
+  }
+  .stale-bar {
+    margin: 8px 10px 0;
+  }
+  .kpi-cell {
+    padding: 8px 10px;
+  }
+  .kpi-value {
+    font-size: 19px;
+  }
+  .seg-card {
+    height: 340px;
+  }
+  .map-card {
+    height: clamp(320px, 52vh, 460px);
+  }
+  .map-toolbar {
+    padding: 7px 10px;
+  }
+  .map-caption {
+    padding: 5px 10px;
+  }
+  /* 告警摘要允许自然换行：手机宽度下 nowrap + 省略号会把「触发依据」整段吃掉。 */
+  .alert-summary {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
+/* ---------- ≤560：手机竖屏（390×844 等） ---------- */
+@media (max-width: 560px) {
+  .kpi-bar {
+    margin: 8px 8px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+  .stale-bar {
+    margin: 8px 8px 0;
+  }
+  .cm-note {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .kpi-cell {
+    padding: 7px 8px;
+  }
+  .kpi-label {
+    font-size: 11px;
+  }
+  .kpi-value {
+    font-size: 18px;
+  }
+  .kpi-unit {
+    margin-left: 3px;
+    font-size: 11px;
+  }
+  .kpi-sub {
+    font-size: 10px;
+  }
+  .seg-card {
+    height: 320px;
+  }
+  .map-card {
+    height: clamp(320px, 50vh, 440px);
+  }
+  .map-toolbar-left,
+  .map-toolbar-right {
+    gap: 6px;
+  }
+  .pack-switch-item {
+    padding: 3px 8px;
+  }
+  .map-caption {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  /* 右栏预测两列在 340px 宽内会挤成窄条 —— 小屏单列。 */
+  .pred-grid {
+    grid-template-columns: 1fr;
+  }
+  /* 方向 / 车道 的键列从固定 106px 收到 84px，值列允许换行到下一行。 */
+  .dir-kv {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .dir-kv .k {
+    flex: 0 0 84px;
+  }
+  .dir-kv .v {
+    flex: 1 1 160px;
+  }
+  .route-item-head {
+    flex-wrap: wrap;
+  }
+  .route-meta {
+    gap: 4px 8px;
+  }
+  .trip-segs {
+    margin-left: 0;
+  }
+  .alert-title {
+    white-space: normal;
+  }
+  .alert-summary {
+    flex: 1 1 100%;
+  }
+  .alert-right {
+    flex-wrap: wrap;
+  }
+  .sec-head {
+    margin: 10px 0 5px;
+  }
+  .act-btn {
+    height: 36px;
+  }
+  .heat-band {
+    margin-bottom: 6px;
+  }
+}
+
+/* ---------- 矮屏桌面（1366×768 / 1280×720 投影）：纵向留白再压一档 ----------
+   与 Lead 的全局 @media (max-height:800px) 同断点，只管大屏页内部：
+   不改数据、不改文案，只压 KPI / 颜色模式条 / 地图工具条的内边距，
+   把省下的高度还给地图（目标：地图可视高度 ≥300px、左栏列表 ≥2~3 行）。 */
+@media (max-height: 800px) and (min-width: 1181px) {
+  .kpi-bar {
+    margin: 6px 12px 6px;
+  }
+  .kpi-cell {
+    padding: 6px 10px;
+  }
+  .kpi-label {
+    font-size: 11px;
+  }
+  .kpi-value {
+    margin-top: 2px;
+    font-size: 18px;
+  }
+  .kpi-sub {
+    margin-top: 2px;
+    font-size: 10px;
+  }
+  .color-mode-bar {
+    margin-bottom: 4px;
+    padding: 4px 8px;
+  }
+  .cm-title {
+    font-size: 11px;
+  }
+  .cm-item {
+    height: 22px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  .cm-note {
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  /* 地图工具条回到单行：底图口径文案单行省略（完整文案仍在页脚口径条），
+     不再因为换行多吃一行高度。 */
+  .map-toolbar {
+    padding: 4px 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .map-toolbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .map-title {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .map-tag {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .map-toolbar-right {
+    flex: 0 0 auto;
+  }
+  .map-caption {
+    padding: 4px 10px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  /* 热力带卡身裁剪 176px → 150px（内容本身有内部滚动，不藏数据） */
+  .band-card .td-card-body {
+    max-height: 150px;
+  }
+  .heat-band {
+    margin-bottom: 6px;
+  }
+  .alert-bar {
+    padding: 6px 10px;
+  }
+  .alert-title {
+    font-size: 11px;
+  }
+  .alert-summary,
+  .alert-counts,
+  .alert-link {
+    font-size: 10.5px;
+  }
+  /* 左栏「选择监控」内部收紧，把高度让给下方路段列表（多出 1~2 行可见） */
+  .view-seg {
+    margin-bottom: 6px;
+  }
+  .dist-legend {
+    margin-top: 5px;
+    gap: 4px 10px;
+  }
+}
 </style>

@@ -30,4 +30,17 @@ import { CI_BANDS, ciGradientCss } from '../../../shared/traffic'
   color: var(--td-text-color-placeholder);
   font-family: var(--td-font-family-mono);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）：手机宽度下刻度数字缩小一号，5 个刻度不重叠。
+   断点与 DashboardView 一致：560。
+   ========================================================================== */
+@media (max-width: 560px) {
+  .ramp {
+    height: 10px;
+  }
+  .ticks {
+    font-size: 9px;
+  }
+}
 </style>

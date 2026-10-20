@@ -194,4 +194,38 @@ const summaryRows = computed(() => {
 .note.err {
   color: #ad352f;
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤1180：卡头 / 分隔行折行，长文案不横向顶破卡片 */
+@media (max-width: 1180px) {
+  .td-card-head,
+  .sep {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .td-card-head .td-head-tag,
+  .sep .td-head-tag {
+    margin-left: 0;
+  }
+}
+/* ≤768：5 环节流程在窄屏按 min-width 108px 自动折行（与全局断点口径一致），
+   环节值允许折行；键值行同理 */
+@media (max-width: 768px) {
+  .stage {
+    flex: 1 1 140px;
+    min-width: 108px;
+    max-width: 100%;
+  }
+  .st-val {
+    overflow-wrap: anywhere;
+  }
+  .kv {
+    flex-wrap: wrap;
+    row-gap: 1px;
+  }
+  .note,
+  .flow-note {
+    overflow-wrap: anywhere;
+  }
+}
 </style>

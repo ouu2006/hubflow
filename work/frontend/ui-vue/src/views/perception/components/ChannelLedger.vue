@@ -241,4 +241,44 @@ function stateOf(c: ChannelState): { text: string; cls: string } {
   color: var(--td-text-color-primary);
   font-weight: 500;
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤1180：整页改为文档滚动后，左栏不再靠 .td-col 的内部滚动限高；
+   台账列表保留一个合理上限 + 自身滚动（61 路时不会把监控墙推出去），其余卡片自然高度。 */
+@media (max-width: 1180px) {
+  .td-card-body.flush {
+    max-height: 46vh;
+    overflow-y: auto;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .td-card-head .td-head-tag {
+    margin-left: 0;
+  }
+  .chan-l1 {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .chan-l1 .td-chip {
+    margin-left: 0;
+  }
+  .chan-l3 {
+    overflow-wrap: anywhere;
+  }
+  .kv {
+    flex-wrap: wrap;
+    row-gap: 1px;
+  }
+}
+/* ≤768：说明文案 / 长值折行，不产生页面级横向滚动 */
+@media (max-width: 768px) {
+  .ledger-note,
+  .note,
+  .line,
+  .kv .v {
+    overflow-wrap: anywhere;
+  }
+}
 </style>

@@ -329,4 +329,66 @@ const gaps = computed<string[]>(() => {
 .gap-item::before {
   content: '· ';
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤900：两侧对照列按整宽折行，中间映射区改成横向一行，不再被压成窄条 */
+@media (max-width: 900px) {
+  .supply-body {
+    flex-wrap: wrap;
+    gap: 10px 12px;
+  }
+  .sup-col {
+    flex: 1 1 320px;
+  }
+  .sup-mid {
+    flex: 0 0 100%;
+    flex-direction: row;
+    justify-content: center;
+    gap: 10px;
+    text-align: left;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .td-card-head .td-head-tag {
+    margin-left: 0;
+  }
+}
+/* ≤768：缺口说明由 max-width:46% 改为整行（原来半宽会把长缺口挤成竖条） */
+@media (max-width: 768px) {
+  .s-gap {
+    max-width: 100%;
+    flex-basis: 100%;
+  }
+  .sup-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .s-name {
+    flex-basis: 120px;
+  }
+}
+/* ≤560：左右两列各占整行；映射区回到纵向，不横向溢出 */
+@media (max-width: 560px) {
+  .supply-card {
+    margin: 10px 10px 0;
+  }
+  .sup-col {
+    flex-basis: 100%;
+  }
+  .sup-mid {
+    flex-direction: column;
+    text-align: center;
+  }
+  .s-name {
+    flex: 0 0 108px;
+  }
+  .s-val {
+    flex: 1 1 auto;
+  }
+  .gap-band {
+    padding: 7px 10px;
+  }
+}
 </style>

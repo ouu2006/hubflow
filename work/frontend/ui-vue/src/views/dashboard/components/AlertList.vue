@@ -97,4 +97,22 @@ function statusClass(s: AlertStatus): string {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）：手机宽度下告警号 / 等级 / 状态会挤成一行，
+   改为允许换行（文案不动）。断点与 DashboardView 一致：560。
+   ========================================================================== */
+@media (max-width: 560px) {
+  .al-row {
+    gap: 4px;
+  }
+  .al-line1,
+  .al-line2 {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .al-status {
+    margin-left: 0;
+  }
+}
 </style>

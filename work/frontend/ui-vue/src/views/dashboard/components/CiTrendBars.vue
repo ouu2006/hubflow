@@ -75,4 +75,17 @@ function pct(ci: number): string {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）：手机宽度下把 58px 的走势图略微压低，
+   给同屏的告警 / 预测留出纵向空间（柱宽自适应，不改变口径）。断点：560。
+   ========================================================================== */
+@media (max-width: 560px) {
+  .plot {
+    height: 48px;
+  }
+  .bar {
+    border-radius: 1px 1px 0 0;
+  }
+}
 </style>

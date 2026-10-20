@@ -173,6 +173,8 @@ const ROUTE_DEPART_COLOR = '#7B61FF'
 /** 悬停浮牌尺寸（只用于翻面判断，与 CSS 里的 min/max-width 对应） */
 const CHIP_W = 210
 const CHIP_H = 26
+/** 摄像头浮牌宽度（与 <style> 中 .cam-chip 的 width 保持一致；窄屏 CSS 会用 min() 收小） */
+const CAM_CHIP_W = 192
 
 /** 'level' = 四级视图（默认） · 'index' = 拥挤指数视图 */
 type MapMode = CongestionViewMode
@@ -582,6 +584,12 @@ let camMarkers: Marker[] = []
 const pin = ref<CameraPin | null>(null)
 
 /**
+ * 图例是否展开（Issue IKP3EV）。≤1180 单列后地图整行变宽，整幅图例会盖住路网主体，
+ * 所以窄屏把图例收进可折叠浮层；手机/平板默认收起（地图优先），>1180 该状态不参与样式。
+ */
+const legendOpen = ref(!(typeof window !== 'undefined' && window.matchMedia('(max-width: 1180px)').matches))
+
+/**
  * 摄像头布点（Issue IKLX5Y）：位置取站点包 `channels[].lon/lat`（落在该段折线上的示意点，
  * **不是路测点位**），点击跳到感知层对应通道。
  * ⚠️ 2026-10-18 口径（IKNBT2）：图钉只是**源台账布点**（初始映射），不代表一期摄像头总数——
@@ -913,7 +921,13 @@ const camChipStyle = computed(() => {
   void camTick.value
   if (!map || !p) return {}
   const pt = map.project([p.lon, p.lat])
-  return { left: `${Math.max(6, pt.x - 96)}px`, top: `${Math.max(6, pt.y - 62)}px` }
+  // Issue IKP3EV：旧逻辑只夹左边界，窄地图（≤560 时画布可能只有 340px 宽）上图钉靠右时
+  // 192px 的浮牌右缘会被推出画布。这里左右都夹：先保左不越界，再保右不越界。
+  const w = containerRef.value?.clientWidth ?? 0
+  const half = CAM_CHIP_W / 2
+  const rawLeft = Math.max(6, pt.x - half)
+  const left = w > CAM_CHIP_W + 12 ? Math.min(rawLeft, w - CAM_CHIP_W - 6) : 6
+  return { left: `${left}px`, top: `${Math.max(6, pt.y - 62)}px` }
 })
 
 // ---- 建图 ----
@@ -1105,8 +1119,21 @@ onUnmounted(() => {
       {{ hoverChip }}
     </div>
 
-    <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级） -->
-    <div v-if="legend" class="legend">
+    <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级）。
+         Issue IKP3EV：≤1180 单列后地图变成整行宽，整幅图例（600px+ 宽）会盖住路网主体，
+         所以窄屏把图例收进可折叠浮层（默认收起，点「图例」展开）；
+         桌面 (>1180) 不包一层布局：.legend-dock 用 display:contents，.legend 仍相对 .mlmap 定位，
+         视觉与改造前完全一致。 -->
+    <div v-if="legend" class="legend-dock" :class="{ open: legendOpen }">
+      <button
+        type="button"
+        class="legend-toggle"
+        :aria-expanded="legendOpen"
+        @click="legendOpen = !legendOpen"
+      >
+        {{ legendOpen ? '图例 ▾' : '图例 ▸' }}
+      </button>
+      <div class="legend">
       <!-- IKOQEJ · 方向标记图例：两种颜色模式都有（方向标不随拥堵/流量换色） -->
       <div class="lg-title">方向标记（只读 enriched）</div>
       <div class="lg-row">
@@ -1191,6 +1218,7 @@ onUnmounted(() => {
           </div>
         </template>
       </template>
+    </div>
     </div>
   </div>
 </template>
@@ -1294,6 +1322,15 @@ onUnmounted(() => {
   white-space: nowrap;
   pointer-events: none;
   z-index: 4;
+}
+
+/* 图例浮层容器（Issue IKP3EV）：桌面 display:contents，DOM 包裹层对布局零影响
+   （.legend 仍相对 .mlmap 绝对定位）；只有窄屏媒体查询里才变成真正的折叠浮层。 */
+.legend-dock {
+  display: contents;
+}
+.legend-toggle {
+  display: none;
 }
 
 /* 图例：左下角（比例尺已挪到右下，不再打架） */
@@ -1455,5 +1492,137 @@ onUnmounted(() => {
 :deep(.cam-pin.empty) {
   background: #ffffff;
   color: #455a64;
+}
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）
+   地图是「容器尺寸驱动」的：≤1180 三栏堆叠后地图变整行宽，≤768/≤560 画布又收窄，
+   浮层（图例 / 浮牌 / 水印 / 底图角标）必须自己收，不能撑出画布或盖住比例尺。
+   断点含义与 DashboardView 一致：1180 / 768 / 560。
+   ========================================================================== */
+@media (max-width: 1180px) {
+  /* 堆叠后地图整行变宽，底图角标给右侧缩放控件让位，避免长文案压到控件上。 */
+  .basemap-note {
+    max-width: calc(100% - 96px);
+  }
+  /* 堆叠后地图高 320~620px，而整幅图例内容高 450px+、宽 670px+，会盖住大半张图。
+     窄屏改为「图例 ▸」折叠浮层：默认收起（只有一个小按钮），展开后限宽
+     min(320px, 72vw)、限高 min(360px, 36vh) 并内部滚动，信息一条不少。 */
+  .legend-dock {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    position: absolute;
+    left: 8px;
+    bottom: 8px;
+    z-index: 2;
+    max-width: min(320px, 72vw);
+    pointer-events: none;
+  }
+  .legend-toggle {
+    display: inline-flex;
+    align-items: center;
+    height: 24px;
+    padding: 0 9px;
+    font: inherit;
+    font-size: 11px;
+    color: #1a1a1a;
+    background: rgba(255, 255, 255, 0.94);
+    border: 1px solid #e8e8e8;
+    border-radius: 4px;
+    cursor: pointer;
+    pointer-events: auto;
+  }
+  .legend-dock .legend {
+    position: static;
+    left: auto;
+    bottom: auto;
+    max-width: 100%;
+    max-height: min(360px, 36vh);
+    overflow: auto;
+    pointer-events: auto;
+    padding: 7px 9px;
+    gap: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .legend-dock:not(.open) .legend {
+    display: none;
+  }
+  .lg-note {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 顶部三层：底图角标（左上）/ 水印（上中）/ 缩放控件（右上）——逐个限宽，互不重叠。 */
+  .watermark {
+    max-width: 46%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 10px;
+  }
+  .basemap-note {
+    top: 8px;
+    left: 8px;
+    max-width: calc(100% - 84px);
+    padding: 2px 6px;
+    gap: 5px;
+    font-size: 10px;
+  }
+  .attribution {
+    top: 30px;
+    left: 8px;
+    max-width: calc(100% - 16px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 9px;
+  }
+  /* 图例在 ≤1180 已是折叠浮层：这里只收紧字号 / 限宽，给右下比例尺让位。 */
+  .legend-dock {
+    max-width: min(300px, 76vw);
+  }
+  .lg-title,
+  .lg-row,
+  .lg-row.ts {
+    font-size: 10px;
+  }
+  .lg-note {
+    font-size: 9px;
+    line-height: 1.45;
+  }
+  /* 浮牌：内容允许换行，宽度不超过画布。 */
+  .hover-chip {
+    max-width: min(220px, calc(100% - 16px));
+    white-space: normal;
+  }
+  .cam-chip {
+    width: min(192px, calc(100% - 16px));
+  }
+}
+
+@media (max-width: 560px) {
+  .legend-dock {
+    left: 6px;
+    bottom: 6px;
+    max-width: min(280px, 78vw);
+  }
+  .legend-dock .legend {
+    padding: 6px 8px;
+    max-height: min(300px, 34vh);
+  }
+  .lg-title {
+    font-size: 9.5px;
+  }
+  /* MapLibre 自带控件（缩放 / 比例尺）在窄地图里收紧外边距，避免与图例/水印打架。 */
+  :deep(.maplibregl-ctrl-top-right) {
+    margin: 4px 4px 0 0;
+  }
+  :deep(.maplibregl-ctrl-bottom-right) {
+    margin: 0 4px 4px 0;
+  }
 }
 </style>

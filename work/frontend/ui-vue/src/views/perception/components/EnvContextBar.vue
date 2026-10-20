@@ -219,4 +219,67 @@ function unitText(value: number | null | undefined, unit: string): string {
   border-radius: 2px;
   vertical-align: -1px;
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤900：天气 / 时间两块不再死守「auto auto 两列 × 3 行」（窄屏会与卡宽打架），
+   整条改为自动折行；字段值允许折行，长文案不再横向溢出。 */
+@media (max-width: 900px) {
+  .env-body {
+    flex-wrap: wrap;
+    gap: 12px 16px;
+  }
+  .env-block {
+    flex: 1 1 220px;
+    min-width: 0;
+  }
+  /* 因地制宜块内容最长，独占一行 */
+  .env-block.grow {
+    flex-basis: 100%;
+  }
+  .env-block:not(.grow) {
+    grid-template-columns: repeat(2, minmax(0, auto));
+    grid-auto-flow: row;
+    grid-template-rows: none;
+  }
+  .env-title {
+    flex-wrap: wrap;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .td-card-head .td-head-tag {
+    margin-left: 0;
+  }
+  .env-kv .v {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .env-err,
+  .env-note {
+    overflow-wrap: anywhere;
+  }
+}
+/* ≤560：两块各占一行；边距收窄把宽度让给内容 */
+@media (max-width: 560px) {
+  .env-bar {
+    margin: 10px 10px 0;
+  }
+  .env-body {
+    gap: 10px 12px;
+    padding: 8px 10px;
+  }
+  .env-block {
+    flex-basis: 100%;
+  }
+  .env-kv {
+    gap: 4px;
+  }
+  .env-kv .k {
+    min-width: 48px;
+  }
+  .env-note {
+    padding: 5px 10px;
+  }
+}
 </style>

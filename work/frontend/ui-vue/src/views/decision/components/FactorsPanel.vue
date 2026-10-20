@@ -197,4 +197,30 @@ watch(
   font-size: 11px;
   color: var(--td-text-color-secondary);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤900:卡片内边距与置位开关按触屏收紧/放大 */
+@media (max-width: 900px) {
+  .td-card-body {
+    padding: 8px 10px;
+  }
+  .sw {
+    height: 26px;
+  }
+}
+/* ≤560:置位行允许换行(编号 + 因素名 + 开关),按钮触摸高度 32px;复位行同样可换行 */
+@media (max-width: 560px) {
+  .frow {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .sw {
+    height: 32px;
+    padding: 0 12px;
+  }
+  .foot-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+}
 </style>

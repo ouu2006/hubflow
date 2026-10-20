@@ -146,4 +146,34 @@ const GLYPH: Record<AlertStatus, string> = {
   font-size: 11px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 队列行本身无固定宽度/nowrap,窄屏只需收紧内边距保证行高与可点面积 */
+@media (max-width: 900px) {
+  .grp {
+    padding: 6px 10px 4px;
+  }
+  .q-row {
+    padding: 8px 10px;
+  }
+  .q-empty {
+    padding: 6px 10px;
+  }
+}
+/* ≤560:路段名允许折行(长站名不挤压等级徽章 / 时间),不出现页面横向滚动 */
+@media (max-width: 560px) {
+  .q-seg {
+    line-height: 1.5;
+  }
+  .q-bot {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .grp {
+    padding: 6px 8px 4px;
+  }
+  .q-row {
+    padding: 8px;
+  }
+}
 </style>
