@@ -590,6 +590,19 @@ const pin = ref<CameraPin | null>(null)
 const legendOpen = ref(!(typeof window !== 'undefined' && window.matchMedia('(max-width: 1180px)').matches))
 
 /**
+ * 跨断点复位图例开合（Issue IKP3EV 独立审查整改）：上面只在 setup 求值一次，
+ * 桌面加载后再把窗口缩到 ≤1180，图例仍保持展开、会盖住地图（需刷新才复位）。
+ * 监听 1180 断点：跨入窄屏默认收起（地图优先），跨回桌面默认展开。
+ * 用户手动点开/收起的状态在同一个断点区间内不受影响。
+ */
+const legendMq = typeof window !== 'undefined' ? window.matchMedia('(max-width: 1180px)') : null
+function onLegendMqChange(e: MediaQueryListEvent): void {
+  legendOpen.value = !e.matches
+}
+onMounted(() => legendMq?.addEventListener('change', onLegendMqChange))
+onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
+
+/**
  * 摄像头布点（Issue IKLX5Y）：位置取站点包 `channels[].lon/lat`（落在该段折线上的示意点，
  * **不是路测点位**），点击跳到感知层对应通道。
  * ⚠️ 2026-10-18 口径（IKNBT2）：图钉只是**源台账布点**（初始映射），不代表一期摄像头总数——
