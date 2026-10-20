@@ -112,4 +112,21 @@ watch(
   font-size: 12px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 预测行是固定列宽 + 弹性徽章,390px 下不溢出;仅按断点收紧内边距与列距 */
+@media (max-width: 900px) {
+  .td-card-body {
+    padding: 8px 10px;
+  }
+}
+@media (max-width: 560px) {
+  .prow {
+    gap: 6px;
+  }
+  .pd,
+  .pv {
+    width: 44px;
+  }
+}
 </style>

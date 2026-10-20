@@ -78,4 +78,23 @@ function multText(m: number): string {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）：手机宽度下因素名不再单行省略，允许换行。
+   断点与 DashboardView 一致：560。
+   ========================================================================== */
+@media (max-width: 560px) {
+  .fac-row {
+    gap: 6px;
+  }
+  .fac-name {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    line-height: 1.45;
+  }
+  .fac-m {
+    min-width: 36px;
+  }
+}
 </style>

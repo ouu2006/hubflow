@@ -297,4 +297,33 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
   color: var(--v-textdim);
   word-break: break-word;
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤900：监控墙两列后画面区设最小高度，避免窄屏把 16:9 画面压成细条；
+   标题行 / 指标行允许换行，不顶破格宽。aspect-ratio 仍按源分辨率（960×600 ≈ 16:10）由行内样式给定。 */
+@media (max-width: 900px) {
+  .cell-media {
+    min-height: 160px;
+  }
+  .cell-top {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .cell-foot {
+    flex-wrap: wrap;
+    row-gap: 1px;
+  }
+}
+/* ≤560：单列，画面区保持 16:9 观感所需的最小高度 */
+@media (max-width: 560px) {
+  .cell-media {
+    min-height: 180px;
+  }
+  .ct-name {
+    font-size: 11px;
+  }
+  .cf-cnt {
+    margin-left: 0;
+  }
+}
 </style>

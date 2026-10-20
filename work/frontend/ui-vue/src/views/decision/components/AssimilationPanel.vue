@@ -110,4 +110,21 @@ onMounted(() => {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 断面行 = 编号 + 可省略站名 + 状态 chip,窄屏不换行也不溢出(站名已 ellipsis) */
+@media (max-width: 900px) {
+  .td-card-body {
+    padding: 8px 10px;
+  }
+}
+@media (max-width: 560px) {
+  .atop {
+    gap: 6px;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+}
 </style>

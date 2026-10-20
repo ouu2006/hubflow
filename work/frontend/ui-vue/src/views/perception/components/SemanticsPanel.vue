@@ -58,4 +58,21 @@ const lineNote = `虚线 = 越线计数线(line_position = ${COUNT_LINE_POS},归
 .line strong {
   color: var(--td-text-color-primary);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤768：图例与长句按整宽折行，不产生横向溢出 */
+@media (max-width: 768px) {
+  .legend {
+    gap: 10px 14px;
+  }
+  .line {
+    overflow-wrap: anywhere;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+  }
+  .td-card-head .td-head-tag {
+    margin-left: 0;
+  }
+}
 </style>

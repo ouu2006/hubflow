@@ -401,4 +401,45 @@ onBeforeUnmount(() => {
 .td-switch.on .td-switch-knob {
   left: 17px;
 }
+
+/* ---------- 响应式（Issue IKP3EV，2026-10-20）----------
+   壳层在窄屏的职责只有两件：
+   ① ≤1180 时放开主体高度（原 flex:1 + min-height:0 会把整页锁成一屏，
+      导致单列后内容被裁）；② 顶栏两个弹出层在手机上不超出视口。
+   顶栏本身的换行 / 页签横滑规则在 `src/style.css` 的≤1080 断点里（.td-top 是全局类）。 */
+@media (max-width: 1180px) {
+  .td-main {
+    flex: 0 0 auto;
+  }
+}
+@media (max-width: 1080px) {
+  .net-switch-menu {
+    min-width: min(260px, calc(100vw - 24px));
+  }
+  .td-settings-menu {
+    width: min(320px, calc(100vw - 24px));
+  }
+}
+@media (max-width: 768px) {
+  .net-switch-label {
+    max-width: 132px;
+  }
+  .net-switch-btn,
+  .td-settings-btn {
+    padding: 6px 10px;
+  }
+  .net-switch-menu,
+  .td-settings-menu {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+}
+@media (max-width: 560px) {
+  .td-settings-menu {
+    padding: 8px 10px;
+  }
+  .td-set-note {
+    font-size: 10px;
+  }
+}
 </style>

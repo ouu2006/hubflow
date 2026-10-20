@@ -554,4 +554,76 @@ function bandPos(x: number, max: number): string {
   font-weight: 600;
   color: var(--td-text-color-primary);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤1180:单列时面板占满整宽,卡片之间保持 8px 间距(与页内其它卡片一致);
+   四档阈值游标的内部盒子(.band-cursor 的 left 百分比偏移)会超出步骤行,
+   单列后列内不再裁剪 → 在步骤体上裁掉横向溢出,避免整页出现横向滚动条(游标本身仍在栏内)。 */
+@media (max-width: 1180px) {
+  .flow {
+    gap: 8px;
+  }
+  .step-body {
+    overflow-x: clip;
+  }
+}
+/* ≤900:卡片内边距 / 步骤间距压缩,首屏信息密度提升 */
+@media (max-width: 900px) {
+  .td-card-body {
+    padding: 8px 10px;
+  }
+  .step {
+    gap: 8px;
+    padding: 7px 0;
+  }
+  .ci-big {
+    font-size: 22px;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+}
+/* ≤768:输入网格从 auto-fill(150px)降为固定 2 列,避免窄屏出现半列空档 */
+@media (max-width: 768px) {
+  .in-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px 10px;
+  }
+  .pred-grid {
+    gap: 6px;
+  }
+  .band-track {
+    gap: 2px;
+  }
+}
+/* ≤560:单列输入网格;阈值档位条 / CI 公式按窄屏折行,不撑破页面 */
+@media (max-width: 560px) {
+  .in-grid {
+    grid-template-columns: 1fr;
+  }
+  .ci-line {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+  .ci-big {
+    font-size: 20px;
+  }
+  .band-seg {
+    padding: 3px 1px;
+    font-size: 9px;
+  }
+  .step-no {
+    flex: 0 0 18px;
+    height: 18px;
+  }
+  .sec-head {
+    margin: 10px 0 5px;
+    font-size: 11px;
+  }
+  .pred-v {
+    font-size: 15px;
+  }
+}
 </style>

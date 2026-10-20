@@ -238,6 +238,9 @@ function targetLabel(target: string): string {
           </div>
           <p class="tiny">{{ xSampleNote }}<span class="sep">|</span>当前 x = {{ fmt(record.x) }}</p>
         </div>
+        <!-- 响应式（Issue IKP3EV）：窄屏下三列表格会撑破右栏，外面套一层横向滚动容器，
+             桌面宽度下容器与表格同宽，不产生任何视觉变化。 -->
+        <div class="tbl-scroll">
         <table class="td-table th-table">
           <thead>
             <tr>
@@ -254,6 +257,7 @@ function targetLabel(target: string): string {
             </tr>
           </tbody>
         </table>
+        </div>
         <p class="tiny">{{ thresholdsSource }}<span class="sep">|</span>{{ CI_DISCLAIMER }}</p>
       </template>
       <p v-else class="empty sm">阈值未取到（/thresholds 不可用）——不伪造四档边界。</p>
@@ -438,5 +442,34 @@ function targetLabel(target: string): string {
 }
 .deep-note {
   margin-top: 2px;
+}
+/* 表格横向滚动容器：桌面宽度下与表格同宽（不产生横滚条），窄屏才真正起作用。 */
+.tbl-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）
+   断点与 DashboardView 一致：1180 / 768 / 560。
+   ========================================================================== */
+@media (max-width: 768px) {
+  /* 四档阈值三列表格：给它一个最小宽度，由外层 .tbl-scroll 横向滑动，
+     而不是把「四档边界」列压成两个字一行。 */
+  .th-table {
+    min-width: 400px;
+  }
+}
+
+@media (max-width: 560px) {
+  /* 输入网格 2 列→1 列：手机宽度下 label + value 各占半行会被折成两行。 */
+  .in-grid {
+    grid-template-columns: 1fr;
+  }
+  .deep-link {
+    display: block;
+    margin-top: 10px;
+  }
 }
 </style>

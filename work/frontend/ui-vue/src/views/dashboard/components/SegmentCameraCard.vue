@@ -467,4 +467,43 @@ watch(
   font-size: 11px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）
+   断点与 DashboardView 一致：1180 / 768 / 560。桌面 1920 设计稿零变化。
+   ========================================================================== */
+@media (max-width: 1180px) {
+  /* 三栏堆叠后右栏变成整行宽。不能用「width:auto + aspect-ratio + max-height」：
+     当高度被 max-height 截住时，浏览器会把「自动宽度」按比例反推，
+     视频区会缩成 533×300 居中一块（1024 实测）。改为直接给高度
+     + aspect-ratio:auto，宽度自然铺满整行，画面仍由 object-fit: cover 撑满。 */
+  .cam-media {
+    aspect-ratio: auto;
+    height: clamp(180px, 34vw, 300px);
+  }
+}
+
+@media (max-width: 768px) {
+  .cam-media {
+    height: clamp(170px, 42vw, 260px);
+  }
+  .cam-badge {
+    left: 4px;
+    bottom: 4px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 560px) {
+  .cam-head {
+    gap: 4px;
+  }
+  /* 手机宽度下 16:9 自然比例（340px 宽 ≈ 191px 高），给个下限避免过矮。 */
+  .cam-media {
+    height: clamp(150px, 50vw, 220px);
+  }
+  .cam-note {
+    font-size: 9.5px;
+  }
+}
 </style>

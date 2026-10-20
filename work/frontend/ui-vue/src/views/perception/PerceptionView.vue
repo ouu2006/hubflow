@@ -300,6 +300,7 @@ onUnmounted(() => {
 
 <template>
   <AppShell
+    class="p-perception"
     active="perception"
     :station="stationName"
     :ts="snapshotTs"
@@ -397,5 +398,69 @@ onUnmounted(() => {
 .err-text {
   font-size: 12px;
   color: var(--td-warning-color);
+}
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 断点口径与全局 foundation 统一：max-width 1180 / 1080 / 900 / 768 / 560。
+   本页 scoped 规则（.td-body > .col-left 等）特异性高于全局 .td-col，因此必须在同一断点
+   显式覆盖，否则三栏的固定宽度（254 / flex / 372）会赢过全局的纵向单列。 */
+@media (max-width: 1180px) {
+  /* 三栏 → 纵向单列：整页由文档滚动（高度 auto / 栏内滚动取消由全局 foundation 负责） */
+  .td-body {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .td-body > .col-left,
+  .td-body > .col-mid,
+  .td-body > .col-right {
+    flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+  /* 页头错误条在窄屏可折行，长文案不再顶出横向滚动 */
+  .err-body {
+    flex-wrap: wrap;
+  }
+  .err-text,
+  .head-err {
+    overflow-wrap: anywhere;
+  }
+}
+/* ≤768：页头右侧「口径角标 + 处理时间戳」不再强制一行，长角标内部可折行 */
+@media (max-width: 768px) {
+  .td-badge-warn,
+  .head-ts {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .head-err {
+    font-size: 11px;
+    line-height: 1.55;
+  }
+  .err-body {
+    align-items: flex-start;
+  }
+}
+
+/* ---- 低高度桌面（≤1000px 高，且宽 >1180）：整页文档滚动 ----
+   本页的 EnvContextBar / DataSupplyPanel 在 .td-body 之外；三栏 100% 高 + 页面锁一屏时，
+   中间栏会被压扁、监控墙被裁且无滚动条（1366×768 / 1440×900 实测）。
+   这里把栏目恢复为自然高度，由全局 `.td-page.p-perception` 放开页面高度（style.css）。
+   1920×1080（1080 > 1000）不命中，桌面布局不变。 */
+@media (max-height: 1000px) and (min-width: 1181px) {
+  .td-body {
+    flex: 0 0 auto;
+  }
+  .td-body > .col-left,
+  .td-body > .col-mid,
+  .td-body > .col-right {
+    height: auto;
+    max-height: none;
+    overflow: visible;
+  }
+  /* 台账卡在低高度下不再靠 46vh 内部滚动撑高，改用自然高度 + 整页滚动 */
+  .td-body > .col-left :deep(.td-card) {
+    max-height: none;
+  }
 }
 </style>

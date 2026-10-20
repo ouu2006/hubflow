@@ -317,4 +317,45 @@ async function reset(): Promise<void> {
 .sep {
   color: var(--td-text-color-placeholder);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤900:逐项调控行(天气 / 时段 / 需求倍率)允许换行,滑杆独占一行;
+   注入前后对照条同样换行,不撑破卡片 */
+@media (max-width: 900px) {
+  .ctl-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ctl-k {
+    flex: 0 0 56px;
+  }
+  .ctl-row .range {
+    flex: 1 1 100%;
+  }
+  .cmp {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+  .sec-tag {
+    margin-left: 0;
+  }
+}
+/* ≤560:按钮触摸高度 32px;来源标签 / 当前环境说明整行换行 */
+@media (max-width: 560px) {
+  .sec-head {
+    font-size: 11px;
+  }
+  .btn-row .td-btn {
+    height: 32px;
+  }
+  .ctl-k {
+    flex: 0 0 48px;
+  }
+  .note.inline {
+    flex: 1 1 100%;
+  }
+  .range {
+    width: 100%;
+  }
+}
 </style>

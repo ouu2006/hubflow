@@ -976,15 +976,132 @@ function onFlowChanged(): void {
   color: #ad352f;
 }
 
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 断点与全局 foundation 对齐:1366 / 1180 / 1080 / 900 / 768 / 560(一律 max-width)。
+   全局在 ≤1180 负责「整页文档滚动」(.td-page 高度 auto、.td-main 不再 flex:1、
+   .td-body 纵向单列、.td-col 高度 auto 且 overflow visible),本文件不再重复定义整页高度,
+   只补决策页自己的列宽 / 列级滚动 / 间距 / 控件。 */
+
+/* ≤1180:三个视图(决策可视化单列 / 处置队列三栏 / 效果对比两列)一律占满整宽;
+   列级 .td-scroll 取消内滚动,统一交给整页文档滚动(避免滚动套滚动)。
+   断点内同时覆盖基础列宽,即使全局 foundation 尚未生效也不会横向溢出。 */
 @media (max-width: 1180px) {
   .td-body {
     flex-direction: column;
-    overflow-y: auto;
+    gap: 8px;
+    padding: 0 12px 10px;
   }
+  .flow-col,
+  .cmp-col,
   .col-queue,
-  .col-side,
-  .col-work {
+  .col-work,
+  .col-side {
     flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+  .td-col {
+    overflow: visible;
+    min-height: 0;
+  }
+}
+
+/* ≤1080(含 1080×1920 竖屏):单列已成立,进一步压缩主体左右留白。 */
+@media (max-width: 1080px) {
+  .td-body {
+    padding: 0 10px 8px;
+  }
+}
+
+/* ≤900:页头右侧控件(视图切换 / 快照 / 复位按钮)可压缩换行;
+   工作台右侧竖排小注改横排(保留文案,不隐藏信息)。 */
+@media (max-width: 900px) {
+  .td-seg {
+    flex-wrap: wrap;
+  }
+  .snapshot {
+    font-size: 10px;
+  }
+  .wb-body {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .wb-side {
+    writing-mode: horizontal-tb;
+    justify-content: flex-start;
+    padding: 6px 0 0;
+    border-left: none;
+    border-top: 1px dashed var(--td-component-stroke);
+    letter-spacing: 0;
+  }
+  .sec {
+    gap: 6px;
+    padding: 8px 0;
+  }
+}
+
+/* ≤768:工作台滑杆 / 输入行换行并全宽,按钮触摸高度抬到 32px。 */
+@media (max-width: 768px) {
+  .td-body {
+    padding: 0 10px 8px;
+  }
+  .slider-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .slider-row .range {
+    flex: 1 1 100%;
+  }
+  .wb-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .wd,
+  .wd.grow {
+    flex: 1 1 100%;
+  }
+  .td-input {
+    height: 32px;
+  }
+  .td-btn {
+    height: 32px;
+  }
+  .td-btn.sm {
+    height: 28px;
+  }
+  .band {
+    gap: 6px 12px;
+  }
+  .sec-head {
+    flex-wrap: wrap;
+  }
+  .sec-tag {
+    margin-left: 0;
+  }
+}
+
+/* ≤560:页头仅留视图切换与复位(快照时间在顶栏 / 页脚同源展示);分段控件占满整行。 */
+@media (max-width: 560px) {
+  .td-body {
+    padding: 0 8px 8px;
+  }
+  .snapshot {
+    display: none;
+  }
+  .td-seg {
+    width: 100%;
+  }
+  .td-seg-item {
+    flex: 1 1 0;
+    padding: 3px 4px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .td-btn {
+    padding: 0 10px;
+  }
+  .sec-head {
+    font-size: 11px;
   }
 }
 </style>

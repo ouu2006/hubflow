@@ -82,4 +82,18 @@ function rowColor(level: CongestionLevel, color?: string): string {
   min-width: 24px;
   text-align: right;
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）：手机宽度下档位行略收紧，保证色块 + 档名 + 数量
+   在 340px 宽内一行放得下。断点与 DashboardView 一致：560。
+   ========================================================================== */
+@media (max-width: 560px) {
+  .dist-row {
+    gap: 6px;
+    font-size: 11.5px;
+  }
+  .dist-count {
+    min-width: 20px;
+  }
+}
 </style>

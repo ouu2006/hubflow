@@ -76,4 +76,21 @@ const emit = defineEmits<{ (e: 'select', id: string): void }>()
   background: var(--td-bg-color-secondarycontainer);
   border-top: 1px solid var(--td-component-stroke);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）：手机宽度下名称列让出更多空间给 CI 数值 / 徽章。
+   断点与 DashboardView 一致：560。
+   ========================================================================== */
+@media (max-width: 560px) {
+  .rank-ci,
+  .rank-out {
+    min-width: 40px;
+  }
+  .rank-ci {
+    font-size: 13px;
+  }
+  .rank-note {
+    padding: 6px 8px;
+  }
+}
 </style>
