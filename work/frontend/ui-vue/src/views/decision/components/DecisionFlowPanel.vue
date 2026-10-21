@@ -334,6 +334,13 @@ function bandPos(x: number, max: number): string {
             本路段暂无系统预置分流建议(站点包未预置) —— 分流比例可在「处置队列」人工设置;这不是"不需要分流"的结论。
           </p>
 
+          <!-- Issue IKP5CE：输出侧补一行路线引用；完整链路在「路线规划」视图，本面板不重复算 -->
+          <div class="sec-head">路线<span class="sub-tag">见「路线规划」视图</span></div>
+          <p class="out-line">
+            完整路线（起点 → 落客 → 终点 → 离站）与一主二备在页头「路线规划」视图；
+            读引擎算路产物，本页不重算。场景注入 / 人工置位不会让路线变化（引擎产物不随参数变化）。
+          </p>
+
           <div class="sec-head">未来 15 / 30 分钟预测<span class="sub-tag">L0 · 不报精度</span></div>
           <div v-if="record.pred" class="pred-grid">
             <div class="pred-box">
