@@ -1361,3 +1361,89 @@ grep -n "433" docs/口径裁定-20261018.md docs/验收台账-20261018.md work/f
 ```
 
 **证据落点**：`work/frontend/ui-vue/.evidence/IKP5CE-20261021/`（决策层路线规划 3 张截图）+ `work/frontend/ui-vue/.evidence/IKP5-batch-20261021/`（大屏方向标记 / 落客点场区 / 起点终点 / 凸显路线 / Z21 兜底 共 8 张，README 逐个对应判定）。GZ 站 remote 首载 `/overview` 11–27 s 的既有性能问题在证据 README 里如实登记，不作为本批通过依据。
+
+## 二十四、切站：为什么不再整页刷新（IKPFR4）
+
+> 本单只动**前端的切站链路**：契约字段、端点路径、响应形状、判级 / 引擎 / 站点包几何（`station-packs/*.network.ts`）**一个字未改**，也没有新增任何业务端点。站点包仍是 `Z`（肇庆东，61 段）/ `GZ`（广州南，708 段）两个。
+
+### 24.1 旧做法为什么只能刷新
+
+切站过去是 `switchPack(key)` + `window.location.reload()`（顶栏切换器与大屏工具条各一份）。原因不是懒：页面里有一批**在 setup 期拍下的快照**，它们读的是模块级变量（`activePack()` / `activePackKey()`），Vue 的响应式系统根本不知道"包键"这个东西存在，改键不会让任何 computed 失效 —— 不整页重来，就只能看着旧数据：
+
+| 位置 | 旧的快照 | 后果 |
+|---|---|---|
+| `shared/demoNetwork.ts` | 模块单例 `state` + `inited` | 切包后仍返回上一站的几何 |
+| `DashboardView.vue` | `const currentPackKey = activePackKey()` | 工具条按钮的选中态不动 |
+| `DashboardView.vue` | `const packSegmentIds = new Set(...)` | 路线校验用上一站的段号集合，GZ 的路线整条被判"不在包里" |
+| `DashboardView.vue` | `const sourceLabel / geometryNote` | 页脚与图下注脚停在上一站口径 |
+| `DashboardView.vue` | `stationName = ref(activePack().station.name)` | 顶栏站名不动 |
+| `MapLibreViewer.vue` | `const net = DEMO_NETWORK.segments` | 地图画的是上一站的路网 |
+| `MapLibreViewer.vue` | `pins = cameraPins()` / `sourceLabel` | 图钉与水源地标签停在上一站 |
+
+### 24.2 版本号 + 订阅：让"模块级键"变成可观察的
+
+`src/station-packs/index.ts` 新增三样东西（**该文件保持零依赖**，因为它同时被 `vite.config.ts` 的 Node 侧 mock 引用，所以这里没有也不许有 `import { ref } from 'vue'`）：
+
+```ts
+let version = 0
+const listeners = new Set<() => void>()
+export function packVersion(): number
+export function onPackChange(fn: () => void): () => void   // 返回取消订阅
+```
+
+- `switchPack(key)` 只在**键真的变了**之后 `version++` 并通知订阅者；同一个键重复点不重跑流程。
+- `setActivePackKey()`（入口注入 / mock 每请求现取站）**故意不发通知**：前者发生在挂载前、后者在 Node 进程里，都不是"用户切站"。
+- 订阅回调是**同步**跑的，所以只让它改响应式 ref（各组件自建 `packTick`），真正的重绘交给 Vue 的 watch —— 那时几何已经按新包重建完了。
+
+所有 setup 期快照随之改造：`demoNetwork.ts` 增加 `resetNetwork()`，且 `ensureInit()` 现在**按包键自校验**（`initedKey !== activePackKey()` 就重建）；`currentPackKey` 改 `ref`；`packSegmentIds` / `packSegmentCount` / `siteMeta` / `packSegments` / `sourceLabel` / `geometryNote` / `packNote()` / `stationName` 兜底 / `directionsAvailable` 改 computed；`MapLibreViewer` 的 `net` 改 `shallowRef`，`pins`、`sourceLabel` 改 computed。
+
+### 24.3 切站唯一入口：`shared/stationSwitch.ts`
+
+顶栏「线路图切换器」与大屏工具条**共用** `switchStation(key)`，顺序固定：
+
+1. `switchPack(key)` —— 换键、`version++`、广播；
+2. `resetNetwork()` —— 路网几何按新包重建；
+3. **站内状态一律重置** + 中止在途请求（业主 2026-10-21 裁定，见 24.5）；
+4. **缓存优先**：同步吃内存缓存渲染首屏（有缓存就不显示加载态）；
+5. 后台立刻补拉一次（不等 SSE 的下一个 2 s tick）；
+6. 同步 URL `?pack=`。
+
+地图这边**只换数据**：`source.setData(...)` + 重贴 filter + 重建图钉/落客点/方向层 + `fitToNetwork` 重新取景；**不重建 `Map` 实例、不 `setStyle`** —— 底图瓦片是跨站可复用的公共资源，重建一次就是几 MB 重下加一次白屏。
+
+`src/` 下 `grep -rn "location.reload"` 现在**只剩两句注释**（说明历史做法），代码里 0 命中。
+
+### 24.4 缓存优先：键、预热时机、失效规则
+
+新增 `src/shared/stationCache.ts`：内存 `Map<string, StationSnapshotCache>`，**只存两站**，结构 `{ key, overview, segments, meta, thresholds, alerts, factors, matrix, ts }`（字段取自 `shared/traffic.ts` 的类型）。
+
+- **缓存键 = 站点包键**（`Z` / `GZ`）。写和读都按这个键分桶；替别站预热时用 `SnapshotFetchOptions.station` 把请求钉在目标站上（仍是同一个 `X-Station-Pack` 头，只是取值来源换成显式参数）—— 绝不允许"拿本站响应写别站桶"。
+- **预热时机**：首屏 `refresh()` 成功之后，`requestIdleCallback`（无此 API 的浏览器用 `setTimeout` 1 s 兜底）把两站各拉一次 `overview / segments / meta / thresholds / alerts / factors`。预热**失败静默**：不弹错、不进 `failedPanels`，切过去自然走骨架屏 + 正常刷新。
+- **失效规则只有两条**：① 页面进程结束即全部失效（内存 Map 的自然属性，**不写 localStorage** —— 缓存快照会过期，落盘就成了"昨天的路况"且无人察觉）；② 条目超过 `CACHE_TTL_MS`（10 min）视为过期，`readStationCache()` 直接返回 `null`。除此之外切站即刷新、新数据按字段替换，不做"手动清缓存"。
+- **两档体验**：热缓存 = 同步吃缓存，首屏立刻可见（目标 ≤0.3 s，不出现加载态）；冷缓存（首次访问该站 / 预热未完成）= 一条**极简骨架条**「正在加载「GZ」的首屏快照…」，页面主体不白屏，目标 ≤1.5 s 出数据。
+- **不许冒充最新**：用缓存渲染期间，页面上有「缓存 · 刷新中 —— 当前显示「GZ」的缓存快照（缓存于 N s 前）…」提示条，页脚同时标「数据标识:内存缓存快照 · 后台刷新中」；后台刷新一回来两处同时撤掉。
+
+### 24.5 业主裁定：切站时站内状态一律重置
+
+`selectedId`、`hoverChip`（地图浮牌与图钉浮牌）、路线 session（`recommended` / `routeOptions` / 手动起点 / 定位结果）、热力带选中（监控范围筛选）、深链选中（`?segment=` 重新生效一次）、页面滚动位置（整页 + 左右两栏的内部滚动容器）—— **全部清空、回到顶部，不做跨站恢复**。理由：段号、session、点位都是各站自己的命名空间，跨站"恢复"只会把 A 站的段号塞进 B 站。
+
+清空之后：有缓存就用缓存把首屏铺满；没有缓存就骨架条 + 等这一轮刷新。防御上还有一道闸：`refresh()` 记下发请求时的站键，响应回来后若 `activePackKey()` 已变，整批响应**直接丢弃**，同时切站时会 `AbortController.abort()` 掉在途请求 —— 两道都留，中止省带宽、校验兜底。
+
+### 24.6 `?pack=` 深链与 SSE
+
+- 入口（`main.ts`）读一次 URL 的 `pack`（hash 路由下取 `#/…?pack=GZ` 的查询段，也兼容真实 search 段）：命中 `PACKS` 就 `switchPack()`（同时写 `localStorage['hubflow.stationPack']`）；**坏键不报错、不写盘**，落回 `restorePackKey()` 的既有守卫语义（未知键 → 注入值 / 默认包）。
+- 切站后用 `history.replaceState` 把 `?pack=` 写回地址栏（不触发路由跳转 —— 跳转会重建页面组件，等于把省下来的刷新又加回去）。
+- **SSE 不随站切换重连**：`subscribeTrafficSnapshot()` 本来就是不带站的裸通道，切站不重建连接；但切站后**立刻补拉一次**（`switchStation` 的第 ⑤ 步），不用等下一个 2 s tick。
+
+### 24.7 非大屏页面怎么办
+
+决策层 / 感知层没接缓存链路，只靠 `App.vue` 的 `<router-view :key="stationRemountKey">` 兜底：切站时换 key → 页面组件重新 setup、按新包重取数据，**不重新请求文档、不重下底图**。监控大屏自己注册了原地切站钩子，**不会**走这条重挂载。
+
+### 24.8 复核
+
+```bash
+cd work/frontend/ui-vue && npm run build          # vue-tsc 类型检查 + 打包
+grep -rn "location.reload" src/                   # 代码里 0 命中（只剩说明历史做法的注释）
+cd ../../.. && python scripts/doc_gate.py         # 8/8
+```
+
+切站链路自检要点：切 Z↔GZ 后路网段数应为 61 / 708（`activePack().segments.length`，页脚「站点包路网 N 段」可读）、`selectedId` 已归零、地址栏带 `?pack=`、浏览器**不会**重新请求 document（Network 面板不出现第二个 index.html）。
