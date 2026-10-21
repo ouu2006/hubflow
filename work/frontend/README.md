@@ -1327,7 +1327,7 @@ python scripts/doc_gate.py
 | **Z** | 引擎产物 | **61** | `SZ-###` | OSM 真几何（netpack） | — | — | — | — | `work/twin/netpack/network_junction.json` |
 | **GZ** | 前端包 | **708** | `GZ-###` | OSM 真几何 | **49**（全 boundary） | **5**（演示点） | **4**（演示点） | **0**（`channels: []`，展示走演示复用） | `stationGZ.network.ts` + `stationGZ.ts` |
 | **GZ** | 后端 `/network` | **708** | `GZ-###` | 真网产物合成 | **0**（差异：非默认站空表） | **0**（差异） | **0**（差异） | **0** | `guangzhounan/network_junction.json` + 空点位表 |
-| **GZ** | 引擎产物 | **708** | `GZ-###` | OSM 真几何（netpack） | — | — | — | — | `guangzhounan/network_junction.json` + `routes.json`（58 条请求；2026-10-21 规则修正后，修正前 91） |
+| **GZ** | 引擎产物 | **708** | `GZ-###` | OSM 真几何（netpack） | — | — | — | — | `guangzhounan/network_junction.json` + `routes.json`（54 条请求；2026-10-21 规则 + 方向校正后，修正前 91） |
 
 **差异归属**：Z 站 `/network` 的 17 段 / 2 sections / 1 dropoff 全部来自 `stations/` 的样例件 → 真点位与真断面归 **IKMHMX**（T1 真表）/ 开发B；GZ 站 sections / dropoffs / zones 为 0 是非默认站空点位表所致 → 同上。**本单只裁定「前端不消费」并如实登记，不改 `stations/*.json`。**
 

@@ -3752,7 +3752,7 @@
         "539843880"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -3802,7 +3802,7 @@
         "539843879"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -3847,7 +3847,7 @@
         "424235684"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -3880,7 +3880,7 @@
         "156067453"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -3909,7 +3909,7 @@
         "539843879"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -3991,7 +3991,7 @@
         "539843880"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4197,7 +4197,7 @@
         "539843881"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4288,7 +4288,7 @@
         "539843878"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4353,7 +4353,7 @@
         "539843878"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4383,7 +4383,7 @@
         "539843878"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4412,7 +4412,7 @@
         "539843881"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4471,7 +4471,7 @@
         "424235684"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4501,7 +4501,7 @@
         "424235675"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4536,7 +4536,7 @@
         "双涌路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4653,7 +4653,7 @@
         "201710626"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4682,7 +4682,7 @@
         "539843881"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4711,7 +4711,7 @@
         "539843878"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4741,7 +4741,7 @@
         "539843881"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4799,7 +4799,7 @@
         "1271659884"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4836,7 +4836,7 @@
         "1271659879"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4865,7 +4865,7 @@
         "1271659879"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4898,7 +4898,7 @@
         "1271659884"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4931,7 +4931,7 @@
         "1271659884"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -4976,7 +4976,7 @@
         "1271659879"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5026,7 +5026,7 @@
         "1271659884"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5540,7 +5540,7 @@
         "石都北路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5622,7 +5622,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5651,7 +5651,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5762,7 +5762,7 @@
         "890918293"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5799,7 +5799,7 @@
         "919655787"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5832,7 +5832,7 @@
         "919655787"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5906,7 +5906,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5936,7 +5936,7 @@
         "919655787"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5994,7 +5994,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6052,7 +6052,7 @@
         "888585308"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6081,7 +6081,7 @@
         "919655787"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6110,7 +6110,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6139,7 +6139,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6172,7 +6172,7 @@
         "888585308"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6217,7 +6217,7 @@
         "919655787"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6275,7 +6275,7 @@
         "919655787"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6305,7 +6305,7 @@
         "890918298"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6334,7 +6334,7 @@
         "459004362"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6462,7 +6462,7 @@
         "893073217"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6495,7 +6495,7 @@
         "459593804"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6595,7 +6595,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6644,7 +6644,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6693,7 +6693,7 @@
         "459593805"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6730,7 +6730,7 @@
         "105877164"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6767,7 +6767,7 @@
         "459593804"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6800,7 +6800,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6838,7 +6838,7 @@
         "893073217"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6879,7 +6879,7 @@
         "459593805"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6908,7 +6908,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6937,7 +6937,7 @@
         "893073217"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -6967,7 +6967,7 @@
         "765664737"
       ],
       "lanes": 4,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7004,7 +7004,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7037,7 +7037,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7066,7 +7066,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7095,7 +7095,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7124,7 +7124,7 @@
         "459593805"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7153,7 +7153,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7182,7 +7182,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7211,7 +7211,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7240,7 +7240,7 @@
         "459593804"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7270,7 +7270,7 @@
         "765664737"
       ],
       "lanes": 4,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7303,7 +7303,7 @@
         "459593804"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7333,7 +7333,7 @@
         "893073215"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7367,7 +7367,7 @@
         "893073214"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7400,7 +7400,7 @@
         "459593805"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7429,7 +7429,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7458,7 +7458,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7487,7 +7487,7 @@
         "1272200849"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7516,7 +7516,7 @@
         "1272200857"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7551,7 +7551,7 @@
         "石浦大道南"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7580,7 +7580,7 @@
         "459593805"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -7615,7 +7615,7 @@
         "石洲中路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -8419,7 +8419,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -8629,7 +8629,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -8658,7 +8658,7 @@
         "883805014"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -8707,7 +8707,7 @@
         "310269583"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -8769,7 +8769,7 @@
         "917833310"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -8802,7 +8802,7 @@
         "883805016"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9121,7 +9121,7 @@
         "424235683"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9170,7 +9170,7 @@
         "189758784"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9281,7 +9281,7 @@
         "917833302"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9311,7 +9311,7 @@
         "917833303"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9719,7 +9719,7 @@
         "189758784"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9782,7 +9782,7 @@
         "917833303"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9812,7 +9812,7 @@
         "424235691"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9842,7 +9842,7 @@
         "917833301"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9872,7 +9872,7 @@
         "424235683"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9901,7 +9901,7 @@
         "917833302"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -9993,7 +9993,7 @@
         "917833301"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -10117,7 +10117,7 @@
         "424235689"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -10205,7 +10205,7 @@
         "424235680"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -10263,7 +10263,7 @@
         "201450270"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -10324,7 +10324,7 @@
         "1545642536"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -10558,7 +10558,7 @@
         "明盛二路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -10674,7 +10674,7 @@
         "1545642536"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11290,7 +11290,7 @@
         "支路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11319,7 +11319,7 @@
         "424235682"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11348,7 +11348,7 @@
         "424235681"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11458,7 +11458,7 @@
         "459394493"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11495,7 +11495,7 @@
         "201706851"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11528,7 +11528,7 @@
         "459008305"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11604,7 +11604,7 @@
         "459008304"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11649,7 +11649,7 @@
         "458503938"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11683,7 +11683,7 @@
         "459593801"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11732,7 +11732,7 @@
         "890918299"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11766,7 +11766,7 @@
         "459593808"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11795,7 +11795,7 @@
         "459008303"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11832,7 +11832,7 @@
         "223617003"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11869,7 +11869,7 @@
         "459008303"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11899,7 +11899,7 @@
         "459594581"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11928,7 +11928,7 @@
         "893073223"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11957,7 +11957,7 @@
         "917833313"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -11991,7 +11991,7 @@
         "893073218"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12028,7 +12028,7 @@
         "883805017"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12058,7 +12058,7 @@
         "458500497"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12087,7 +12087,7 @@
         "459593801"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12120,7 +12120,7 @@
         "995199572"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12154,7 +12154,7 @@
         "917833313"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12188,7 +12188,7 @@
         "459008305"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12218,7 +12218,7 @@
         "890918299"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12248,7 +12248,7 @@
         "917833313"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12281,7 +12281,7 @@
         "883805017"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12315,7 +12315,7 @@
         "459008304"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12344,7 +12344,7 @@
         "459008303"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12373,7 +12373,7 @@
         "458503938"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12402,7 +12402,7 @@
         "893073218"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12432,7 +12432,7 @@
         "459593801"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12462,7 +12462,7 @@
         "995199572"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12491,7 +12491,7 @@
         "890918299"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12520,7 +12520,7 @@
         "459008304"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12554,7 +12554,7 @@
         "995199572"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12584,7 +12584,7 @@
         "890918299"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12613,7 +12613,7 @@
         "1308014739"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12648,7 +12648,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12898,7 +12898,7 @@
         "424234093"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -12984,7 +12984,7 @@
         "77492221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13017,7 +13017,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13116,7 +13116,7 @@
         "890918296"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13165,7 +13165,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13198,7 +13198,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13235,7 +13235,7 @@
         "223628847"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13276,7 +13276,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13309,7 +13309,7 @@
         "310269560"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13371,7 +13371,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13400,7 +13400,7 @@
         "77492221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13433,7 +13433,7 @@
         "906571328"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13495,7 +13495,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13524,7 +13524,7 @@
         "77492221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13553,7 +13553,7 @@
         "906571328"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13626,7 +13626,7 @@
         "906571328"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13655,7 +13655,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13684,7 +13684,7 @@
         "77492221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13713,7 +13713,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13775,7 +13775,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13814,7 +13814,7 @@
         "890918297"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13848,7 +13848,7 @@
         "424234093"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13882,7 +13882,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -13915,7 +13915,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14008,7 +14008,7 @@
         "77492221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14127,7 +14127,7 @@
         "888614088"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14156,7 +14156,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14185,7 +14185,7 @@
         "459594579"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14214,7 +14214,7 @@
         "77492221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14243,7 +14243,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14310,7 +14310,7 @@
         "支路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14339,7 +14339,7 @@
         "424235688"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14369,7 +14369,7 @@
         "888585307"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14440,7 +14440,7 @@
         "458975466"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14494,7 +14494,7 @@
         "893073222"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14536,7 +14536,7 @@
         "458975467"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14569,7 +14569,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14602,7 +14602,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14631,7 +14631,7 @@
         "484746357"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14673,7 +14673,7 @@
         "459593807"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14722,7 +14722,7 @@
         "765664738"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14763,7 +14763,7 @@
         "917833305"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14796,7 +14796,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14829,7 +14829,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14859,7 +14859,7 @@
         "917833305"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14888,7 +14888,7 @@
         "1006665456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14918,7 +14918,7 @@
         "458503937"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14951,7 +14951,7 @@
         "1006665458"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -14981,7 +14981,7 @@
         "765664733"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15010,7 +15010,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15040,7 +15040,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15077,7 +15077,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15106,7 +15106,7 @@
         "1006665458"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15136,7 +15136,7 @@
         "765664738"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15165,7 +15165,7 @@
         "917833305"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15195,7 +15195,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15224,7 +15224,7 @@
         "458975466"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15253,7 +15253,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15282,7 +15282,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15315,7 +15315,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15348,7 +15348,7 @@
         "919651164"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15377,7 +15377,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15407,7 +15407,7 @@
         "917833305"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15437,7 +15437,7 @@
         "919651164"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15467,7 +15467,7 @@
         "893073219"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15496,7 +15496,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15555,7 +15555,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15585,7 +15585,7 @@
         "484736848"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15615,7 +15615,7 @@
         "893073213"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15645,7 +15645,7 @@
         "484736848"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15674,7 +15674,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15703,7 +15703,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15733,7 +15733,7 @@
         "765664733"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15763,7 +15763,7 @@
         "893073216"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15792,7 +15792,7 @@
         "919651164"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15822,7 +15822,7 @@
         "893073216"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15852,7 +15852,7 @@
         "765664738"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15881,7 +15881,7 @@
         "893073221"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15910,7 +15910,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15939,7 +15939,7 @@
         "223538456"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -15968,7 +15968,7 @@
         "188838464"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16005,7 +16005,7 @@
         "917833300"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16042,7 +16042,7 @@
         "188838464"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16075,7 +16075,7 @@
         "424233297"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16110,7 +16110,7 @@
         "917833317"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16147,7 +16147,7 @@
         "188838464"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16180,7 +16180,7 @@
         "917833318"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16210,7 +16210,7 @@
         "917833319"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16240,7 +16240,7 @@
         "917833319"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16270,7 +16270,7 @@
         "917833300"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16299,7 +16299,7 @@
         "888614095"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16329,7 +16329,7 @@
         "888614097"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16364,7 +16364,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16399,7 +16399,7 @@
         "石都北路"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16428,7 +16428,7 @@
         "917833317"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16464,7 +16464,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16493,7 +16493,7 @@
         "539843883"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16578,7 +16578,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16611,7 +16611,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16682,7 +16682,7 @@
         "539843883"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16715,7 +16715,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16749,7 +16749,7 @@
         "539843883"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16778,7 +16778,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16812,7 +16812,7 @@
         "918289531"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16845,7 +16845,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16874,7 +16874,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16903,7 +16903,7 @@
         "918289532"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16932,7 +16932,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16961,7 +16961,7 @@
         "539843883"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -16991,7 +16991,7 @@
         "918289532"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17020,7 +17020,7 @@
         "310269590"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17126,7 +17126,7 @@
         "201710618"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17159,7 +17159,7 @@
         "189762102"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17337,7 +17337,7 @@
         "201710618"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17370,7 +17370,7 @@
         "189762102"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17403,7 +17403,7 @@
         "201710618"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17436,7 +17436,7 @@
         "201710618"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17493,7 +17493,7 @@
         "189762102"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17550,7 +17550,7 @@
         "1006665478"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17579,7 +17579,7 @@
         "1006665479"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17637,7 +17637,7 @@
         "1006665478"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17696,7 +17696,7 @@
         "1006665479"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17729,7 +17729,7 @@
         "1006665479"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17758,7 +17758,7 @@
         "1006665478"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17787,7 +17787,7 @@
         "189762102"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17816,7 +17816,7 @@
         "201710618"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17845,7 +17845,7 @@
         "189762102"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17874,7 +17874,7 @@
         "201710618"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17962,7 +17962,7 @@
         "1272200851"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -17991,7 +17991,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18024,7 +18024,7 @@
         "888614087"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18061,7 +18061,7 @@
         "223629853"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18098,7 +18098,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18139,7 +18139,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18176,7 +18176,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18213,7 +18213,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18250,7 +18250,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18283,7 +18283,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18320,7 +18320,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18349,7 +18349,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18378,7 +18378,7 @@
         "223629853"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18407,7 +18407,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18436,7 +18436,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18465,7 +18465,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18495,7 +18495,7 @@
         "888614087"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18525,7 +18525,7 @@
         "919651176"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18554,7 +18554,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18583,7 +18583,7 @@
         "919651170"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18612,7 +18612,7 @@
         "223629853"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18641,7 +18641,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18670,7 +18670,7 @@
         "223629853"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18699,7 +18699,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18728,7 +18728,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18761,7 +18761,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18796,7 +18796,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18825,7 +18825,7 @@
         "888614087"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18854,7 +18854,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18883,7 +18883,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18919,7 +18919,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18948,7 +18948,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -18977,7 +18977,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19006,7 +19006,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19035,7 +19035,7 @@
         "919651170"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19064,7 +19064,7 @@
         "223629852"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19099,7 +19099,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19128,7 +19128,7 @@
         "156067416"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19157,7 +19157,7 @@
         "494164732"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19186,7 +19186,7 @@
         "223629853"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19221,7 +19221,7 @@
         "连接匝道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19250,7 +19250,7 @@
         "223629853"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19641,7 +19641,7 @@
         "310269593"
       ],
       "lanes": 3,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19671,7 +19671,7 @@
         "310269595"
       ],
       "lanes": 3,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -19700,7 +19700,7 @@
         "310269602"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -21229,7 +21229,7 @@
         "77492223"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -21834,7 +21834,7 @@
         "1271659864"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -22003,7 +22003,7 @@
         "1308014747"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -22196,7 +22196,7 @@
         "1271659869"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -22520,7 +22520,7 @@
         "场区出入道"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -22616,7 +22616,7 @@
         "1272200905"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -22742,7 +22742,7 @@
         "1272200865"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -22872,7 +22872,7 @@
         "1086578483"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -23011,7 +23011,7 @@
         "1047668861"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -23277,7 +23277,7 @@
         "1047668861"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -23339,7 +23339,7 @@
         "1058059683"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -23980,7 +23980,7 @@
         "1047668861"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -24534,7 +24534,7 @@
         "297958512"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -24836,7 +24836,7 @@
         "223616425"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -24906,7 +24906,7 @@
         "1554805487"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -25146,7 +25146,7 @@
         "201707820"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -25432,7 +25432,7 @@
         "223537880"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -25714,7 +25714,7 @@
         "1554805487"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -25837,7 +25837,7 @@
         "1272200859"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -25993,7 +25993,7 @@
         "1272200860"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -26284,7 +26284,7 @@
         "1272200858"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -26586,7 +26586,7 @@
         "223535428"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -27154,7 +27154,7 @@
         "919651172"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -27285,7 +27285,7 @@
         "223535423"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -27522,7 +27522,7 @@
         "1272200861"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -27746,7 +27746,7 @@
         "919651168"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28025,7 +28025,7 @@
         "201707820"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28227,7 +28227,7 @@
         "1271659926"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28321,7 +28321,7 @@
         "459000620"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28366,7 +28366,7 @@
         "201707820"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28395,7 +28395,7 @@
         "297958512"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28424,7 +28424,7 @@
         "459594585"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28506,7 +28506,7 @@
         "1271674603"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -28993,7 +28993,7 @@
         "985390476"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -29218,7 +29218,7 @@
         "888585312"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -29247,7 +29247,7 @@
         "985390478"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -29322,7 +29322,7 @@
         "985390475"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -29599,7 +29599,7 @@
         "1006665480"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -29974,7 +29974,7 @@
         "201707820"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30244,7 +30244,7 @@
         "424235678"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30304,7 +30304,7 @@
         "459004363"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30334,7 +30334,7 @@
         "1314800799"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30364,7 +30364,7 @@
         "888614098"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30393,7 +30393,7 @@
         "1086578488"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30423,7 +30423,7 @@
         "424235677"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30453,7 +30453,7 @@
         "1271674603"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30483,7 +30483,7 @@
         "223538452"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30513,7 +30513,7 @@
         "888614085"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30543,7 +30543,7 @@
         "985390473"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30573,7 +30573,7 @@
         "1272200861"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30603,7 +30603,7 @@
         "1272200859"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30633,7 +30633,7 @@
         "424234170"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30663,7 +30663,7 @@
         "1272200863"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30693,7 +30693,7 @@
         "888585312"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30753,7 +30753,7 @@
         "424234169"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -30798,5 +30798,11 @@
         ]
       ]
     }
-  ]
+  ],
+  "direction_alignment": {
+    "site_id": "guangzhounan",
+    "flipped": 367,
+    "segments": 708,
+    "note": "oneway 已按 OSM way 节点顺序对齐（build_junction_pack 串 way 时可能反转几何但未翻转 oneway）；只改 oneway，不改几何 / 段号 / 节点。"
+  }
 }

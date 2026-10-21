@@ -306,13 +306,13 @@ python work/engine/predict_cli.py --segments work/engine/samples/segments_sample
 4. 每个 OD 的 `exit_node` = 从行程终点出发**自由流最快的可达离场边界**——终点是内部节点、出口是边界节点，
    两者必不相同，`departure_route` 才是真实离场路线（TC-12 必现）；
 5. 不可达 / 找不到出口的组合**跳过并留痕**（`od_derivation.skipped`），不顺延硬凑；
-6. 本站推导结果（2026-10-21 规则 + 方向校正后）：**4 个 OD 对**；默认第一条 **OD-R-001 = `SZ-004`（`N-040` 东侧外围入口）→ `SZ-036` 末端 `N-028`**（`SZ-036` / `SZ-024` 交界，对应站点包 `DROP-02` 停车场北支落客区），其余 3 条为 `SZ-004` / `SZ-055` 到 `N-028` / `N-014` / `N-037`。每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）**演示假设值**（无上游需求快照，产物标 `demand_source`，**不是实测**）。GZ 站同一规则（未做方向校正）：58 个 OD。
+6. 本站推导结果（2026-10-21 规则 + 方向校正后）：**4 个 OD 对**；默认第一条 **OD-R-001 = `SZ-004`（`N-040` 东侧外围入口）→ `SZ-036` 末端 `N-028`**（`SZ-036` / `SZ-024` 交界，对应站点包 `DROP-02` 停车场北支落客区），其余 3 条为 `SZ-004` / `SZ-055` 到 `N-028` / `N-014` / `N-037`。每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）**演示假设值**（无上游需求快照，产物标 `demand_source`，**不是实测**）。GZ 站同一规则 + 同批方向校正（367 段）：54 个 OD。
 7. **方向校正（2026-10-21，业主复查）**：`build_junction_pack.py` 串同名 way 时会为端点吸附反转几何，但
    `oneway=yes` 未同步翻转，导致吉庆大道整条路单行方向反了（OSM way `1090740692` 实际是 `N-040 → N-022 →
    N-015` 东→西）。`work/twin/netpack/tools/align_oneway_to_osm.py --site-id zhaoqingdong` 按 OSM 节点顺序
    把 14 段（12+2）`oneway` 由 `yes` 改为 `-1`（只改方向，不改几何/段号），进/出口随之变为
    `N-040`/`N-002` 进、`N-001`/`N-003`/`N-038` 出；Z 站方向分布 forward 14 / reverse 14 / bidirectional 33。
-   GZ 未做同批校正（708 段待单独核）。
+   GZ 同批校正 367 段（`--site-id guangzhounan`），方向 forward 297 / reverse 367 / bidirectional 44；GZ 引擎产物 54 条 OD。
 
 **产物（独立目录，不覆盖样例）**
 
