@@ -2,7 +2,7 @@
 
 > **⚠️ 一期口径变更（业主 2026-10-18，Issue IKNB9I + IKNBT2 纠正）—— 以下为最新口径，优先于本文件历史表述**：
 > **N 段 = N 摄像头 = N 视频**（业主 IKNBT2 纠正：不是六路——有多少段路就有多少摄像头/视频）；一期视频/摄像头**全部为 mock（演示复用同一份样本视频）**、**YOLO 模型不实装**（「YOLO」只是项目代号/展示占位，不载入/不训练模型）；前端/大屏用视频顶替真实数据并显示「**模拟识别（演示）**」/「演示复用视频（非本站现场）」角标；一期**只用虚拟数据**。
-> **登记表 `camera-segments.json` 的 6 条仅作「源台账/初始映射」，不是一期摄像头总数**；Z 站 61 段 = 61 路演示摄像头、GZ 站 433 段 = 433 路演示摄像头，每段都有复用视频。
+> **登记表 `camera-segments.json` 的 6 条仅作「源台账/初始映射」，不是一期摄像头总数**；Z 站 61 段 = 61 路演示摄像头、GZ 站 708 段 = 708 路演示摄像头，每段都有复用视频。
 > 本文件历史记录中的「实测 / 真实帧 / 浏览器实测」等表述**只指当时本机工程自测**，**不代表现场实测/真实识别**；对外**不出现「实测 / 实时 / 现场」**、不得宣称「真实 YOLO 识别 / 模型已实装」。
 > 页面代码文案（页头「YOLO 视频链路」、摄像头卡「无独立摄像头」等）**已于 IKNC4J 按本口径落实**（摄像头卡显示「演示摄像头 · 复用样本视频（按路段数 N 路）」、感知页页头带「模拟识别（演示）」限定）；本 README 只登记口径。口径细见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一。
 
@@ -431,8 +431,8 @@ npm run dev:z            # 同一个包 Z,起在 http://localhost:6895(同包不
 | 站名 | 肇庆东站(副标:真路网 · 站区 500 m（脚本推定）/ 61 段 · 吉庆大道 / 鼎湖大道 / 场区通道) |
 | 路段 | **61 条**(`SZ-001` … `SZ-061`;旧 21 段 `SZ-##` 留作 Z21 对照包) |
 | 断面 / 点位 | **mock 数据已落**(IKM4TE):11 条候选断面(5 boundary / 6 internal,`待队长签字冻结`)、3 落客点、2 候客/蓄车区 |
-| 上色口径 | **演示摄像头覆盖口径：N 段 = N 路演示摄像头**（2026-10-18 IKNBT2；Z 61/61、GZ 433/433 每段都有演示摄像头+复用视频，不再按登记表 6 路）；无数据段灰轮廓 + 数据不可用档 |
-| 基线来源 | 预置演示值（每段全演示基线；IKNB9F GZ 433 段同口径） |
+| 上色口径 | **演示摄像头覆盖口径：N 段 = N 路演示摄像头**（2026-10-18 IKNBT2；Z 61/61、GZ 708/708 每段都有演示摄像头+复用视频，不再按登记表 6 路）；无数据段灰轮廓 + 数据不可用档 |
+| 基线来源 | 预置演示值（每段全演示基线；IKNB9F GZ 708 段同口径） |
 | 告警 / 场景 / 分流 | **mock 数据已落**(IKM4TE):4 条告警(四态各 1,id 带 `DEMO-` 前缀)、1 条预置下发回执、2 条分流建议、5 个**环境侧**场景预设（key 与 `ScenarioInjectPanel.applyPreset` 对齐,可一键注入重算） |
 | 几何来源 | **OSM 真值**(`work/twin/netpack/build_junction_pack.py` 产物)+ OSM 署名 |
 | 孪生桥接(:8102) | **不接**——本站几何已是 OSM 真值,接上反而会把另一份选段口径画进来 |
@@ -778,7 +778,7 @@ cd work/frontend/ui-vue && npm run dev:remote
 |---|---|---|
 | 监控大屏 | meta / overview / segments / vehicles / network / alerts / factors / heat-matrix / thresholds / segments/{id}/sources / ci-history / route/recommend + SSE | KPI / 路段 / 热力 / 告警 / 路线 / 摄像头图钉全部走接口；页脚「数据来源」改为接口 `meta.data_sources`（路段快照源 / 路线真网或样例 / 写端点内存态），不再写死“mock 示例快照”；路线卡按响应 `data_source` 标「真网算路产物（IKMS11）」/「样例产物」，`session_matched:false` 时显式提示“非该车行程” |
 | 决策层 | alerts / segments / context / thresholds / assimilation / segments/{id}/sources + factors、plan、scenario 写端点 | 处置队列四态、下发回执、回写流转可用；因素面板标「接口层内存态（重启复位）」且成功文案写明**不重算判级**；场景注入只显示「已注入 + 折算环境因素」，接口 `effects` 为空时显示其 `effects_note`，不伪造等级变化；效果对比先读 `/report/compare`（rows 0 条 + note 如实展示），A/B/C 三组改标「前端演示脚本」 |
-| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | **按 2026-10-18 IKNBT2 口径：N 段 = N 摄像头 = N 视频**——Z 61/61、GZ 433/433 每段有演示摄像头 + 演示复用视频（mock 复用样本）；登记表 6 条仅源台账；页面文案「无独立摄像头」→「演示摄像头 N 路」**已于 IKNC4J 落地**；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
+| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | **按 2026-10-18 IKNBT2 口径：N 段 = N 摄像头 = N 视频**——Z 61/61、GZ 708/708 每段有演示摄像头 + 演示复用视频（mock 复用样本）；登记表 6 条仅源台账；页面文案「无独立摄像头」→「演示摄像头 N 路」**已于 IKNC4J 落地**；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
 
 **数据源口径**：所有响应 `is_simulated=true`；页面角标「演示数据(模拟)· 双数据源」保留；
 写端点响应另带 `level_recomputed:false` / `recomputed:false` / `note` ——
@@ -879,11 +879,11 @@ cd work/frontend/ui-vue && npm run dev
 
 > 业主 2026-10-18 口径：**全部路段都要有视频显示**（视频重复利用，不要求每路独立拍摄）；
 > 同时要能看见**整条路线的路线规划**。本单不新增真实摄像头、不改登记表，也不在前端重算路线 / ETA。
-> **与 IKNBT2 口径的关系（现行）**：按业主纠正，**N 段 = N 摄像头 = N 视频**（每段 1 路演示摄像头 + 复用 mock 视频）——本节的「全路段复用」正是该口径的展示实现（Z **61/61**、GZ **433/433**）；**登记表 6 条仅源台账/初始映射，不是一期总数**，不再要求补 6 路 mock 视频（见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一）。
+> **与 IKNBT2 口径的关系（现行）**：按业主纠正，**N 段 = N 摄像头 = N 视频**（每段 1 路演示摄像头 + 复用 mock 视频）——本节的「全路段复用」正是该口径的展示实现（Z **61/61**、GZ **708/708**）；**登记表 6 条仅源台账/初始映射，不是一期总数**，不再要求补 6 路 mock 视频（见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一）。
 
 ### 17.1 全路段视频复用（`SegmentCameraCard.vue`）
 
-- **对没有真实登记摄像头的路段、或登记摄像头均无视频源的路段**启用（`camerasOfSegment(segmentId).length === 0` 或该段摄像头全部 `hasVideo:false`；按 IKNBT2 口径 **N 段 = N 路演示摄像头**，无真实登记源段走演示复用 → **Z 61/61、GZ 433/433 段都有画面**）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
+- **对没有真实登记摄像头的路段、或登记摄像头均无视频源的路段**启用（`camerasOfSegment(segmentId).length === 0` 或该段摄像头全部 `hasVideo:false`；按 IKNBT2 口径 **N 段 = N 路演示摄像头**，无真实登记源段走演示复用 → **Z 61/61、GZ 708/708 段都有画面**）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
   （字符串 hash 取模，同一段永远同一路，不用随机），显示该通道**真实抽帧**
   （`/perception-api/streams/{source}/frames/{n}.jpg`，与感知页同一路径、可暂停）。
 - 角标与文案按业主口径固定：
@@ -1032,10 +1032,10 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 
 | 项 | 口径 |
 |---|---|
-| 数量 | **N 段 = N 摄像头 = N 视频**：Z 站 **61 段 = 61 路演示摄像头**、GZ 站 **433 段 = 433 路演示摄像头**；每段 1 路演示摄像头 + 1 段复用 mock 视频 |
+| 数量 | **N 段 = N 摄像头 = N 视频**：Z 站 **61 段 = 61 路演示摄像头**、GZ 站 **708 段 = 708 路演示摄像头**；每段 1 路演示摄像头 + 1 段复用 mock 视频 |
 | 登记表 | `camera-segments.json` 的 **6 条仅作「源台账/初始映射」**，**不是一期摄像头总数**；不要求扩到 N 条 |
 | 视频 | 一期全部 **mock 复用样本视频**（`road2` / `track1` 可被多路复用），标「**演示复用 / 非本站现场 / 非实时**」；**不要求每路独立拍摄** |
-| 覆盖证据 | Z **61/61**（IKNAUI / PR !55 全路段复用）；GZ **433/433**（IKNB9F / PR !61，`stationGZ.network.ts` 433 段） |
+| 覆盖证据 | Z **61/61**（IKNAUI / PR !55 全路段复用）；GZ **708/708**（IKNB9F / PR !61 建站包；IKOQEI 扩到 1000 m / 708 段） |
 | 验收 | **M1-9 = 通过（演示口径，待池·Q 复核）**（台账已按本口径重判；旧「6 路真实视频」判据作废留痕） |
 | 页面文案（IKNC4J 已落实） | 摄像头卡显示「**演示摄像头 N 路 / 演示复用视频**」；感知页页头已改为「模拟识别（演示）· 视频链路（YOLO 仅项目代号）」；本 README 只登记口径 |
 | 不造假 | 全部 mock/复用；不写实测/实时/现场；不声称真实摄像头/视频已接入；真实接入归 **IKMHMX** |
@@ -1051,7 +1051,7 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 | 项 | 说明 |
 |---|---|
 | 数据源 | `work/twin/netpack/network_junction.enriched.json`（Z，61 段）/ `work/twin/netpack/guangzhounan/network_junction.enriched.json`（GZ，**enriched 708 段**；IKOQEI 把 GZ 范围 800→1000 m）的 `edges[]`：`direction` / `lanes_forward/backward/total` / `opposite_segment_id` / `continuity` / `field_sources` |
-| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **433/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
+| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **708/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
 | 生成器 | `work/frontend/tools/gen_station_directions.py`（**只读 enriched**，绝不改它）；`--check` 可校验生成物是否与 enriched 同步 |
 | 生成物 | `src/station-packs/stationZ.directions.generated.ts` / `stationGZ.directions.generated.ts`（`Record<segment_id, PackSegmentDirection>`，一段一行） |
 | 类型 | `station-packs/types.ts` 新增 `PackSegmentDirection` / `PackContinuity`；`StationPack.segmentDirections?`（缺省=老包未标定） |
@@ -1079,8 +1079,8 @@ cd work/frontend/ui-vue && npm run build   # exit 0
   - `#/dashboard?segment=SZ-018`（双向）→ 地图双头紫色方向标 + 详情「双向（左右两向）」；
   - `#/dashboard?segment=SZ-001`（单向正向、尾端未贯通）→ 详情「贯通性待核（gap 0 m，节点/相切待核）」；
   - `#/dashboard?segment=SZ-002`（单向、车道 5/0/5）→ 详情「车道（前 / 后 / 共）5 / 0 / 5 · 来源 默认演示值」；
-- GZ 站（前端网络 433 段；enriched 708 段中 433 段有交集）：双向 15 / 单向正向 418；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
-  其余 275 段 enriched 段号（GZ-434…GZ-708）待前端站点包同步后才会出现方向字段。
+- GZ 站（前端网络 708 段；enriched 708 段全覆盖）：双向 44 / 单向正向 664；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
+  **433 为 800 m 旧范围口径**（旧 800 m 裁剪只覆盖 GZ-001…GZ-433）；!67 已把前端包同步到 708 段，方向字段 708 段全部命中。
 - 截图（不入库）：`D:\hubflow\_scratch\ikoqej\`：
   `Z-bidirectional-SZ-018.png`、`Z-oneway-tailgap-SZ-001.png`、`Z-oneway-lanes-SZ-002.png`、
   `Z-opposite-SZ-013.png`（对向段跳转）、`GZ-bidirectional-GZ-146.png`、`GZ-lanes-GZ-075.png`、
@@ -1099,7 +1099,7 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 5. **GZ 前端站点包待同步**：enriched 已 708 段（IKOQEI，范围 1000 m），前端 `stationGZ.network.ts` 仍 433 段；
    本单只生成 433 段交集字段，待前端包同步后重跑生成器即可覆盖新增段（`--check` 校验）。
 
-> ⚠️ 上面第 5 条**已过期**：`!67` 已把前端 `stationGZ.network.ts` 同步到 708 段、
+> ⚠️ 上面第 5 条**已过期**（433 = 800 m 旧范围口径，IKOQEI 已扩到 1000 m / 708 段）：`!67` 已把前端 `stationGZ.network.ts` 同步到 708 段、
 > `stationGZ.directions.generated.ts` 也已是 708 段全部命中（文件头 sha256 `0747d9df…`）。
 
 ## 二十一、广州南站点位：落客点 / 候客区补齐（2026-10-19）
