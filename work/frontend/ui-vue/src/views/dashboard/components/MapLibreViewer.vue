@@ -33,9 +33,12 @@ import {
   NavigationControl,
   ScaleControl,
   setWorkerUrl,
+  type CircleLayerSpecification,
   type ExpressionSpecification,
   type FilterSpecification,
+  type FillLayerSpecification,
   type GeoJSONSource,
+  type GeoJSONSourceSpecification,
   type LineLayerSpecification,
   type MapMouseEvent,
   type StyleSpecification,
@@ -77,7 +80,33 @@ import {
   directionsVisible,
   routeEmphasisEnabled,
 } from '../../../shared/settings'
-import { activePack, onPackChange, packVersion } from '../../../station-packs/index'
+import {
+  activePack,
+  activePackKey,
+  onPackChange,
+  packVersion,
+  stationEntries,
+  type StationEntry,
+} from '../../../station-packs/index'
+// IKPFVN：全国视角 / 站区视角的镜头运动集中在 `shared/mapMotion.ts`（时长、中国范围、留白、打断规则）
+import {
+  cancelMotion,
+  clampOverviewZoom,
+  flyToOverview,
+  flyToStation,
+  overviewCamera,
+  overviewPadding,
+  stationCamera,
+  stationPadding,
+  type CameraPadding,
+  type MotionPhase,
+} from '../../../shared/mapMotion'
+// 底图拉不到时的**兜底轮廓**（Natural Earth 1:110m 简化，公有领域）。
+// ⚠️ 用 `?raw` 把文件当**文本**导入，而不是 `import … from '…geojson'`：
+//    ① `.geojson` 不是 `.json`，`resolveJsonModule` 不认它（改 tsconfig 属于为一个素材文件动全局配置）；
+//    ② `?url` 也不行 —— Vite 的已知素材类型表里没有 `.geojson`，打包时直接报 Module not found；
+//    ③ 进 `public/` 又要把素材搬一份。`?raw` 内联成字符串、运行时 `JSON.parse`，零配置、零重复文件。
+import chinaOutlineText from '../../../assets/geo/china-outline.geojson?raw'
 import {
   landmarkKindLabel,
   landmarkPins,
@@ -181,6 +210,27 @@ const LAYER_ROUTE_DEP_HALO = `${SRC}-route-dep-halo`
 const LAYER_ROUTE_DEP = `${SRC}-route-dep`
 const LAYER_SELECTED = `${SRC}-selected`
 
+// ---- IKPFVN · 全国视角的两个图层族（站点 pin / 底图兜底轮廓）----
+//
+// 为什么站点用 GeoJSON source + 图层，而不是 DOM Marker：站只会越加越多（现为 Z / GZ），
+// DOM Marker 每个都要建元素、挂事件、随地图重排；图层一次挂好，加站只换 data。
+// 点击 / 悬停也走同一条通道（`queryRenderedFeatures`），不用给每个 pin 绑一对监听。
+const STATION_SRC = 'hubflow-station'
+/** 透明大圆：**只用来命中**（视觉半径 6~9 px，命中半径 15 px → 30 px 热区，≥ 24 px 要求） */
+const LAYER_STATION_HIT = `${STATION_SRC}-hit`
+/** 站点实心圆；选中环就画在**它自己**身上（`feature-state.selected`），不另建一套图层 */
+const LAYER_STATION_DOT = `${STATION_SRC}-dot`
+/** 站名（canvas 生成图片的 symbol 图层，见 `stationLabelLayerSpec()` 里为什么不用 text-field） */
+const LAYER_STATION_LABEL = `${STATION_SRC}-label`
+const STATION_LABEL_ICON_PREFIX = 'hubflow-station-label-'
+/** 非当前站的中性深灰（品牌蓝只给「当前 / 已选」） */
+const STATION_DOT_COLOR = '#475569'
+/** 底图拉不到时的中国轮廓（淡填充 + 细描边，不抢路网） */
+const OUTLINE_SRC = 'hubflow-china-outline'
+const LAYER_OUTLINE_FILL = `${OUTLINE_SRC}-fill`
+const LAYER_OUTLINE_LINE = `${OUTLINE_SRC}-line`
+const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
+
 /**
  * 备选 1 = 青 `#0E7490`、备选 2 = 琥珀 `#B45309`（队长 2026-10-20 裁定）：
  * 两色都避开四级判级色（#2BA471 / #E9B32E / #E37318 / #D54941）、
@@ -205,9 +255,18 @@ const CHIP_H = 26
 const CAM_CHIP_W = 192
 /** 落客点 / 场区浮牌宽度（与 <style> 中 .lm-chip 的 width 保持一致；窄屏同样用 min() 收小） */
 const LM_CHIP_W = 220
+/** 全国站点浮牌宽度（与 <style> 中 .st-chip 的 width 保持一致） */
+const ST_CHIP_W = 176
 
 /** 'level' = 四级视图（默认） · 'index' = 拥挤指数视图 */
 type MapMode = CongestionViewMode
+/**
+ * IKPFVN：视角范围。
+ *   `national` = 全国大地图（只画站点 pin，不画任何站的路网 / 路线）
+ *   `station`  = 站区视角（当前站路网 + 路线 + 图例 + 浮牌）
+ * 与上面的 `MapMode`（上色口径）是两回事，**不要合并**。
+ */
+type MapScope = 'national' | 'station'
 
 const props = withDefaults(
   defineProps<{
@@ -234,6 +293,14 @@ const props = withDefaults(
     hoverChip?: string
     /** 紧凑图例 */
     legend?: boolean
+    /**
+     * 视角范围（Issue IKPFVN）：`national` = 全国大地图（只画站点 pin，不画任何站的路网 / 路线）；
+     * `station` = 站区视角（当前站路网 + 路线 + 图例）。
+     *
+     * ⚠️ 与上面的 `mode`（四级 / 指数视图）**不是一回事**：那个管上色口径，这个管“看多远”。
+     *    当初差点把这个 prop 也叫 `mode`——两个同名 prop 会直接报重复声明，也算提醒。
+     */
+    mapMode?: MapScope
   }>(),
   {
     vehicles: () => [],
@@ -245,10 +312,17 @@ const props = withDefaults(
     ts: '',
     hoverChip: '',
     legend: true,
+    mapMode: 'national',
   },
 )
 
-const emit = defineEmits<{ (e: 'select', segmentId: string): void }>()
+const emit = defineEmits<{
+  (e: 'select', segmentId: string): void
+  /** 点全国浮层卡片 / 点站点 pin：请求切到该站（切站唯一入口仍由父级调 `switchStation`） */
+  (e: 'switch-station', key: string): void
+  /** 镜头真的落到站区（父级据此提交页面数据，见 IKPFVN D 节时序） */
+  (e: 'arrived'): void
+}>()
 
 /** 容器**始终渲染**（不用 v-if 挂载），从根上避免「容器还没进 DOM 就初始化」那类静默失败 */
 const containerRef = ref<HTMLDivElement | null>(null)
@@ -324,6 +398,20 @@ const osmActive = computed(() => {
   void packTick.value
   return isOsmNetwork()
 })
+
+/** 当前站键（响应式）：挂在容器 `data-station` 上，切站后跟着变 */
+const currentStationKey = computed<string>(() => {
+  void packTick.value
+  return activePackKey()
+})
+
+/**
+ * 全国浮层 / 站点 pin 的点击：只**请求**切站，真正的切站在父级（唯一入口 `switchStation()`）。
+ * 本组件不碰包、不碰数据 —— 否则又会出现“地图自己换了一套包、面板还停在上一坑”的老毛病。
+ */
+function pickStation(key: string): void {
+  emit('switch-station', key)
+}
 /**
  * 上色策略由站点包 `colorPolicy` 决定（IKP5DM 起 Z/GZ 均为 `'all'`：全段按等级上色，
  * 灰只表示数据不可用/陈旧，不再表示「这段没摄像头」）。
@@ -509,11 +597,22 @@ function directionLayerSpec(): SymbolLayerSpecification {
     source: DIR_SRC,
     layout: {
       'icon-image': ['get', 'icon'],
-      // 双向段用 `icon_scale` 收小（0.8×）；单/双向共用同一套随缩放尺寸
+      // 双向段用 `icon_scale` 收小（0.8×）；单/双向共用同一套随缩放尺寸。
+      // ⚠️ `zoom` **只能**出现在顶层 `interpolate` / `step` 的输入位（MapLibre 硬性限制）：
+      //    原来写成 `['*', ['interpolate', …zoom…], ['get','icon_scale']]` 会让整个
+      //    `setStyle(mergedStyle(…))` 直接抛
+      //    「layers.hubflow-direction-marker.layout.icon-size: "zoom" expression may only be used
+      //      as input to a top-level "step" or "interpolate" expression」——
+      //    底图就永远停在「底图加载中…」（改前 main 上就有，与 IKPFR4 无关）。
+      //    正确写法：`zoom` 当顶层 interpolate 输入，`icon_scale` 放进**各 stop 的输出值**。
       'icon-size': [
-        '*',
-        ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
-        ['get', 'icon_scale'],
+        'interpolate',
+        ['linear'],
+        ['zoom'],
+        12,
+        ['*', 0.5, ['get', 'icon_scale']],
+        15,
+        ['*', 0.85, ['get', 'icon_scale']],
       ],
       'icon-rotate': ['get', 'rotate'],
       'icon-rotation-alignment': 'map',
@@ -535,17 +634,16 @@ function applyDirectionVisibility(map: MapLibreMap): void {
   )
 }
 
-/** 建图 / 换样式后把方向源与图层挂上（源/图层存在则跳过；图标缺则补） */
-function addDirectionLayers(map: MapLibreMap): void {
+/**
+ * 建图 / 换样式后把方向源与图标备齐（源/图标存在则跳过）。
+ * ⚠️ 图层本身**不在这里 `addLayer`**：绘制顺序统一由 `ownLayerSpecs()` 一份决定，
+ * 两条路各排一套顺序的话，方向标一下子在路线上、一下子在路线下。
+ */
+function ensureDirectionSource(map: MapLibreMap): void {
   addDirectionImages(map)
   if (!map.getSource(DIR_SRC)) {
     map.addSource(DIR_SRC, { type: 'geojson', data: directionGeoJson() })
   }
-  if (!map.getLayer(LAYER_DIRECTION)) {
-    const before = map.getLayer(LAYER_ROUTE_ALT1_HALO) ? LAYER_ROUTE_ALT1_HALO : undefined
-    map.addLayer(directionLayerSpec(), before)
-  }
-  applyDirectionVisibility(map)
 }
 
 /**
@@ -827,12 +925,485 @@ function lineLayerSpecs(): LineLayerSpecification[] {
   ]
 }
 
-function addRouteLayers(map: MapLibreMap): void {
-  if (map.getSource(SRC)) return
-  map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
-  for (const spec of lineLayerSpecs()) map.addLayer(spec)
-  // IKOQEJ：方向标记画在路网之上、路线之下（路线语义仍是最上层）
-  addDirectionLayers(map)
+// ---- IKPFVN · 全国视角：站点 pin / 兜底轮廓 / 三态图层开关 / 镜头取景 ----
+
+/**
+ * 镜头状态（由 `shared/mapMotion.ts` 的状态机驱动）。本组件**只读它**来决定图层显隐：
+ *   `national`                 → 站点 pin 层可见，路网 / 路线层隐藏
+ *   `leaving` / `panning` / `entering`（过渡中）→ 与全国同（pin 可见、路网隐藏）
+ *   `station`                  → 反过来
+ */
+const motionPhase = ref<MotionPhase>(props.mapMode === 'station' ? 'station' : 'national')
+
+/** 全国站表（生成物 `stations.generated.ts`，不在这里拼）—— pin / 浮层卡片 / 镜头目标共用 */
+const stations = computed<StationEntry[]>(() => stationEntries())
+
+function stationGeoJson(): FeatureCollection {
+  const features: Feature<Point>[] = stations.value.map((s, index) => ({
+    type: 'Feature' as const,
+    // 数字 id：`setFeatureState` / `removeFeatureState` 靠它定位一个站（不能用站键字符串）
+    id: index,
+    properties: {
+      key: s.key,
+      name: s.name,
+      segments: s.segment_count ?? 0,
+      label_icon: STATION_LABEL_ICON_PREFIX + s.key,
+    },
+    geometry: { type: 'Point' as const, coordinates: [s.lon, s.lat] },
+  }))
+  return { type: 'FeatureCollection', features }
+}
+
+/**
+ * 站名标签图片（canvas 生成，不依赖字体 glyphs）。
+ *
+ * 为什么不用 `text-field`：`text-field` 必须配底图样式的 `glyphs`，而**本地兜底样式没有 glyphs**
+ * —— 底图拉不到时那一层会直接报 `use of "text-field" requires a style "glyphs" property`，
+ * 控制台脏了、标签也画不出来。canvas 图片在任何样式下都能画（方向标记也是这么干的）。
+ */
+function stationLabelImage(name: string): ImageData {
+  const pad = 6
+  const height = 23
+  const font = '600 14px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif'
+  const canvas = document.createElement('canvas')
+  const probe = canvas.getContext('2d')
+  if (!probe) return new ImageData(1, 1)
+  probe.font = font
+  const width = Math.ceil(probe.measureText(name).width) + pad * 2
+  // 2× 后备缓冲：高分屏上文字不糊
+  canvas.width = Math.ceil(width * 2)
+  canvas.height = height * 2
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return new ImageData(1, 1)
+  ctx.scale(2, 2)
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+  ctx.strokeStyle = 'rgba(71, 85, 105, 0.55)'
+  ctx.lineWidth = 1
+  if (typeof ctx.roundRect === 'function') {
+    ctx.beginPath()
+    ctx.roundRect(0.5, 0.5, width - 1, height - 1, 6)
+    ctx.fill()
+    ctx.stroke()
+  } else {
+    ctx.fillRect(0.5, 0.5, width - 1, height - 1)
+    ctx.strokeRect(0.5, 0.5, width - 1, height - 1)
+  }
+  ctx.font = font
+  ctx.fillStyle = '#1F2937'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(name, width / 2, height / 2 + 1)
+  return ctx.getImageData(0, 0, canvas.width, canvas.height)
+}
+
+/** 注册站名标签图标（换样式后要重新注册，`setStyle` 会清空 image 资源） */
+function addStationImages(map: MapLibreMap): void {
+  for (const s of stations.value) {
+    const name = STATION_LABEL_ICON_PREFIX + s.key
+    if (!map.hasImage(name)) map.addImage(name, stationLabelImage(s.name))
+  }
+}
+
+/** 站点三个图层：命中区（透明大圆）→ 实心圆（选中环就画在它身上）→ 站名 */
+function stationLayerSpecs(): (CircleLayerSpecification | SymbolLayerSpecification)[] {
+  const selected: ExpressionSpecification = ['boolean', ['feature-state', 'selected'], false]
+  const hovered: ExpressionSpecification = ['boolean', ['feature-state', 'hover'], false]
+  return [
+    {
+      id: LAYER_STATION_HIT,
+      type: 'circle',
+      source: STATION_SRC,
+      // 半径 15 px → 30 px 直径热区（要求 ≥ 24 px）；全透明，视觉上看不见
+      paint: { 'circle-radius': 15, 'circle-color': '#000000', 'circle-opacity': 0 },
+    },
+    {
+      id: LAYER_STATION_DOT,
+      type: 'circle',
+      source: STATION_SRC,
+      paint: {
+        // 选中环不另建图层：同一图层用 feature-state 把半径 / 描边 / 颜色一起切
+        'circle-radius': ['case', selected, 9, ['case', hovered, 7.5, 6]],
+        'circle-color': ['case', selected, BRAND, STATION_DOT_COLOR],
+        'circle-stroke-width': ['case', selected, 3, 1.5],
+        'circle-stroke-color': '#FFFFFF',
+        'circle-stroke-opacity': 0.95,
+      },
+    },
+    {
+      id: LAYER_STATION_LABEL,
+      type: 'symbol',
+      source: STATION_SRC,
+      layout: {
+        'icon-image': ['get', 'label_icon'],
+        'icon-anchor': 'bottom',
+        'icon-offset': [0, -10],
+        // ⚠️ icon-size 约 0.5（不是 1）：标签图片是 **2× 后备缓冲**（高分屏不糊），
+        //    按 1 渲染就是两倍大 —— 首版就是这么大得餐人（详见文件内注释）。
+        // 随缩放略放大：全国（3~4 档）不抢视线，接近站区（6 档）才看得清。
+        'icon-size': ['interpolate', ['linear'], ['zoom'], 3, 0.5, 6, 0.62],
+        // 两个条站相距约 100 km，在全国缩放下不到 10 px —— 强制全部画会叠成一团，
+        // 交给 MapLibre 的碰撞检测：叠不下时只留一个，放大自然都出来。
+        'icon-allow-overlap': false,
+        'icon-ignore-placement': false,
+      },
+    },
+  ]
+}
+
+/** 上一帧高亮 / 选中的站（清 feature-state 时要先知道是谁） */
+let selectedStationKey: string | null = null
+let hoverStationKey: string | null = null
+/** 被悬停的站（DOM 浮牌用）。两个条站相距不到 10 px（全国缩放），光有 pin 分不清谁是谁 */
+const hoverStation = ref<StationEntry | null>(null)
+
+/** 把“当前站”的选中环贴到图层上（站区视角才高亮：全国里没有“当前站”这回事） */
+function syncStationSelection(map: MapLibreMap): void {
+  if (!map.getSource(STATION_SRC)) return
+  const next = props.mapMode === 'station' ? activePackKey() : null
+  if (selectedStationKey !== null) {
+    const prev = stations.value.findIndex((s) => s.key === selectedStationKey)
+    if (prev >= 0) map.removeFeatureState({ source: STATION_SRC, id: prev }, 'selected')
+  }
+  selectedStationKey = next
+  if (next === null) return
+  const index = stations.value.findIndex((s) => s.key === next)
+  if (index >= 0) map.setFeatureState({ source: STATION_SRC, id: index }, { selected: true })
+}
+
+/** 悬停高亮（只改 feature-state，不重建图层、不重建数据） */
+function syncStationHover(map: MapLibreMap, key: string | null): void {
+  if (hoverStationKey === key) return
+  const prev = stations.value.findIndex((s) => s.key === hoverStationKey)
+  if (prev >= 0) map.removeFeatureState({ source: STATION_SRC, id: prev }, 'hover')
+  hoverStationKey = key
+  hoverStation.value = stations.value.find((s) => s.key === key) ?? null
+  const index = stations.value.findIndex((s) => s.key === key)
+  if (index >= 0) map.setFeatureState({ source: STATION_SRC, id: index }, { hover: true })
+}
+
+/** 悬停站点浮牌落点 = pin 正上方（与摄像头 / 落客点浮牌同一套夹边逻辑） */
+const stationChipStyle = computed(() => {
+  const map = mapRef.value
+  const s = hoverStation.value
+  void camTick.value // 地图动过就重算
+  if (!map || !s) return {}
+  const pt = map.project([s.lon, s.lat])
+  const w = containerRef.value?.clientWidth ?? 0
+  const width = ST_CHIP_W
+  const rawLeft = Math.max(6, pt.x - width / 2)
+  const left = w > width + 12 ? Math.min(rawLeft, w - width - 6) : 6
+  return { left: `${left}px`, top: `${Math.max(6, pt.y - 76)}px` }
+})
+
+/** 站点源 + 站名图标备齐（图层顺序同上，统一交给 `ownLayerSpecs()`） */
+function ensureStationSource(map: MapLibreMap): void {
+  addStationImages(map)
+  if (!map.getSource(STATION_SRC)) {
+    map.addSource(STATION_SRC, { type: 'geojson', data: stationGeoJson() })
+  }
+}
+
+// ---- 底图兜底轮廓（Natural Earth 1:110m 简化，公有领域）----
+
+/**
+ * 兜底轮廓数据。只在**真的用得上**的时候拉一次（底图不可用时），懒加载 + 模块内缓存：
+ * 4.3 KB 的文件没必要每次都请求，也不该在底图正常时白占带宽。
+ */
+const outlineData = shallowRef<FeatureCollection | null>(null)
+let outlineLoading: Promise<FeatureCollection | null> | null = null
+
+function loadOutline(): Promise<FeatureCollection | null> {
+  if (outlineData.value) return Promise.resolve(outlineData.value)
+  if (outlineLoading) return outlineLoading
+  outlineLoading = (async () => {
+    try {
+      const data = JSON.parse(chinaOutlineText) as FeatureCollection
+      if (!data || data.type !== 'FeatureCollection') return null
+      outlineData.value = data
+      return data
+    } catch {
+      // 兜底图形的兜底：解析失败就只画站点 pin（依然不白屏）
+      return null
+    }
+  })()
+  return outlineLoading
+}
+
+function outlineSource(): GeoJSONSourceSpecification {
+  return { type: 'geojson', data: outlineData.value ?? EMPTY_FC }
+}
+
+/** 淡填充 + 细描边：它只是“这里有块陆地”的提示，不能抢路网 / pin 的视线 */
+function outlineLayerSpecs(): (FillLayerSpecification | LineLayerSpecification)[] {
+  return [
+    {
+      id: LAYER_OUTLINE_FILL,
+      type: 'fill',
+      source: OUTLINE_SRC,
+      paint: { 'fill-color': '#C7D2FE', 'fill-opacity': 0.3 },
+    },
+    {
+      id: LAYER_OUTLINE_LINE,
+      type: 'line',
+      source: OUTLINE_SRC,
+      paint: { 'line-color': '#94A3B8', 'line-width': 1.1, 'line-opacity': 0.6 },
+    },
+  ]
+}
+
+/** 本组件自有图层的**唯一一份**绘制顺序（底图在 / 不在时长得一样，靠的就是只有这一份定义） */
+type OwnLayer =
+  | LineLayerSpecification
+  | SymbolLayerSpecification
+  | CircleLayerSpecification
+  | FillLayerSpecification
+
+function ownLayerSpecs(): OwnLayer[] {
+  const own: OwnLayer[] = [...outlineLayerSpecs(), ...lineLayerSpecs()]
+  // 方向标记插在路线图层之前（路网 → 方向标 → 路线 → 选中）
+  const at = own.findIndex((layer) => layer.id === LAYER_ROUTE_ALT1_HALO)
+  own.splice(at < 0 ? own.length : at, 0, directionLayerSpec())
+  // 站点 pin 永远在最上层（切站入口不能被路网盖住）
+  own.push(...stationLayerSpecs())
+  return own
+}
+
+function setLayerVisible(map: MapLibreMap, id: string, visible: boolean): void {
+  if (!map.getLayer(id)) return
+  const next = visible ? 'visible' : 'none'
+  if (map.getLayoutProperty(id, 'visibility') === next) return
+  map.setLayoutProperty(id, 'visibility', next)
+}
+
+/**
+ * **三态图层开关的唯一一处**（全国 / 过渡中 / 站区）：
+ *
+ * | 图层族                    | national | leaving·panning·entering | station |
+ * |---------------------------|----------|--------------------------|---------|
+ * | 路网 / 热力 / 选中 / 路线 |  隐藏    |          隐藏            |  可见   |
+ * | 方向标记                  |  隐藏    |          隐藏            | 按开关  |
+ * | 站点 pin（命中/圆/文字）  |  可见    |          可见            |  隐藏   |
+ * | 兜底轮廓                  | 底图≠ok时可见 | 同左                 |  隐藏   |
+ *
+ * 为什么过渡中也藏路网：那时父级已经把上一站的 `routes` 清空了，但**几何还是上一站的**
+ * ——“地图缩小时还看得见旧站路网”正是 IKPFVN D4 要禁的东西。
+ */
+function applyModeLayers(map: MapLibreMap): void {
+  const atStation = motionPhase.value === 'station'
+  for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
+  setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
+  setLayerVisible(map, LAYER_STATION_HIT, !atStation)
+  setLayerVisible(map, LAYER_STATION_DOT, !atStation)
+  setLayerVisible(map, LAYER_STATION_LABEL, !atStation)
+  const outline = basemap.value !== 'ok' && !atStation
+  setLayerVisible(map, LAYER_OUTLINE_FILL, outline)
+  setLayerVisible(map, LAYER_OUTLINE_LINE, outline)
+  syncStationSelection(map)
+  if (outline) void loadOutline().then((data) => {
+    if (!data || disposed) return
+    const src = mapRef.value?.getSource(OUTLINE_SRC) as GeoJSONSource | undefined
+    if (src) void src.setData(data)
+  })
+}
+
+/** 把全部自有图层挂上（建图 / 刚换完样式时调一次；顺序只有 `ownLayerSpecs()` 一份） */
+function addOwnLayers(map: MapLibreMap): void {
+  if (!map.getSource(OUTLINE_SRC)) map.addSource(OUTLINE_SRC, outlineSource())
+  if (!map.getSource(SRC)) map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
+  ensureDirectionSource(map)
+  ensureStationSource(map)
+  for (const spec of ownLayerSpecs()) {
+    if (!map.getLayer(spec.id)) map.addLayer(spec)
+  }
+  applyModeLayers(map)
+}
+
+// ---- 镜头取景（IKPFVN C 节；动效参数与状态机全在 `shared/mapMotion.ts`）----
+
+function containerViewport(map: MapLibreMap): { width: number; height: number } {
+  const c = map.getContainer()
+  return { width: c.clientWidth, height: c.clientHeight }
+}
+
+/**
+ * 站区取景留白：把左右栏宽度也算进去（IKPFVN C3）。
+ * 栏在容器**外面**（中栏就是地图容器），所以不去重复扣，只在 `stationPadding` 里作对称余量；
+ * 这里量的是 **当前真实宽度** —— 栏是滑入的，写死 296 / 396 会在拖过栏宽的页面上取偏。
+ */
+function sideColumnsWidth(): number {
+  const self = containerRef.value
+  const splitter = self?.closest('.el-splitter')
+  if (!self || !splitter) return 0
+  let total = 0
+  for (const child of Array.from(splitter.children)) {
+    if (!child.classList.contains('el-splitter-panel')) continue
+    if (child.contains(self)) continue // 自己所在的中栏不算
+    total += (child as HTMLElement).clientWidth
+  }
+  return total
+}
+
+function stationPaddingNow(map: MapLibreMap): CameraPadding {
+  const view = containerViewport(map)
+  return stationPadding({
+    ...view,
+    columnsWidth: sideColumnsWidth(),
+    // 图例在宽屏是左下角浮层，会给站区最外侧的起点段让位；窄屏图例已收进折叠浮层 → 0
+    legendWidth: props.legend && legendOpen.value && view.width > 900 ? 440 : 0,
+  })
+}
+
+/** 先量准容器尺寸再取景：左右栏刚滑入时宽高还是旧的，直接 fitBounds 会偏（IKPFVN E1） */
+async function resizeMap(map: MapLibreMap): Promise<void> {
+  map.resize()
+  await new Promise<void>((resolve) => {
+    window.requestAnimationFrame(() => resolve())
+  })
+  map.resize()
+}
+
+function fitStationInstant(map: MapLibreMap, key: string): void {
+  const cam = stationCamera(key)
+  if (!cam) return
+  map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
+    padding: stationPaddingNow(map),
+    maxZoom: cam.maxZoom,
+    duration: 0,
+  })
+}
+
+function fitOverviewInstant(map: MapLibreMap): void {
+  const cam = overviewCamera()
+  map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
+    padding: overviewPadding(containerViewport(map)),
+    duration: 0,
+  })
+  // 容器偏矮时 `fitBounds` 会把中国算到 2 档（大陆变成中间一小块）——按判定的下界抬到 3 档
+  clampOverviewZoom(map)
+}
+
+/**
+ * 镜头同步（唯一入口）：按 `mapMode` 决定落到全国还是落进某个站。
+ * `animated=false` 只用于“不能有动画”的场合（起手建图、换完底图样式后）。
+ */
+async function syncCamera(animated: boolean): Promise<void> {
+  const map = mapRef.value
+  if (!map || !ready.value || disposed) return
+  if (props.mapMode === 'station') {
+    const key = activePackKey()
+    if (!animated || !stationCamera(key)) {
+      fitStationInstant(map, key)
+      motionPhase.value = 'station'
+      applyModeLayers(map)
+      // 站包几何为空时也没别的去处：如实按“已到站”通知父级，别让数据永远挂在“过渡中”
+      emit('arrived')
+      return
+    }
+    motionPhase.value = 'leaving'
+    applyModeLayers(map)
+    const result = await flyToStation(map, key, {
+      padding: () => stationPaddingNow(map),
+      onPhase: (phase) => {
+        motionPhase.value = phase
+        const live = mapRef.value
+        if (live) applyModeLayers(live)
+      },
+      beforeFit: () => resizeMap(map),
+    })
+    if (result.cancelled) return
+    motionPhase.value = 'station'
+    applyModeLayers(map)
+    emit('arrived')
+    return
+  }
+  if (!animated) {
+    fitOverviewInstant(map)
+    motionPhase.value = 'national'
+    applyModeLayers(map)
+    return
+  }
+  motionPhase.value = 'leaving'
+  applyModeLayers(map)
+  const result = await flyToOverview(map, {
+    padding: () => overviewPadding(containerViewport(map)),
+    onPhase: (phase) => {
+      motionPhase.value = phase
+      const live = mapRef.value
+      if (live) applyModeLayers(live)
+    },
+    beforeFit: () => resizeMap(map),
+  })
+  if (result.cancelled) return
+  motionPhase.value = 'national'
+  applyModeLayers(map)
+}
+
+/**
+ * 把镜头同步合并到**下一个微任务**里跑一次。
+ *
+ * 为什么需要合并：切站那一瞬 `mapMode` 与 `packTick` 往往**同时**变（从全国点一个站），
+ * 两个 watch 各叫一次 `syncCamera()` 就会“取消一次再重开一次”——画面抖一下。
+ * 合并之后同一轮只跑一次，状态机里“只允许一个动画”也就真的只剩一个。
+ *
+ * `resizeFirst = true`：视角切了（左右栏收起 / 滑入），必须先 `map.resize()` 再取景。
+ */
+let cameraPending = false
+let cameraNeedsResize = false
+function scheduleCameraSync(resizeFirst = false): void {
+  if (resizeFirst) cameraNeedsResize = true
+  if (cameraPending) return
+  cameraPending = true
+  void nextTick().then(async () => {
+    cameraPending = false
+    const map = mapRef.value
+    if (!map || !ready.value || disposed) {
+      cameraNeedsResize = false
+      return
+    }
+    const needResize = cameraNeedsResize
+    cameraNeedsResize = false
+    if (needResize) await resizeMap(map)
+    await syncCamera(true)
+  })
+}
+
+/**
+ * 容器尺寸一变就按**当前视角**重新取景（IKPFVN）。
+ *
+ * 为什么必须有：地图建在 `el-splitter` 的弹性中栏里 —— 全国模式下左右栏收起要 250 ms，
+ * 挂载首帧的容器宽度也未必已经定型。按那一刻的尺寸 `fitBounds` 会把中国算到 2.3 档
+ * （大陆只占中间一小块，达不到「全国大地图」的观感），而定型之后没有任何一处会再重算。
+ * 尺寸真的变了（拖栏 / 窗口缩放 / 窄屏单列 / 左右栏收放）就补一次**无动画**取景。
+ *
+ * 三条纪律：① 动画途中不抢镜头（否则一次飞行被切成两段）；② 只在尺寸真的变了才动
+ * （`ResizeObserver` 会因为一次过渡触发很多次回调）；③ 防抖 140 ms，等布局稳定再算。
+ */
+let resizeObserver: ResizeObserver | null = null
+let resizeTimer = 0
+let lastFitSize = { width: 0, height: 0 }
+
+function watchContainerSize(map: MapLibreMap): void {
+  const el = containerRef.value
+  if (!el || typeof ResizeObserver === 'undefined') return
+  resizeObserver?.disconnect()
+  resizeObserver = new ResizeObserver(() => {
+    // ① 飞行途中（leaving / panning / entering）不插手
+    if (motionPhase.value !== 'national' && motionPhase.value !== 'station') return
+    window.clearTimeout(resizeTimer)
+    resizeTimer = window.setTimeout(() => {
+      const live = mapRef.value
+      if (!live || disposed || !ready.value) return
+      const size = containerViewport(live)
+      // ② 尺寸没变就不动（过渡期间的中间态回调全部走到这里被挡掉）
+      if (size.width === lastFitSize.width && size.height === lastFitSize.height) return
+      lastFitSize = { width: size.width, height: size.height }
+      void live.resize()
+      // ③ 无动画：取景是"补算"，不是一次新的转场
+      void syncCamera(false)
+    }, 140)
+  })
+  resizeObserver.observe(el)
+  lastFitSize = containerViewport(map)
 }
 
 // ---- 摄像头布点 ----
@@ -1022,27 +1593,11 @@ function syncVehicles(map: MapLibreMap | null): void {
 }
 
 // ---- 取景 ----
-
-/** 视野适配到整张路网（边界留白，避免线贴边） */
-function fitToNetwork(map: MapLibreMap): void {
-  const lons = net.value.flatMap((s) => s.coords.map((c) => c[0]))
-  const lats = net.value.flatMap((s) => s.coords.map((c) => c[1]))
-  if (lons.length === 0) return
-  map.fitBounds(
-    [
-      [Math.min(...lons), Math.min(...lats)],
-      [Math.max(...lons), Math.max(...lats)],
-    ],
-    {
-      // 宽屏时左侧给图例留出 440px：起点多在大道最外侧（路网边缘），不留白会被图例压住。
-      padding:
-        map.getContainer().clientWidth > 900
-          ? { top: 36, right: 56, bottom: 72, left: 440 }
-          : 56,
-      duration: 0,
-    },
-  )
-}
+//
+// IKPFVN 把取景收成两件事：全国视角 = 中国范围 `fitBounds`；站区视角 = 该站包几何的
+// min/max（见 `shared/mapMotion.ts` 的 `stationCamera()`）。原先那个“适配到当前路网”的
+// `fitToNetwork()` 已删：它只会在站区视角下有意义，而站区取景现在由状态机统一算，
+// 两套取景各写一份必然对不上（图例留白、左右栏宽度只会在其中一处生效）。
 
 // ---- 底图：异步、可失败、失败只丢自己 ----
 
@@ -1054,18 +1609,19 @@ function fitToNetwork(map: MapLibreMap): void {
  * 合成后再切，路网在整份样式里，从一开始就在。
  */
 function mergedStyle(remote: StyleSpecification): StyleSpecification {
-  // 方向标记插在路线图层之前（与建图时的顺序一致：路网 → 方向标 → 路线 → 选中）
-  const own: (LineLayerSpecification | SymbolLayerSpecification)[] = [...lineLayerSpecs()]
-  const at = own.findIndex((layer) => layer.id === LAYER_ROUTE_ALT1_HALO)
-  own.splice(at < 0 ? own.length : at, 0, directionLayerSpec())
   return {
     ...remote,
     sources: {
       ...(remote.sources ?? {}),
+      // 兜底轮廓 / 站点 pin / 路网 / 方向标 —— 四份 source 都必须带上，否则 setStyle 之后
+      // 图层在、数据源没了，地图会报错且 pin 直接消失。
+      [OUTLINE_SRC]: outlineSource(),
       [SRC]: { type: 'geojson', data: routeGeoJson() },
       [DIR_SRC]: { type: 'geojson', data: directionGeoJson() },
+      [STATION_SRC]: { type: 'geojson', data: stationGeoJson() },
     },
-    layers: [...(remote.layers ?? []), ...own],
+    // 自有图层的绘制顺序只有 `ownLayerSpecs()` 一份
+    layers: [...(remote.layers ?? []), ...ownLayerSpecs()],
   }
 }
 
@@ -1076,7 +1632,8 @@ function dropBasemap(map: MapLibreMap): void {
   remoteApplied = false
   map.once('styledata', () => {
     if (disposed) return
-    fitToNetwork(map)
+    // 换样式后不能“动画回位”（会突然飞一下）：直接按当前视角 Instant 重新取景
+    void syncCamera(false)
     applyViewState(map)
   })
   map.setStyle(mergedStyle(FALLBACK_STYLE), { diff: false })
@@ -1145,7 +1702,7 @@ async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): P
     // ⚠️ 监听要先挂再 `setStyle` —— 反过来万一 styledata 已同步派发就漏掉了。
     map.once('styledata', () => {
       if (disposed) return
-      fitToNetwork(map)
+      void syncCamera(false)
       applyViewState(map)
     })
     map.setStyle(mergedStyle(remote), { diff: false })
@@ -1200,13 +1757,17 @@ async function waitForBasemapTiles(
   return false
 }
 
-/** 数据/选中/路线变化后，把视图状态贴回图层（换样式之后也要重贴一次） */
+/** 数据/选中/路线/视角变化后，把视图状态贴回图层（换样式之后也要重贴一次） */
 function applyViewState(map: MapLibreMap): void {
-  // 换样式会清空 image 资源：先把方向图标补回去，再更新方向源
+  // 换样式会清空 image 资源：方向图标与站名标签都要补回去
   addDirectionImages(map)
+  addStationImages(map)
   applyDirectionVisibility(map)
+  syncStationSelection(map)
   const dirSrc = map.getSource(DIR_SRC) as GeoJSONSource | undefined
   if (dirSrc) void dirSrc.setData(directionGeoJson())
+  const stSrc = map.getSource(STATION_SRC) as GeoJSONSource | undefined
+  if (stSrc) void stSrc.setData(stationGeoJson())
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
@@ -1216,6 +1777,8 @@ function applyViewState(map: MapLibreMap): void {
   if (map.getLayer(LAYER_ROUTE_ALT1_HALO)) map.setFilter(LAYER_ROUTE_ALT1_HALO, altFilter(1))
   if (map.getLayer(LAYER_ROUTE_ALT2)) map.setFilter(LAYER_ROUTE_ALT2, altFilter(2))
   if (map.getLayer(LAYER_ROUTE_ALT2_HALO)) map.setFilter(LAYER_ROUTE_ALT2_HALO, altFilter(2))
+  // 三态图层显隐也重贴一次：换样式会把 `visibility` 回到默认的 visible
+  applyModeLayers(map)
 }
 
 // ---- 交互：点击选中 / 悬停即切换选中 + 浮牌跟随 ----
@@ -1231,10 +1794,30 @@ function hoveredSegmentId(map: MapLibreMap, point: MapMouseEvent['point']): stri
   return typeof id === 'string' && id ? id : null
 }
 
+/**
+ * 鼠标下的站点（全国视角的切站入口）。
+ * 命中用那个**透明大圆**图层（半径 15 px），而不是可见小圆：可见圆只有 12~18 px 直径，
+ * 鼠标要正中才能点中；热区要求 ≥ 24 px。
+ */
+function stationKeyAt(map: MapLibreMap, point: MapMouseEvent['point']): string | null {
+  if (props.mapMode === 'station') return null
+  if (!map.getLayer(LAYER_STATION_HIT)) return null
+  const hit = map.queryRenderedFeatures(point, { layers: [LAYER_STATION_HIT] })
+  const key = hit?.[0]?.properties?.key
+  return typeof key === 'string' && key ? key : null
+}
+
 function onMapMouseMove(e: MapMouseEvent): void {
   const map = mapRef.value
   if (!map) return
   mouse.value = { x: e.point.x, y: e.point.y }
+  // 全国视角：只有站点 pin 是可选对象（路网图层已隐藏，路口悬停不该再报路段）
+  const stationKey = stationKeyAt(map, e.point)
+  syncStationHover(map, stationKey)
+  if (props.mapMode !== 'station') {
+    map.getCanvas().style.cursor = stationKey ? 'pointer' : ''
+    return
+  }
   const id = hoveredSegmentId(map, e.point)
   map.getCanvas().style.cursor = id ? 'pointer' : ''
   // 悬停即切换选中（业主 2026-10-14：不要"靠点击才切换"）——浮牌据此吸附在当前路段上
@@ -1243,11 +1826,19 @@ function onMapMouseMove(e: MapMouseEvent): void {
 
 function onMapMouseOut(): void {
   mouse.value = null
+  const map = mapRef.value
+  if (map) syncStationHover(map, null)
 }
 
 function onMapClick(e: MapMouseEvent): void {
   const map = mapRef.value
   if (!map) return
+  // 全国视角：点 pin = 切站（父级走 `switchStation`，本组件不自己换包）
+  const stationKey = stationKeyAt(map, e.point)
+  if (stationKey) {
+    emit('switch-station', stationKey)
+    return
+  }
   const id = hoveredSegmentId(map, e.point)
   if (id) emit('select', id)
 }
@@ -1325,29 +1916,44 @@ async function detectBasemapProxy(): Promise<void> {
 
 function initMap(): void {
   if (!containerRef.value) return
+  const overview = overviewCamera()
   const map = new MapLibreMap({
     container: containerRef.value,
-    // ⚠️ 起手是**本地兜底样式**：路网据此立刻画出来，不等公网（本单的核心）
+    // ⚠️ 起手是**本地兜底样式**：路网 / 站点 pin 据此立刻画出来，不等公网（本单的核心）
     style: FALLBACK_STYLE,
-    center: [112.657, 23.215],
-    zoom: 14,
+    // IKPFVN：起手取景不再是写死的肇庆东（`center:[112.657,23.215] / zoom:14`），
+    // 而是**中国范围**（常量在 `shared/mapMotion.ts`）。真正的取景在 `load` 里 `fitBounds`。
+    center: overview.center,
+    zoom: overview.zoom,
     // 底图那几类请求（样式 / tilejson / 瓦片 / sprite / 字形）统一过一遍地址改写：
     // 探到同源直通就换成本地前缀（绕开系统代理），没探到就原样返回。
     transformRequest: (url) => ({ url: toBasemapUrl(url) }),
     // 不隐藏默认署名控件：OSM/ODbL 要求署名（见文件头「合规」）
   })
   mapRef.value = map
+  // 验收钩子（**只在 dev 生效**；生产构建里 `import.meta.env.DEV === false`，这块会被摇掉）：
+  // 本单的完成判定里有两条只能读地图实例 —— `map.getZoom()`（全国 3–6 / 站区 ≥14）与
+  // `map.querySourceFeatures` 里的路线段号（切 Z 全 `SZ-`、切 GZ 全 `GZ-`）。
+  // 它与容器上的 `data-map-mode` / `data-station` / `data-motion-phase` 是同一套验收设施。
+  if (import.meta.env.DEV) {
+    ;(window as unknown as { __hubflowMap?: MapLibreMap }).__hubflowMap = map
+  }
   map.addControl(new NavigationControl({ visualizePitch: true }), 'top-right')
   // 比例尺放右下（左下角留给图例）
   map.addControl(new ScaleControl({ unit: 'metric' }), 'bottom-right')
 
   map.on('load', () => {
-    addRouteLayers(map)
+    addOwnLayers(map)
     addCameraPins(map)
     addLandmarkPins(map)
     updateRouteEndpointMarkers(map)
-    fitToNetwork(map)
+    // 起手取景按**当前视角**：全国（默认）→ 中国范围；深链 `?station=` → 直接站区（无动画）
+    motionPhase.value = props.mapMode === 'station' ? 'station' : 'national'
     ready.value = true
+    void syncCamera(false)
+    // 首帧的容器宽度可能还没定型（左右栏正在收起 / 挂载时布局未稳定）——
+    // 尺寸一变就补一次取景，见 `watchContainerSize()`。
+    watchContainerSize(map)
     // 车辆要在 ready 之后再同步（`syncVehicles` 以 ready 为前置）
     syncVehicles(map)
     map.on('move', () => {
@@ -1406,9 +2012,9 @@ function applyPackChange(): void {
   landmarkMarkers.forEach((m) => m.remove())
   landmarkMarkers = []
   addLandmarkPins(map)
-  // 方向图层：图标已在 map 里（同一套 canvas 图标），只需重贴数据与显隐
+  // 方向 / 路网 / 站点 pin 重贴数据与显隐；**取景交给镜头状态机**（IKPFVN C）
   applyViewState(map)
-  fitToNetwork(map)
+  scheduleCameraSync()
 }
 
 watch(packTick, applyPackChange)
@@ -1471,6 +2077,31 @@ watch(basemapEnabled, () => {
   void applyBasemap(map)
 })
 
+/**
+ * 底图状态一变（ok / failed / off）就重算图层显隐：兜底轮廓的可见性挂在它上面
+ * （`basemap !== 'ok'` 才画轮廓，见 `applyModeLayers()`）。
+ */
+watch(basemap, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  applyModeLayers(map)
+})
+
+/**
+ * 视角切换（IKPFVN E1/E2）：`national` ⇄ `station`。
+ *
+ * 顺序不能反：**先 `map.resize()` 再 `fitBounds`**。左右栏是滑入 / 收起的，
+ * resize 之前量到的是旧宽高，直接取景会偏（图例留白、中栏宽度都按旧值算）。
+ */
+watch(
+  () => props.mapMode,
+  () => {
+    // 先让左右栏把位置定下来（`resizeFirst`），再动镜头；两者都合并到同一轮，
+    // 避免与 `packTick` 同时变化时“取消一次再重开一次”（见 `scheduleCameraSync`）。
+    scheduleCameraSync(true)
+  },
+)
+
 watch(
   () => props.vehicles,
   () => {
@@ -1490,7 +2121,13 @@ onUnmounted(() => {
   disposed = true
   offPackTick()
   window.clearTimeout(retryTimer)
+  window.clearTimeout(resizeTimer)
+  resizeObserver?.disconnect()
+  resizeObserver = null
   inflightCtrl?.abort()
+  // 镜头动画也要停：组件没了还跑着 `easeTo` 会往一个已销毁的渲染器里写
+  const map = mapRef.value
+  if (map) cancelMotion(map)
   camMarkers.forEach((m) => m.remove())
   camMarkers = []
   landmarkMarkers.forEach((m) => m.remove())
@@ -1504,16 +2141,49 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="mlmap">
+  <!-- 地图容器：`data-map-mode` / `data-station` 是验收与自动化用的**机器可读标记**（IKPFVN E3），
+       不要拿文案去判断当前视角。 -->
+  <div
+    class="mlmap"
+    :class="{ 'mode-national': mapMode === 'national' }"
+    :data-map-mode="mapMode"
+    :data-station="currentStationKey"
+    :data-motion-phase="motionPhase"
+  >
     <div ref="containerRef" class="mlmap-canvas" />
+
+    <!-- 全国视角浮层（IKPFVN B3）：已接入车站一览，点站名 = 切站（与点 pin 同一条通道） -->
+    <div v-if="mapMode === 'national'" class="nation-card">
+      <div class="nc-head">已接入车站 {{ stations.length }} 个</div>
+      <button
+        v-for="station in stations"
+        :key="station.key"
+        type="button"
+        class="nc-item"
+        :title="`切换到${station.name}：地图缩远 → 移动到该站 → 放大 → 显示该站路网`"
+        @click="pickStation(station.key)"
+      >
+        <span class="nc-name">{{ station.name }}</span>
+        <span class="nc-seg">{{ station.segment_count ?? '—' }} 段</span>
+        <span class="nc-demo">演示数据</span>
+      </button>
+      <div class="nc-note">
+        只有已接入的站有演示路网；其余区域不上色、不画路线。点站名或地图上的站点圆点进入站区。
+      </div>
+      <!-- 兜底轮廓的署名与口径：不写审图号之类没依据的话 -->
+      <div v-if="basemap !== 'ok'" class="nc-note">
+        轮廓简化，仅作示意，不代表边界主张（Natural Earth 1:110m）。
+      </div>
+    </div>
 
     <!-- 底图状态角标：**只占一个小角、不覆盖地图** —— 底图拉不出来（或设置里关掉）时路网照样看。
          旧版是一块 inset:0 的整屏遮罩，会把路网一起盖住。 -->
-    <div v-if="basemap !== 'ok'" class="basemap-note">
+    <div v-if="basemap !== 'ok'" class="basemap-note" :class="{ 'note-bottom': mapMode === 'national' }">
       <template v-if="basemap === 'off'">底图已关闭（顶栏「设置」里可开）· 只画路网</template>
       <template v-else-if="basemap === 'loading'">底图加载中…</template>
       <template v-else>
-        <span>底图不可用（{{ basemapMsg }}）· 路网照画</span>
+        <span v-if="mapMode === 'national'">底图不可用 · 仅显示站点与站区路网</span>
+        <span v-else>底图不可用（{{ basemapMsg }}）· 路网照画</span>
         <!-- ⚠️ 按钮**文案不许变**：自动重试时若在「重试 / 重试中…」之间改文案，按钮宽度跟着变，
              CDP 端会一直判它 "element is not stable"（实测点了 30 s 点不上）。
              所以「正在重试…」另起一个 span，按钮只切换 disabled（只改透明度，不改尺寸）。 -->
@@ -1524,12 +2194,18 @@ onUnmounted(() => {
       </template>
     </div>
 
-    <!-- 来源口径水印（自绘视图搬来） -->
-    <div class="watermark">{{ sourceLabel }}</div>
+    <!-- 来源口径水印（自绘视图搬来）——全国视角不写“当前站来源”，那样会让人以为全国都有路网 -->
+    <div v-if="mapMode === 'station'" class="watermark">{{ sourceLabel }}</div>
 
     <!-- 路网 OSM 署名：单独一份，**底图挂了也仍在**（E-11 / E-13） -->
     <div v-if="osmActive" class="attribution">
       <a :href="OSM_COPYRIGHT_URL" target="_blank" rel="noopener">{{ OSM_ATTRIBUTION }}</a>
+    </div>
+
+    <!-- 全国视角：悬停站点 pin 的浮牌（两个站近得叠在一起时，这是分辨“我指到的是哪个”的依据） -->
+    <div v-if="mapMode === 'national' && hoverStation" class="st-chip" :style="stationChipStyle">
+      <b>{{ hoverStation.name }}</b>
+      <span class="st-chip-sub">{{ hoverStation.segment_count ?? '—' }} 段 · 演示数据 · 点击进入站区</span>
     </div>
 
     <!-- 摄像头浮牌（悬停图钉时；与路段浮牌是两套，不混） -->
@@ -1549,8 +2225,7 @@ onUnmounted(() => {
       </span>
     </div>
 
-    <!-- 跟随鼠标的信息浮牌：吸附在当前选中路段上，沿线走 -->
-    <div v-if="mouse && hoverChip" class="hover-chip" :style="chipStyle">
+    <!-- 跟随鼠标的信息浮牌：吸附在当前选中路段上，沿线走（站区视角才有路段可选） -->    <div v-if="mapMode === 'station' && mouse && hoverChip" class="hover-chip" :style="chipStyle">
       {{ hoverChip }}
     </div>
 
@@ -1559,7 +2234,7 @@ onUnmounted(() => {
          所以窄屏把图例收进可折叠浮层（默认收起，点「图例」展开）；
          桌面 (>1180) 不包一层布局：.legend-dock 用 display:contents，.legend 仍相对 .mlmap 定位，
          视觉与改造前完全一致。 -->
-    <div v-if="legend" class="legend-dock" :class="{ open: legendOpen }">
+    <div v-if="legend && mapMode === 'station'" class="legend-dock" :class="{ open: legendOpen }">
       <button
         type="button"
         class="legend-toggle"
@@ -2198,5 +2873,108 @@ onUnmounted(() => {
   :deep(.maplibregl-ctrl-bottom-right) {
     margin: 0 4px 4px 0;
   }
+}
+
+/* ---------- 全国视角（Issue IKPFVN） ---------- */
+/* 全国浮层卡片：左上方（右上角是 MapLibre 的缩放控件、右下是署名 + 比例尺）。
+   `pointer-events` 只给按钮：卡片背景不吞地图拖拽的鼠标事件。 */
+.nation-card {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.95);
+  border: 1px solid #e8e8e8;
+  border-radius: 6px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+  pointer-events: none;
+  max-width: min(320px, calc(100% - 24px));
+}
+.nc-head {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text-color-primary, #1a1a1a);
+}
+.nc-item {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 12px;
+  color: var(--td-text-color-primary, #1a1a1a);
+  cursor: pointer;
+  text-align: left;
+}
+.nc-item:hover {
+  border-color: v-bind('BRAND');
+  background: #eef4ff;
+}
+.nc-name {
+  font-weight: 500;
+}
+.nc-seg {
+  font-size: 11px;
+  color: var(--td-text-color-secondary, #666666);
+}
+.nc-demo {
+  margin-left: auto;
+  font-size: 10px;
+  color: #b45309;
+  background: #fef3c7;
+  border-radius: 3px;
+  padding: 0 4px;
+}
+.nc-note {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder, #999999);
+}
+
+/* 全国视角里把底图状态角标改放**左下**：左上角是站点浮层卡片（`top/left 10~12px`），
+   两个都放左上会叠在一起（实测截图里提示被卡片盖住）。全国视角没有图例，左下是空的。 */
+.basemap-note.note-bottom {
+  top: auto;
+  bottom: 12px;
+}
+
+/* 全国站点悬停浮牌（宽度与 script 里的 ST_CHIP_W 一致） */
+.st-chip {
+  position: absolute;
+  width: 176px;
+  padding: 4px 8px;
+  background: #ffffff;
+  border: 1.2px solid v-bind('BRAND');
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+  font-size: 11px;
+  color: v-bind('BRAND');
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  pointer-events: none;
+  z-index: 4;
+}
+.st-chip-sub {
+  font-size: 10px;
+  color: var(--td-text-color-secondary, #666666);
+}
+
+/* 全国视角里 DOM Marker（摄像头 / 落客点 / 起终点 / 车辆）一律不画：
+   它们属于**某一个站**，放到全国尺度上就是一堆坐标不明的点，会把站点 pin 淹掉。
+   为什么用 CSS 而不是删 Marker：Marker 是切站时重建的，来回删建比换个 display 贵得多。 */
+.mlmap.mode-national :deep(.cam-pin),
+.mlmap.mode-national :deep(.lm-pin),
+.mlmap.mode-national :deep(.rt-pin),
+.mlmap.mode-national :deep(.veh-dot) {
+  display: none;
 }
 </style>
