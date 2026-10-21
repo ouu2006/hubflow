@@ -76,6 +76,7 @@ import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   basemapEnabled,
   directionsVisible,
+  routeEmphasisEnabled,
 } from '../../../shared/settings'
 import { activePack } from '../../../station-packs/index'
 import {
@@ -166,18 +167,36 @@ const LAYER_LINE = `${SRC}-line`
 /** 推荐路线（品牌蓝实线；「当前 / 已选」语义，不得用等级色） */
 const LAYER_ROUTE_HALO = `${SRC}-route-halo`
 const LAYER_ROUTE = `${SRC}-route`
-/** 备选路线（灰虚线；可多条一起画） */
-const LAYER_ROUTE_ALT_HALO = `${SRC}-route-alt-halo`
-const LAYER_ROUTE_ALT = `${SRC}-route-alt`
+/**
+ * 备选 1 / 备选 2（Issue IKP5CK）：两条备选必须**互相可区分**（原来一起画灰虚线）。
+ * 分两个图层而不是一个「按属性取色」的图层：两者的**虚线节律 + 平行偏移**也不同，
+ * 叠在同一段路时靠「颜色 + 节律 + ±2px 平行线」三重区分，不只靠颜色单通道。
+ */
+const LAYER_ROUTE_ALT1_HALO = `${SRC}-route-alt1-halo`
+const LAYER_ROUTE_ALT1 = `${SRC}-route-alt1`
+const LAYER_ROUTE_ALT2_HALO = `${SRC}-route-alt2-halo`
+const LAYER_ROUTE_ALT2 = `${SRC}-route-alt2`
 /** 离站路线（紫色实线；第三种语义色，与等级色 / 品牌蓝分开） */
 const LAYER_ROUTE_DEP_HALO = `${SRC}-route-dep-halo`
 const LAYER_ROUTE_DEP = `${SRC}-route-dep`
 const LAYER_SELECTED = `${SRC}-selected`
 
-/** 备选路线的灰（TDesign gray-7 同族；不是等级色，也不是"数据不可用"的灰档） */
-const ROUTE_ALT_COLOR = '#6B6B6B'
+/**
+ * 备选 1 = 青 `#0E7490`、备选 2 = 琥珀 `#B45309`（队长 2026-10-20 裁定）：
+ * 两色都避开四级判级色（#2BA471 / #E9B32E / #E37318 / #D54941）、
+ * 数据不可用灰 #8B8B8B、品牌蓝 #0052D9、离站紫 #7B61FF。
+ * 虚线节律再分一套：备选 1 长虚（12/6）、备选 2 短虚（2.5/4.5）。
+ */
+const ROUTE_ALT1_COLOR = '#0E7490'
+const ROUTE_ALT2_COLOR = '#B45309'
 /** 离站路线色（紫色；与品牌蓝 / 四级色都不撞，只表示"第 3 种路线语义"） */
 const ROUTE_DEPART_COLOR = '#7B61FF'
+/**
+ * 「凸显路线」时非路线段的中性灰（Issue IKP5CK）。
+ * 必须与「数据不可用灰」#8B8B8B 视觉可区分：更浅（#C9CDD4）、更细（2 px vs 5.5 px）、
+ * 透明度更低（0.55）、**不加虚线**；且只有路线存在、开关打开时才生效。
+ */
+const ROUTE_EMPHASIS_GRAY = '#C9CDD4'
 
 /** 悬停浮牌尺寸（只用于翻面判断，与 CSS 里的 min/max-width 对应） */
 const CHIP_W = 210
@@ -425,7 +444,6 @@ function directionIconImage(kind: DirectionKind): ImageData {
   // Issue IKP5BD：双向段不再用 `↕` 字形 —— 由 `directionGeoJson()` 生成两支单箭头
   // （各自带 rotate、分列折线两侧），图标本身保持单箭头形状，只是染双向语义色。
   const glyph = kind === 'unknown' ? '?' : '↑'
-
   ctx.clearRect(0, 0, size, size)
   ctx.font = 'bold 44px "Segoe UI Symbol", "Noto Sans Symbols", system-ui, sans-serif'
   ctx.textAlign = 'center'
@@ -488,30 +506,53 @@ function addDirectionLayers(map: MapLibreMap): void {
     map.addSource(DIR_SRC, { type: 'geojson', data: directionGeoJson() })
   }
   if (!map.getLayer(LAYER_DIRECTION)) {
-    const before = map.getLayer(LAYER_ROUTE_ALT_HALO) ? LAYER_ROUTE_ALT_HALO : undefined
+    const before = map.getLayer(LAYER_ROUTE_ALT1_HALO) ? LAYER_ROUTE_ALT1_HALO : undefined
     map.addLayer(directionLayerSpec(), before)
   }
   applyDirectionVisibility(map)
 }
 
+/**
+ * 当前是否处于「凸显路线」：开关开 **且** 真有路线可凸显。
+ * 没路线时不能把整张图压灰——那会让人读成"全网数据不可用"。
+ */
+const routeEmphasisOn = computed<boolean>(
+  () => routeEmphasisEnabled.value && hasRoutes.value,
+)
+/** 任一语义组里的段号（判断"这段是否在路线上"用；同段重复只算一次） */
+function routeSegmentIds(): Set<string> {
+  const out = new Set<string>()
+  for (const g of props.routes ?? []) for (const id of g.segments) out.add(id)
+  return out
+}
+
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
 function routeGeoJson(): FeatureCollection {
+  const routed = routeSegmentIds()
+  const emphasize = routeEmphasisOn.value
   return {
     type: 'FeatureCollection',
-    features: net.map((seg) => ({
-      type: 'Feature',
-      properties: {
-        segment_id: seg.segment_id,
-        name: seg.name,
-        kind: seg.kind,
-        color: colorOf(seg),
-        /** 该段是否有可展示数据（拥堵版=摄像头覆盖；流量版=有 q 且不陈旧）—— 线宽/透明度按它分档 */
-        covered: coveredOf(seg),
-        /** 热力晕染强度（0 = 不画） */
-        heat: heatOf(seg),
-      },
-      geometry: { type: 'LineString', coordinates: seg.coords },
-    })),
+    features: net.map((seg) => {
+      // 非路线段统一压灰（Issue IKP5CK）：不再按 level 上色，改用中性浅灰细线。
+      // heat 一并归零——否则指数视图还会在灰线外圈漫出一层等级色，等于没压。
+      const emphasisGray = emphasize && !routed.has(seg.segment_id)
+      return {
+        type: 'Feature' as const,
+        properties: {
+          segment_id: seg.segment_id,
+          name: seg.name,
+          kind: seg.kind,
+          color: colorOf(seg),
+          /** 该段是否有可展示数据（拥堵版=摄像头覆盖；流量版=有 q 且不陈旧）—— 线宽/透明度按它分档 */
+          covered: coveredOf(seg),
+          /** 热力晕染强度（0 = 不画） */
+          heat: emphasisGray ? 0 : heatOf(seg),
+          /** 凸显路线时该段不在任何路线上 → 用中性灰细线画（paint 直接读这个属性） */
+          emphasis_gray: emphasisGray,
+        },
+        geometry: { type: 'LineString' as const, coordinates: seg.coords },
+      }
+    }),
   }
 }
 
@@ -536,7 +577,7 @@ function routeFilter(): FilterSpecification {
 
 /**
  * 取某一组（或多组）路线要高亮的路段 id —— 去重后作为图层 filter 的 `literal`。
- * 备选可能有多条，叠成一组灰虚线一起画（同一条段重复出现只画一次）。
+ * 推荐 / 离站各一组；备选按序号拆两色，另见 `routeIdsOfAlternative()`（Issue IKP5CK）。
  */
 function routeIdsOf(...kinds: RouteHighlight['kind'][]): string[] {
   const out = new Set<string>()
@@ -551,8 +592,36 @@ function routeFilterOf(...kinds: RouteHighlight['kind'][]): FilterSpecification 
   return ['in', ['get', 'segment_id'], ['literal', routeIdsOf(...kinds)]]
 }
 
-/** 任一组路线存在时才在图上画图例三行（否则不占地方） */
+/** 备选分组序号（兼容旧调用：没有 `index` 时按备选 1） */
+function altIndex(g: RouteHighlight): number {
+  return typeof g.index === 'number' && g.index >= 1 ? g.index : 1
+}
+
+/**
+ * 取「备选 N」的段号：N=1 取 index 1，N=2 取 index ≥2（第 3 条及以后一并按备选 2 画，
+ * 不新增第五种颜色；页面只承诺"一主二备"三色可辨）。
+ */
+function routeIdsOfAlternative(n: 1 | 2): string[] {
+  const out = new Set<string>()
+  for (const g of props.routes ?? []) {
+    if (g.kind !== 'alternative') continue
+    const idx = altIndex(g)
+    if (n === 1 ? idx !== 1 : idx < 2) continue
+    for (const id of g.segments) out.add(id)
+  }
+  return [...out]
+}
+
+function altFilter(n: 1 | 2): FilterSpecification {
+  return ['in', ['get', 'segment_id'], ['literal', routeIdsOfAlternative(n)]]
+}
+
+/** 任一组路线存在时才在图上画图例（否则不占地方） */
 const hasRoutes = computed(() => (props.routes ?? []).some((g) => g.segments.length > 0))
+/** 图例里的「备选 N 条」：按实际分组计数，不足 2 条时如实少画（不凑等价路线） */
+const altRouteCount = computed(
+  () => (props.routes ?? []).filter((g) => g.kind === 'alternative' && g.segments.length > 0).length,
+)
 
 /**
  * 本组件自有的图层（按绘制顺序：底衬 → 热力 → 色线 → 路线 → 选中）。
@@ -567,7 +636,16 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       type: 'line',
       source: SRC,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#FFFFFF', 'line-width': widthExpr(11, 9) },
+      paint: {
+        'line-color': '#FFFFFF',
+        // 压灰段只有 2 px 线，白色底衬也得跟着收细，否则一张灰图上全是粗白边
+        'line-width': [
+          'case',
+          ['==', ['get', 'emphasis_gray'], true],
+          3.5,
+          widthExpr(11, 9),
+        ],
+      },
     },
     // 热力晕染：只指数视图有值；四级视图 heat 恒 0，等于不画
     {
@@ -587,30 +665,80 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       source: SRC,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': ['get', 'color'],
-        'line-width': widthExpr(5.5, 4.5),
-        'line-opacity': ['case', ['==', ['get', 'covered'], false], 0.4, 1],
+        // 「凸显路线」开：非路线段 = 中性浅灰细线（不是 level 色，也不是数据不可用灰）
+        'line-color': [
+          'case',
+          ['==', ['get', 'emphasis_gray'], true],
+          ROUTE_EMPHASIS_GRAY,
+          ['get', 'color'],
+        ],
+        'line-width': [
+          'case',
+          ['==', ['get', 'emphasis_gray'], true],
+          2,
+          widthExpr(5.5, 4.5),
+        ],
+        'line-opacity': [
+          'case',
+          ['==', ['get', 'emphasis_gray'], true],
+          0.55,
+          ['case', ['==', ['get', 'covered'], false], 0.4, 1],
+        ],
       },
     },
-    // 备选路线：灰虚线（在推荐 / 离站下面画，避免盖住主路线）
+    // 备选 1 / 备选 2：青 + 琥珀，长虚 / 短虚，且各偏 ±2 px 成平行线
+    // （两条备选叠在同一段时，颜色、节律、平行位置三处都可分辨；Issue IKP5CK）
     {
-      id: LAYER_ROUTE_ALT_HALO,
+      id: LAYER_ROUTE_ALT1_HALO,
       type: 'line',
       source: SRC,
-      filter: routeFilterOf('alternative'),
-      layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': '#FFFFFF', 'line-width': 10, 'line-opacity': 0.7 },
-    },
-    {
-      id: LAYER_ROUTE_ALT,
-      type: 'line',
-      source: SRC,
-      filter: routeFilterOf('alternative'),
+      filter: altFilter(1),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': ROUTE_ALT_COLOR,
+        'line-color': '#FFFFFF',
+        'line-width': 9,
+        'line-offset': -2,
+        'line-opacity': 0.65,
+      },
+    },
+    {
+      id: LAYER_ROUTE_ALT1,
+      type: 'line',
+      source: SRC,
+      filter: altFilter(1),
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': ROUTE_ALT1_COLOR,
         'line-width': 3,
-        'line-dasharray': [9, 7],
+        'line-offset': -2,
+        'line-dasharray': [12, 6],
+        'line-opacity': 0.95,
+      },
+    },
+    {
+      id: LAYER_ROUTE_ALT2_HALO,
+      type: 'line',
+      source: SRC,
+      filter: altFilter(2),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#FFFFFF',
+        'line-width': 9,
+        'line-offset': 2,
+        'line-opacity': 0.65,
+      },
+    },
+    {
+      id: LAYER_ROUTE_ALT2,
+      type: 'line',
+      source: SRC,
+      filter: altFilter(2),
+      layout: { 'line-cap': 'butt', 'line-join': 'round' },
+      paint: {
+        'line-color': ROUTE_ALT2_COLOR,
+        'line-width': 3,
+        'line-offset': 2,
+        'line-dasharray': [2.5, 4.5],
         'line-opacity': 0.95,
       },
     },
@@ -642,7 +770,8 @@ function lineLayerSpecs(): LineLayerSpecification[] {
     },
     {
       // ⚠️ 实线与旧版虚线的差别：IKMF1W 起推荐路线用**品牌蓝实线**（"当前 / 已选"语义），
-      //    备选才是灰虚线；旧版把"推荐"画成虚线，和"选中路段"的虚线语义撞车。
+      //    备选是另一种虚线（IKP5CK 起按备选 1/2 分青、琥珀两色）；旧版把"推荐"画成虚线，
+      //    和"选中路段"的虚线语义撞车。
       id: LAYER_ROUTE,
       type: 'line',
       source: SRC,
@@ -856,7 +985,7 @@ function fitToNetwork(map: MapLibreMap): void {
 function mergedStyle(remote: StyleSpecification): StyleSpecification {
   // 方向标记插在路线图层之前（与建图时的顺序一致：路网 → 方向标 → 路线 → 选中）
   const own: (LineLayerSpecification | SymbolLayerSpecification)[] = [...lineLayerSpecs()]
-  const at = own.findIndex((layer) => layer.id === LAYER_ROUTE_ALT_HALO)
+  const at = own.findIndex((layer) => layer.id === LAYER_ROUTE_ALT1_HALO)
   own.splice(at < 0 ? own.length : at, 0, directionLayerSpec())
   return {
     ...remote,
@@ -1012,6 +1141,10 @@ function applyViewState(map: MapLibreMap): void {
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
   if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilter())
   if (map.getLayer(LAYER_ROUTE_HALO)) map.setFilter(LAYER_ROUTE_HALO, routeFilter())
+  if (map.getLayer(LAYER_ROUTE_ALT1)) map.setFilter(LAYER_ROUTE_ALT1, altFilter(1))
+  if (map.getLayer(LAYER_ROUTE_ALT1_HALO)) map.setFilter(LAYER_ROUTE_ALT1_HALO, altFilter(1))
+  if (map.getLayer(LAYER_ROUTE_ALT2)) map.setFilter(LAYER_ROUTE_ALT2, altFilter(2))
+  if (map.getLayer(LAYER_ROUTE_ALT2_HALO)) map.setFilter(LAYER_ROUTE_ALT2_HALO, altFilter(2))
 }
 
 // ---- 交互：点击选中 / 悬停即切换选中 + 浮牌跟随 ----
@@ -1183,23 +1316,29 @@ watch(
  * 按引用监听的写法会在每次刷新时白跑一遍 `setFilter`。
  */
 const routeKey = computed(() =>
-  (props.routes ?? []).map((g) => `${g.kind}:${g.segments.join(',')}`).join('|'),
+  (props.routes ?? [])
+    .map((g) => `${g.kind}:${g.index ?? 0}:${g.segments.join(',')}`)
+    .join('|'),
 )
 
+// 路线变化要连**数据**一起重算：非路线段压灰依赖 feature 属性（emphasis_gray），
+// 只换 filter 不够（Issue IKP5CK）。applyViewState 会重贴源数据 + 全部 filter。
 watch(routeKey, () => {
   const map = mapRef.value
   if (!map || !ready.value) return
-  const updates: [string, FilterSpecification][] = [
-    [LAYER_ROUTE, routeFilter()],
-    [LAYER_ROUTE_HALO, routeFilter()],
-    [LAYER_ROUTE_ALT, routeFilterOf('alternative')],
-    [LAYER_ROUTE_ALT_HALO, routeFilterOf('alternative')],
-    [LAYER_ROUTE_DEP, routeFilterOf('departure')],
-    [LAYER_ROUTE_DEP_HALO, routeFilterOf('departure')],
-  ]
-  for (const [id, filter] of updates) {
-    if (map.getLayer(id)) map.setFilter(id, filter)
-  }
+  applyViewState(map)
+})
+
+/** 顶栏 / 工具条两个开关：方向标记显隐、凸显路线（压灰） */
+watch(directionsVisible, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  applyViewState(map)
+})
+watch(routeEmphasisEnabled, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  applyViewState(map)
 })
 
 /** 顶栏「设置」里的底图开关：开 → 拉底图；关 → 撤掉底图层（路网一行不动） */
@@ -1208,13 +1347,6 @@ watch(basemapEnabled, () => {
   if (!map || !ready.value) return
   retryStep = 0
   void applyBasemap(map)
-})
-
-/** 方向标记显隐（Issue IKP5BD）：关掉后地图一支箭头都不留，图例同步改写 */
-watch(directionsVisible, () => {
-  const map = mapRef.value
-  if (!map || !ready.value) return
-  applyViewState(map)
 })
 
 watch(
@@ -1351,8 +1483,13 @@ onUnmounted(() => {
         <template v-if="hasRoutes">
           <div class="lg-sep" />
           <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
-          <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（青 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（琥珀 · 短虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
+          <div class="lg-note">
+            凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关 — 满图等级色，路线叠加' }}
+          </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
         <!-- 「只摄像头段上色」是拥堵版的策略；流量版对所有有 q 的段上色，这里只解释图钉语义 -->
@@ -1394,8 +1531,13 @@ onUnmounted(() => {
         <template v-if="hasRoutes">
           <div class="lg-sep" />
           <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
-          <div class="lg-row"><span class="lg-line alternative" />备选路线（灰虚线）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（青 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（琥珀 · 短虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
+          <div class="lg-note">
+            凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关 — 满图等级色，路线叠加' }}
+          </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
         <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
@@ -1618,8 +1760,16 @@ onUnmounted(() => {
   display: inline-block;
   border-top: 3px solid #0052d9;
 }
-.lg-line.alternative {
-  border-top: 3px dashed #8c8c8c;
+/* 备选 1 / 2 的图例线段：颜色 + 节律都与地图一致（长虚 12/6 vs 短虚 2.5/4.5） */
+.lg-line.alt1 {
+  height: 3px;
+  border-top: 0;
+  background: repeating-linear-gradient(90deg, #0e7490 0 7px, transparent 7px 10px);
+}
+.lg-line.alt2 {
+  height: 3px;
+  border-top: 0;
+  background: repeating-linear-gradient(90deg, #b45309 0 3px, transparent 3px 6px);
 }
 .lg-line.departure {
   border-top: 3px solid #7b61ff;
@@ -1661,6 +1811,7 @@ onUnmounted(() => {
   display: block;
   color: #666666;
 }
+
 /* 落客点 / 场区浮牌（Issue IKP5BZ）：与摄像头浮牌同一族，宽度略大以容纳「所属路段 + 点位 id」 */
 .lm-chip {
   position: absolute;
@@ -1680,7 +1831,6 @@ onUnmounted(() => {
   display: block;
   color: #666666;
 }
-
 
 /* MapLibre 自己生成的 DOM 不在 scoped 作用域内，须用 :deep() 才生效。
    署名控件只调字号，**不隐藏、不遮挡**（OSM/ODbL 署名义务）。 */
@@ -1713,6 +1863,7 @@ onUnmounted(() => {
   background: #ffffff;
   color: #455a64;
 }
+
 /* 落客点 / 场区（Issue IKP5BZ）：与摄像头图钉同族（20 px、细边、轻投影、悬停浮牌），
    靠形状（圆角方 vs 圆）+ 颜色区分：落客点=青「落」，场区=棕「场」。
    坐标是路段折线上的演示点，不是踏勘点位。 */
@@ -1734,7 +1885,6 @@ onUnmounted(() => {
 :deep(.lm-pin.zone) {
   background: #8a5a2b;
 }
-
 
 /* ==========================================================================
    响应式（Issue IKP3EV）

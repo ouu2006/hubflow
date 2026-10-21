@@ -36,7 +36,7 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
-import { basemapEnabled } from '../../shared/settings'
+import { basemapEnabled, routeEmphasisEnabled, setRouteEmphasisEnabled } from '../../shared/settings'
 import { landmarksNearSegment } from '../../shared/landmarks'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
@@ -694,9 +694,13 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
     groups.push({ kind: 'arrival', segments: r.arrival_route.segments })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
-    for (const a of r.alternatives) {
-      if (a.segments && a.segments.length > 0) groups.push({ kind: 'alternative', segments: a.segments })
-    }
+    // Issue IKP5CK：备选不能再全压成同一个 `alternative` 分组（两条备选会画成同一套灰虚线）。
+    // `index` 是前端展示类型字段（非契约）：1 = 备选 1（青/长虚）、2 = 备选 2（琥珀/短虚）。
+    r.alternatives.forEach((a, i) => {
+      if (a.segments && a.segments.length > 0) {
+        groups.push({ kind: 'alternative', index: i + 1, segments: a.segments })
+      }
+    })
   }
   if (routeView.value === 'all' || routeView.value === 'departure') {
     if (r.departure_route && r.departure_route.segments.length > 0) {
@@ -714,6 +718,13 @@ interface RouteCard {
   eta: number
   segments: string[]
   note: string
+  /**
+   * 同一份 recommend 的备选条数（Issue IKP5CK）。路线卡用它如实提示
+   * 「本 OD 仅 N 条候选（契约要求 ≥2 条备选）」；**不凑等价路线**。
+   */
+  alternativeCount: number
+  /** 引擎声明的 `no_alternative_reason`（只读；未声明 = null） */
+  noAlternativeReason: string | null
 }
 
 /** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
@@ -721,6 +732,10 @@ const routeCards = computed<RouteCard[]>(() => {
   const r = recommend.value
   if (!r) return []
   const cards: RouteCard[] = []
+  // Issue IKP5CK：备选不足的判定依据（`alternatives.length` + 引擎 `no_alternative_reason`）
+  // 放进每张卡的数据结构，供路线卡区域如实提示；页面不据此补画等价路线。
+  const alternativeCount = r.alternatives.length
+  const noAlternativeReason = r.no_alternative_reason ?? null
   if (routeView.value === 'all' || routeView.value === 'arrival') {
     cards.push({
       key: 'arrival',
@@ -730,6 +745,8 @@ const routeCards = computed<RouteCard[]>(() => {
       eta: r.arrival_route.eta_min,
       segments: r.arrival_route.segments,
       note: r.why,
+      alternativeCount,
+      noAlternativeReason,
     })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
@@ -742,6 +759,8 @@ const routeCards = computed<RouteCard[]>(() => {
         eta: a.eta_min,
         segments: a.segments ?? [],
         note: a.reason,
+        alternativeCount,
+        noAlternativeReason,
       })
     })
   }
@@ -755,6 +774,8 @@ const routeCards = computed<RouteCard[]>(() => {
         eta: r.departure_route.eta_min,
         segments: r.departure_route.segments,
         note: '送完人之后的离站方向（契约 departure_route）',
+        alternativeCount,
+        noAlternativeReason,
       })
     }
   }
@@ -783,9 +804,9 @@ const routeSourceNote = computed<string>(() => recommend.value?.data_source_note
 const routeWhyLine = computed<string>(() => {
   const source = recommend.value?.data_source
   if (source === 'engine.routes.real' || source === 'engine.routes.sample') {
-    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。'
+    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。'
   }
-  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。`
+  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。`
 })
 /** 路线降级说明（session 未匹配 / 段号命名空间不一致等，来自接口响应 note；无则空）。
  *  session 未匹配已在下方单独用显式警示段落呈现，这里去掉重复的第一句。 */
@@ -1492,6 +1513,25 @@ function onCommandChanged(): void {
                       @click="onPackChange(p.key)"
                     >
                       {{ p.name }}
+                    </button>
+                  </span>
+                  <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
+                       默认开，落 localStorage；状态在图上与图例里都能看到。 -->
+                  <span class="pack-switch" role="group" aria-label="凸显路线">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: routeEmphasisEnabled }"
+                      role="switch"
+                      :aria-checked="routeEmphasisEnabled"
+                      :title="
+                        routeEmphasisEnabled
+                          ? '凸显路线：开（非路线段中性灰细线，不按等级上色）；点击恢复满图等级色'
+                          : '凸显路线：关（满图等级色 + 路线叠加）；点击压灰非路线段'
+                      "
+                      @click="setRouteEmphasisEnabled(!routeEmphasisEnabled)"
+                    >
+                      凸显路线 {{ routeEmphasisEnabled ? '开' : '关' }}
                     </button>
                   </span>
                 </div>
