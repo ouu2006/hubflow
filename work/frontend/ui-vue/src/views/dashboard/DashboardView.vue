@@ -37,7 +37,7 @@ import {
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
 import type { LocateResult } from '../../api/traffic'
-import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
+import { demoSegment, networkGeometryNote, networkSourceLabel, pointAtOffset, segmentLengthM } from '../../shared/demoNetwork'
 import { basemapEnabled, routeEmphasisEnabled, setRouteEmphasisEnabled } from '../../shared/settings'
 import { landmarksNearSegment } from '../../shared/landmarks'
 import { USE_MOCK } from '../../shared/env'
@@ -74,6 +74,7 @@ import {
   type HeatMatrix,
   type RecommendResult,
   type RouteHighlight,
+  type RouteEndpointMarker,
   type RouteOption,
   type RouteOptionsSnapshot,
   type SegmentRecord,
@@ -776,6 +777,84 @@ const tripEnd = computed(() => {
     last,
     lastName: last ? nameOf(last) : '—',
     reason: notes.join(' '),
+  }
+})
+
+// ---------- 地图上的「起点 / 终点」标注（业主 2026-10-21 口径） ----------
+// 「那些大道最外面的路段就是起点，然后停车场落客点是终点」：起点用推荐路线实际起点路段
+// （引擎边界推导的进场段，站点包里登记为 boundary 的 P-Bxx），终点优先对齐站点包里的
+// 停车场落客点（演示点），对不上才退回末段终点——只做展示，不改算路 / ETA。
+const startBoundarySection = computed(() => {
+  const id = currentStart.value?.segment_id
+  if (!id) return null
+  return (activePack().sections ?? []).find((s) => s.segment_id === id && s.role === 'boundary') ?? null
+})
+
+const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
+  const s = currentStart.value
+  if (!s) return null
+  const seg = demoSegment(s.segment_id)
+  if (!seg || seg.coords.length === 0) return null
+  const p = pointAtOffset(seg.coords, s.offset_m ?? 0)
+  return {
+    kind: 'start',
+    label: '起点',
+    segment_id: s.segment_id,
+    name: seg.name,
+    lon: p[0],
+    lat: p[1],
+    note: startBoundarySection.value
+      ? `外围边界断面 ${startBoundarySection.value.point_id}（演示）`
+      : '路网内部段（演示）',
+  }
+})
+
+const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
+  const r = recommend.value
+  if (!r) return null
+  const segs = r.arrival_route.segments ?? []
+  const last = segs.length > 0 ? segs[segs.length - 1]! : null
+  if (!last) return null
+  const seg = demoSegment(last)
+  const dropId = r.arrival_route.dropoff_point ?? null
+  if (dropId) {
+    const point = activePack().dropoffs.find((d) => d.id === dropId)
+    if (point) {
+      return {
+        kind: 'end',
+        label: '终点·落客点',
+        segment_id: last,
+        name: point.name,
+        lon: point.lon,
+        lat: point.lat,
+        note: `点位 ${dropId}（演示点）`,
+      }
+    }
+  }
+  const near = landmarksNearSegment(last)
+    .filter((x) => x.kind === 'dropoff')
+    .sort((a, b) => a.distance_m - b.distance_m)[0]
+  if (near) {
+    return {
+      kind: 'end',
+      label: '终点·落客点',
+      segment_id: last,
+      name: near.name,
+      lon: near.lon,
+      lat: near.lat,
+      note: `停车场落客点 ${near.id}（演示点）· 距末段 ${Math.round(near.distance_m)} m`,
+    }
+  }
+  if (!seg || seg.coords.length === 0) return null
+  const p = pointAtOffset(seg.coords, Math.max(0, segmentLengthM(seg.coords) - 1))
+  return {
+    kind: 'end',
+    label: '终点',
+    segment_id: last,
+    name: seg.name,
+    lon: p[0],
+    lat: p[1],
+    note: '引擎产物未给落客点；落在末段终点（演示）',
   }
 })
 
@@ -1671,6 +1750,8 @@ function onCommandChanged(): void {
                   :vehicles="vehicles"
                   :selected-id="selectedId"
                   :routes="routeHighlights"
+                  :route-start="routeStartMarker"
+                  :route-end="routeEndMarker"
                   :mode="viewMode"
                   :color-mode="colorMode"
                   :ts="snapshotTs"
@@ -1716,8 +1797,9 @@ function onCommandChanged(): void {
                     :key="option.session_id || option.request_id || ''"
                     :value="option.session_id || ''"
                   >
-                    {{ option.od_id ?? 'OD' }} · {{ option.session_id }} · 到达
-                    {{ fmtEta(option.arrival_route?.eta_min) }} min
+                    {{ option.od_id ?? 'OD' }} · 起点 {{ option.location.segment_id ?? '—' }}
+                    <template v-if="option.location.segment_id">（{{ nameOf(option.location.segment_id) }}）</template>
+                    · 到达 {{ fmtEta(option.arrival_route?.eta_min) }} min
                   </option>
                 </select>
                 <div v-if="tripSummary" class="trip-summary">
@@ -1786,6 +1868,11 @@ function onCommandChanged(): void {
                   </div>
                   <div class="se-line">
                     段号 <b class="td-mono">{{ currentStart?.segment_id ?? '—' }}</b> · 路段名 {{ startName }}
+                  </div>
+                  <div class="se-line">
+                    位置类型
+                    <b>{{ startBoundarySection ? `外围边界断面 ${startBoundarySection.point_id}` : '路网内部段' }}</b>
+                    <span class="se-note">（演示口径：外围入口段 → 停车场落客点）</span>
                   </div>
                   <div class="se-line">
                     来源 {{ startSourceLabel }} · offset {{ offsetText }} m · match_confidence

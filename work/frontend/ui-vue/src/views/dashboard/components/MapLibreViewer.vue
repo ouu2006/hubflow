@@ -119,6 +119,7 @@ import {
   type CongestionViewMode,
   type DriverType,
   type RouteHighlight,
+  type RouteEndpointMarker,
   type SegmentRecord,
   type VehicleRecord,
 } from '../../../shared/traffic'
@@ -216,6 +217,10 @@ const props = withDefaults(
     vehicles?: VehicleRecord[]
     /** 推荐 / 备选 / 离站三组路线高亮（IKMF1W；空数组 = 不画路线） */
     routes?: RouteHighlight[]
+    /** 路线起点标注（业主 2026-10-21：大道最外侧路段 = 起点） */
+    routeStart?: RouteEndpointMarker | null
+    /** 路线终点标注（停车场落客点 = 终点） */
+    routeEnd?: RouteEndpointMarker | null
     mode?: MapMode
     /**
      * 颜色模式（Issue IKNB9G）：
@@ -233,6 +238,8 @@ const props = withDefaults(
   {
     vehicles: () => [],
     routes: () => [],
+    routeStart: null,
+    routeEnd: null,
     mode: 'level',
     colorMode: 'congestion',
     ts: '',
@@ -896,6 +903,34 @@ function addLandmarkPins(map: MapLibreMap): void {
   }
 }
 
+// ---- 路线起点 / 终点标注（业主 2026-10-21：「大道最外侧路段 = 起点，停车场落客点 = 终点」）----
+
+/**
+ * 起 / 终两个 Marker：与摄像头 / 落客点图钉同族（DOM + 悬停 title），
+ * 但用**圆底 + 起/终 字**在视觉上置顶，避免与「落」「场」混淆。
+ * 只认父组件传进来的展示坐标（父组件按站点包折线 / 落客点算），本组件不做任何路线计算。
+ */
+let routeEndpointMarkers: Marker[] = []
+
+function updateRouteEndpointMarkers(map: MapLibreMap): void {
+  for (const marker of routeEndpointMarkers) marker.remove()
+  routeEndpointMarkers = []
+  for (const p of [props.routeStart, props.routeEnd]) {
+    if (!p) continue
+    const el = document.createElement('div')
+    el.className = `rt-pin ${p.kind}`
+    el.textContent = p.kind === 'start' ? '起' : '终'
+    el.title = `${p.label} · ${p.segment_id} · ${p.name}${p.note ? ` · ${p.note}` : ''}`
+    el.addEventListener('click', (event) => {
+      event.stopPropagation()
+      if (p.segment_id) emit('select', p.segment_id)
+    })
+    routeEndpointMarkers.push(
+      new Marker({ element: el, anchor: 'bottom' }).setLngLat([p.lon, p.lat]).addTo(map),
+    )
+  }
+}
+
 /** 落客点 / 场区浮牌落点 = 标记正上方（与摄像头浮牌同一套夹边逻辑，宽度不同） */
 const landmarkChipStyle = computed(() => {
   const map = mapRef.value
@@ -971,7 +1006,14 @@ function fitToNetwork(map: MapLibreMap): void {
       [Math.min(...lons), Math.min(...lats)],
       [Math.max(...lons), Math.max(...lats)],
     ],
-    { padding: 56, duration: 0 },
+    {
+      // 宽屏时左侧给图例留出 440px：起点多在大道最外侧（路网边缘），不留白会被图例压住。
+      padding:
+        map.getContainer().clientWidth > 900
+          ? { top: 36, right: 56, bottom: 72, left: 440 }
+          : 56,
+      duration: 0,
+    },
   )
 }
 
@@ -1276,6 +1318,7 @@ function initMap(): void {
     addRouteLayers(map)
     addCameraPins(map)
     addLandmarkPins(map)
+    updateRouteEndpointMarkers(map)
     fitToNetwork(map)
     ready.value = true
     // 车辆要在 ready 之后再同步（`syncVehicles` 以 ready 为前置）
@@ -1330,6 +1373,26 @@ watch(routeKey, () => {
   if (!map || !ready.value) return
   applyViewState(map)
 })
+
+/** 起点 / 终点标注随推荐路线（或手动选起点）变化：重建两个 Marker 即可，不动其他图层。
+ *  用**稳定字符串键**而不是数组/对象：数组每次求值都是新引用，会让 watch 在每次渲染都触发，
+ *  反复重建 Marker 会把地图拖进渲染循环（表现为整张图空白）。 */
+watch(
+  () =>
+    [
+      props.routeStart?.segment_id ?? '',
+      props.routeStart?.lon ?? '',
+      props.routeStart?.lat ?? '',
+      props.routeEnd?.segment_id ?? '',
+      props.routeEnd?.lon ?? '',
+      props.routeEnd?.lat ?? '',
+    ].join('|'),
+  () => {
+    const map = mapRef.value
+    if (!map || !ready.value) return
+    updateRouteEndpointMarkers(map)
+  },
+)
 
 /** 顶栏 / 工具条两个开关：方向标记显隐、凸显路线（压灰） */
 watch(directionsVisible, () => {
@@ -1488,6 +1551,12 @@ onUnmounted(() => {
           <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（青 · 长虚线）</div>
           <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（琥珀 · 短虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div v-if="routeStart" class="lg-row">
+            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（外围入口段）
+          </div>
+          <div v-if="routeEnd" class="lg-row">
+            <span class="rt-dot end">终</span>{{ routeEnd.label }} · 停车场落客点（演示）
+          </div>
           <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
           <div class="lg-note">
             凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关 — 满图等级色，路线叠加' }}
@@ -1536,6 +1605,12 @@ onUnmounted(() => {
           <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（青 · 长虚线）</div>
           <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（琥珀 · 短虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div v-if="routeStart" class="lg-row">
+            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（外围入口段）
+          </div>
+          <div v-if="routeEnd" class="lg-row">
+            <span class="rt-dot end">终</span>{{ routeEnd.label }} · 停车场落客点（演示）
+          </div>
           <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
           <div class="lg-note">
             凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关 — 满图等级色，路线叠加' }}
@@ -1680,7 +1755,12 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  pointer-events: none;
+  /* 图例内容较长（方向 / 四级 / 路线 / 起终点），限宽 + 内部滚动：
+     既保证信息一条不丢，又不让它盖住整张地图（起点在路网左下角时最容易被压住）。 */
+  max-width: min(420px, 40%);
+  max-height: min(72%, 400px);
+  overflow-y: auto;
+  pointer-events: auto;
   z-index: 2;
 }
 .lg-title {
@@ -1886,6 +1966,45 @@ onUnmounted(() => {
 }
 :deep(.lm-pin.zone) {
   background: #8a5a2b;
+}
+
+/* ---- 路线起点 / 终点标注（业主 2026-10-21：外围入口段 = 起点，停车场落客点 = 终点）---- */
+:deep(.rt-pin) {
+  width: 26px;
+  height: 26px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 22px;
+  text-align: center;
+  cursor: pointer;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+:deep(.rt-pin.start) {
+  background: #0052d9;
+}
+:deep(.rt-pin.end) {
+  background: #b45309;
+}
+.rt-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 5px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 50%;
+}
+.rt-dot.start {
+  background: #0052d9;
+}
+.rt-dot.end {
+  background: #b45309;
 }
 
 /* ==========================================================================

@@ -183,6 +183,27 @@ export interface RouteHighlight {
   index?: number
 }
 
+/**
+ * 路线起点 / 终点的地图标注（Issue IKP5C6 追加；业主 2026-10-21 口径：
+ * 「那些大道最外面的路段就是起点，然后停车场落客点是终点」）。
+ *
+ * **前端展示类型**，不是契约字段：坐标由前端按站点包路段折线 + 落客点演示点推出，
+ * 只用于地图上的「起 / 终」标记与浮牌，不参与算路、不改 ETA。
+ */
+export interface RouteEndpointMarker {
+  kind: 'start' | 'end'
+  /** 浮牌标题：起点 / 终点（落客点） */
+  label: string
+  /** 所属路段 */
+  segment_id: string
+  /** 路段名（起点）或点位名（终点） */
+  name: string
+  lon: number
+  lat: number
+  /** 补充说明：外围边界断面 / 场内落客点 / 演示点等 */
+  note?: string
+}
+
 // ---------- 整条路线规划选项（Issue IKNAUI；非契约辅助端点 /route/options） ----------
 // 接口层只把引擎产物 requests 的 OD / session / 路径摘要端出来（ETA / 段号原样透传），
 // 页面选中后用 session_id 调 POST /route/recommend 画完整路线，不在前端重算。

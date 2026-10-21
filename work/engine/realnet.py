@@ -649,11 +649,16 @@ def derive_od_pairs(
     1. **边界节点**：真网产物 `nodes[].boundary_role`（IKNB9H 有向出入度：`entry` / `exit` / `both`；
        含 `topology.py` 派生的、原 boundary 漏掉的边界，如本站 N-006）；没有该字段时退回
        **有向出入度**，不再用无向度数 1 —— 多出边的边界节点会被无向度数漏掉；
-    2. **进场边界** = `entry` / `both`（车从围栏外进来）；
-       **离场边界** = `exit` / `both`（车离开围栏）；
-    3. 对每个进场边界：遍历全部**内部节点**（非边界）作为候选行程终点，按
+    2. **进场边界** = `entry`（车从围栏外进来）；**离场边界** = `exit`（车离开围栏）。
+       `both` 是范围裁剪后场区内部通道 / 服务道路的断头（如 N-016/N-018/N-024/N-026/N-044），
+       **不算外围入口**；只有整站没有纯 entry / exit 时才退回 `both`（老图兼容）。
+       业务口径（业主 2026-10-21）：「那些大道最外面的路段就是起点」——所以入口必须是
+       围栏外的大道 / 外部接驳道，不能是停车场内部通道。
+    3. 对每个进场边界：遍历全部**内部节点**作为候选行程终点，按
        （**候选路线数降序**, 自由流耗时升序, 节点 id）排序，取前
        `OD_DESTINATIONS_PER_ENTRY`（3）个作为该入口的 OD 终点。
+       业务口径（业主 2026-10-21）：「停车场落客点是终点」——因此**优先只取场区内部节点**
+       （所有相邻边 `kind=ramp`，即停车场 / 服务道路）；该站没有场区内部路时退回全部内部节点。
        候选路线数 = `select_candidates(K / 重叠度均读站点包 decision 组)` 在**当前真网拓扑**上
        算出的条数——它是真网拓扑 + 站点包参数的直接函数，**不是手写 OD**；
        取"候选最丰富"的终点是为了让 K=3 候选 / 路径重叠度约束在真网可验（M1-4 备选 ≥2），
@@ -674,8 +679,17 @@ def derive_od_pairs(
         node_id: str(graph.node(node_id).get("boundary_role") or "") for node_id in node_ids
     }
     boundary_source = "nodes[].boundary_role（有向出入度；IKNB9H）"
-    entries = [node_id for node_id in node_ids if roles.get(node_id) in ("entry", "both")]
-    exits = [node_id for node_id in node_ids if roles.get(node_id) in ("exit", "both")]
+    # 进场 / 离场只认**方向明确**的 entry / exit（Issue IKP5C6 后续修正）：
+    # `both` 是范围裁剪后场区内部通道 / 服务道路的断头（如 N-016/N-018/N-024/N-026/N-044），
+    # 把车“从停车场内部进场”当成外围入口，会推出 OD 起点落在场区内部——
+    # 与「大道最外侧路段是起点、停车场落客点是终点」的业务口径不符（业主 2026-10-21）。
+    entries = [node_id for node_id in node_ids if roles.get(node_id) == "entry"]
+    exits = [node_id for node_id in node_ids if roles.get(node_id) == "exit"]
+    # 旧图可能只有 `both`（双向边界段）：没有纯 entry / exit 时退回 both，避免整站无 OD。
+    if not entries:
+        entries = [node_id for node_id in node_ids if roles.get(node_id) == "both"]
+    if not exits:
+        exits = [node_id for node_id in node_ids if roles.get(node_id) == "both"]
     if not any(roles.values()):
         # 旧图 / 极简图没有 boundary_role：退回有向出入度推导（不读无向度数，
         # 因为多出边的边界节点会被无向度数 1 漏掉 —— 见 IKNB9H 的 N-006）
@@ -716,6 +730,24 @@ def derive_od_pairs(
     if not internal_nodes:
         raise SystemExit("真网没有内部节点（全部是边界/断头节点）：无法推导 OD")
 
+    # 行程终点优先取**场区内部节点**（所有相邻边 kind=ramp）：业务口径是
+    # 「外围大道最外侧路段 = 起点、停车场落客点 = 终点」（业主 2026-10-21 交办）。
+    # 若该站没有场区内部路（例如全部是 main），退回全部内部节点，保持旧行为。
+    incident: dict[str, list[str]] = {node_id: [] for node_id in node_ids}
+    for edge_id, attrs in graph._edges.items():  # noqa: SLF001
+        incident[str(attrs["from"])].append(edge_id)
+        incident[str(attrs["to"])].append(edge_id)
+    facility_nodes = [
+        node_id
+        for node_id in internal_nodes
+        if incident.get(node_id)
+        and all(
+            str(graph.edge(edge_id).get("kind") or "") == "ramp"
+            for edge_id in incident[node_id]
+        )
+    ]
+    destination_nodes = facility_nodes or internal_nodes
+
     def free_flow_weight(edge_id: str) -> float:
         return network.free_flow_time_s(graph.edge(edge_id))
 
@@ -750,7 +782,7 @@ def derive_od_pairs(
     skipped: list[dict[str, Any]] = []
     for entry in entries:
         ranked: list[tuple[int, float, str, int]] = []
-        for dst in internal_nodes:
+        for dst in destination_nodes:
             paths = candidates.select_candidates(
                 graph, entry, dst, k=k, max_overlap=max_overlap, weight=weight
             )
