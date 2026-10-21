@@ -135,6 +135,10 @@ def build_directions(enriched_path: Path, allowed_ids: set[str] | None = None) -
             key: (edge.get("continuity") or {}).get(key) for key in CONTINUITY_FIELDS
         }
         item = {field: edge.get(field) for field in FIELDS}
+        # 拓扑侧 direction 取值是 forward / reverse / bidirectional；前端站点包的展示枚举是
+        # forward / backward / bidirectional —— 这里做一次映射（reverse = 与几何 from→to 相反的单行）。
+        if item.get("direction") == "reverse":
+            item["direction"] = "backward"
         item["continuity"] = continuity
         sources = edge.get("field_sources") or {}
         picked = {key: sources.get(key) for key in SOURCE_KEYS if key in sources}
