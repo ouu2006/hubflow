@@ -2,7 +2,7 @@
 
 > **⚠️ 一期口径变更（业主 2026-10-18，Issue IKNB9I + IKNBT2 纠正）—— 以下为最新口径，优先于本文件历史表述**：
 > **N 段 = N 摄像头 = N 视频**（业主 IKNBT2 纠正：不是六路——有多少段路就有多少摄像头/视频）；一期视频/摄像头**全部为 mock（演示复用同一份样本视频）**、**YOLO 模型不实装**（「YOLO」只是项目代号/展示占位，不载入/不训练模型）；前端/大屏用视频顶替真实数据并显示「**模拟识别（演示）**」/「演示复用视频（非本站现场）」角标；一期**只用虚拟数据**。
-> **登记表 `camera-segments.json` 的 6 条仅作「源台账/初始映射」，不是一期摄像头总数**；Z 站 61 段 = 61 路演示摄像头、GZ 站 433 段 = 433 路演示摄像头，每段都有复用视频。
+> **登记表 `camera-segments.json` 的 6 条仅作「源台账/初始映射」，不是一期摄像头总数**；Z 站 61 段 = 61 路演示摄像头、GZ 站 708 段 = 708 路演示摄像头，每段都有复用视频。
 > 本文件历史记录中的「实测 / 真实帧 / 浏览器实测」等表述**只指当时本机工程自测**，**不代表现场实测/真实识别**；对外**不出现「实测 / 实时 / 现场」**、不得宣称「真实 YOLO 识别 / 模型已实装」。
 > 页面代码文案（页头「YOLO 视频链路」、摄像头卡「无独立摄像头」等）**已于 IKNC4J 按本口径落实**（摄像头卡显示「演示摄像头 · 复用样本视频（按路段数 N 路）」、感知页页头带「模拟识别（演示）」限定）；本 README 只登记口径。口径细见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一。
 
@@ -429,10 +429,10 @@ npm run dev:z            # 同一个包 Z,起在 http://localhost:6895(同包不
 | 项 | 包 Z(唯一站点包 · OSM 真路网) |
 |---|---|
 | 站名 | 肇庆东站(副标:真路网 · 站区 500 m（脚本推定）/ 61 段 · 吉庆大道 / 鼎湖大道 / 场区通道) |
-| 路段 | **61 条**(`SZ-001` … `SZ-061`;旧 21 段 `SZ-##` 留作 Z21 对照包) |
+| 路段 | **61 条**(`SZ-001` … `SZ-061`；旧 21 段 `SZ-##` 的 Z21 对照包已随 IKP5D3 删除——后端站点登记表只登记 Z/GZ，留着切包即全站 404) |
 | 断面 / 点位 | **mock 数据已落**(IKM4TE):11 条候选断面(5 boundary / 6 internal,`待队长签字冻结`)、3 落客点、2 候客/蓄车区 |
-| 上色口径 | **演示摄像头覆盖口径：N 段 = N 路演示摄像头**（2026-10-18 IKNBT2；Z 61/61、GZ 433/433 每段都有演示摄像头+复用视频，不再按登记表 6 路）；无数据段灰轮廓 + 数据不可用档 |
-| 基线来源 | 预置演示值（每段全演示基线；IKNB9F GZ 433 段同口径） |
+| 上色口径 | **演示摄像头覆盖口径：N 段 = N 路演示摄像头**（2026-10-18 IKNBT2；Z 61/61、GZ 708/708 每段都有演示摄像头+复用视频，不再按登记表 6 路）；无数据段灰轮廓 + 数据不可用档 |
+| 基线来源 | 预置演示值（每段全演示基线；IKNB9F GZ 708 段同口径） |
 | 告警 / 场景 / 分流 | **mock 数据已落**(IKM4TE):4 条告警(四态各 1,id 带 `DEMO-` 前缀)、1 条预置下发回执、2 条分流建议、5 个**环境侧**场景预设（key 与 `ScenarioInjectPanel.applyPreset` 对齐,可一键注入重算） |
 | 几何来源 | **OSM 真值**(`work/twin/netpack/build_junction_pack.py` 产物)+ OSM 署名 |
 | 孪生桥接(:8102) | **不接**——本站几何已是 OSM 真值,接上反而会把另一份选段口径画进来 |
@@ -778,7 +778,7 @@ cd work/frontend/ui-vue && npm run dev:remote
 |---|---|---|
 | 监控大屏 | meta / overview / segments / vehicles / network / alerts / factors / heat-matrix / thresholds / segments/{id}/sources / ci-history / route/recommend + SSE | KPI / 路段 / 热力 / 告警 / 路线 / 摄像头图钉全部走接口；页脚「数据来源」改为接口 `meta.data_sources`（路段快照源 / 路线真网或样例 / 写端点内存态），不再写死“mock 示例快照”；路线卡按响应 `data_source` 标「真网算路产物（IKMS11）」/「样例产物」，`session_matched:false` 时显式提示“非该车行程” |
 | 决策层 | alerts / segments / context / thresholds / assimilation / segments/{id}/sources + factors、plan、scenario 写端点 | 处置队列四态、下发回执、回写流转可用；因素面板标「接口层内存态（重启复位）」且成功文案写明**不重算判级**；场景注入只显示「已注入 + 折算环境因素」，接口 `effects` 为空时显示其 `effects_note`，不伪造等级变化；效果对比先读 `/report/compare`（rows 0 条 + note 如实展示），A/B/C 三组改标「前端演示脚本」 |
-| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | **按 2026-10-18 IKNBT2 口径：N 段 = N 摄像头 = N 视频**——Z 61/61、GZ 433/433 每段有演示摄像头 + 演示复用视频（mock 复用样本）；登记表 6 条仅源台账；页面文案「无独立摄像头」→「演示摄像头 N 路」**已于 IKNC4J 落地**；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
+| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | **按 2026-10-18 IKNBT2 口径：N 段 = N 摄像头 = N 视频**——Z 61/61、GZ 708/708 每段有演示摄像头 + 演示复用视频（mock 复用样本）；登记表 6 条仅源台账；页面文案「无独立摄像头」→「演示摄像头 N 路」**已于 IKNC4J 落地**；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
 
 **数据源口径**：所有响应 `is_simulated=true`；页面角标「演示数据(模拟)· 双数据源」保留；
 写端点响应另带 `level_recomputed:false` / `recomputed:false` / `note` ——
@@ -879,11 +879,11 @@ cd work/frontend/ui-vue && npm run dev
 
 > 业主 2026-10-18 口径：**全部路段都要有视频显示**（视频重复利用，不要求每路独立拍摄）；
 > 同时要能看见**整条路线的路线规划**。本单不新增真实摄像头、不改登记表，也不在前端重算路线 / ETA。
-> **与 IKNBT2 口径的关系（现行）**：按业主纠正，**N 段 = N 摄像头 = N 视频**（每段 1 路演示摄像头 + 复用 mock 视频）——本节的「全路段复用」正是该口径的展示实现（Z **61/61**、GZ **433/433**）；**登记表 6 条仅源台账/初始映射，不是一期总数**，不再要求补 6 路 mock 视频（见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一）。
+> **与 IKNBT2 口径的关系（现行）**：按业主纠正，**N 段 = N 摄像头 = N 视频**（每段 1 路演示摄像头 + 复用 mock 视频）——本节的「全路段复用」正是该口径的展示实现（Z **61/61**、GZ **708/708**）；**登记表 6 条仅源台账/初始映射，不是一期总数**，不再要求补 6 路 mock 视频（见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一）。
 
 ### 17.1 全路段视频复用（`SegmentCameraCard.vue`）
 
-- **对没有真实登记摄像头的路段、或登记摄像头均无视频源的路段**启用（`camerasOfSegment(segmentId).length === 0` 或该段摄像头全部 `hasVideo:false`；按 IKNBT2 口径 **N 段 = N 路演示摄像头**，无真实登记源段走演示复用 → **Z 61/61、GZ 433/433 段都有画面**）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
+- **对没有真实登记摄像头的路段、或登记摄像头均无视频源的路段**启用（`camerasOfSegment(segmentId).length === 0` 或该段摄像头全部 `hasVideo:false`；按 IKNBT2 口径 **N 段 = N 路演示摄像头**，无真实登记源段走演示复用 → **Z 61/61、GZ 708/708 段都有画面**）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
   （字符串 hash 取模，同一段永远同一路，不用随机），显示该通道**真实抽帧**
   （`/perception-api/streams/{source}/frames/{n}.jpg`，与感知页同一路径、可暂停）。
 - 角标与文案按业主口径固定：
@@ -1032,10 +1032,10 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 
 | 项 | 口径 |
 |---|---|
-| 数量 | **N 段 = N 摄像头 = N 视频**：Z 站 **61 段 = 61 路演示摄像头**、GZ 站 **433 段 = 433 路演示摄像头**；每段 1 路演示摄像头 + 1 段复用 mock 视频 |
+| 数量 | **N 段 = N 摄像头 = N 视频**：Z 站 **61 段 = 61 路演示摄像头**、GZ 站 **708 段 = 708 路演示摄像头**；每段 1 路演示摄像头 + 1 段复用 mock 视频 |
 | 登记表 | `camera-segments.json` 的 **6 条仅作「源台账/初始映射」**，**不是一期摄像头总数**；不要求扩到 N 条 |
 | 视频 | 一期全部 **mock 复用样本视频**（`road2` / `track1` 可被多路复用），标「**演示复用 / 非本站现场 / 非实时**」；**不要求每路独立拍摄** |
-| 覆盖证据 | Z **61/61**（IKNAUI / PR !55 全路段复用）；GZ **433/433**（IKNB9F / PR !61，`stationGZ.network.ts` 433 段） |
+| 覆盖证据 | Z **61/61**（IKNAUI / PR !55 全路段复用）；GZ **708/708**（IKNB9F / PR !61 建站包；IKOQEI 扩到 1000 m / 708 段） |
 | 验收 | **M1-9 = 通过（演示口径，待池·Q 复核）**（台账已按本口径重判；旧「6 路真实视频」判据作废留痕） |
 | 页面文案（IKNC4J 已落实） | 摄像头卡显示「**演示摄像头 N 路 / 演示复用视频**」；感知页页头已改为「模拟识别（演示）· 视频链路（YOLO 仅项目代号）」；本 README 只登记口径 |
 | 不造假 | 全部 mock/复用；不写实测/实时/现场；不声称真实摄像头/视频已接入；真实接入归 **IKMHMX** |
@@ -1051,7 +1051,7 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 | 项 | 说明 |
 |---|---|
 | 数据源 | `work/twin/netpack/network_junction.enriched.json`（Z，61 段）/ `work/twin/netpack/guangzhounan/network_junction.enriched.json`（GZ，**enriched 708 段**；IKOQEI 把 GZ 范围 800→1000 m）的 `edges[]`：`direction` / `lanes_forward/backward/total` / `opposite_segment_id` / `continuity` / `field_sources` |
-| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **433/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
+| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **708/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
 | 生成器 | `work/frontend/tools/gen_station_directions.py`（**只读 enriched**，绝不改它）；`--check` 可校验生成物是否与 enriched 同步 |
 | 生成物 | `src/station-packs/stationZ.directions.generated.ts` / `stationGZ.directions.generated.ts`（`Record<segment_id, PackSegmentDirection>`，一段一行） |
 | 类型 | `station-packs/types.ts` 新增 `PackSegmentDirection` / `PackContinuity`；`StationPack.segmentDirections?`（缺省=老包未标定） |
@@ -1079,8 +1079,8 @@ cd work/frontend/ui-vue && npm run build   # exit 0
   - `#/dashboard?segment=SZ-018`（双向）→ 地图双头紫色方向标 + 详情「双向（左右两向）」；
   - `#/dashboard?segment=SZ-001`（单向正向、尾端未贯通）→ 详情「贯通性待核（gap 0 m，节点/相切待核）」；
   - `#/dashboard?segment=SZ-002`（单向、车道 5/0/5）→ 详情「车道（前 / 后 / 共）5 / 0 / 5 · 来源 默认演示值」；
-- GZ 站（前端网络 433 段；enriched 708 段中 433 段有交集）：双向 15 / 单向正向 418；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
-  其余 275 段 enriched 段号（GZ-434…GZ-708）待前端站点包同步后才会出现方向字段。
+- GZ 站（前端网络 708 段；enriched 708 段全覆盖）：双向 44 / 单向正向 664；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
+  **433 为 800 m 旧范围口径**（旧 800 m 裁剪只覆盖 GZ-001…GZ-433）；!67 已把前端包同步到 708 段，方向字段 708 段全部命中。
 - 截图（不入库）：`D:\hubflow\_scratch\ikoqej\`：
   `Z-bidirectional-SZ-018.png`、`Z-oneway-tailgap-SZ-001.png`、`Z-oneway-lanes-SZ-002.png`、
   `Z-opposite-SZ-013.png`（对向段跳转）、`GZ-bidirectional-GZ-146.png`、`GZ-lanes-GZ-075.png`、
@@ -1090,16 +1090,16 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 
 ### 20.4 遗留 / 说明
 
-1. **Z21 旧包**没有方向字段（enriched 只覆盖现行 Z/GZ）→ 地图画灰色「?」、详情「未标定」，不编数据。
+1. **缺方向字段的包**（Z21 过渡包已随 IKP5D3 删除；此条留作通用兜底口径）：整包不画方向箭头、图例写「本包无方向字段」，不再画一屏灰色「?」；单段缺值仍显示「未标定」，不编数据。
 2. 车道数多数为 `null`（enriched 里 OSM 没查到 lanes，按默认/推导口径）→ 页面如实「—」并标来源；
    真实车道标定不在本单。
 3. 方向标是**每段一个**（中段位置），不做逐车道级箭头/车道线渲染；双向语义用双头箭头表达。
 4. 对向段跳转只切换大屏选中段（同一页），不改路线/判级；对向字段 Z 8 段 / GZ 13 段有值（enriched derived）；
    GZ 部分对向段号落在 434+（前端包尚未同步）→ 详情显示段号 +「不在当前路网（前端站点包待同步，暂不可跳转）」，不做假跳转。
-5. **GZ 前端站点包待同步**：enriched 已 708 段（IKOQEI，范围 1000 m），前端 `stationGZ.network.ts` 仍 433 段；
+5. **GZ 前端站点包待同步（历史条目，已过期）**：enriched 已 708 段（IKOQEI，范围 1000 m），当时前端 `stationGZ.network.ts` 仍 433 段（433 = 旧 800 m 口径）；
    本单只生成 433 段交集字段，待前端包同步后重跑生成器即可覆盖新增段（`--check` 校验）。
 
-> ⚠️ 上面第 5 条**已过期**：`!67` 已把前端 `stationGZ.network.ts` 同步到 708 段、
+> ⚠️ 上面第 5 条**已过期**（433 = 800 m 旧范围口径，IKOQEI 已扩到 1000 m / 708 段）：`!67` 已把前端 `stationGZ.network.ts` 同步到 708 段、
 > `stationGZ.directions.generated.ts` 也已是 708 段全部命中（文件头 sha256 `0747d9df…`）。
 
 ## 二十一、广州南站点位：落客点 / 候客区补齐（2026-10-19）
@@ -1245,9 +1245,118 @@ python scripts/doc_gate.py
 3. 竖屏手机的地图以缩放 / 拖拽为主，未做手势级优化。
 4. 新增页面请沿用同一套断点，不要另起一套；窄屏规则集中在各文件末尾的 `/* ---------- 响应式（Issue IKP3EV） ---------- */` 区块。
 
+## 二十三、2026-10-20 业主交办八单收口（IKP58M / IKP5BD / IKP5BZ / IKP5C6 / IKP5CK / IKP5CE / IKP5D3 / IKP5DM）
 
+> 本批八单同属「业主 2026-10-20 交办」的一轮问题清单，2026-10-21 一次收口。**判级算法、契约字段形状、`stations/*.json` 数据、引擎候选生成均未改动**；页面与文档仍按一期口径标注「演示数据（模拟）」，不把 mock 复用写成真实接入。
 
+### 23.1 先回答「现在跑的是哪种模式」：依赖 / 健康端点 / 环境自检 / 顶栏 chip（IKP58M）
 
+「加载失败、总显示连接不上」的主因不是页面降级没写好，而是**没人告诉使用者该起什么**。本单把这件事补齐：
 
+- **依赖清单**：仓库根新增 `requirements.txt`（实际 import 全集只有 `fastapi` / `starlette` / `uvicorn`，其余标准库）；`README.md`「怎么开始」补「装依赖 → 起接口层 → 起前端」三条命令，并写明 mock / remote 两种模式的区别。
+- **健康端点**：`GET /api/traffic/health`（**运维端点、非契约端点**）恒返回 200，逐源给出 `present / fallback / missing` + `used` + 路径，另含 `station` / `version` / `ts` / `missing` / `data_ok` / `resolved` / `is_simulated: true`；与 `traffic.py --check` 共用 `build_health()`，不各写一套。服务活着 ≠ 数据齐，**无数据也 200**；未知 `?station=` 同样 200（`resolved:false`）。
+- **环境自检**：`python scripts/env_check.py` 探 `8000 / 8101 / 5173`，HTTP 200 才算过；失败项直接打印该敲的命令；退出码 0 = 全绿、1 = 有缺。支持 `--json`、`--self-test` 与 `--traffic-port/--perception-port/--frontend-port` 覆盖。
+- **顶栏运行模式 chip**：`src/api/http.ts` 维护 `backendReachable`（只在 remote 更新，由真实请求成功/失败刷新，**不新造轮询**）；`AppShell.vue` 显示「运行 mock / 运行 remote」，remote 不可达转琥珀警示色，`title` 直接给「起 `traffic.py`」的命令。它与顶栏「数据源（视频链路 / 孪生链路 / 并排）」是两个维度，文案已区分。
+- **端口策略**：`vite.config.ts` 开 `strictPort: true` —— 5173 被占**直接启动失败并提示**，不再静默顺延到 5174（README 全篇写的是 5173）。`dev:z` 仍按 `VITE_DEV_PORT` 起在 6895。
 
+#### 23.1.1 mock / remote 端点差异总表
 
+**mock 不是「没有后端也能跑全部端点」**：`/api/traffic/*` 绝大多数由 vite mock 中间件回答，但两条辅助端点只在 remote（真接口）存在；感知面 `/perception-api/*` **两种模式都要起感知服务**。
+
+| 端点 | mock（`npm run dev`） | remote（`npm run dev:remote`） | 页面怎么降级 / 说明 |
+|---|---|---|---|
+| `/segments`、`/segments/{id}`、`/segments/{id}/sources`、`/overview`、`/meta`、`/vehicles`、`/alerts`、`/factors`、`/thresholds`、`/heat-matrix`、`/ci-history`、`/predict`、`/context`、`/assimilation`、`/scenario`、`/plan/*`、`/stream`（SSE）等 | **200**（`src/mock/traffic.ts` 按当前站点包现造） | **200**（`traffic.py` 读快照 / 运行态；缺产物空壳 + note） | 两模式页面形状一致；字段口径以 `src/shared/traffic.ts` 为准 |
+| `/api/traffic/route/options` | **404**（mock 未实现） | **200**（真网产物优先、样例回退；缺产物如实 404 + note） | 大屏 `loadRouteOptions()` 在 `USE_MOCK` 时**直接不发请求**，提示「mock 模式无该端点」并回退演示会话路线 |
+| `/api/traffic/report/compare` | **404**（mock 未实现） | **200 空壳**（`rows: []` + note） | 决策页 `EffectCompare` 在 `USE_MOCK` 时同样不发请求，按演示脚本展示；remote 空行时显示 note，不伪造结论 |
+| `/api/traffic/health` | **404**（mock 未实现，前端也不消费） | **200**（运维端点） | 顶栏 chip 只读 `request()` 成功/失败，不轮询 health |
+| `/perception-api/*` | 代理 → `127.0.0.1:8101` | 同左 | **mock 模式也要起感知服务**才有视频画面；没起时显示「未连接 + 重试」 |
+| `/twin-api/*`（可选） | 代理 → `127.0.0.1:8102` | 同左 | 没起孪生预览服务按不可达降级，不影响三页主链路 |
+
+> 口径：mock 只接管 `/api`，未匹配路径一律 404 是**刻意设计**（不臆造端点）；新增端点必须 mock / 真接口两边同步。前端只认同源相对路径，模式差异只由 `VITE_USE_MOCK` 决定。
+
+### 23.2 方向标记：显示开关 + 双向两侧箭头 + 缺字段兜底（IKP5BD）
+
+- **开关**：`shared/settings.ts` 新增 `directionsVisible`（默认开，键 `hubflow.settings.directions`），顶栏「设置」新增「方向标记」开关；关掉后地图上一支箭头都不留，图例同步写「当前已隐藏方向标记」。
+- **双向画法**：`bidirectional` 段不再用单个 `↕` 字形，而是在折线 35% / 65% 处各放一支箭头，沿法向 ±14 m 分列两侧、一支顺走向一支逆走向；`forward / backward` 保持单支。Z 站 61 段里 33 段双向（GZ 44 段），默认视野下能看出「有来有回」。
+- **缺字段兜底**：包整体没有 `segmentDirections` 时**整包不画方向标记**，图例写「本包无方向字段（旧 21 段对照包）」；不再画一屏灰色 `?`。单段缺值仍显示「未标定」。
+- **口径**：方向来自 **OSM oneway + 只读 enriched**（演示标注），不改方向字段与生成器。
+
+### 23.3 落客点 / 场区（停车场）标注（IKP5BZ）
+
+- **唯一真值源 = 前端站点包**（`activePack().dropoffs` / `.zones`）：Z 站 3 个落客点 + 2 个场区，GZ 站 5 + 4，坐标是**路段折线上的演示点**，不是踏勘点位。
+- 地图新增两组 Marker（「落」青 / 「场」棕，与摄像头图钉同族但形状颜色区分），悬停浮牌显示「名称 · 所属路段 · 点位 id · 演示点」；右栏「路段信息」新增「本段附近的落客点 / 场区」文字入口（选中路段时列出 150 m 内点位，可点击选中其路段）。
+- **删掉 `GET /api/traffic/network` 的前端请求**：落客点/场区已不从接口取，`network` ref、`PANEL_LABEL.network`、`track('network')` 一并移除——页头不再出现「本次刷新未取到：路网」而页面上根本没有路网面板。
+- **口径**：`/api/traffic/network` 保持「前端不消费」（Z 站是 `SEG-###` 样例网、GZ 站点位为空表），真点位补齐归 IKMHMX。
+
+### 23.4 起点 / 终点确认（IKP5C6）
+
+- **起点**：路线卡新增「本次起点」块——段号 + 路段名 + 来源角标（`twin` 孪生真值 / `app_gnss` App 定位 / `manual` 手动选择）+ `offset_m` + `match_confidence`；未点「以这里为起点」时明确标「**未确认**（按孪生真值演示）」。前端新增 `api/traffic.ts::postTrafficLocate()` 接 `POST /api/traffic/locate`，失败（含 mock 无该端点）如实降级到推荐响应自带 `location`，**不编起点**。
+- **终点**：优先 `arrival_route.dropoff_point`（能对上站点包点位时带名称）+ 所在末段段号/路段名；为 `null` 时显示「引擎产物未给落客点（如实空窗）」+ 从 `why` 抽出的具体原因（「终点不是落客/上客点」或「点位未在站点包登记」）+ **末段兜底**。
+- **兜底入口**：`match_confidence < 0.6`（与 `work/engine/locate.py` 的 `MATCH_CONFIDENCE_MIN` 同口径）提示「定位不稳定」，可从当前站点包路段下拉手动选起点。
+- **接口层原因**：`work/engine/run.py` 的 `build_request()` 与 `_build_cooperative_request()` 补上「终点不是落客/上客点（节点类型 intersection）」的原因进 `why`（真网原先该分支永不命中、`dropoff_point` 静默 null）；不新增契约字段。
+- **台账订正**：`docs/验收台账-20261018.md` 的 TC-18 依据与 `docs/口径裁定-20261018.md` 的「定位空壳」表述按 `locate.py` 现状更正（`locate()` 真值直读、`add_gnss_noise()`、`locate_check.py` 可复跑）；**TC-18 判定状态未改**：① 一致率 1.0（164/164）可复算，② σ=20 m 因统一图缺 WGS-84 锚点未测。
+
+### 23.5 大屏路线绘制：一主二备三色 + 非路线段压灰（IKP5CK）
+
+- **四种语义色**：推荐品牌蓝 `#0052D9` 实线；备选 1 青 `#0E7490` 长虚线 `12/6`、`line-offset:-2`；备选 2 琥珀 `#B45309` 短虚线 `2.5/4.5`、`offset:+2`；离站紫 `#7B61FF` 实线。四色避开四级判级色、数据不可用灰与品牌蓝；两条备选叠在同一段时靠**颜色 + 虚线节律 + 平行偏移**三重区分。
+- `RouteHighlight` 加可选 `index`（**前端展示类型，非契约**）；`alternatives` 不再压进同一个 `alternative` 分组。
+- **「凸显路线」开关**（默认开、键 `hubflow.settings.routeEmphasis`，入口在地图工具条）：开且确有路线时，不在任何路线上的路段画 `#C9CDD4` 细线、透明度 0.55、无虚线、热力晕染归零，不再按 level 上色；关掉恢复满图等级色。压灰色与「数据不可用灰」`#8B8B8B` 视觉可区分。
+- **备选不足如实说明**：路线卡在 `alternatives.length < 2` 时显示「本 OD 仅 N 条候选（契约要求 ≥2 条备选）」+ `no_alternative_reason`；图例同时显示实际备选条数，不补画等价路线。
+- **数据侧违规登记**：引擎产物 103 条请求中 45 条「备选 <2 且未标 `no_alternative`」（Z 8 / GZ 37）——本单只负责页面如实呈现，不改 `work/engine/candidates.py` / `run.py`，引擎侧另单处理。
+
+### 23.6 决策层 · 路线规划视图（IKP5CE）
+
+- `DecisionView.vue` 新增第四个 tab「路线规划」（`flow / queue / compare / route`），新建 `views/decision/components/RoutePlanView.vue`。
+- **链路条**：起点（段号 + 路段名 + `location.source`）→ 场区 / 落客点（`dropoff_point`，缺失给原因 + 末段兜底）→ 终点（到达末段）→ 离站方向（`departure_route`，`null` 如实说明）。
+- **一主二备**：推荐 + `alternatives` 的 `eta_min` / `reason`；备选不足显示「本 OD 仅 N 条候选」+ `no_alternative_reason`。
+- **变化效果（方案 A：只读产物）**：两个 session 选择器各调一次 `POST /route/recommend`，左右并排链路 + ETA 差值 + 引擎 `why`；页面单列「路线是否随参数变化」表，明确回答**场景注入 / 人工置位 / 告警下发不会触发算路、路线不变**——「路线来自固定产物，本页不重算」，不编造路线、不代算 ETA。
+- **mock 降级**：`/route/options` 在 mock 下 404，页面不发请求、写明「mock 无该辅助端点」并回退演示会话单列。
+
+### 23.7 路网对账：Z21 切包 404 + `/network` 真值源 + GZ 433→708（IKP5D3）
+
+- **Z21 全站 404（方案 A）**：`PACKS` 移除 `Z21`、删除 `stationZ21.ts` / `stationZ21.network.ts`。`restorePackKey()` 的 `PACKS[k]` 兜底会把浏览器里残留的 `localStorage['hubflow.stationPack']='Z21'` 落回注入值；`switchPack()` 对未知键首行 `return`、**不写坏键**。顶栏切换器现在只有 Z（61 段）/ GZ（708 段）两个真站包。
+- **`/network` 真值源裁定：前端不消费**。保留端点作接口存在性 / 调试用途；`build_network()` 的 `note` 与 `work/assembly/README.md` 已写明「前端不消费；Z 站为 `SEG-###` 样例网，勿用于真路网绘制」；前端那次请求已删除（见 23.3）。
+- **GZ 433 → 708**：`docs/口径裁定-20261018.md`、`docs/验收台账-20261018.md`、本 README 中作为**当前段数**的 433 已全部改为 708；历史留痕（PR !61 当时的 433 段）保留并统一标「旧 800 m 口径」；台账追加「433 为 800 m 旧范围口径，已由 IKOQEI 扩到 1000 m / 708 段」。判定值本身一字未动。
+- **路网对账表（Z / GZ × 前端包 / 后端接口 / 引擎产物）**：
+
+| 站点 | 一方 | 段数 | 命名空间 | 几何来源 | sections | dropoffs | zones | 摄像头条数 | 真值源文件 |
+|---|---|---|---|---|---|---|---|---|---|
+| **Z** | 前端包 | **61** | `SZ-###` | OSM 真几何 | **11**（候选·待签字冻结） | **3**（演示点） | **2**（演示点） | **6**（源台账，2 路有视频源） | `stationZ.network.ts` + `stationZ.ts` |
+| **Z** | 后端 `/network` | **17**（差异：样例网） | `SEG-###`（差异） | 占位坐标（coords 全空） | **2**（差异：样例 detector） | **1**（差异） | **2**（同数不同源） | **0**（接口不含摄像头字段） | `stations/network.json` + `stations/points.json`（样例件） |
+| **Z** | 引擎产物 | **61** | `SZ-###` | OSM 真几何（netpack） | — | — | — | — | `work/twin/netpack/network_junction.json` |
+| **GZ** | 前端包 | **708** | `GZ-###` | OSM 真几何 | **49**（全 boundary） | **5**（演示点） | **4**（演示点） | **0**（`channels: []`，展示走演示复用） | `stationGZ.network.ts` + `stationGZ.ts` |
+| **GZ** | 后端 `/network` | **708** | `GZ-###` | 真网产物合成 | **0**（差异：非默认站空表） | **0**（差异） | **0**（差异） | **0** | `guangzhounan/network_junction.json` + 空点位表 |
+| **GZ** | 引擎产物 | **708** | `GZ-###` | OSM 真几何（netpack） | — | — | — | — | `guangzhounan/network_junction.json` + `routes.json`（91 条请求） |
+
+**差异归属**：Z 站 `/network` 的 17 段 / 2 sections / 1 dropoff 全部来自 `stations/` 的样例件 → 真点位与真断面归 **IKMHMX**（T1 真表）/ 开发B；GZ 站 sections / dropoffs / zones 为 0 是非默认站空点位表所致 → 同上。**本单只裁定「前端不消费」并如实登记，不改 `stations/*.json`。**
+
+**断面 / 摄像头缺口（Z 站）**：手册 §10.5 要求每条路段至少 1 个断面 → 61 段应有 **61 个 detector**，`stations/points.json` 现有 **2 个**（且都在 `SEG-###` 样例网）→ **缺 59 个**；摄像头源台账 **6 路**（2 路有视频源），**55 段没有源台账摄像头**，页面按 IKNBT2「N 段 = N 演示摄像头（mock 复用）」兜底——**不是真实接入**，补齐归 IKMHMX。
+
+### 23.8 摄像头布点规划：Z 61 + GZ 708 行 + 登记表对齐（IKP5DM）
+
+- 新增 **`work/perception/mapping/camera-plan.json`（机器可读）+ `camera-plan.md`（人读）**：每行 = 一个路段，含 `segment_id` / 路段名 / `planned` / `offset_m` / **布点理由** / `demo_camera_id` / `detector_id`（规划编号）/ `source_ledger_cam_id` / `needs_video_source`。Z **61 行（布点 25 / 不布点 36）**、GZ **708 行（布点 416 / 不布点 292）**，合计规划 detector **441 个**；每行理由具体、无空行、无「待定」。
+- **生成器**：`work/perception/tools/gen_camera_plan.py`（可重复生成，`--check` 只校验不写盘，连续重跑 sha 一致）；规划编号是**待 IKMHMX 落 `points.json` 的规划值**，不冒充已登记。
+- **登记表对齐**：`camera-segments.json` 的 6 条各加 `plan_ref` / `plan_version`，与规划表双向可查；`cameras` 仍 **6 条**、`video_streams` 仍只有 `road2` / `track1` **两路**，`needs_video_source=true` 仅 `cam-02` / `cam-05`。**不扩表、不伪造视频源。**
+- **上色策略统一（方案 A）**：`stationZ.ts` 的 `colorPolicy` 由 `'camera-covered'` 改为 `'all'`，与 GZ 一致——Z 站 61 段全部按等级上色，**不再 55 段恒灰**；图钉仍只画源台账 6 路（`MapLibreViewer` 图例与上色策略已解耦，灰只表示数据不可用/陈旧，不再表示「没摄像头」）。
+- **文档**：`work/perception/README.md` 第十节、`work/perception/mapping/README.md` 第五节补「一期布点规划」；`check_camera_map.py` 新增规划表行数 / 字段完整性 / 双向映射 / 视频源两路校验（`--self-test` 20 用例）。
+
+### 23.9 复核与门禁
+
+```bash
+# 前端构建（含 vue-tsc 类型检查）
+cd work/frontend/ui-vue && npm run build
+# 仓库门禁（编码 / 大文件 / 链接 / JSON / 密钥 / 契约命名 / 台账）
+python scripts/doc_gate.py
+# 摄像头规划表与登记表
+python work/perception/tools/check_camera_map.py && python work/perception/tools/check_camera_map.py --self-test
+python work/perception/tools/gen_camera_plan.py --check
+# 环境自检（只起前端时退出码 1 是预期：缺 traffic.py / 感知服务）
+python scripts/env_check.py
+# 健康端点（起接口层后；无数据也应 200）
+curl -s http://127.0.0.1:8000/api/traffic/health
+# Z21 清理与 433 复核（剩下的 433 必须都标「旧 800 m 口径」）
+grep -rn "stationZ21\|Z21" work/frontend/ui-vue/src --include=*.ts --include=*.vue
+grep -n "433" docs/口径裁定-20261018.md docs/验收台账-20261018.md work/frontend/README.md
+```
+
+**证据落点**：`work/frontend/ui-vue/.evidence/IKP5CE-20261021/`（决策层路线规划 3 张截图）+ `work/frontend/ui-vue/.evidence/IKP5-batch-20261021/`（大屏方向标记 / 落客点场区 / 起点终点 / 凸显路线 / Z21 兜底 共 8 张，README 逐个对应判定）。GZ 站 remote 首载 `/overview` 11–27 s 的既有性能问题在证据 README 里如实登记，不作为本批通过依据。

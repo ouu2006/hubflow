@@ -1,0 +1,16 @@
+# hubflow 接口层 / 感知演示服务的第三方依赖（Issue IKP58M）
+#
+# 用法（仓库根目录）：
+#     python -m pip install -r requirements.txt
+#
+# 覆盖范围：work/assembly/*.py（接口层 traffic.py / 一键脚本 / 自检）与
+# work/perception/server.py 实际 import 的第三方包。自查命令：
+#     grep -RhE "^(import|from) [a-zA-Z_]" work/assembly/*.py work/perception/server.py
+# 依赖全集只有 fastapi / starlette / uvicorn 三个（其余均为 Python 标准库）。
+#
+# 不在本清单：孪生与视频感知链路的推理依赖（MindSpore / torch 等）——
+# 那套环境在一期开工时已单独建好，版本固定，见 work/assembly/README.md 第七节，
+# 不要用本文件重装，否则会把已定版的推理环境改掉。
+fastapi>=0.110
+starlette>=0.36
+uvicorn>=0.27

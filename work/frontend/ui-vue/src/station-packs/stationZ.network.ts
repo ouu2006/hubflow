@@ -1,6 +1,6 @@
 // ⚠️ 本文件由脚本 `work/twin/netpack/build_junction_pack.py` 生成，切换时**原样拷入**（勿手改）。
 //    IKMDKY 子单①：大屏切新段——61 段（站区 500 m），段号 3 位（SZ-001…）；
-//    旧 21 段几何保留在 `stationZ21.network.ts`，用于切换前后对照。
+//    旧 21 段几何（`stationZ21.network.ts`）随 IKP5D3 删除，不再保留对照包。
 // 站点包 ·「站点 OSM 真路网 · 先路线后分段」演示站
 //
 // 来源：station.osm 切片经 build_junction_pack.py（① 获取路线 → ② 路口切分 → ③ 打标签）。

@@ -26,7 +26,6 @@ import {
   getTrafficFactors,
   getTrafficHeatMatrix,
   getTrafficMeta,
-  getTrafficNetwork,
   getTrafficOverview,
   getTrafficRouteOptions,
   getTrafficSegmentSources,
@@ -34,10 +33,13 @@ import {
   getTrafficThresholds,
   getTrafficVehicles,
   postRouteRecommend,
+  postTrafficLocate,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
+import type { LocateResult } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
-import { basemapEnabled } from '../../shared/settings'
+import { basemapEnabled, routeEmphasisEnabled, setRouteEmphasisEnabled } from '../../shared/settings'
+import { landmarksNearSegment } from '../../shared/landmarks'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
 // IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成字段；缺值→未标定，不编）
@@ -79,7 +81,6 @@ import {
   type ThresholdSnapshot,
   type TrafficAlert,
   type TrafficMeta,
-  type TrafficNetwork,
   type TrafficOverview,
   type VehicleRecord,
 } from '../../shared/traffic'
@@ -312,7 +313,7 @@ const RANGE_SOURCE_LABEL: Record<string, string> = {
   'ai-assisted': 'AI 辅助候选（已人工确认）',
 }
 
-// 大屏工具条上的「路网版本」切换（IKMDKY 子单①）：Z = 61 段新几何 / Z21 = 旧 21 段对照。
+// 大屏工具条上的「路网版本」切换（IKMDKY 子单①；IKP5D3 起只剩 Z=61 段 / GZ=708 段两个真站包，Z21 旧包已删）。
 // 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
 const packChoices = packItems()
 const currentPackKey = activePackKey()
@@ -326,7 +327,6 @@ function onPackChange(key: string): void {
 const overview = ref<TrafficOverview | null>(null)
 const segments = ref<SegmentRecord[]>([])
 const vehicles = ref<VehicleRecord[]>([])
-const network = ref<TrafficNetwork | null>(null)
 const alerts = ref<TrafficAlert[]>([])
 /** 全网生效因素(各路段 factors_applied 展平,供 KPI 第 4 格取前 3 条) */
 const allFactors = ref<(FactorApplied & { segment_id: string })[]>([])
@@ -405,6 +405,15 @@ const selectedName = computed<string>(() => {
   if (!id) return '—'
   return demoSegment(id)?.name ?? selected.value?.segment_id ?? id
 })
+
+// ---------- IKP5BZ：本段附近的落客点 / 场区（唯一真值源 = 前端站点包） ----------
+// 图上 Marker 之外再给一处**文字入口**：选中路段时列出同段 / 邻近段（≤150 m）的点位，
+// 点条目 → 选中其所属路段（地图上点不到时仍可查）。坐标是演示点，不是踏勘点位。
+const nearbyLandmarks = computed(() => landmarksNearSegment(selectedId.value ?? ''))
+/** 距离显示（米）：非有限值如实「未标定」，不写 0 */
+function landmarkDistance(v: number): string {
+  return Number.isFinite(v) ? `约 ${Math.round(v)} m` : '距离未标定'
+}
 
 // ---------- IKOQEJ：方向 / 车道 / 对向 / 贯通（只读站点包字段，非契约、不参与判级） ----------
 const segDirection = computed(() => directionOf(selectedId.value ?? ''))
@@ -489,7 +498,6 @@ const PANEL_LABEL: Record<string, string> = {
   overview: 'KPI',
   segments: '路段监测',
   vehicles: '车辆',
-  network: '路网',
   alerts: '告警',
   factors: '因素',
   matrix: '热力矩阵',
@@ -498,11 +506,13 @@ const PANEL_LABEL: Record<string, string> = {
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
-  const [ov, seg, veh, net, al, fa, meta, matrix, thr] = await Promise.allSettled([
+  // Issue IKP5BZ（方案 A）：不再请求 `/api/traffic/network`——落客点/场区唯一真值源是前端站点包，
+  // 这条端点的 dropoffs/zones 与本站真网段号对不上（Z 是 SEG-### 样例点、GZ 为空表），
+  // 取了也不用；留着只会在页头打「本次刷新未取到：路网」，而页面上并没有路网面板。
+  const [ov, seg, veh, al, fa, meta, matrix, thr] = await Promise.allSettled([
     getTrafficOverview(),
     getTrafficSegments(),
     getTrafficVehicles(),
-    getTrafficNetwork(),
     getTrafficAlerts(),
     getTrafficFactors(),
     getTrafficMeta(),
@@ -525,8 +535,6 @@ async function refresh(): Promise<void> {
   track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
   track('vehicles', veh.status === 'fulfilled')
-  if (net.status === 'fulfilled') network.value = net.value
-  track('network', net.status === 'fulfilled')
   if (al.status === 'fulfilled') alerts.value = al.value.alerts
   track('alerts', al.status === 'fulfilled')
   if (fa.status === 'fulfilled') allFactors.value = fa.value.factors
@@ -639,6 +647,8 @@ async function loadRecommend(sessionId?: string): Promise<void> {
     recommendError.value = `推荐接口不可达（${e instanceof Error ? e.message : '未知错误'}）：保持不画路线，不编造演示路线`
   } finally {
     recommendLoading.value = false
+    // 起点与推荐同源（同一份引擎产物）：每次取推荐后同步刷新 /locate，避免两块显示两个起点
+    void refreshLocate()
   }
 }
 
@@ -679,6 +689,131 @@ function onRouteSessionChange(): void {
   void loadRecommend(selectedSession.value)
 }
 
+// ---------- 起点 / 终点确认（Issue IKP5C6）----------
+//
+// 一期口径：起点是**孪生真值**（接口 `/api/traffic/locate` 直读引擎产物 `requests[].location`，
+// 接口层不做地图匹配），所以这里的“确认”只是把这份真值显式摆给使用者看并留下一个确认动作，
+// **不是用户定位**；未确认时页面必须写明「按孪生真值演示」，不得暗示“已确认你的位置”。
+// TC-05 展示侧兜底：定位不可用 / 置信度低时，可从当前站点包手动选一段作为起点（流程不中断）。
+const locateInfo = ref<LocateResult | null>(null)
+const locateLoading = ref(false)
+const locateError = ref('')
+/** 使用者是否点过「以这里为起点」（切换 session 后重置） */
+const startConfirmed = ref(false)
+/** 手动选起点（兜底）：从当前站点包路段下拉里选一段 */
+const manualStartId = ref('')
+const manualStart = ref(false)
+
+const packSegments = computed(() => activePack().segments)
+
+/** 当前起点：手动选择优先 → /locate 结果 → 推荐响应自带的 location（失败降级，不编） */
+const currentStart = computed<{
+  segment_id: string
+  offset_m: number | null
+  match_confidence: number | null
+  source: string
+} | null>(() => {
+  if (manualStart.value && manualStartId.value) {
+    return { segment_id: manualStartId.value, offset_m: 0, match_confidence: null, source: 'manual' }
+  }
+  const loc = locateInfo.value
+  if (loc && loc.segment_id) {
+    return {
+      segment_id: loc.segment_id,
+      offset_m: loc.offset_m,
+      match_confidence: loc.match_confidence,
+      source: loc.source,
+    }
+  }
+  const rec = recommend.value?.location
+  if (rec) {
+    return {
+      segment_id: rec.segment_id,
+      offset_m: rec.offset_m,
+      match_confidence: rec.match_confidence ?? null,
+      source: rec.source,
+    }
+  }
+  return null
+})
+const startName = computed(() => (currentStart.value ? nameOf(currentStart.value.segment_id) : '—'))
+const startSourceLabel = computed(() => {
+  const source = currentStart.value?.source
+  if (source === 'twin') return '孪生真值'
+  if (source === 'app_gnss') return 'App 定位'
+  if (source === 'manual') return '手动选择'
+  return source || '—'
+})
+const confidenceText = computed(() => {
+  const c = currentStart.value?.match_confidence
+  return typeof c === 'number' && Number.isFinite(c) ? c.toFixed(2) : '—'
+})
+const offsetText = computed(() => {
+  const v = currentStart.value?.offset_m
+  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(1) : '—'
+})
+/** 与 `work/engine/locate.py` 的 MATCH_CONFIDENCE_MIN 同口径：< 0.6 提示定位不稳定（不改判定） */
+const confidenceLow = computed(() => {
+  const c = currentStart.value?.match_confidence
+  return typeof c === 'number' && Number.isFinite(c) && c < 0.6
+})
+
+/** 终点：优先 `arrival_route.dropoff_point`；为 null 时给 `why` 里的具体原因 + 末段兜底 */
+const tripEnd = computed(() => {
+  const r = recommend.value
+  if (!r) return null
+  const segs = r.arrival_route.segments ?? []
+  const last = segs.length > 0 ? segs[segs.length - 1]! : null
+  const drop = r.arrival_route.dropoff_point ?? null
+  const landmark = drop
+    ? [...activePack().dropoffs, ...activePack().zones].find((p) => p.id === drop)
+    : undefined
+  // why 里的原因用 [] 括起（引擎口径）；只挑与终点 / 点位相关的条目，别把离站原因混进来
+  const notes = (r.why.match(/\[[^\]]+\]/g) ?? []).filter((n) => /落客|上客|点位|终点/.test(n))
+  return {
+    drop,
+    pointName: landmark?.name ?? null,
+    last,
+    lastName: last ? nameOf(last) : '—',
+    reason: notes.join(' '),
+  }
+})
+
+/** 拉一次 /locate（真接口才有；mock 如实标注降级，不编起点） */
+async function refreshLocate(): Promise<void> {
+  locateError.value = ''
+  locateInfo.value = null
+  startConfirmed.value = false
+  manualStart.value = false
+  manualStartId.value = ''
+  if (USE_MOCK) {
+    locateError.value = 'mock 模式无 /api/traffic/locate 端点（辅助端点仅真接口提供）'
+    return
+  }
+  locateLoading.value = true
+  try {
+    locateInfo.value = await postTrafficLocate({ session_id: selectedSession.value || undefined })
+  } catch (e) {
+    locateError.value = `定位接口不可达（${
+      e instanceof Error ? e.message : '未知错误'
+    }）；当前按推荐响应自带的 location 显示，不编起点`
+  } finally {
+    locateLoading.value = false
+  }
+}
+
+function confirmStart(): void {
+  if (currentStart.value) startConfirmed.value = true
+}
+
+function applyManualStart(): void {
+  if (!manualStartId.value) return
+  manualStart.value = true
+  startConfirmed.value = true
+}
+
+
+
 /** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
 const routeHighlights = computed<RouteHighlight[]>(() => {
   const r = recommend.value
@@ -688,9 +823,13 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
     groups.push({ kind: 'arrival', segments: r.arrival_route.segments })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
-    for (const a of r.alternatives) {
-      if (a.segments && a.segments.length > 0) groups.push({ kind: 'alternative', segments: a.segments })
-    }
+    // Issue IKP5CK：备选不能再全压成同一个 `alternative` 分组（两条备选会画成同一套灰虚线）。
+    // `index` 是前端展示类型字段（非契约）：1 = 备选 1（青/长虚）、2 = 备选 2（琥珀/短虚）。
+    r.alternatives.forEach((a, i) => {
+      if (a.segments && a.segments.length > 0) {
+        groups.push({ kind: 'alternative', index: i + 1, segments: a.segments })
+      }
+    })
   }
   if (routeView.value === 'all' || routeView.value === 'departure') {
     if (r.departure_route && r.departure_route.segments.length > 0) {
@@ -708,6 +847,13 @@ interface RouteCard {
   eta: number
   segments: string[]
   note: string
+  /**
+   * 同一份 recommend 的备选条数（Issue IKP5CK）。路线卡用它如实提示
+   * 「本 OD 仅 N 条候选（契约要求 ≥2 条备选）」；**不凑等价路线**。
+   */
+  alternativeCount: number
+  /** 引擎声明的 `no_alternative_reason`（只读；未声明 = null） */
+  noAlternativeReason: string | null
 }
 
 /** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
@@ -715,6 +861,10 @@ const routeCards = computed<RouteCard[]>(() => {
   const r = recommend.value
   if (!r) return []
   const cards: RouteCard[] = []
+  // Issue IKP5CK：备选不足的判定依据（`alternatives.length` + 引擎 `no_alternative_reason`）
+  // 放进每张卡的数据结构，供路线卡区域如实提示；页面不据此补画等价路线。
+  const alternativeCount = r.alternatives.length
+  const noAlternativeReason = r.no_alternative_reason ?? null
   if (routeView.value === 'all' || routeView.value === 'arrival') {
     cards.push({
       key: 'arrival',
@@ -724,6 +874,8 @@ const routeCards = computed<RouteCard[]>(() => {
       eta: r.arrival_route.eta_min,
       segments: r.arrival_route.segments,
       note: r.why,
+      alternativeCount,
+      noAlternativeReason,
     })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
@@ -736,6 +888,8 @@ const routeCards = computed<RouteCard[]>(() => {
         eta: a.eta_min,
         segments: a.segments ?? [],
         note: a.reason,
+        alternativeCount,
+        noAlternativeReason,
       })
     })
   }
@@ -749,6 +903,8 @@ const routeCards = computed<RouteCard[]>(() => {
         eta: r.departure_route.eta_min,
         segments: r.departure_route.segments,
         note: '送完人之后的离站方向（契约 departure_route）',
+        alternativeCount,
+        noAlternativeReason,
       })
     }
   }
@@ -777,9 +933,9 @@ const routeSourceNote = computed<string>(() => recommend.value?.data_source_note
 const routeWhyLine = computed<string>(() => {
   const source = recommend.value?.data_source
   if (source === 'engine.routes.real' || source === 'engine.routes.sample') {
-    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。'
+    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。'
   }
-  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。`
+  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。`
 })
 /** 路线降级说明（session 未匹配 / 段号命名空间不一致等，来自接口响应 note；无则空）。
  *  session 未匹配已在下方单独用显式警示段落呈现，这里去掉重复的第一句。 */
@@ -1013,8 +1169,8 @@ const rankRows = computed(() =>
 )
 
 // ---------- 中栏 · 地图 ----------
-// 极简口径(业主 2026-10-14):图上只画路段线,断面/落客点/场区/站点不再下发地图;
-// 文字只出现在跟随鼠标的浮牌(hover-chip)里。
+// 2026-10-14 极简口径只画路段线；Issue IKP5BZ 起补回落客点 / 场区 Marker（唯一真值源 = 前端站点包）——
+// 断面仍未上图，路段摘要仍只用跟随鼠标的浮牌（hover-chip）。
 
 /** 选中 chip:路段拥堵 · 摄像头 2 路 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
 const mapChip = computed<string>(() => {
@@ -1473,7 +1629,7 @@ function onCommandChanged(): void {
                   <span class="map-title">全路段状态</span>
                   <span class="map-tag">{{ basemapTag }}</span>
                 </div>
-                <!-- 路网版本切换（IKMDKY 子单①）：Z=61 段新几何 / Z21=旧 21 段对照 -->
+                <!-- 路网版本切换（IKMDKY 子单①；IKP5D3 起 Z21 旧包已删，只剩 Z / GZ） -->
                 <div class="map-toolbar-right">
                   <span class="pack-switch" role="group" aria-label="切换路网版本">
                     <button
@@ -1486,6 +1642,25 @@ function onCommandChanged(): void {
                       @click="onPackChange(p.key)"
                     >
                       {{ p.name }}
+                    </button>
+                  </span>
+                  <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
+                       默认开，落 localStorage；状态在图上与图例里都能看到。 -->
+                  <span class="pack-switch" role="group" aria-label="凸显路线">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: routeEmphasisEnabled }"
+                      role="switch"
+                      :aria-checked="routeEmphasisEnabled"
+                      :title="
+                        routeEmphasisEnabled
+                          ? '凸显路线：开（非路线段中性灰细线，不按等级上色）；点击恢复满图等级色'
+                          : '凸显路线：关（满图等级色 + 路线叠加）；点击压灰非路线段'
+                      "
+                      @click="setRouteEmphasisEnabled(!routeEmphasisEnabled)"
+                    >
+                      凸显路线 {{ routeEmphasisEnabled ? '开' : '关' }}
                     </button>
                   </span>
                 </div>
@@ -1597,10 +1772,84 @@ function onCommandChanged(): void {
               </div>
               <div class="route-meta">
                 <span class="route-badge">演示数据（模拟）</span>
-                <span>
-                  起点 {{ recommend.location.segment_id }} · 定位来源
-                  {{ recommend.location.source === 'twin' ? '孪生真值' : 'App 定位' }}
-                </span>
+                <span>路线来自引擎算路产物 · 本页不重算</span>
+              </div>
+              <!-- IKP5C6：起点 / 终点确认（起点=孪生真值，不是用户定位；终点优先 dropoff_point，空窗给原因 + 末段兜底） -->
+              <div class="start-end">
+                <div class="se-block">
+                  <div class="se-head">
+                    本次起点
+                    <span class="se-tag" :class="{ warn: !startConfirmed }">
+                      {{ startConfirmed ? '已确认' : '未确认' }}
+                    </span>
+                    <span v-if="locateLoading" class="se-tag">读取定位中</span>
+                  </div>
+                  <div class="se-line">
+                    段号 <b class="td-mono">{{ currentStart?.segment_id ?? '—' }}</b> · 路段名 {{ startName }}
+                  </div>
+                  <div class="se-line">
+                    来源 {{ startSourceLabel }} · offset {{ offsetText }} m · match_confidence
+                    {{ confidenceText }}
+                  </div>
+                  <p v-if="!startConfirmed" class="se-note">
+                    起点未确认（按{{ startSourceLabel }}演示）：点「以这里为起点」表示认可此起点后再看路线。
+                  </p>
+                  <p v-if="confidenceLow" class="se-warn">
+                    定位不稳定（match_confidence &lt; 0.6）：可改用下方手动选起点。
+                  </p>
+                  <p v-if="locateError" class="se-note">{{ locateError }}</p>
+                  <div class="se-actions">
+                    <button
+                      type="button"
+                      class="se-btn"
+                      :disabled="!currentStart"
+                      @click="confirmStart"
+                    >
+                      以这里为起点
+                    </button>
+                    <select
+                      v-model="manualStartId"
+                      class="route-select se-select"
+                      aria-label="手动选择起点路段"
+                    >
+                      <option value="">手动选起点（兜底）…</option>
+                      <option v-for="seg in packSegments" :key="seg.segment_id" :value="seg.segment_id">
+                        {{ seg.segment_id }} · {{ seg.name }}
+                      </option>
+                    </select>
+                    <button
+                      type="button"
+                      class="se-btn"
+                      :disabled="!manualStartId"
+                      @click="applyManualStart"
+                    >
+                      用这段
+                    </button>
+                  </div>
+                </div>
+                <div class="se-block">
+                  <div class="se-head">本次终点 <span class="se-tag">落客点</span></div>
+                  <template v-if="tripEnd?.drop">
+                    <div class="se-line">
+                      点位 <b class="td-mono">{{ tripEnd.drop }}</b>
+                      <template v-if="tripEnd.pointName"> · {{ tripEnd.pointName }}</template>
+                    </div>
+                    <div class="se-line">
+                      所在末段 <b class="td-mono">{{ tripEnd.last ?? '—' }}</b> · {{ tripEnd.lastName }}
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="se-line">落客点位：引擎产物未给（如实空窗）</div>
+                    <p v-if="tripEnd?.reason" class="se-note">原因：{{ tripEnd.reason }}</p>
+                    <p v-else class="se-note">
+                      原因：引擎 why 未附说明（点位表未登记真网段号，补齐归 IKMHMX）。
+                    </p>
+                    <div class="se-line">
+                      替代信息：终点所在末段 <b class="td-mono">{{ tripEnd?.last ?? '—' }}</b> ·
+                      {{ tripEnd?.lastName ?? '—' }}
+                    </div>
+                  </template>
+                </div>
               </div>
               <p v-if="routeSourceNote" class="route-source">{{ routeSourceNote }}</p>
               <div v-for="c in routeCards" :key="c.key" class="route-item" :class="c.kind">
@@ -1611,6 +1860,12 @@ function onCommandChanged(): void {
                 <div class="route-segs td-mono">{{ c.segments.join(' → ') || '—' }}</div>
                 <div class="route-note">{{ c.note }}</div>
               </div>
+              <!-- IKP5CK：备选不足如实说明（契约要求 ≥2 条；不凑等价路线，不空白） -->
+              <p v-if="recommend.alternatives.length < 2" class="route-hint warn">
+                本 OD 仅 {{ recommend.alternatives.length }} 条候选（契约要求 ≥2 条备选）<template
+                  v-if="recommend.no_alternative_reason"
+                >：{{ recommend.no_alternative_reason }}</template>；不为凑数补画等价路线。
+              </p>
               <p v-if="routeMissing.length" class="route-hint warn">
                 路线里有 {{ routeMissing.length }} 段不在当前站点包（{{ routeMissing.join(', ') }}），这些段不会被画出；不补造数据。
               </p>
@@ -1697,6 +1952,38 @@ function onCommandChanged(): void {
                   方向 / 车道 / 对向 / 贯通来自站点包<b>只读字段</b>（tools/gen_station_directions.py 从 enriched 生成）：
                   方向来自 OSM oneway，车道多为默认演示值——<b>不是实测车道/实测方向</b>；缺值一律「—/未标定」；
                   贯通性待核只提示，不改路网。
+                </p>
+              </div>
+
+              <!-- IKP5BZ · 本段附近的落客点 / 场区：图上 Marker 之外的第二入口（文字可查、可点选） -->
+              <div class="lm-block">
+                <div class="sec-head">
+                  本段附近的落客点 / 场区<span class="sub-tag">{{ nearbyLandmarks.length }} 个 · 演示点</span>
+                </div>
+                <p v-if="nearbyLandmarks.length === 0" class="lm-empty">
+                  本段 150 m 内暂无登记点位（数据源：本站站点包）。图上标记仍可在全图范围内悬停查看。
+                </p>
+                <ul v-else class="lm-list">
+                  <li v-for="p in nearbyLandmarks" :key="`${p.kind}-${p.id}`">
+                    <button
+                      type="button"
+                      class="lm-item"
+                      :title="`${p.name} · 所属路段 ${p.segment_id || '未标定'} · ${p.id} · 演示点 · 点击选中该路段`"
+                      @click="onSelect(p.segment_id)"
+                    >
+                      <span class="lm-icon" :class="p.kind">{{ p.kind === 'dropoff' ? '落' : '场' }}</span>
+                      <span class="lm-main">
+                        <span class="lm-name">{{ p.name }}</span>
+                        <span class="lm-meta">
+                          {{ p.segment_id || '路段未标定' }} · {{ p.id }} · {{ landmarkDistance(p.distance_m) }}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                </ul>
+                <p class="lm-note">
+                  数据源：本站站点包（唯一真值源）· 坐标为路段折线上的<b>演示点</b>，不是踏勘点位 ·
+                  点击条目选中其所属路段（所属路段按最近折线推定）。
                 </p>
               </div>
 
@@ -2382,6 +2669,78 @@ function onCommandChanged(): void {
   line-height: 1.6;
   color: var(--td-text-color-placeholder);
 }
+/* IKP5BZ · 本段附近的落客点 / 场区（与地图 Marker 同一份演示点位） */
+.lm-block {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--td-component-stroke);
+}
+.lm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lm-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 6px;
+  text-align: left;
+  font: inherit;
+  background: var(--td-bg-color-container-hover);
+  border: 1px solid transparent;
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.lm-item:hover {
+  border-color: var(--td-brand-color);
+}
+.lm-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+.lm-icon.dropoff {
+  background: #0f766e;
+}
+.lm-icon.zone {
+  background: #8a5a2b;
+}
+.lm-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lm-name {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--td-text-color-primary);
+}
+.lm-meta {
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+}
+.lm-empty {
+  margin: 2px 0;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+.lm-note {
+  margin: 5px 0 0;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
 /* 大号 CI(原 /heat 右栏;CI 只展示不判级) */
 .ci-head {
   display: flex;
@@ -2742,6 +3101,85 @@ function onCommandChanged(): void {
   line-height: 1.5;
   color: var(--td-text-color-secondary);
   word-break: break-all;
+}
+
+/* ---------- 起点 / 终点确认（Issue IKP5C6） ---------- */
+.start-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+.se-block {
+  padding: 6px 8px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-left: 3px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
+}
+.se-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.se-tag {
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--td-brand-color);
+  background: var(--td-brand-color-1);
+  border-radius: 2px;
+}
+.se-tag.warn {
+  color: var(--td-warning-color);
+  background: var(--td-warning-color-1);
+}
+.se-line {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+}
+.se-note,
+.se-warn {
+  margin: 3px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
+.se-warn {
+  color: var(--td-warning-color);
+}
+.se-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+.se-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.se-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--td-brand-color);
+  cursor: pointer;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
+}
+.se-btn:disabled {
+  color: var(--td-text-color-disabled);
+  cursor: not-allowed;
+  border-color: var(--td-component-border);
 }
 
 /* 右栏顺序（Issue IKMS18）：点路段后**先看路段信息**（关联摄像头 / 决策计算摘要 / 直接下令），

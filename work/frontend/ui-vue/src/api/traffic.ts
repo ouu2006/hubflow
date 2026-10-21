@@ -61,6 +61,27 @@ export function getTrafficRouteOptions(): Promise<RouteOptionsSnapshot> {
   return request<RouteOptionsSnapshot>('GET', '/api/traffic/route/options')
 }
 
+// POST /api/traffic/locate → 一期定位结果（Issue IKP5C6；非契约辅助端点，真接口才有）
+// 口径：接口层只端引擎产物 `requests[].location`（孪生真值直读），**不做地图匹配、不编定位**；
+// 页面据此显示“本次起点”的来源/置信度，并给使用者一个显式确认动作。
+export interface LocateResult {
+  segment_id: string | null
+  offset_m: number | null
+  match_confidence: number | null
+  /** 'twin' = 孪生真值；二期才是 'app_gnss'。缺省按 twin 解释（接口层已兜底） */
+  source: string
+  data_source: string
+  data_source_note: string
+  session_matched: boolean
+  requested_session_id: string | null
+  is_simulated: true
+  note: string
+}
+
+export function postTrafficLocate(body: { session_id?: string } = {}): Promise<LocateResult> {
+  return request<LocateResult>('POST', '/api/traffic/locate', { body })
+}
+
 // GET /api/traffic/stream(SSE,事件 traffic_snapshot)→ 轻量刷新事件;页面收到后重新拉快照。
 // EventSource 无法附带鉴权头;当前端点公开访问,鉴权方案随接口面重新规划一并定稿。
 export function subscribeTrafficSnapshot(

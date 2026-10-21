@@ -1,7 +1,7 @@
 {
   "is_simulated": true,
-  "registry_version": "2026-10-18",
-  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY 建表 / IKMS1T 去固定化）。唯一真值来源：页面画的与后端发的都取本文件。摄像头条数 N = cameras 条数，动态：0 ≤ N ≤ 本站路段数（肇庆东 61），默认一段最多 1 路；本表当前登记的 6 路是**合法示例**，不是固定值。样本视频非本站现场，映射仅用于演示/联调。",
+  "registry_version": "2026-10-21",
+  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY 建表 / IKMS1T 去固定化）。唯一真值来源：页面画的与后端发的都取本文件。摄像头条数 N = cameras 条数，动态：0 ≤ N ≤ 本站路段数（肇庆东 61），默认一段最多 1 路；本表当前登记的 6 路是**合法源台账**，不是固定值。样本视频不是本站画面，映射仅用于演示/联调。 IKP5DM 起：本表 6 条与 camera-plan.json 双向可查（本表 plan_ref 指向规划行，规划行 source_ledger_cam_id 回指本表）；一期演示层 N 段 N 路不扩本表。",
   "segment_id_namespaces": {
     "SZ-###": "站点 Z 真 OSM 路网（61 段，见 work/twin/netpack/network_junction.json / stationZ.network.ts）—— 本站唯一现役段号",
     "SEG-###": "7 节点样例网（stations/network.json 占位件 + work/engine/samples/ + 鸿蒙 App fixture）—— 样例数据专用，不是本站真网；保留不改名，避免把样例冒充本站",
@@ -26,7 +26,9 @@
       "has_video_source": false,
       "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
       "lon": 112.6548733,
-      "lat": 23.2151734
+      "lat": 23.2151734,
+      "plan_ref": "camera-plan.json#SZ-010",
+      "plan_version": "2026-10-21"
     },
     {
       "cam_id": "cam-02",
@@ -37,7 +39,9 @@
       "has_video_source": true,
       "mapping_evidence": "视频↔摄像头沿用 2026-10-13 运行产物 provenance（road2→C-02 / track1→C-05）；摄像头→段号沿用 IKMDKY 子单① 的几何最近重映射；**本表登记后即唯一真值来源**（前端生成物与后端都读本表；样本视频非本站现场，映射仅演示）",
       "lon": 112.6573791,
-      "lat": 23.2139003
+      "lat": 23.2139003,
+      "plan_ref": "camera-plan.json#SZ-005",
+      "plan_version": "2026-10-21"
     },
     {
       "cam_id": "cam-03",
@@ -48,7 +52,9 @@
       "has_video_source": false,
       "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
       "lon": 112.6570652,
-      "lat": 23.2140549
+      "lat": 23.2140549,
+      "plan_ref": "camera-plan.json#SZ-054",
+      "plan_version": "2026-10-21"
     },
     {
       "cam_id": "cam-04",
@@ -59,7 +65,9 @@
       "has_video_source": false,
       "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
       "lon": 112.6577645,
-      "lat": 23.2156324
+      "lat": 23.2156324,
+      "plan_ref": "camera-plan.json#SZ-019",
+      "plan_version": "2026-10-21"
     },
     {
       "cam_id": "cam-05",
@@ -70,7 +78,9 @@
       "has_video_source": true,
       "mapping_evidence": "视频↔摄像头沿用 2026-10-13 运行产物 provenance（road2→C-02 / track1→C-05）；摄像头→段号沿用 IKMDKY 子单① 的几何最近重映射；**本表登记后即唯一真值来源**（前端生成物与后端都读本表；样本视频非本站现场，映射仅演示）",
       "lon": 112.6588897,
-      "lat": 23.2148643
+      "lat": 23.2148643,
+      "plan_ref": "camera-plan.json#SZ-024",
+      "plan_version": "2026-10-21"
     },
     {
       "cam_id": "cam-06",
@@ -81,7 +91,9 @@
       "has_video_source": false,
       "mapping_evidence": "段号来自 IKMDKY 子单① 的几何最近重映射（61 段真路网）；**本表登记后即唯一真值来源**（前端生成物与后端都读本表）；本期无视频源（业主 2026-10-15 口径）",
       "lon": 112.6535729,
-      "lat": 23.2150334
+      "lat": 23.2150334,
+      "plan_ref": "camera-plan.json#SZ-015",
+      "plan_version": "2026-10-21"
     }
   ],
   "video_streams": [
@@ -108,5 +120,7 @@
       "note": "样本视频回放（非本站现场）· 演示数据（模拟）；真实摄像头接入时按 IKMHMX 重做标定与映射"
     }
   ],
-  "coordinate_note": "摄像头坐标是**演示布点**：取自该段自己的折线（只保证图钉画在这条线上），不是路测点、也不是踏勘点位；唯一真值来源仍以本表为准。"
+  "coordinate_note": "摄像头坐标是**演示布点**：取自该段自己的折线（只保证图钉画在这条线上），不是路测点、也不是踏勘点位；唯一真值来源仍以本表为准。",
+  "plan_version": "2026-10-21",
+  "plan_path": "work/perception/mapping/camera-plan.json"
 }

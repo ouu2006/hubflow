@@ -233,3 +233,58 @@ python work/perception/run_chain.py --check    # 3 个产物逐字节比对（�
 > **口径纪律**：视频是**N 段=N 摄像头=N 视频的演示 mock（每段复用样本视频，非本站现场）**、`is_simulated: true`、`source: "video"`；页面与产物**不得出现「实测 / 实时 / 现场」**、不得宣称「真实 YOLO 识别 / 模型已实装」；型已实装」；
 > 标定 `inferred: true` 的精度数字只是**留一交叉验证的演示值**，**不得**当 M1-9 的现场精度结论（按 2026-10-18 口径 M1-9 判据待重定义）。
 
+## 十、一期布点规划（Issue IKP5DM）
+
+> 回答三个问题：**该布多少路、布在哪、现在差在哪**。机器可读：[camera-plan.json](mapping/camera-plan.json)；
+> 人读版：[camera-plan.md](mapping/camera-plan.md)；生成器：[gen_camera_plan.py](tools/gen_camera_plan.py)（`--check` 只校验不写盘）。
+>
+> **两层不要混**：
+> - **规划层 `planned=true`**：物理布点候选（边界断面 / 主进场干道 / 场区出入口 / 落客候客区），对应未来 `stations/points.json` 的 detector；
+> - **演示层 `demo_camera_id`**：一期展示口径 **N 段 = N 演示摄像头 = N 视频（mock 复用）**，每段都有，不因 `planned=false` 少给，也不写成真实点位。
+>
+> 规划编号 `DET-PLAN-Z-###` / `DET-PLAN-GZ-###` 只是**规划占位**，落 `points.json` 归 **IKMHMX**；本单不改 `points.json`、不改判级。
+
+### 10.1 规模（生成后自检）
+
+| 站 | 路段数 | 规划布点 | 不布点 | 演示摄像头 | 源台账登记 | 有视频源 |
+|---|---:|---:|---:|---:|---:|---:|
+| Z · 肇庆东站 | 61 | 25 | 36 | 61 | 6 | 2 |
+| GZ · 广州南站 | 708 | 416 | 292 | 708 | 0 | 0 |
+
+> 行数按站点包实际段数（Z 61 / GZ 708）生成；生成器与 `check_camera_map.py` 都会对行数、段号、字段完整性再核一遍。
+> GZ 站点包当前是 708 段（旧文中的 433 是历史口径，以站点包实际段数为准）。
+
+### 10.2 布点判定规则（为什么布 / 为什么不布）
+
+优先级从高到低，命中即取先命中的理由：
+
+1. **路网范围边界段**（`boundary=true`）——边界断面优先；一期同化只允许边界段，点位取边界端点；
+2. **场区出入口 / 候客区所在段**（站点包 `zones`）——监测进出场与候客排队；
+3. **落客区所在段**（站点包 `dropoffs`）——监测落客停靠与排队；
+4. **主进场干道**（`kind=main`）且段长 ≥ 20 m 的常规监测段。
+
+**不布点**也要写明具体理由：场区内部支路（停车场内部通道）一期不进入判定口径；服务道路 / 连接匝道不单独设断面，由相邻主路段断面覆盖；主路切分出的 <20 m 极短段不单独布点（同一股车流会被相邻短段重复计数）。三类都仍保留演示摄像头，保证展示口径不断档。
+
+### 10.3 detector ↔ cam ↔ segment 与缺口
+
+- 规划表每行含 `segment_id` / `demo_camera_id` / `detector_id` / `source_ledger_cam_id` / `needs_video_source`，三列可直接对照；`detector_id` 只给 `planned=true` 的行，按站内布点顺序编号（Z 25 个、GZ 416 个，合计 441 个规划 detector）。
+- **`points.json` 现状**：detector 共 **2 个**（`DET-01`、`DET-02`），但都在 **`SEG-###` 7 节点样例网**，与本站 Z 真网 `SZ-###` 的对应是 **0/61**；真网点位 / `lanes_covered` 类字段补齐归 IKMHMX。
+- **视频源只有 2 路**：`needs_video_source=true` 仅出现在源台账 `cam-02`（road2）/ `cam-05`（track1）两行；其余全部是演示复用（N 段 N 路 mock），不新增、不伪造视频流。
+
+### 10.4 与 `camera-segments.json` 的关系
+
+- 登记表仍是**唯一源台账**：6 条 `cameras` + 2 条 `video_streams`；本单**不扩**到 61/708 条（避免与 [口径裁定 §十一](../../docs/口径裁定-20261018.md) 的「登记表是否长期维持 6 条源台账」待拍板项冲突）。
+- 登记表每条 camera 新增 `plan_ref` / `plan_version`，指向规划表对应行；规划表每行用 `source_ledger_cam_id` 回指登记表——**双向可查**（`check_camera_map.py` 校验）。
+- 演示层的 `demo_camera_id` 只存在于规划表，不写进登记表；登记表 6 条仍不是一期摄像头总数。
+- 前端 Z 包 `colorPolicy` 已按 IKP5DM 选 A 改为 `'all'`（与 GZ 一致）：61 段按等级上色，不再出现 55 段恒灰；图钉仍只画源台账 6 路。上色策略与布点关系见 [camera-plan.md](mapping/camera-plan.md) 与前端说明。
+
+### 10.5 生成与校验
+
+```bash
+python work/perception/tools/gen_camera_plan.py            # 生成 / 覆盖 camera-plan.json + .md
+python work/perception/tools/gen_camera_plan.py --check    # 只校验，不写盘（逐字节一致）
+python work/perception/tools/check_camera_map.py           # 登记表 / 生成物 / 规划表三方对账
+python work/perception/tools/check_camera_map.py --self-test
+```
+
+> 产物是**演示规划**：不声称摄像头已经接入；真实点位、视频源与标定归 IKMHMX。

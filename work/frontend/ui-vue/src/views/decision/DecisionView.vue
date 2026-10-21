@@ -14,10 +14,12 @@
 // 决策层 · 决策工作台(Issue #77 三页收敛:页头视图扩为**决策可视化 / 处置队列 / 效果对比**三段)。
 // 业务口径继承旧 DecisionView.vue 与手册 §11.2 / README 第八·九节。
 //
-// 三个视图(页头分段切换,不影响顶栏数据源控件):
+// 四个视图(页头分段切换,不影响顶栏数据源控件):
 //   ① **决策可视化**(本单新增,排首位)= 全部输入数据 + 处理过程可视化 + 可调控演示 + 输出(业主口径);
 //   ② **处置队列** = 三栏:左四态队列 / 中处置工作台(建议 + 比例滑杆 + 渠道 + 回执 + 回写)/ 右因素置位 · 预测 · 同化;
-//   ③ **效果对比** = 三场景 A/B/C 仿真对照(TC-14 / TC-17)。
+//   ③ **效果对比** = 三场景 A/B/C 仿真对照(TC-14 / TC-17);
+//   ④ **路线规划**(Issue IKP5CE)= 读引擎产物做完整链路 + 一主二备 + 产物内 session 对比,
+//      不重算、不造路线；场景注入 / 人工置位不会让路线变化,页面如实回答。
 // 状态机硬口径(处置队列视图):
 //   认领:待认领 → 处置中(仅置本地标记);下发:→ 处置中(允许覆盖回执重下发);
 //   回写:**必须先有下发回执**(TC-07 闭环顺序:下发 → 回执 → 回写),无回执不得回写;
@@ -38,6 +40,7 @@ import DecisionFlowPanel from './components/DecisionFlowPanel.vue'
 import EffectCompare from './components/EffectCompare.vue'
 import FactorsPanel from './components/FactorsPanel.vue'
 import PredictPanel from './components/PredictPanel.vue'
+import RoutePlanView from './components/RoutePlanView.vue'
 import {
   getTrafficAlerts,
   getTrafficContext,
@@ -87,8 +90,8 @@ const deepSegment = computed<string>(() => {
   const raw = route.query.segment
   return typeof raw === 'string' ? raw : Array.isArray(raw) ? (raw[0] ?? '') : ''
 })
-/** 视图:决策可视化(新) / 处置队列 / 效果对比 */
-const view = ref<'flow' | 'queue' | 'compare'>('flow')
+/** 视图:决策可视化(新) / 处置队列 / 效果对比 / 路线规划(Issue IKP5CE) */
+const view = ref<'flow' | 'queue' | 'compare' | 'route'>('flow')
 const sourceMode = ref<SourceMode>('both')
 const selectedId = ref<string | null>(null)
 /** 决策可视化视图用的环境上下文与阈值(判级演算口径) */
@@ -519,7 +522,7 @@ function onFlowChanged(): void {
     :ts="snapshotDisplay"
     v-model:sourceMode="sourceMode"
     title="决策层"
-    subtitle="决策可视化 · 处置闭环(四态 / 下发回执 / 回写)· 效果对比"
+    subtitle="决策可视化 · 处置闭环(四态 / 下发回执 / 回写)· 效果对比 · 路线规划"
   >
     <template #headRight>
       <span class="td-seg" role="group" aria-label="视图切换">
@@ -549,6 +552,15 @@ function onFlowChanged(): void {
           @click="view = 'compare'"
         >
           效果对比
+        </span>
+        <span
+          class="td-seg-item"
+          :class="{ on: view === 'route' }"
+          role="button"
+          :aria-pressed="view === 'route'"
+          @click="view = 'route'"
+        >
+          路线规划
         </span>
       </span>
       <span class="snapshot td-mono">快照 {{ snapshotDisplay }}</span>
@@ -758,8 +770,13 @@ function onFlowChanged(): void {
       </template>
 
       <!-- 效果对比视图 -->
-      <div v-else class="td-col cmp-col td-scroll">
+      <div v-else-if="view === 'compare'" class="td-col cmp-col td-scroll">
         <EffectCompare />
+      </div>
+
+      <!-- 路线规划视图(Issue IKP5CE):完整链路 + 一主二备 + 产物内 session 对比 -->
+      <div v-else class="td-col route-col td-scroll">
+        <RoutePlanView />
       </div>
     </div>
 
@@ -786,6 +803,10 @@ function onFlowChanged(): void {
   flex: 0 0 380px;
 }
 .cmp-col {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.route-col {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -993,6 +1014,7 @@ function onFlowChanged(): void {
   }
   .flow-col,
   .cmp-col,
+  .route-col,
   .col-queue,
   .col-work,
   .col-side {
