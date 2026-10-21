@@ -78,6 +78,12 @@
       "contract_map"
     ]
   },
+  "direction_alignment": {
+    "site_id": "zhaoqingdong",
+    "flipped": 12,
+    "segments": 61,
+    "note": "oneway 已按 OSM way 节点顺序对齐（build_junction_pack 串 way 时可能反转几何但未翻转 oneway）；只改 oneway，不改几何 / 段号 / 节点。"
+  },
   "nodes": [
     {
       "node_id": "N-001",
@@ -86,11 +92,11 @@
       "lat": 23.2164724,
       "degree": 1,
       "boundary": true,
-      "in_degree": 0,
-      "out_degree": 1,
+      "in_degree": 1,
+      "out_degree": 0,
       "boundary_effective": true,
-      "boundary_role": "entry",
-      "boundary_role_source": "raw_boundary+directed:入度 0"
+      "boundary_role": "exit",
+      "boundary_role_source": "raw_boundary+directed:出度 0"
     },
     {
       "node_id": "N-002",
@@ -99,11 +105,11 @@
       "lat": 23.2156971,
       "degree": 1,
       "boundary": true,
-      "in_degree": 1,
-      "out_degree": 0,
+      "in_degree": 0,
+      "out_degree": 1,
       "boundary_effective": true,
-      "boundary_role": "exit",
-      "boundary_role_source": "raw_boundary+directed:出度 0"
+      "boundary_role": "entry",
+      "boundary_role_source": "raw_boundary+directed:入度 0"
     },
     {
       "node_id": "N-003",
@@ -218,8 +224,8 @@
       "lat": 23.2148381,
       "degree": 4,
       "boundary": false,
-      "in_degree": 2,
-      "out_degree": 2,
+      "in_degree": 3,
+      "out_degree": 1,
       "boundary_effective": false,
       "boundary_role": "through",
       "boundary_role_source": "derived:内部节点（进出都有）"
@@ -231,8 +237,8 @@
       "lat": 23.2150216,
       "degree": 3,
       "boundary": false,
-      "in_degree": 2,
-      "out_degree": 1,
+      "in_degree": 1,
+      "out_degree": 2,
       "boundary_effective": false,
       "boundary_role": "through",
       "boundary_role_source": "derived:内部节点（进出都有）"
@@ -569,11 +575,11 @@
       "lat": 23.2128139,
       "degree": 1,
       "boundary": true,
-      "in_degree": 0,
-      "out_degree": 1,
+      "in_degree": 1,
+      "out_degree": 0,
       "boundary_effective": true,
-      "boundary_role": "entry",
-      "boundary_role_source": "raw_boundary+directed:入度 0"
+      "boundary_role": "exit",
+      "boundary_role_source": "raw_boundary+directed:出度 0"
     },
     {
       "node_id": "N-039",
@@ -595,11 +601,11 @@
       "lat": 23.2129909,
       "degree": 1,
       "boundary": true,
-      "in_degree": 1,
-      "out_degree": 0,
+      "in_degree": 0,
+      "out_degree": 1,
       "boundary_effective": true,
-      "boundary_role": "exit",
-      "boundary_role_source": "raw_boundary+directed:出度 0"
+      "boundary_role": "entry",
+      "boundary_role_source": "raw_boundary+directed:入度 0"
     },
     {
       "node_id": "N-041",
@@ -668,7 +674,7 @@
         "1090740690"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -683,28 +689,28 @@
           23.2148381
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
       "left_turn_allowed": false,
       "left_turn_allowed_reverse": null,
       "continuity": {
-        "head_connected": true,
-        "tail_connected": false,
+        "head_connected": false,
+        "tail_connected": true,
         "chain_id": "CH-005",
         "chain_name": "吉庆大道",
         "is_main_road": true,
-        "gap_to_next_m": 0.0,
+        "gap_to_next_m": null,
         "gap_to_next_node": null,
         "gap_to_next_segment_id": null
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -717,14 +723,15 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
+        "行车末端是边界/断头：无后继属正常，gap_to_next_m=null"
       ]
     },
     {
@@ -742,7 +749,7 @@
         "1363996368"
       ],
       "lanes": 5,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -761,9 +768,9 @@
           23.2140549
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": 5,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": 5,
       "lanes_total": 5,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
@@ -781,8 +788,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "osm",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "osm",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -795,14 +802,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数"
       ]
     },
     {
@@ -820,7 +827,7 @@
         "1340607681"
       ],
       "lanes": 5,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -843,83 +850,10 @@
           23.2156595
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": 5,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": 5,
       "lanes_total": 5,
-      "opposite_segment_id": null,
-      "u_turn_allowed": false,
-      "left_turn_allowed": false,
-      "left_turn_allowed_reverse": null,
-      "continuity": {
-        "head_connected": true,
-        "tail_connected": false,
-        "chain_id": "CH-006",
-        "chain_name": "吉庆大道",
-        "is_main_road": true,
-        "gap_to_next_m": 0.0,
-        "gap_to_next_node": null,
-        "gap_to_next_segment_id": null
-      },
-      "field_sources": {
-        "direction": "osm",
-        "lanes_forward": "osm",
-        "lanes_backward": "derived",
-        "lanes_total": "osm",
-        "opposite_segment_id": "derived",
-        "u_turn_allowed": "derived",
-        "left_turn_allowed": "derived",
-        "left_turn_allowed_reverse": "default",
-        "continuity.head_connected": "derived",
-        "continuity.tail_connected": "derived",
-        "continuity.chain_id": "derived",
-        "continuity.is_main_road": "derived",
-        "continuity.gap_to_next_m": "derived"
-      },
-      "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数",
-        "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
-        "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
-      },
-      "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数"
-      ]
-    },
-    {
-      "segment_id": "SZ-004",
-      "id": "SZ-004",
-      "name": "吉庆大道（N-022→N-040）",
-      "name_raw": "吉庆大道",
-      "kind": "main",
-      "from": "N-022",
-      "to": "N-040",
-      "length_m": 120.7,
-      "way_ids": [
-        "1085492979",
-        "1090740692"
-      ],
-      "lanes": null,
-      "oneway": "yes",
-      "speed_limit": null,
-      "capacity_vph": null,
-      "t0": null,
-      "boundary": true,
-      "coords": [
-        [
-          112.6580882,
-          23.2135346
-        ],
-        [
-          112.6591106,
-          23.2129909
-        ]
-      ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
-      "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
       "left_turn_allowed": false,
@@ -936,8 +870,82 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
+        "lanes_total": "osm",
+        "opposite_segment_id": "derived",
+        "u_turn_allowed": "derived",
+        "left_turn_allowed": "derived",
+        "left_turn_allowed_reverse": "default",
+        "continuity.head_connected": "derived",
+        "continuity.tail_connected": "derived",
+        "continuity.chain_id": "derived",
+        "continuity.is_main_road": "derived",
+        "continuity.gap_to_next_m": "derived"
+      },
+      "field_source_notes": {
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数",
+        "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
+        "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
+      },
+      "notes": [
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数",
+        "行车末端是边界/断头：无后继属正常，gap_to_next_m=null"
+      ]
+    },
+    {
+      "segment_id": "SZ-004",
+      "id": "SZ-004",
+      "name": "吉庆大道（N-022→N-040）",
+      "name_raw": "吉庆大道",
+      "kind": "main",
+      "from": "N-022",
+      "to": "N-040",
+      "length_m": 120.7,
+      "way_ids": [
+        "1085492979",
+        "1090740692"
+      ],
+      "lanes": null,
+      "oneway": "-1",
+      "speed_limit": null,
+      "capacity_vph": null,
+      "t0": null,
+      "boundary": true,
+      "coords": [
+        [
+          112.6580882,
+          23.2135346
+        ],
+        [
+          112.6591106,
+          23.2129909
+        ]
+      ],
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
+      "lanes_total": null,
+      "opposite_segment_id": null,
+      "u_turn_allowed": false,
+      "left_turn_allowed": false,
+      "left_turn_allowed_reverse": null,
+      "continuity": {
+        "head_connected": true,
+        "tail_connected": false,
+        "chain_id": "CH-006",
+        "chain_name": "吉庆大道",
+        "is_main_road": true,
+        "gap_to_next_m": 0.0,
+        "gap_to_next_node": null,
+        "gap_to_next_segment_id": null
+      },
+      "field_sources": {
+        "direction": "osm",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -950,15 +958,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
-        "行车末端是边界/断头：无后继属正常，gap_to_next_m=null"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     },
     {
@@ -974,7 +981,7 @@
         "1090740692"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -989,13 +996,13 @@
           23.2135346
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": true,
+      "left_turn_allowed": false,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -1009,8 +1016,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1023,14 +1030,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     },
     {
@@ -1047,7 +1054,7 @@
         "1363996363"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -1062,9 +1069,9 @@
           23.2154553
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
@@ -1082,8 +1089,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1096,14 +1103,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     },
     {
@@ -1120,7 +1127,7 @@
         "1363996367"
       ],
       "lanes": 5,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -1135,13 +1142,13 @@
           23.2153974
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": 5,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": 5,
       "lanes_total": 5,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": false,
+      "left_turn_allowed": true,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -1155,8 +1162,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "osm",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "osm",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1169,14 +1176,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数"
       ]
     },
     {
@@ -1193,7 +1200,7 @@
         "1363996366"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -1212,9 +1219,9 @@
           23.2152001
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
@@ -1232,8 +1239,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1246,14 +1253,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     },
     {
@@ -1270,7 +1277,7 @@
         "1363996363"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -1293,28 +1300,28 @@
           23.2156971
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
       "left_turn_allowed": false,
       "left_turn_allowed_reverse": null,
       "continuity": {
-        "head_connected": false,
-        "tail_connected": true,
+        "head_connected": true,
+        "tail_connected": false,
         "chain_id": "CH-005",
         "chain_name": "吉庆大道",
         "is_main_road": true,
-        "gap_to_next_m": null,
+        "gap_to_next_m": 0.0,
         "gap_to_next_node": null,
         "gap_to_next_segment_id": null
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1327,15 +1334,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
-        "行车末端是边界/断头：无后继属正常，gap_to_next_m=null"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     },
     {
@@ -1352,7 +1358,7 @@
         "1363996368"
       ],
       "lanes": 5,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -1375,153 +1381,9 @@
           23.2151734
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": 5,
-      "lanes_backward": 0,
-      "lanes_total": 5,
-      "opposite_segment_id": null,
-      "u_turn_allowed": false,
-      "left_turn_allowed": true,
-      "left_turn_allowed_reverse": null,
-      "continuity": {
-        "head_connected": true,
-        "tail_connected": true,
-        "chain_id": "CH-006",
-        "chain_name": "吉庆大道",
-        "is_main_road": true,
-        "gap_to_next_m": 0.0,
-        "gap_to_next_node": null,
-        "gap_to_next_segment_id": null
-      },
-      "field_sources": {
-        "direction": "osm",
-        "lanes_forward": "osm",
-        "lanes_backward": "derived",
-        "lanes_total": "osm",
-        "opposite_segment_id": "derived",
-        "u_turn_allowed": "derived",
-        "left_turn_allowed": "derived",
-        "left_turn_allowed_reverse": "default",
-        "continuity.head_connected": "derived",
-        "continuity.tail_connected": "derived",
-        "continuity.chain_id": "derived",
-        "continuity.is_main_road": "derived",
-        "continuity.gap_to_next_m": "derived"
-      },
-      "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数",
-        "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
-        "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
-      },
-      "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数"
-      ]
-    },
-    {
-      "segment_id": "SZ-011",
-      "id": "SZ-011",
-      "name": "吉庆大道（N-014→N-015）",
-      "name_raw": "吉庆大道",
-      "kind": "main",
-      "from": "N-014",
-      "to": "N-015",
-      "length_m": 36.4,
-      "way_ids": [
-        "1090740692"
-      ],
-      "lanes": null,
-      "oneway": "yes",
-      "speed_limit": null,
-      "capacity_vph": null,
-      "t0": null,
-      "boundary": false,
-      "coords": [
-        [
-          112.6570652,
-          23.2140549
-        ],
-        [
-          112.6573791,
-          23.2139003
-        ]
-      ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
-      "lanes_total": null,
-      "opposite_segment_id": null,
-      "u_turn_allowed": false,
-      "left_turn_allowed": true,
-      "left_turn_allowed_reverse": null,
-      "continuity": {
-        "head_connected": true,
-        "tail_connected": true,
-        "chain_id": "CH-006",
-        "chain_name": "吉庆大道",
-        "is_main_road": true,
-        "gap_to_next_m": 0.0,
-        "gap_to_next_node": null,
-        "gap_to_next_segment_id": null
-      },
-      "field_sources": {
-        "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
-        "lanes_total": "default",
-        "opposite_segment_id": "derived",
-        "u_turn_allowed": "derived",
-        "left_turn_allowed": "derived",
-        "left_turn_allowed_reverse": "default",
-        "continuity.head_connected": "derived",
-        "continuity.tail_connected": "derived",
-        "continuity.chain_id": "derived",
-        "continuity.is_main_road": "derived",
-        "continuity.gap_to_next_m": "derived"
-      },
-      "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
-        "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
-        "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
-      },
-      "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
-      ]
-    },
-    {
-      "segment_id": "SZ-012",
-      "id": "SZ-012",
-      "name": "吉庆大道（N-010→N-012）",
-      "name_raw": "吉庆大道",
-      "kind": "main",
-      "from": "N-010",
-      "to": "N-012",
-      "length_m": 33.6,
-      "way_ids": [
-        "1363996368"
-      ],
-      "lanes": 5,
-      "oneway": "yes",
-      "speed_limit": null,
-      "capacity_vph": null,
-      "t0": null,
-      "boundary": false,
-      "coords": [
-        [
-          112.6548733,
-          23.2151734
-        ],
-        [
-          112.6551577,
-          23.2150216
-        ]
-      ],
-      "direction": "forward",
-      "lanes_forward": 5,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": 5,
       "lanes_total": 5,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
@@ -1539,8 +1401,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "osm",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "osm",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1553,14 +1415,158 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；前向车道数 = OSM lanes 总数"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数"
+      ]
+    },
+    {
+      "segment_id": "SZ-011",
+      "id": "SZ-011",
+      "name": "吉庆大道（N-014→N-015）",
+      "name_raw": "吉庆大道",
+      "kind": "main",
+      "from": "N-014",
+      "to": "N-015",
+      "length_m": 36.4,
+      "way_ids": [
+        "1090740692"
+      ],
+      "lanes": null,
+      "oneway": "-1",
+      "speed_limit": null,
+      "capacity_vph": null,
+      "t0": null,
+      "boundary": false,
+      "coords": [
+        [
+          112.6570652,
+          23.2140549
+        ],
+        [
+          112.6573791,
+          23.2139003
+        ]
+      ],
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
+      "lanes_total": null,
+      "opposite_segment_id": null,
+      "u_turn_allowed": false,
+      "left_turn_allowed": false,
+      "left_turn_allowed_reverse": null,
+      "continuity": {
+        "head_connected": true,
+        "tail_connected": true,
+        "chain_id": "CH-006",
+        "chain_name": "吉庆大道",
+        "is_main_road": true,
+        "gap_to_next_m": 0.0,
+        "gap_to_next_node": null,
+        "gap_to_next_segment_id": null
+      },
+      "field_sources": {
+        "direction": "osm",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
+        "lanes_total": "default",
+        "opposite_segment_id": "derived",
+        "u_turn_allowed": "derived",
+        "left_turn_allowed": "derived",
+        "left_turn_allowed_reverse": "default",
+        "continuity.head_connected": "derived",
+        "continuity.tail_connected": "derived",
+        "continuity.chain_id": "derived",
+        "continuity.is_main_road": "derived",
+        "continuity.gap_to_next_m": "derived"
+      },
+      "field_source_notes": {
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
+        "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
+        "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
+      },
+      "notes": [
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
+      ]
+    },
+    {
+      "segment_id": "SZ-012",
+      "id": "SZ-012",
+      "name": "吉庆大道（N-010→N-012）",
+      "name_raw": "吉庆大道",
+      "kind": "main",
+      "from": "N-010",
+      "to": "N-012",
+      "length_m": 33.6,
+      "way_ids": [
+        "1363996368"
+      ],
+      "lanes": 5,
+      "oneway": "-1",
+      "speed_limit": null,
+      "capacity_vph": null,
+      "t0": null,
+      "boundary": false,
+      "coords": [
+        [
+          112.6548733,
+          23.2151734
+        ],
+        [
+          112.6551577,
+          23.2150216
+        ]
+      ],
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": 5,
+      "lanes_total": 5,
+      "opposite_segment_id": null,
+      "u_turn_allowed": false,
+      "left_turn_allowed": false,
+      "left_turn_allowed_reverse": null,
+      "continuity": {
+        "head_connected": true,
+        "tail_connected": true,
+        "chain_id": "CH-006",
+        "chain_name": "吉庆大道",
+        "is_main_road": true,
+        "gap_to_next_m": 0.0,
+        "gap_to_next_node": null,
+        "gap_to_next_segment_id": null
+      },
+      "field_sources": {
+        "direction": "osm",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
+        "lanes_total": "osm",
+        "opposite_segment_id": "derived",
+        "u_turn_allowed": "derived",
+        "left_turn_allowed": "derived",
+        "left_turn_allowed_reverse": "default",
+        "continuity.head_connected": "derived",
+        "continuity.tail_connected": "derived",
+        "continuity.chain_id": "derived",
+        "continuity.is_main_road": "derived",
+        "continuity.gap_to_next_m": "derived"
+      },
+      "field_source_notes": {
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数",
+        "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
+        "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
+      },
+      "notes": [
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；后向车道数 = OSM lanes 总数"
       ]
     },
     {
@@ -1576,7 +1582,7 @@
         "1090740690"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -1591,9 +1597,9 @@
           23.214957
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": "SZ-060",
       "u_turn_allowed": false,
@@ -1611,8 +1617,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -1625,14 +1631,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     },
     {
@@ -1678,7 +1684,7 @@
       "lanes_total": 2,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": true,
+      "left_turn_allowed": false,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -1827,7 +1833,7 @@
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": false,
+      "left_turn_allowed": true,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -1900,7 +1906,7 @@
       "lanes_total": 2,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": false,
+      "left_turn_allowed": true,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -2005,7 +2011,7 @@
       "opposite_segment_id": null,
       "u_turn_allowed": true,
       "left_turn_allowed": false,
-      "left_turn_allowed_reverse": true,
+      "left_turn_allowed_reverse": false,
       "continuity": {
         "head_connected": false,
         "tail_connected": true,
@@ -2090,7 +2096,7 @@
       "opposite_segment_id": null,
       "u_turn_allowed": true,
       "left_turn_allowed": false,
-      "left_turn_allowed_reverse": true,
+      "left_turn_allowed_reverse": false,
       "continuity": {
         "head_connected": false,
         "tail_connected": true,
@@ -3262,7 +3268,7 @@
       "opposite_segment_id": null,
       "u_turn_allowed": false,
       "left_turn_allowed": true,
-      "left_turn_allowed_reverse": true,
+      "left_turn_allowed_reverse": false,
       "continuity": {
         "head_connected": true,
         "tail_connected": true,
@@ -4799,7 +4805,7 @@
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": true,
+      "left_turn_allowed": false,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -5197,7 +5203,7 @@
       "lanes_total": 2,
       "opposite_segment_id": "SZ-013",
       "u_turn_allowed": false,
-      "left_turn_allowed": true,
+      "left_turn_allowed": false,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -5248,7 +5254,7 @@
         "1086351198"
       ],
       "lanes": null,
-      "oneway": "yes",
+      "oneway": "-1",
       "speed_limit": null,
       "capacity_vph": null,
       "t0": null,
@@ -5263,13 +5269,13 @@
           23.2150216
         ]
       ],
-      "direction": "forward",
-      "lanes_forward": null,
-      "lanes_backward": 0,
+      "direction": "reverse",
+      "lanes_forward": 0,
+      "lanes_backward": null,
       "lanes_total": null,
       "opposite_segment_id": null,
       "u_turn_allowed": false,
-      "left_turn_allowed": false,
+      "left_turn_allowed": true,
       "left_turn_allowed_reverse": null,
       "continuity": {
         "head_connected": true,
@@ -5283,8 +5289,8 @@
       },
       "field_sources": {
         "direction": "osm",
-        "lanes_forward": "default",
-        "lanes_backward": "derived",
+        "lanes_forward": "derived",
+        "lanes_backward": "default",
         "lanes_total": "default",
         "opposite_segment_id": "derived",
         "u_turn_allowed": "derived",
@@ -5297,14 +5303,14 @@
         "continuity.gap_to_next_m": "derived"
       },
       "field_source_notes": {
-        "direction": "OSM oneway='yes' → 正向单行",
-        "lanes": "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造",
+        "direction": "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "lanes": "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造",
         "u_turn_allowed": "规则：仅双向段 + 无向度数 1 的断头端点允许掉头；OSM 切片没有掉头限制数据（derived，不冒充实测）",
         "left_turn_allowed": "按相邻段转向角几何推导（左转 = 有向角 ∈ [-150°, -30°]）；OSM 切片没有 turn restriction 数据（derived）"
       },
       "notes": [
-        "OSM oneway='yes' → 正向单行",
-        "单向正向：后向 0（derived）；OSM 未抽到 lanes 总数 → 前向留 null，不编造"
+        "OSM oneway='-1' → 反向单行（几何 from/to 与行车方向相反）",
+        "单向反向：前向 0（derived）；OSM 未抽到 lanes 总数 → 后向留 null，不编造"
       ]
     }
   ],
@@ -5314,7 +5320,7 @@
     "note": "方向/车道/贯通性后处理产物（Issue IKNB9H）：**不覆盖原 network_junction.json**；几何/拓扑/oneway/lanes 原样保留，只补派生字段并逐字段标 field_sources。缺 OSM 字段一律标 default/derived，不编真实车道数；本文件是脚本产物，勿手改。",
     "generated_by": "work/twin/netpack/topology.py",
     "source_file": "work/twin/netpack/network_junction.json",
-    "source_sha256": "3e64a1d92de171fb3fcfc37fa3e92ff9519dc98b8621b3c287b76762f75182f8",
+    "source_sha256": "4222cbe7affd36fb576dadbb4787d920257a68f74b693e51bb1a5c5c7e5fa05d",
     "site_id": "zhaoqingdong",
     "site_name": "肇庆东站",
     "rules": {
@@ -5337,7 +5343,8 @@
       "nodes": 44,
       "directions": {
         "bidirectional": 33,
-        "forward": 28
+        "forward": 14,
+        "reverse": 14
       },
       "boundary_roles": {
         "both": 5,
@@ -5348,14 +5355,14 @@
       "lanes_total_known": 10,
       "lanes_total_missing": 51,
       "u_turn_allowed": 5,
-      "left_turn_allowed": 31,
+      "left_turn_allowed": 29,
       "explicit_opposite_pairs": 4,
       "main_road_gap_candidates": 0,
       "derived_boundaries": 1,
       "field_source_values": {
-        "default": 196,
+        "default": 201,
         "derived": 555,
-        "osm": 42
+        "osm": 37
       }
     },
     "findings": {

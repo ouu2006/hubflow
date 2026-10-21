@@ -656,7 +656,7 @@ def dropoff_target_nodes(site_id: str) -> list[str]:
         return []
     station = (payload.get("stations") or {}).get(site_id) or {}
     out: list[str] = []
-    for row in station.get("dropoffs") or []:
+    for row in station.get("landmarks") or station.get("dropoffs") or []:
         node_id = str(row.get("node_id") or "")
         if node_id and node_id not in out:
             out.append(node_id)
@@ -830,20 +830,25 @@ def derive_od_pairs(
             )
             if not paths:
                 continue
+            # 只保留「像一段行程」的候选：到落客点的路径至少 3 段（避免把相邻节点的
+            # 1 段连接当成一条 OD —— 业主 2026-10-21 反馈的「起点/终点就在隔壁」）。
+            if dst in drop_nodes and len(paths[0]) < 3:
+                continue
             eta_s = free_flow_eta(paths[0])
             ranked.append((-(len(paths)), eta_s, dst, len(paths)))
         ranked.sort(key=lambda item: (item[0], round(item[1], 6), item[2]))
         # 落客点节点优先（业主 2026-10-21：停车场落客点是终点）：有落客点映射时**只取落客点**
-        # （Z 站 = N-028 一个终点 × 4 个外围入口 = 4 条 OD）；没有映射的站退回候选最丰富的 3 个。
+        # （Z 站 = 落客点 / 场区节点 × 可达的外围入口）；没有映射的站退回候选最丰富的 3 个。
         by_node = {item[2]: item for item in ranked}
-        picked = [by_node[node_id] for node_id in drop_nodes if node_id in by_node][
-            :OD_DESTINATIONS_PER_ENTRY
-        ]
-        if not picked:
+        if drop_nodes:
+            picked = [by_node[node_id] for node_id in drop_nodes if node_id in by_node][
+                :OD_DESTINATIONS_PER_ENTRY
+            ]
+        else:
             picked = ranked[:OD_DESTINATIONS_PER_ENTRY]
         if not picked:
             skipped.append(
-                {"entry_boundary": entry, "reason": "该进场边界到任何内部节点均不可达"}
+                {"entry_boundary": entry, "reason": "该进场边界到落客点/内部节点均不可达（或仅相邻 1 段）"}
             )
             continue
         for _neg_count, free_flow_s, dst, candidate_count in picked:
@@ -909,6 +914,19 @@ def derive_od_pairs(
             "（演示数据（模拟），不是实测）"
         ),
     }
+    # 业主视角：打开大屏默认看到的第一条，应是「外围入口 → 停车场落客点」这条主演示路线。
+    # 有落客点映射时，把终点=第一个落客点节点的 OD 排到最前（其余按入口/终点稳定排序），再重编 od_id。
+    if drop_nodes and len(od_pairs) > 1:
+        primary_drop = drop_nodes[0]
+        od_pairs.sort(
+            key=lambda od: (
+                od.get("to_node") != primary_drop,
+                str(od.get("from_node") or ""),
+                str(od.get("to_node") or ""),
+            )
+        )
+        for index, od in enumerate(od_pairs, start=1):
+            od["od_id"] = f"OD-R-{index:03d}"
     meta["entries"] = list(entries)
     meta["exits"] = list(exits)
     meta["od_derivation"] = derivation
