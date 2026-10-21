@@ -68,7 +68,6 @@ import {
 import {
   cameraPins,
   isCameraCovered,
-  packColorPolicy,
   perceptionHref,
   type CameraPin,
 } from '../../../shared/cameras'
@@ -296,8 +295,11 @@ let inflightCtrl: AbortController | null = null
 const net = DEMO_NETWORK.segments
 const sourceLabel = networkSourceLabel()
 const osmActive = computed(() => isOsmNetwork())
-/** 只摄像头段上色（站点包 `colorPolicy`）——老包的 `'all'` 行为不变 */
-const cameraOnly = packColorPolicy() === 'camera-covered'
+/**
+ * 上色策略由站点包 `colorPolicy` 决定（IKP5DM 起 Z/GZ 均为 `'all'`：全段按等级上色，
+ * 灰只表示数据不可用/陈旧，不再表示「这段没摄像头」）。
+ * 图钉与上色策略**解耦**：图钉只画源台账 6 路，图例按 `pins.length` 显隐（见模板）。
+ */
 const pins = cameraPins()
 
 // ---- 路段染色（四级 / 指数两种视图） ----
@@ -1492,12 +1494,12 @@ onUnmounted(() => {
           </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
-        <!-- 「只摄像头段上色」是拥堵版的策略；流量版对所有有 q 的段上色，这里只解释图钉语义 -->
-        <template v-if="cameraOnly">
+        <!-- 图钉语义与上色策略解耦（IKP5DM）：图钉只画源台账，流量版有 q 即上色 -->
+        <template v-if="pins.length > 0">
           <div class="lg-sep" />
           <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
           <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
-          <div class="lg-note">流量版按 q 分档上色：源台账无布点的段只要有流量数据同样上色（颜色只表示流量大小）</div>
+          <div class="lg-note">图钉只画源台账登记段；流量版有 q 即上色，演示摄像头按 N 段 N 路（mock 复用）</div>
         </template>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
@@ -1540,14 +1542,14 @@ onUnmounted(() => {
           </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
-        <!-- 「只摄像头段上色」的图例（Issue IKLX5Y）：说清灰轮廓 = 这段没监控 -->
-        <template v-if="cameraOnly">
+        <!-- 图钉只画源台账（IKP5DM 选 A：全段按等级上色，图钉语义与上色策略分开说） -->
+        <template v-if="pins.length > 0">
           <div class="lg-sep" />
           <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
           <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
           <div class="lg-note">
-            图钉仅源台账布点（初始映射，不代表一期总数）；一期 N 段 = N 摄像头 = N 视频（mock 复用，画面见右栏路段卡）；
-            拥堵版仅源台账布点段上色。
+            图钉只画源台账登记段（初始映射，不代表一期总数）；演示摄像头按 N 段 N 路（mock 复用，画面见右栏路段卡）；
+            路网全段按等级上色，灰 = 数据不可用，不是「没摄像头」。
           </div>
         </template>
       </template>

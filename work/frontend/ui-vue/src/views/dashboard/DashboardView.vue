@@ -313,7 +313,7 @@ const RANGE_SOURCE_LABEL: Record<string, string> = {
   'ai-assisted': 'AI 辅助候选（已人工确认）',
 }
 
-// 大屏工具条上的「路网版本」切换（IKMDKY 子单①）：Z = 61 段新几何 / Z21 = 旧 21 段对照。
+// 大屏工具条上的「路网版本」切换（IKMDKY 子单①；IKP5D3 起只剩 Z=61 段 / GZ=708 段两个真站包，Z21 旧包已删）。
 // 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
 const packChoices = packItems()
 const currentPackKey = activePackKey()
@@ -1629,7 +1629,7 @@ function onCommandChanged(): void {
                   <span class="map-title">全路段状态</span>
                   <span class="map-tag">{{ basemapTag }}</span>
                 </div>
-                <!-- 路网版本切换（IKMDKY 子单①）：Z=61 段新几何 / Z21=旧 21 段对照 -->
+                <!-- 路网版本切换（IKMDKY 子单①；IKP5D3 起 Z21 旧包已删，只剩 Z / GZ） -->
                 <div class="map-toolbar-right">
                   <span class="pack-switch" role="group" aria-label="切换路网版本">
                     <button
