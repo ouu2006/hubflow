@@ -1,0 +1,87 @@
+{
+  "is_simulated": true,
+  "kind": "station_landmarks",
+  "note": "站点包落客点（演示点）→ 真网最近节点映射，供引擎 OD 推导把行程终点优先落在停车场落客点；坐标不是踏勘点位，不参与判级 / 契约字段。生成器：work/twin/netpack/tools/gen_station_landmarks.py。",
+  "stations": {
+    "zhaoqingdong": {
+      "dropoffs": [
+        {
+          "id": "DROP-01",
+          "name": "停车场·站门口落客区（演示点）",
+          "lon": 112.6582025,
+          "lat": 23.21537,
+          "node_id": "N-028",
+          "segment_id": "SZ-019",
+          "distance_m": 29.6
+        },
+        {
+          "id": "DROP-02",
+          "name": "停车场北支落客区（演示点）",
+          "lon": 112.6583471,
+          "lat": 23.21514,
+          "node_id": "N-028",
+          "segment_id": "SZ-024",
+          "distance_m": 0.0
+        },
+        {
+          "id": "DROP-03",
+          "name": "场区落客区（演示点）",
+          "lon": 112.6562027,
+          "lat": 23.2158868,
+          "node_id": "N-013",
+          "segment_id": "SZ-054",
+          "distance_m": 134.2
+        }
+      ]
+    },
+    "guangzhounan": {
+      "dropoffs": [
+        {
+          "id": "GZ-DROP-01",
+          "name": "东出发平台落客区（演示点）",
+          "lon": 113.2665195,
+          "lat": 22.9913493,
+          "node_id": "N-159",
+          "segment_id": "GZ-041",
+          "distance_m": 101.0
+        },
+        {
+          "id": "GZ-DROP-02",
+          "name": "西出发平台落客区（演示点）",
+          "lon": 113.262142,
+          "lat": 22.990344,
+          "node_id": "N-039",
+          "segment_id": "GZ-451",
+          "distance_m": 99.3
+        },
+        {
+          "id": "GZ-DROP-03",
+          "name": "P3 快速接送区落客点·南站南路（演示点）",
+          "lon": 113.2654254,
+          "lat": 22.9893754,
+          "node_id": "N-148",
+          "segment_id": "GZ-076",
+          "distance_m": 151.8
+        },
+        {
+          "id": "GZ-DROP-04",
+          "name": "P1 快速接送区落客点·南站南路（演示点）",
+          "lon": 113.265812,
+          "lat": 22.9898123,
+          "node_id": "N-148",
+          "segment_id": "GZ-075",
+          "distance_m": 93.4
+        },
+        {
+          "id": "GZ-DROP-05",
+          "name": "P5 快速接送区落客点·南站北路（演示点）",
+          "lon": 113.2647576,
+          "lat": 22.9944433,
+          "node_id": "N-107",
+          "segment_id": "GZ-043",
+          "distance_m": 17.1
+        }
+      ]
+    }
+  }
+}
