@@ -23,6 +23,7 @@
 
 | 端点 | 方法 | 用途 | 状态 |
 |---|---|---|---|
+| `/api/traffic/health` | GET | **运维端点、非契约端点**：每个数据源在场 / 回落 + 当前站点 + 版本；**无数据也恒 200**（IKP58M） | **已实现**（IKP58M） |
 | `/api/traffic/segments` | GET | 路段级指标与等级列表 | **已实现**（IKMF1T） |
 | `/api/traffic/segments/{id}` | GET | 单路段详情（含 `factors_applied` / `pred`） | **已实现**（IKMF1T） |
 | `/api/traffic/segments/{id}/sources` | GET | **同一路段 `video` / `twin` 并排 + 差值（TC-19 展示侧）** | **已实现**（IKMF1T） |
@@ -36,7 +37,7 @@
 | `/api/traffic/assimilation` | GET | 数据同化状态（`counts` + 每条 `role` / `point_code` / `name` / `reason`） | 沿用 + 扩字段（已实现） |
 | `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | **已实现**（IKMF1T；IKMS17 起带 `data_sources` 角标） |
 | `/api/traffic/overview` | GET | 全网 KPI（均速 + 环比 / 最堵路段 / 在途·已引导·采纳率 / 生效因素数 / 等级分布） | **已实现**（IKMF1T） |
-| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点 | **已实现**（IKMF1T） |
+| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点。**前端不消费**（IKP5D3 裁定：仅接口存在性 / 调试；默认站 Z 为 SEG 样例网，勿用于真路网绘制） | **已实现**（IKMF1T；note 已写「前端不消费」） |
 | `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **已实现**（IKMF1T 由快照派生；**IKMS1H 起读持久化后的运行态**） |
 | `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
 | `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
@@ -307,6 +308,26 @@ python work/assembly/traffic.py --reset-state  # 复位运行态（留审计；�
 | **C-5 压测** | [`stress_test.py`](stress_test.py) · [`压测报告.md`](压测报告.md) | `python work/assembly/stress_test.py` | 3 轮 × 14 只读端点 × 20 次 × 8 并发；实测启动耗时 / P50·P95 / 错误数 / RSS；**不判定性能达标** |
 | **C-6 对外接口** | [`对外接口.md`](对外接口.md) | 直接阅读 | 端点表（27 条，`/plan/audit` 标非契约）/ 请求响应示例 / 信封 / 鉴权形状 / **围栏衔接** / 错误码表 / 演示环境声明 |
 | **C-7 部署与监控** | [`部署与监控.md`](部署与监控.md) · [`monitor_check.py`](monitor_check.py) | `python work/assembly/monitor_check.py` | 单机部署步骤 / 端口 / 守护 / 日志 / 回滚 + 监控项清单（数据·服务·效果分层，一期/二期标注） |
+
+### 2.4 健康端点（运维端点、**非契约端点**，IKP58M）
+
+**一句话**：`GET /api/traffic/health` 回答「接口层活着没有、每个数据源在不在 / 回落到了哪一层」，
+**不回答业务数据**；它**不是** [`../../docs/数据契约.md`](../../docs/数据契约.md) §七 的契约端点，
+接入方不得把它当业务接口消费。
+
+| 项 | 口径 |
+|---|---|
+| 状态码 | **恒 200**——数据全缺（干净 checkout）也 200；服务活着 ≠ 数据齐 |
+| 字段 | `ok`（服务存活恒 true）/ `services[]`（每个源 `present` / `fallback` / `missing` + `used` + 路径）/ `station`（key / site_id / name / is_default / resolved）/ `version`（FastAPI app 版本）/ `ts` / `missing[]` / `data_ok` / `resolved.segments_source` / `resolved.routes_source` / `is_simulated: true` |
+| 解析来源 | **与 `python work/assembly/traffic.py --check` 共用 `build_health()`**，不另写一套；终端看到的「存在 / 回落 / 缺失」与端点一致 |
+| 站点参数 | 带未知 `?station=` 也 200（`station.resolved=false` + note）；排障端点不该被站点校验挡成 404 |
+| 前端消费 | **不消费**：顶栏「运行模式」chip 只读 `request()` 的成功 / 失败，不轮询 health（IKP58M） |
+
+```bash
+python work/assembly/traffic.py --port 8000     # 终端 1
+curl -s http://127.0.0.1:8000/api/traffic/health
+python scripts/env_check.py                     # 三个进程（8000 / 8101 / 5173）一起自检
+```
 
 ## 三、一键演示与压测（C-4 / C-5）
 

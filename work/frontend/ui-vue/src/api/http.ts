@@ -10,6 +10,7 @@
 //
 // 失败必须可读:网络不可达 / 请求超时 / 后端错误码 三类分开报,页面据此显式降级(TC-06/TC-11)。
 
+import { ref } from 'vue'
 import { activePackKey } from '../station-packs/index'
 import { USE_MOCK } from '../shared/env'
 
@@ -31,7 +32,19 @@ export class ApiError extends Error {
 /** 默认超时(毫秒):接口层只读快照,正常 < 1s;10s 还没回按失败处理(不无限转圈) */
 export const REQUEST_TIMEOUT_MS = 10_000
 
-/** 网络不可达时的可读提示(按当前运行模式给排障指向,不笼统说"网络错误") */
+/**
+ * 后端可达性(顶栏「运行模式」chip 用,Issue IKP58M)。
+ *
+ * - `null` = 本次会话还没发出过请求 —— 不臆断「能连上」,也不先报红;
+ * - `true` / `false` = 最近一次**真实请求**的结论。
+ *
+ * 只在 remote 模式更新:mock 模式的 `/api` 由 vite 中间件回答,它成功不代表 traffic.py 活着。
+ * 不新造轮询 —— 页面每次取数、每次重试、SSE 重连都会经过 `request()`,状态自然跟着刷新;
+ * 单开一个 setInterval 探活只会多一份要维护的假数据源。
+ */
+export const backendReachable = ref<boolean | null>(null)
+
+/** 后端不可达时的可读提示(按当前运行模式给排障指向,不笼统说"网络错误") */
 export function networkHint(): string {
   return USE_MOCK
     ? '后端不可达:mock 模式下请确认 vite dev server 在跑(不依赖 traffic.py)'
@@ -76,6 +89,12 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
       signal: controller.signal,
     })
 
+    // 502/503/504 是 vite 代理「后端没起」的固定表现（见下方错误分支）：先按不可达记；
+    // 其余 HTTP 状态说明后端至少回了话，可达性为真（端点级错误由 ApiError 继续抛）。
+    if (!USE_MOCK) {
+      backendReachable.value = !(res.status === 502 || res.status === 503 || res.status === 504)
+    }
+
     if (!res.ok) {
       let code = `HTTP_${res.status}`
       let message = res.statusText || `请求失败(${res.status})`
@@ -110,6 +129,8 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
     // 调用方主动取消(切页 / 丢弃过期响应):原样抛出,页面按 AbortError 处理
     if (e instanceof ApiError) throw e
     if (opts.signal?.aborted) throw e
+    // 走到这里的只剩「请求没拿到任何 HTTP 响应」:网络不可达 / 超时 —— 顶栏 chip 据此转警示色
+    if (!USE_MOCK) backendReachable.value = false
     if (e instanceof DOMException && e.name === 'AbortError') {
       throw new ApiError(0, 'TIMEOUT', `请求超时(${timeoutMs}ms):${method} ${path} —— ${networkHint()}`, true)
     }

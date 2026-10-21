@@ -25,6 +25,14 @@
 `requests` 的 OD / session / 路径摘要列表（供大屏「整条路线规划」选择器），数据源优先级同上；
 只做摘要、不代算 ETA，缺产物如实 404 + note。契约 §七 未定义该端点，接入方按辅助端点消费。
 
+**路网端点裁定（IKP5D3）**：`GET /api/traffic/network` **前端不消费**——页面路网只认站点包
+（`stationZ.network.ts` / `stationGZ.network.ts`）。该端点保留作接口存在性 / 调试用途；
+默认站 Z 读到的是 `stations/network.json` 的 **SEG-### 样例网**（几何为占位坐标），
+**勿用于真路网绘制**；非默认站（GZ）由真网产物合成，几何为 OSM 真值，但仍不是前端真值源。
+
+**运维端点（非契约）**：`GET /api/traffic/health`（IKP58M）——恒 200，报数据源在场 / 回落，
+不参与契约字段，详见 `work/assembly/README.md` §2.4。
+
 ## 写端点
 
 | 端点 | 语义 | 持久化 |
@@ -1472,11 +1480,16 @@ def build_network() -> dict[str, Any]:
         "is_simulated": True,
         "origin": "demo",
         "note": (
+            # IKP5D3 裁定：前端不消费本端点（页面路网以站点包为唯一真值源）。
+            # 不写清的话，下一个人很容易把 SEG 样例网当"后端真路网"接进地图。
+            "前端不消费（IKP5D3 裁定）：本端点仅作接口存在性 / 调试用途，真路网绘制以站点包"
+            "（stationZ.network.ts / stationGZ.network.ts）为唯一真值源，勿把本响应当路网画图数据。"
             f"站点包网络（{node_count} 节点 / {len(segments)} 段）："
             + (
                 "几何取自真网产物（OSM 切片，经纬度真值）；指标为演示数据（模拟）"
                 if any(segment["coords"] for segment in segments)
-                else "几何为站点包占位节点坐标（network.json 未给经纬度），不含实测几何；指标为演示数据（模拟）"
+                else "默认站 Z 为 SEG 样例网（network.json 未给经纬度），几何为占位坐标，勿用于真路网绘制；"
+                     "指标为演示数据（模拟）"
             )
         ),
         "attribution": None,
@@ -2350,6 +2363,10 @@ async def _station_middleware(request: Request, call_next):
 
     未知站点直接 404 + note（不静默拿默认站数据冒充）；已知站点在请求内生效。
     """
+    # 运维端点例外（IKP58M）：health 回答的是「服务活没活」，站点写错也要返回 200，
+    # 由端点自己在 body 里如实标 resolved=false —— 排障时不该被站点校验挡成 404。
+    if request.url.path == "/api/traffic/health":
+        return await call_next(request)
     raw = request.headers.get(STATION_HEADER) or request.query_params.get(STATION_QUERY_KEY)
     if not raw:
         return await call_next(request)
@@ -2389,6 +2406,161 @@ async def _validation_exception_handler(request: Request, exc: RequestValidation
 async def _unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     traceback.print_exc()
     return _error(500, "INTERNAL_ERROR", "接口层内部错误（详见服务端日志）")
+
+
+# ---------------------------------------------------------------- 运维端点（health，IKP58M）
+
+
+#: health / --check 共用的状态中文标签：两处说法必须一致，免得「脚本说在、端点说缺」
+HEALTH_STATE_LABELS = {"present": "存在", "fallback": "回落", "missing": "缺失"}
+
+
+def _health_row(key: str, label: str, path: Path | None, role: str = "primary") -> dict[str, Any]:
+    """一个数据源的在场状态。`path is None`（该站没有这条源）按缺失如实报，不拿别站顶。"""
+    exists = bool(path is not None and Path(path).is_file())
+    try:
+        relative = Path(path).relative_to(ROOT).as_posix() if path is not None else None
+    except ValueError:
+        relative = str(path)
+    return {
+        "key": key,
+        "label": label,
+        "role": role,  # primary=主源 / fallback=回落源 / config=站点包配置
+        "state": "present" if exists else "missing",
+        "used": exists and role != "fallback",
+        "path": relative,
+    }
+
+
+def build_health(station_key: str | None = None) -> dict[str, Any]:
+    """数据源健康快照（Issue IKP58M）：只回答服务活没活 + 每个数据源在场/回落，不报业务数。
+
+    与 `--check`（`print_data_check`）共用这一个解析 —— 两处各写一套，迟早出现
+    「脚本看着全在、端点却说缺失」。**永不因为数据缺失而 500 / 404**：健康端点判的是服务，
+    数据齐不齐写在 `services` / `missing` 里。
+    """
+    paths = _station_paths(station_key)
+    site = paths["site"]
+    rows: list[dict[str, Any]] = []
+
+    # ① 运行产物：按「主源 + 回落源」标注。主源在场时回落源标 present、used=false（没被用上）。
+    video = _health_row("perception.video", "视频链路路段产物", paths["perception_video"])
+    twin_latest = _health_row("twin.latest", "孪生链路路段产物", paths["twin_latest"])
+    twin_snapshot = _health_row("twin.snapshot", "孪生契约形状快照", paths["twin_snapshot"], role="fallback")
+    if not twin_latest["used"] and twin_snapshot["state"] == "present":
+        twin_snapshot["state"] = "fallback"
+        twin_snapshot["used"] = True
+    rows.extend([
+        video,
+        twin_latest,
+        twin_snapshot,
+        _health_row("twin.vehicles", "孪生车辆", paths["twin_vehicles"]),
+        _health_row("twin.assimilation", "同化状态", paths["twin_assimilation"]),
+    ])
+
+    # ② 引擎路线：真网优先、样例回退（与 `_routes_layers()` 同一优先级，不另判一套）
+    layers = _routes_layers()
+    used_route_key = f"engine.routes.{layers[0][0]}" if layers else None
+    for layer_key, path in paths["engine_routes"]:
+        row = _health_row(f"engine.routes.{layer_key}", f"引擎路线·{layer_key}", path,
+                          role="fallback" if layer_key != "real" else "primary")
+        row["used"] = f"engine.routes.{layer_key}" == used_route_key
+        if row["used"] and layer_key != "real":
+            row["state"] = "fallback"
+        rows.append(row)
+
+    # ③ 站点包 / 登记表：默认站读 stations/*.json；非默认站的 network 由真网产物合成、
+    #    points 如实空表（与 `station_json()` 的解析口径一致）。
+    station_files: list[tuple[str, str, Path | None]] = [
+        ("station.ranges", "站点范围登记", SITE_RANGES),
+    ]
+    if paths["is_default"]:
+        station_files.extend([
+            ("station.network", "站点包 network", STATIONS_DIR / "network.json"),
+            ("station.points", "站点包 points", STATIONS_DIR / "points.json"),
+            ("station.thresholds", "站点包 thresholds", STATIONS_DIR / "thresholds.json"),
+            ("station.scenarios", "站点包 scenarios", STATIONS_DIR / "scenarios.json"),
+            ("station.factors", "站点包 factors", STATIONS_DIR / "factors.json"),
+            ("station.demand", "站点包 demand", STATIONS_DIR / "demand.json"),
+        ])
+    else:
+        station_files.extend([
+            ("station.network", "站点包 network（真网产物合成）", paths["network_json"]),
+            ("station.points", "站点包 points（该站未登记，如实空表）", None),
+            ("station.thresholds", "站点包 thresholds（共享演示参数）", STATIONS_DIR / "thresholds.json"),
+            ("station.scenarios", "站点包 scenarios", None),
+            ("station.factors", "站点包 factors", None),
+            ("station.demand", "站点包 demand", None),
+        ])
+    for key, label, path in station_files:
+        rows.append(_health_row(key, label, path, role="config"))
+
+    snapshot = build_segments_snapshot()
+    missing = [row["key"] for row in rows if row["state"] == "missing"]
+    primary_missing = [
+        row["key"] for row in rows if row["role"] == "primary" and row["state"] == "missing"
+    ]
+    return {
+        "ok": True,  # 服务活着就是 true；数据缺不是 5xx，见 note
+        "ts": _now_iso(),
+        "version": app.version,
+        "station": {
+            "key": paths["key"],
+            "site_id": site.get("site_id"),
+            "name": site.get("site_name"),
+            "is_default": bool(paths["is_default"]),
+            "resolved": True,
+        },
+        "services": rows,
+        "resolved": {
+            "segments_source": snapshot["source"],
+            "segments_fallback": snapshot["source"] == "stations.baseline",
+            "routes_source": used_route_key,
+            "routes_fallback": bool(used_route_key and not used_route_key.endswith(".real")),
+        },
+        "missing": missing,
+        "data_ok": not primary_missing,
+        "note": (
+            "运维端点、非契约端点（Issue IKP58M）：只回答服务是否存活与各数据源在场/回落，"
+            "数据全缺也返回 200（服务活着 ≠ 数据齐）；不参与契约 §七字段，接入方不得当业务端点消费。"
+            "所有数据均为演示数据（模拟），is_simulated 恒 true。"
+        ),
+    }
+
+
+@app.get("/api/traffic/health")
+def api_health(request: Request) -> JSONResponse:
+    """GET /api/traffic/health —— 运维端点（Issue IKP58M），恒 200，非契约端点。"""
+    raw = request.headers.get(STATION_HEADER) or request.query_params.get(STATION_QUERY_KEY)
+    if raw:
+        key, note = _resolve_station_key(raw)
+        if key is None:
+            # 站点写错也返回 200：排障端点不能因为一个查询参数变成 404；未解析如实写进 body。
+            return _json({
+                "ok": True,
+                "ts": _now_iso(),
+                "version": app.version,
+                "station": {
+                    "key": raw,
+                    "site_id": None,
+                    "name": None,
+                    "is_default": False,
+                    "resolved": False,
+                },
+                "services": [],
+                "resolved": {
+                    "segments_source": None,
+                    "segments_fallback": False,
+                    "routes_source": None,
+                    "routes_fallback": False,
+                },
+                "missing": [],
+                "data_ok": False,
+                "note": f"运维端点、非契约端点：站点未登记（{note}）；服务本身仍在运行，故仍返回 200。",
+            })
+    else:
+        key = None
+    return _json(build_health(key))
 
 
 @app.get("/api/traffic/meta")
@@ -3059,39 +3231,23 @@ async def api_stream() -> StreamingResponse:
 
 
 def print_data_check() -> int:
-    """--check：把「当前站点每个数据文件在不在、回落到哪一层」打印出来（不起服务）。"""
-    paths = _station_paths()
-    site = paths["site"]
+    """--check：把「当前站点每个数据文件在不在、回落到哪一层」打印出来（不起服务）。
+
+    解析与 `GET /api/traffic/health` 共用 `build_health()`（Issue IKP58M）：终端看到的
+    「存在 / 回落 / 缺失」与服务端 health 上报的必须是同一份结论，不各写一套。
+    """
+    health = build_health()
+    station = health["station"]
     print(f"仓库根目录：{ROOT}")
     print(
-        f"当前站点：{_active_station_key()}（{site.get('site_name')}，site_id={site.get('site_id')}）"
-        f" · {'默认站路径' if paths['is_default'] else '按站点登记表路径'}"
+        f"当前站点：{station['key']}（{station['name']}，site_id={station['site_id']}）"
+        f" · {'默认站路径' if station['is_default'] else '按站点登记表路径'}"
     )
-    files: list[tuple[str, Path | None]] = [
-        ("视频链路路段产物", paths["perception_video"]),
-        ("孪生链路路段产物", paths["twin_latest"]),
-        ("孪生契约形状快照", paths["twin_snapshot"]),
-        ("孪生车辆", paths["twin_vehicles"]),
-        ("同化状态", paths["twin_assimilation"]),
-    ]
-    route_layers = paths["engine_routes"]
-    for key, path in route_layers:
-        files.append((f"引擎路线·{key}", path))
-    files.extend([
-        ("站点范围登记", SITE_RANGES),
-        ("站点包 network", STATIONS_DIR / "network.json"),
-        ("站点包 points", STATIONS_DIR / "points.json"),
-        ("站点包 thresholds", STATIONS_DIR / "thresholds.json"),
-        ("站点包 scenarios", STATIONS_DIR / "scenarios.json"),
-        ("站点包 factors", STATIONS_DIR / "factors.json"),
-        ("站点包 demand", STATIONS_DIR / "demand.json"),
-    ])
-    for label, path in files:
-        if path is None:
-            print(f"  [缺失] {label:<18}（该站无此数据源路径）")
-            continue
-        state = "存在" if path.is_file() else "缺失"
-        print(f"  [{state}] {label:<18} {path.relative_to(ROOT)}")
+    for row in health["services"]:
+        state = HEALTH_STATE_LABELS[row["state"]]
+        path_text = row["path"] or "（该站无此数据源路径）"
+        print(f"  [{state}] {row['label']:<18} {path_text}")
+    print(f"数据源健康：data_ok={health['data_ok']} · 缺失 {len(health['missing'])} 项")
 
     snapshot = build_segments_snapshot()
     print()
