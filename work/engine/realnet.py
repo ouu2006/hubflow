@@ -61,6 +61,10 @@ REPO_ROOT = HERE.parents[1]
 #: 站点范围登记表（唯一载体；引擎只读不写）
 DEFAULT_SITE_RANGES = REPO_ROOT / "work" / "twin" / "site-ranges.json"
 
+#: 站点包落客点 → 真网节点映射（由 `work/twin/netpack/tools/gen_station_landmarks.py` 生成）。
+#: 只用于**OD 终点优先落在停车场落客点**（业主 2026-10-21 口径）；缺文件时退回旧规则。
+DEFAULT_STATION_LANDMARKS = REPO_ROOT / "work" / "engine" / "inputs" / "station-landmarks.json"
+
 #: 真网统一图的节点类型：真网产物没有 type 字段（点位归站点包 points.json），
 #: 本单不编落客/上客点位，统一按路口处理（写进 attributes 说明）。
 DERIVED_NODE_TYPE = "intersection"
@@ -636,6 +640,29 @@ def normalize_network(
 # ============================================================================
 
 
+def dropoff_target_nodes(site_id: str) -> list[str]:
+    """站点包落客点映射到的真网节点（去重保序）；缺文件 / 缺该站 / 映射不上时返回空。
+
+    数据来自 `work/engine/inputs/station-landmarks.json`（生成器见
+    `work/twin/netpack/tools/gen_station_landmarks.py`）。只读、不写；
+    坐标是站点包里的**演示点**，这里只用 node_id，不把坐标写进任何契约字段。
+    """
+    path = DEFAULT_STATION_LANDMARKS
+    if not site_id or not path.is_file():
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    station = (payload.get("stations") or {}).get(site_id) or {}
+    out: list[str] = []
+    for row in station.get("dropoffs") or []:
+        node_id = str(row.get("node_id") or "")
+        if node_id and node_id not in out:
+            out.append(node_id)
+    return out
+
+
 def derive_od_pairs(
     graph: network.Graph,
     meta: dict[str, Any],
@@ -654,13 +681,14 @@ def derive_od_pairs(
        **不算外围入口**；只有整站没有纯 entry / exit 时才退回 `both`（老图兼容）。
        业务口径（业主 2026-10-21）：「那些大道最外面的路段就是起点」——所以入口必须是
        围栏外的大道 / 外部接驳道，不能是停车场内部通道。
-    3. 对每个进场边界：遍历全部**内部节点**作为候选行程终点，按
-       （**候选路线数降序**, 自由流耗时升序, 节点 id）排序，取前
+    3. 对每个进场边界：行程终点优先级 = ①**站点包落客点映射到的真网节点**
+       （`work/engine/inputs/station-landmarks.json`，由 `gen_station_landmarks.py` 从站点包
+       `dropoffs` 生成；如 Z 站 `DROP-02` → `N-028`）→ ②**场区内部节点**（所有相邻边 `kind=ramp`）
+       → ③全部内部节点（兼容回退）。候选按（**候选路线数降序**, 自由流耗时升序, 节点 id）排序，取前
        `OD_DESTINATIONS_PER_ENTRY`（3）个作为该入口的 OD 终点。
-       业务口径（业主 2026-10-21）：「停车场落客点是终点」——因此**优先只取场区内部节点**
-       （所有相邻边 `kind=ramp`，即停车场 / 服务道路）；该站没有场区内部路时退回全部内部节点。
-       候选路线数 = `select_candidates(K / 重叠度均读站点包 decision 组)` 在**当前真网拓扑**上
-       算出的条数——它是真网拓扑 + 站点包参数的直接函数，**不是手写 OD**；
+       业务口径（业主 2026-10-21）：「停车场落客点是终点」——所以终点要落在落客点 / 场区内部，
+       不能停在通道中途或停车场外的大道上；候选路线数 = `select_candidates(K / 重叠度均读站点包
+       decision 组)` 在真网拓扑上算出的条数，是**数据 + 参数推出来的**，不是手写 OD；
        取"候选最丰富"的终点是为了让 K=3 候选 / 路径重叠度约束在真网可验（M1-4 备选 ≥2），
        同时覆盖不同进场方向的到达流量；
     4. 每个 OD 的 `exit_node` = 从该行程终点可达的离场边界里**自由流最快**的那个
@@ -746,7 +774,21 @@ def derive_od_pairs(
             for edge_id in incident[node_id]
         )
     ]
-    destination_nodes = facility_nodes or internal_nodes
+    # 行程终点优先级（2026-10-21 业主口径）：
+    #   ① 站点包落客点映射到的真网节点（`station-landmarks.json`，如 DROP-02 → N-028）；
+    #   ② 场区内部节点（所有相邻边 ramp，停车场 / 服务道路）；
+    #   ③ 全部内部节点（老图 / 无场区内部路时的兼容回退）。
+    drop_nodes = [
+        node_id
+        for node_id in dropoff_target_nodes(str(meta.get("site_id") or ""))
+        if node_id in internal_nodes
+    ]
+    # 候选终点集合 = 落客点节点先行 + 场区内部节点 + 全部内部节点回退；
+    # 排序仍按候选路线数，但**落客点节点优先入榜**（见下方 picked）。
+    destination_nodes = []
+    for node_id in [*drop_nodes, *facility_nodes, *internal_nodes]:
+        if node_id not in destination_nodes:
+            destination_nodes.append(node_id)
 
     def free_flow_weight(edge_id: str) -> float:
         return network.free_flow_time_s(graph.edge(edge_id))
@@ -791,7 +833,14 @@ def derive_od_pairs(
             eta_s = free_flow_eta(paths[0])
             ranked.append((-(len(paths)), eta_s, dst, len(paths)))
         ranked.sort(key=lambda item: (item[0], round(item[1], 6), item[2]))
-        picked = ranked[:OD_DESTINATIONS_PER_ENTRY]
+        # 落客点节点优先（业主 2026-10-21：停车场落客点是终点）：有落客点映射时**只取落客点**
+        # （Z 站 = N-028 一个终点 × 4 个外围入口 = 4 条 OD）；没有映射的站退回候选最丰富的 3 个。
+        by_node = {item[2]: item for item in ranked}
+        picked = [by_node[node_id] for node_id in drop_nodes if node_id in by_node][
+            :OD_DESTINATIONS_PER_ENTRY
+        ]
+        if not picked:
+            picked = ranked[:OD_DESTINATIONS_PER_ENTRY]
         if not picked:
             skipped.append(
                 {"entry_boundary": entry, "reason": "该进场边界到任何内部节点均不可达"}

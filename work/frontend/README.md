@@ -1295,7 +1295,7 @@ python scripts/doc_gate.py
 - **兜底入口**：`match_confidence < 0.6`（与 `work/engine/locate.py` 的 `MATCH_CONFIDENCE_MIN` 同口径）提示「定位不稳定」，可从当前站点包路段下拉手动选起点。
 - **接口层原因**：`work/engine/run.py` 的 `build_request()` 与 `_build_cooperative_request()` 补上「终点不是落客/上客点（节点类型 intersection）」的原因进 `why`（真网原先该分支永不命中、`dropoff_point` 静默 null）；不新增契约字段。
 - **台账订正**：`docs/验收台账-20261018.md` 的 TC-18 依据与 `docs/口径裁定-20261018.md` 的「定位空壳」表述按 `locate.py` 现状更正（`locate()` 真值直读、`add_gnss_noise()`、`locate_check.py` 可复跑）；**TC-18 判定状态未改**：① 一致率 1.0（164/164）可复算，② σ=20 m 因统一图缺 WGS-84 锚点未测。
-- **地图「起 / 终」标注 + OD 口径修正（业主 2026-10-21 追加）**：地图新增两个标记——「起」（品牌蓝圆底）放在推荐路线实际起点路段的折线上（外围入口段，站点包 `sections.role=boundary` 的 `P-Bxx`，如 `SZ-003 = P-B02`）；「终」（琥珀圆底）放在**停车场落客点**（站点包 `dropoffs` 演示点，优先 `arrival_route.dropoff_point`，否则按末段就近匹配，如 `DROP-02`）。浮牌显示段号 / 点位 / 演示点说明，图例同步两行；`OD` 下拉与「本次起点」块都显示起点段号与「外围边界断面 P-Bxx / 路网内部段」。同时修正 `work/engine/realnet.py` 的 OD 推导：进场边界只认 `entry`（Z 站 `SZ-001/003/055/059` 四个外围入口），行程终点优先**场区内部节点**（停车场 / 服务道路），Z 站由 27 个 OD 收敛为 **12 个 OD**（4 入口 × 3 场区终点）——不再生成「从停车场内部通道出发」的路线。口径：起终点都是**演示坐标**，不参与算路 / ETA。
+- **地图「起 / 终」标注 + OD 口径修正（业主 2026-10-21 追加）**：地图新增两个标记——「起」（品牌蓝圆底）放在推荐路线实际起点路段的折线上（外围入口段，站点包 `sections.role=boundary` 的 `P-Bxx`，如 `SZ-003 = P-B02`）；「终」（琥珀圆底）放在**停车场落客点**（站点包 `dropoffs` 演示点，优先 `arrival_route.dropoff_point`，否则按末段就近匹配，如 `DROP-02`）。浮牌显示段号 / 点位 / 演示点说明，图例同步两行；`OD` 下拉与「本次起点」块都显示起点段号与「外围边界断面 P-Bxx / 路网内部段」。同时修正 `work/engine/realnet.py` 的 OD 推导：进场边界只认 `entry`（Z 站 `SZ-001/003/055/059` 四个外围入口），行程终点优先**场区内部节点**（停车场 / 服务道路），Z 站由 27 个 OD 收敛为 **4 个 OD**（4 个外围入口 × 落客点终点 `N-028` = `SZ-036`/`SZ-024` 交界，对应 `DROP-02`）——不再生成「从停车场内部通道出发」的路线，也不再停在停车场通道中途。口径：起终点都是**演示坐标**，不参与算路 / ETA。
 
 ### 23.5 大屏路线绘制：一主二备三色 + 非路线段压灰（IKP5CK）
 
@@ -1327,7 +1327,7 @@ python scripts/doc_gate.py
 | **Z** | 引擎产物 | **61** | `SZ-###` | OSM 真几何（netpack） | — | — | — | — | `work/twin/netpack/network_junction.json` |
 | **GZ** | 前端包 | **708** | `GZ-###` | OSM 真几何 | **49**（全 boundary） | **5**（演示点） | **4**（演示点） | **0**（`channels: []`，展示走演示复用） | `stationGZ.network.ts` + `stationGZ.ts` |
 | **GZ** | 后端 `/network` | **708** | `GZ-###` | 真网产物合成 | **0**（差异：非默认站空表） | **0**（差异） | **0**（差异） | **0** | `guangzhounan/network_junction.json` + 空点位表 |
-| **GZ** | 引擎产物 | **708** | `GZ-###` | OSM 真几何（netpack） | — | — | — | — | `guangzhounan/network_junction.json` + `routes.json`（51 条请求；2026-10-21 规则修正后，修正前 91） |
+| **GZ** | 引擎产物 | **708** | `GZ-###` | OSM 真几何（netpack） | — | — | — | — | `guangzhounan/network_junction.json` + `routes.json`（58 条请求；2026-10-21 规则修正后，修正前 91） |
 
 **差异归属**：Z 站 `/network` 的 17 段 / 2 sections / 1 dropoff 全部来自 `stations/` 的样例件 → 真点位与真断面归 **IKMHMX**（T1 真表）/ 开发B；GZ 站 sections / dropoffs / zones 为 0 是非默认站空点位表所致 → 同上。**本单只裁定「前端不消费」并如实登记，不改 `stations/*.json`。**
 

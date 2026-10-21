@@ -295,18 +295,21 @@ python work/engine/predict_cli.py --segments work/engine/samples/segments_sample
    **离场边界** = `exit`（本站 `N-002`/`N-003`/`N-040`）。`both` 是范围裁剪后**场区内部通道 / 服务道路**的断头
    （如 `N-016`/`N-018`/`N-024`/`N-026`/`N-044`），**不算外围入口**——业主 2026-10-21 口径：
    「那些大道最外面的路段就是起点」；只有整站没有纯 `entry` / `exit` 时才退回 `both`（老图兼容）；
-3. 对每个进场边界，把**场区内部节点**（所有相邻边 `kind=ramp`，即停车场 / 服务道路）当候选终点，
-   取「**候选路线数最多**」的前 3 个（并列按自由流耗时、节点 id）——业主 2026-10-21 口径：
-   「停车场落客点是终点」；该站没有场区内部路时退回全部内部节点。候选路线数由真网拓扑 + 站点包
+3. 对每个进场边界，行程终点优先级 = ①**站点包落客点映射到的真网节点**
+   （`work/engine/inputs/station-landmarks.json`，由 `work/twin/netpack/tools/gen_station_landmarks.py`
+   从站点包 `dropoffs` 生成；如 Z 站 `DROP-02` → `N-028`）→ ②**场区内部节点**（所有相邻边 `kind=ramp`）
+   → ③全部内部节点（兼容回退）。候选取「**候选路线数最多**」的前 3 个（并列按自由流耗时、节点 id）——
+   业主 2026-10-21 口径：「停车场落客点是终点」；候选路线数由真网拓扑 + 站点包
    `k_candidates` / `max_path_overlap` 算出，所以这是**数据 + 参数推出来的 OD**，不是手写；取 3 个是演示 OD
    的覆盖广度（常量 `realnet.OD_DESTINATIONS_PER_ENTRY`，不是判据数值），目的是覆盖各进场方向、并让
    「备选 ≥2」的 OD 对存在（M1-4）；
 4. 每个 OD 的 `exit_node` = 从行程终点出发**自由流最快的可达离场边界**——终点是内部节点、出口是边界节点，
    两者必不相同，`departure_route` 才是真实离场路线（TC-12 必现）；
 5. 不可达 / 找不到出口的组合**跳过并留痕**（`od_derivation.skipped`），不顺延硬凑；
-6. 本站推导结果（2026-10-21 规则修正后）：**12 个 OD 对**（4 个外围进场边界 × 3 个场区终点），
-   起点即 `SZ-001` / `SZ-003` / `SZ-055` / `SZ-059`；每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）
-   **演示假设值**（无上游需求快照，产物标 `demand_source`，**不是实测**）。
+6. 本站推导结果（2026-10-21 规则修正后）：**4 个 OD 对**（4 个外围进场边界 × 落客点终点 `N-028`），
+   起点即 `SZ-001` / `SZ-003` / `SZ-055` / `SZ-059`，终点为 `SZ-036` 末端 `N-028`（`SZ-036` / `SZ-024`
+   交界，对应站点包 `DROP-02` 停车场北支落客区）；每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）
+   **演示假设值**（无上游需求快照，产物标 `demand_source`，**不是实测**）。GZ 站同一规则：58 个 OD。
 
 **产物（独立目录，不覆盖样例）**
 
@@ -357,7 +360,7 @@ exit=0；突发时刻在途 85 辆，封 SZ-002 → 改道 1 辆走 SZ-054
 ```text
 $ python work/engine/run.py --network real
 exit=0；写 out/real/routes.json（约 309 KB）+ run_log.json；读入 61 段 / 44 节点；
-12 个 OD（4 个外围进场边界 × 3 个场区终点；2026-10-21 规则修正后）；reservation.harm_check.passed=true 12 条；
+4 个 OD（4 个外围进场边界 × 落客点终点 N-028；2026-10-21 规则修正后）；reservation.harm_check.passed=true 4 条；
 响应段号全部 SZ-###（硬校验通过）；每条路线带 legs[]（方向/车道/U-turn）
 
 $ python work/engine/run.py --network real --compare
@@ -393,7 +396,7 @@ $ python work/engine/run.py --sample / --sample --compare
 
 **本轮 Z 站结果（2026-10-18 真跑；IKNB9H 时点）**：61 段（33 双向 / 28 单向）、94 条遍历边、9 个进场边界 / 8 个离场边界；
 27 个 OD；`route_matrix.json` 覆盖 61/61 段、0 条非法路线；边界 OD 67 对里 48 对可达，19 对如实 `unreachable`
-> 2026-10-21 业主口径修正后：进场边界只认 `entry`（4 个）、终点优先场区内部节点 → **12 个 OD**；上表的 9/27 为 IKNB9H 历史值。
+> 2026-10-21 业主口径修正后：进场边界只认 `entry`（4 个）、终点优先落客点映射节点（Z 站 N-028）→ **4 个 OD**；上表的 9/27 为 IKNB9H 历史值。
 （单向/边界方向决定的合法不可达，不是错）；样例基线仍逐字节一致。
 
 > **契约口径**：`legs[]` / `direction_counts` 是**追加字段**（不改既有字段、不改 `--sample` 产物）；
