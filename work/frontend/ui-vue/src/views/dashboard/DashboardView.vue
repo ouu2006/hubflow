@@ -1860,6 +1860,12 @@ function onCommandChanged(): void {
                 <div class="route-segs td-mono">{{ c.segments.join(' → ') || '—' }}</div>
                 <div class="route-note">{{ c.note }}</div>
               </div>
+              <!-- IKP5CK：备选不足如实说明（契约要求 ≥2 条；不凑等价路线，不空白） -->
+              <p v-if="recommend.alternatives.length < 2" class="route-hint warn">
+                本 OD 仅 {{ recommend.alternatives.length }} 条候选（契约要求 ≥2 条备选）<template
+                  v-if="recommend.no_alternative_reason"
+                >：{{ recommend.no_alternative_reason }}</template>；不为凑数补画等价路线。
+              </p>
               <p v-if="routeMissing.length" class="route-hint warn">
                 路线里有 {{ routeMissing.length }} 段不在当前站点包（{{ routeMissing.join(', ') }}），这些段不会被画出；不补造数据。
               </p>
