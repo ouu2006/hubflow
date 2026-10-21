@@ -1632,11 +1632,24 @@ function dropBasemap(map: MapLibreMap): void {
   remoteApplied = false
   map.once('styledata', () => {
     if (disposed) return
-    // 换样式后不能“动画回位”（会突然飞一下）：直接按当前视角 Instant 重新取景
-    void syncCamera(false)
-    applyViewState(map)
+    // 换样式后不能“动画回位”（会突然飞一下）：停住时才按当前视角 Instant 重新取景
+    refitAfterStyleSwap(map)
   })
   map.setStyle(mergedStyle(FALLBACK_STYLE), { diff: false })
+}
+
+/**
+ * 换完底图样式后补一次取景（IKPFVN）。
+ *
+ * ⚠️ 只在**停住**的时候补（`national` / `station`）。`setStyle` 本身会保留相机，所以
+ * 飞行途中（leaving / panning / entering）**根本不需要**补：那里补一次 `syncCamera(false)`
+ * 等于把正在跑的镜头按下去、把 `motionPhase` 强置成 `station` 并提前 `emit('arrived')`
+ * —— 表现就是"路网在半空显形、页面数据提前放行"（PR !77 独立审查发现的漏口）。
+ */
+function refitAfterStyleSwap(map: MapLibreMap): void {
+  applyViewState(map)
+  if (motionPhase.value !== 'national' && motionPhase.value !== 'station') return
+  void syncCamera(false)
 }
 
 /** 失败后按 2s / 6s / 12s 退避自动重试（最多三次）；开关关掉或组件卸载即停 */
@@ -1702,8 +1715,7 @@ async function applyBasemap(map: MapLibreMap, opts: { retry?: boolean } = {}): P
     // ⚠️ 监听要先挂再 `setStyle` —— 反过来万一 styledata 已同步派发就漏掉了。
     map.once('styledata', () => {
       if (disposed) return
-      void syncCamera(false)
-      applyViewState(map)
+      refitAfterStyleSwap(map)
     })
     map.setStyle(mergedStyle(remote), { diff: false })
     remoteApplied = true

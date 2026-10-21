@@ -5,13 +5,19 @@
 为什么需要它：全国地图的 pin 位置与切站镜头的目标取景都读 `src/station-packs/stations.generated.ts`，
 而那份文件是从 `work/twin/site-ranges.json` **生成**的、经纬度又要和站点包 `stations[0]` 对得上。
 这三处任意一处漂移，观众看到的就是「pin 钉在 A 处、镜头飞到 B 处、路网长在 C 处」——
-这种错很像"地图坏了"，实际是配置没对齐。所以本脚本把三处钉在一起：
+这种错很像"地图坏了"，实际是配置没对齐。所以本脚本把三处钉在一起（**三方都读**）：
 
   ① **键必须一一对应**：`PACKS` 里每个键都要在站表里、站表里每个键都要在 `PACKS` 里
      （加了站点包却忘了登记表 → 切过去后端 404；登记了却没包 → 全国图多一个点不出来）；
   ② **锚点必须逐位对齐**：登记表 `anchor_lonlat` 与站点包 `stations[0]` 的经纬度**容差 1 m**；
   ③ **不许缺字段 / 不许重复 key**：缺字段的 pin 画不出来，而画出来的错 pin 比不画更糟；
-  ④ （附加）`pack` 指向的文件真的在、`segment_count` 与该包真实段数一致。
+  ④ （附加）`pack` 指向的文件真的在、`segment_count` 与该包真实段数一致；
+  ⑤ **登记表 ↔ 生成物逐字段对齐**：`name / anchor_lonlat / range_m / seg_target` 与生成物一致
+     —— 生成物是"抄"登记表的，抄错 / 手改生成物 / 登记表改了没重跑脚本，都在这里露出来。
+
+> 为什么 ⑤ 必须真的读 `site-ranges.json`：只比「生成物 ↔ 站点包」的话，登记表被改、
+> 生成物没重跑这种漂移**根本看不出来**（两边都对得上，可它们已经和真值源脱钩了）。
+> `gen_station_registry.py --check` 也能抓，但那是一个脚本的自洽，这里是独立判据。
 
 用法（仓库根）：
 
@@ -24,6 +30,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import re
 import sys
@@ -136,6 +143,22 @@ def count_pack_segments(key: str) -> int | None:
     return len(ids)
 
 
+def parse_registry_sites() -> dict[str, dict]:
+    """站点登记表 `work/twin/site-ranges.json` 的每站关键字段（按站点包键索引）。"""
+    payload = json.loads(_read(REGISTRY))
+    sites = payload.get("sites")
+    if not isinstance(sites, list):
+        raise SystemExit(f"{REGISTRY.relative_to(ROOT)} 里没有 sites[]")
+    out: dict[str, dict] = {}
+    for site in sites:
+        if not isinstance(site, dict):
+            continue
+        key = site.get("station_pack_key")
+        if isinstance(key, str) and key:
+            out[key] = site
+    return out
+
+
 def distance_m(a: tuple[float, float], b: tuple[float, float]) -> float:
     """两点距离（米，近似平面）：1 m 级比较不需要大地线公式。"""
     (lon1, lat1), (lon2, lat2) = a, b
@@ -196,6 +219,37 @@ def run_checks(verbose: bool = True) -> list[str]:
         if key not in pack_keys:
             problems.append(f"站表有 {key!r}，但 PACKS 里没有它（顶栏/全国图会指向一个不存在的包）")
 
+    # ⑤ 登记表 ↔ 生成物逐字段（真值源 → 抄写件）
+    registry = parse_registry_sites()
+    for key in registry:
+        if key not in station_keys:
+            problems.append(f"登记表有 {key!r}，但生成物站表里没有它（改完 site-ranges.json 要重跑 gen_station_registry.py）")
+    for row in stations:
+        site = registry.get(row.key)
+        if site is None:
+            if row.key:
+                problems.append(f"生成物站表有 {row.key!r}，但 {REGISTRY.relative_to(ROOT)} 里没有这个站")
+            continue
+        if isinstance(site.get("site_name"), str) and row.name != site["site_name"]:
+            problems.append(f"{row.key}：name 与登记表不一致（站表 {row.name!r} / 登记表 {site['site_name']!r}）")
+        anchor = site.get("anchor_lonlat")
+        if isinstance(anchor, list) and len(anchor) == 2:
+            if abs(row.lon - float(anchor[0])) > 1e-9 or abs(row.lat - float(anchor[1])) > 1e-9:
+                problems.append(
+                    f"{row.key}：anchor 与登记表不一致（站表 {row.lon},{row.lat} / 登记表 {anchor[0]},{anchor[1]}）"
+                )
+        else:
+            problems.append(f"{row.key}：登记表缺 anchor_lonlat")
+        if isinstance(site.get("range_m"), (int, float)) and row.range_m is not None:
+            if int(site["range_m"]) != int(row.range_m):
+                problems.append(f"{row.key}：range_m 与登记表不一致（站表 {int(row.range_m)} / 登记表 {int(site['range_m'])}）")
+        if isinstance(site.get("seg_target"), (int, float)) and row.segment_count is not None:
+            if int(site["seg_target"]) != int(row.segment_count):
+                problems.append(
+                    f"{row.key}：segment_count 与登记表 seg_target 不一致"
+                    f"（站表 {row.segment_count} / 登记表 {site['seg_target']}）"
+                )
+
     # ② 锚点对齐 + ④ pack 存在 / 段数一致
     for row in stations:
         if not row.pack:
@@ -253,6 +307,10 @@ def self_test() -> int:
         "完整行不该报缺字段",
     )
 
+    registry = parse_registry_sites()
+    expect(set(registry) == {"Z", "GZ"}, "登记表应解析出 Z / GZ 两个站（三方比对的输入不能空）")
+    expect(registry["Z"]["station_pack_key"] == "Z", "登记表按站点包键索引")
+
     # 真实数据也必须过（自测顺带当一次全量对账）
     real = run_checks(verbose=False)
     expect(not real, "自测里对真实仓库跑对账应通过：" + "；".join(real))
@@ -263,7 +321,7 @@ def self_test() -> int:
         for item in failures:
             print(f"  · {item}")
         return 1
-    print(f"[通过] 自测 8 项全部符合预期，且真实仓库对账通过（{stamp}）")
+    print(f"[通过] 自测全部符合预期（含登记表解析 2 项），且真实仓库三方对账通过（{stamp}）")
     return 0
 
 
