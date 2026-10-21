@@ -4,7 +4,9 @@
 // 语义纪律:页签「当前页」与数据源「已选」一律用品牌蓝;等级色不得出现在壳层。
 import { computed, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
 import { RouterLink } from 'vue-router'
+import { backendReachable } from '../api/http'
 import { APP_TABS, DEMO_BADGE, SOURCE_ITEMS, type AppTabKey, type SourceMode } from '../shared/nav'
+import { USE_MOCK } from '../shared/env'
 import { basemapEnabled, setBasemapEnabled } from '../shared/settings'
 import { formatStamp } from '../shared/traffic'
 import { TD } from '../shared/theme'
@@ -41,6 +43,39 @@ const showHead = computed(() => props.title !== '' || !!slots.headRight)
  * (`main.ts` / vite 配置)注入包键,会恒定取到默认包(而不是入口注入的那个)。所以这里惰性取。
  */
 const stationName = computed(() => props.station ?? activePack().station.name)
+
+/**
+ * 顶栏「运行模式」chip（Issue IKP58M）。
+ * 与「数据源（视频链路 / 孪生链路 / 并排）」不是一回事：那个切的是同一页看哪条链路，
+ * 这个回答「页面现在吃的是 vite mock 还是 traffic.py」。remote 且请求已确认不可达时
+ * 转警示色，并把该敲的命令写进 title —— 使用者不用再从 502 里猜。
+ */
+interface ModeChip {
+  label: string
+  note: string
+  warn: boolean
+}
+const modeChip = computed<ModeChip>(() => {
+  if (USE_MOCK) {
+    return {
+      label: 'mock',
+      note: 'mock：/api 由 vite mock 中间件回答，不需要 traffic.py（npm run dev）',
+      warn: false,
+    }
+  }
+  if (backendReachable.value === false) {
+    return {
+      label: 'remote · 后端不可达',
+      note: 'remote：/api 走 vite 代理到 127.0.0.1:8000，请先起接口层：python work/assembly/traffic.py --port 8000',
+      warn: true,
+    }
+  }
+  return {
+    label: 'remote',
+    note: 'remote：/api 走 vite 代理到 traffic.py（127.0.0.1:8000）',
+    warn: false,
+  }
+})
 
 // ---- 线路图切换器(业主 2026-10-14):顶栏直接选包,选完即换整套路网/基线 ----
 // 2026-10-17(IKMDKY 子单①):包有两个 —— Z(61 段现行)/ Z21(旧 21 段对照)，切换器恢复显示；
@@ -142,6 +177,15 @@ onBeforeUnmount(() => {
           </span>
         </span>
         <span class="td-chip">{{ stationName }}</span>
+        <!-- 运行模式 chip（IKP58M）：与「数据源」分段控件区分——那个切链路，这个切 mock/remote -->
+        <span
+          class="td-mode-chip"
+          :class="{ warn: modeChip.warn }"
+          :title="modeChip.note"
+          :aria-label="`运行模式：${modeChip.label}。${modeChip.note}`"
+        >
+          <span class="td-mode-prefix">运行</span>{{ modeChip.label }}
+        </span>
         <span v-if="sourceMode !== null && sourceMode !== undefined" class="td-seg" role="group" aria-label="数据源视图">
           <span
             v-for="s in SOURCE_ITEMS"
@@ -400,6 +444,36 @@ onBeforeUnmount(() => {
 }
 .td-switch.on .td-switch-knob {
   left: 17px;
+}
+
+/* ---- 运行模式 chip（顶栏，Issue IKP58M）----
+   中性灰 = 说明性状态；remote 不可达时转警示色（琥珀），不用等级色、不抢品牌蓝。
+   title 里带「该敲哪条命令」——502 本身不告诉使用者下一步做什么。 */
+.td-mode-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 9px;
+  border: 1px solid #d9dce1;
+  border-radius: 999px;
+  background: #f7f8fa;
+  color: #4b5563;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.td-mode-chip.warn {
+  border-color: #e0a800;
+  background: #fff7e0;
+  color: #8a5b00;
+  font-weight: 600;
+}
+.td-mode-prefix {
+  color: #999999;
+  font-weight: 400;
+}
+.td-mode-chip.warn .td-mode-prefix {
+  color: #b07a00;
 }
 
 /* ---------- 响应式（Issue IKP3EV，2026-10-20）----------
