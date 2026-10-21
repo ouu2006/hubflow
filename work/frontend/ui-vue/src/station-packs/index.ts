@@ -17,6 +17,7 @@
 
 import { STATION_Z } from './stationZ.ts'
 import { STATION_GZ } from './stationGZ.ts'
+import { STATIONS, type StationEntry } from './stations.generated.ts'
 import type { StationPack } from './types.ts'
 
 export const PACKS: Record<string, StationPack> = {
@@ -164,3 +165,20 @@ export function packItems(): { key: string; name: string; note: string }[] {
     note: p.note,
   }))
 }
+
+/**
+ * 已接入车站的**全国站表**（Issue IKPFVN A）：键 / 站名 / 经纬度 / 站区范围 / 段数 / 包路径。
+ *
+ * 为什么单独一支、而不是让各处继续拼 `packItems()`：`packItems()` 只有 `key/name/note`，
+ * 没有经纬度也没有站区范围 —— 全国地图的 pin 不知道钉在哪、切站镜头不知道该飞多近。
+ * 这份数据来自生成物 `stations.generated.ts`（源头是 `work/twin/site-ranges.json`），
+ * 全国 pin / 全国浮层卡片 / 切站镜头 / 顶栏切换器**共用这一份**，加站只改配置 + 重跑脚本。
+ *
+ * 只读：不要在调用方改写返回的数组或元素（它就是生成物里的那一份）。
+ */
+export function stationEntries(): StationEntry[] {
+  return STATIONS
+}
+
+export { STATIONS }
+export type { StationEntry }
