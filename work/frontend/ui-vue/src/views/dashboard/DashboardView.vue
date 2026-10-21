@@ -549,9 +549,24 @@ const switching = ref(false)
 const servedFromCache = ref(false)
 /** 缓存写入时刻（ms），提示条据此写"缓存于 N s 前" */
 const cacheStamp = ref(0)
+/**
+ * 「缓存于 N s 前」的时钟源（PR !76 审查意见）。
+ * 为什么需要单独一个 ref：`Date.now()` 不是响应式的 —— 没有它，秒数会**停在切站那一刻**
+ * （数据没错，但"几秒前"这句话会变成假的）。只在亮着缓存条时开 1 s 定时器，条件一变就停。
+ */
+const cacheClockTick = ref(0)
+let cacheClockTimer = 0
+watch(servedFromCache, (on) => {
+  window.clearInterval(cacheClockTimer)
+  if (!on) return
+  cacheClockTimer = window.setInterval(() => {
+    cacheClockTick.value += 1
+  }, 1000)
+})
 /** 缓存提示文案；空 = 当前数据就是这次网络拉到的，不用标"缓存" */
 const cacheNote = computed<string>(() => {
   if (!servedFromCache.value) return ''
+  void cacheClockTick.value // 每秒 +1，让"几秒前"跟着走（见上）
   const age = Math.max(0, Math.round((Date.now() - cacheStamp.value) / 1000))
   return `当前显示「${stationName.value}」的缓存快照（缓存于 ${age} s 前）· 正在后台刷新，新数据到达即替换 —— 缓存数据不代表最新态势`
 })
@@ -752,6 +767,8 @@ onUnmounted(() => {
   // 卸载时把在途请求一并掐掉（切页 / 关页都不该让响应回来往空组件里写）
   refreshCtrl?.abort()
   refreshCtrl = null
+  // 「缓存于 N s 前」的时钟也一起停，别让定时器在已卸载的页面上空转
+  window.clearInterval(cacheClockTimer)
 })
 
 // ---------- 推荐路线（Issue IKMF1W）----------
