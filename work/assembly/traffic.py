@@ -25,6 +25,14 @@
 `requests` 的 OD / session / 路径摘要列表（供大屏「整条路线规划」选择器），数据源优先级同上；
 只做摘要、不代算 ETA，缺产物如实 404 + note。契约 §七 未定义该端点，接入方按辅助端点消费。
 
+**路网端点裁定（IKP5D3）**：`GET /api/traffic/network` **前端不消费**——页面路网只认站点包
+（`stationZ.network.ts` / `stationGZ.network.ts`）。该端点保留作接口存在性 / 调试用途；
+默认站 Z 读到的是 `stations/network.json` 的 **SEG-### 样例网**（几何为占位坐标），
+**勿用于真路网绘制**；非默认站（GZ）由真网产物合成，几何为 OSM 真值，但仍不是前端真值源。
+
+**运维端点（非契约）**：`GET /api/traffic/health`（IKP58M）——恒 200，报数据源在场 / 回落，
+不参与契约字段，详见 `work/assembly/README.md` §2.4。
+
 ## 写端点
 
 | 端点 | 语义 | 持久化 |
@@ -1472,11 +1480,16 @@ def build_network() -> dict[str, Any]:
         "is_simulated": True,
         "origin": "demo",
         "note": (
+            # IKP5D3 裁定：前端不消费本端点（页面路网以站点包为唯一真值源）。
+            # 不写清的话，下一个人很容易把 SEG 样例网当"后端真路网"接进地图。
+            "前端不消费（IKP5D3 裁定）：本端点仅作接口存在性 / 调试用途，真路网绘制以站点包"
+            "（stationZ.network.ts / stationGZ.network.ts）为唯一真值源，勿把本响应当路网画图数据。"
             f"站点包网络（{node_count} 节点 / {len(segments)} 段）："
             + (
                 "几何取自真网产物（OSM 切片，经纬度真值）；指标为演示数据（模拟）"
                 if any(segment["coords"] for segment in segments)
-                else "几何为站点包占位节点坐标（network.json 未给经纬度），不含实测几何；指标为演示数据（模拟）"
+                else "默认站 Z 为 SEG 样例网（network.json 未给经纬度），几何为占位坐标，勿用于真路网绘制；"
+                     "指标为演示数据（模拟）"
             )
         ),
         "attribution": None,

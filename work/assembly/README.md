@@ -37,7 +37,7 @@
 | `/api/traffic/assimilation` | GET | 数据同化状态（`counts` + 每条 `role` / `point_code` / `name` / `reason`） | 沿用 + 扩字段（已实现） |
 | `/api/traffic/meta` | GET | 站点 / 数据源 / 页签 / 常驻口径角标 | **已实现**（IKMF1T；IKMS17 起带 `data_sources` 角标） |
 | `/api/traffic/overview` | GET | 全网 KPI（均速 + 环比 / 最堵路段 / 在途·已引导·采纳率 / 生效因素数 / 等级分布） | **已实现**（IKMF1T） |
-| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点 | **已实现**（IKMF1T） |
+| `/api/traffic/network` | GET | 路网几何 + 断面（边界 / 内部）+ 落客点 + 场区 + 站点。**前端不消费**（IKP5D3 裁定：仅接口存在性 / 调试；默认站 Z 为 SEG 样例网，勿用于真路网绘制） | **已实现**（IKMF1T；note 已写「前端不消费」） |
 | `/api/traffic/alerts` | GET | 告警列表（四态 + `triggered_by` + 首次观测时间 + 回执 / 回写留痕） | **已实现**（IKMF1T 由快照派生；**IKMS1H 起读持久化后的运行态**） |
 | `/api/traffic/plan/dispatch` | POST | 下发分流方案（渠道 + 比例）→ 回执 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
 | `/api/traffic/plan/ack` | POST | 处置回写（认领人 / 动作 / 结果四选一）→ 状态流转 | **已实现**（**IKMS1H 起 JSON 文件仓持久化**，重启不复位；审计可查） |
