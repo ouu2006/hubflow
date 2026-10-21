@@ -77,7 +77,7 @@ import {
   directionsVisible,
   routeEmphasisEnabled,
 } from '../../../shared/settings'
-import { activePack } from '../../../station-packs/index'
+import { activePack, onPackChange, packVersion } from '../../../station-packs/index'
 import {
   landmarkKindLabel,
   landmarkPins,
@@ -295,19 +295,45 @@ let remoteApplied = false
 let inflightCtrl: AbortController | null = null
 
 /**
- * 路网几何与来源口径。
- * ⚠️ `DEMO_NETWORK.segments` 是当前站点包的惰性快照：桥接覆盖发生在挂载前
- * （`main.ts` 拉 `/twin-api/network`），本组件挂载时它已经定了。
+ * 路网几何与来源口径（Issue IKPFR4：**随包变化**）。
+ *
+ * 以前这里是 setup 期的两个常量（`DEMO_NETWORK.segments` / `networkSourceLabel()`），
+ * 切站只能靠整页刷新把它们重拍一遍。现在改成 `shallowRef` + 订阅：
+ * 切站时 `switchStation()` 已把几何按新包重建，这里的订阅只负责**换引用**，
+ * 真正重绘由下面的 `watch(packTick)` 完成（只换 GeoJSON data，不重建 Map、不 setStyle）。
+ *
+ * ⚠️ 用 `shallowRef` 而不是 `ref`：`DemoSegment` 是几百到几千条折线的纯数据，
+ *    深响应式代理在这里纯属浪费，而且地图本来也不靠逐点响应式（我们自己 setData）。
  */
-const net = DEMO_NETWORK.segments
-const sourceLabel = networkSourceLabel()
-const osmActive = computed(() => isOsmNetwork())
+const net = shallowRef<DemoSegment[]>(DEMO_NETWORK.segments)
+
+/**
+ * 包键代号：切站时 +1。所有"读 activePack() 的 computed / 一次性快照"都靠它刷新。
+ * 注意 `packVersion()` 是模块级**数字**，不是 Vue 的 ref —— 所以这里自己建一个 ref 订阅。
+ */
+const packTick = ref(packVersion())
+const offPackTick = onPackChange(() => {
+  packTick.value = packVersion()
+})
+
+const sourceLabel = computed(() => {
+  void packTick.value
+  return networkSourceLabel()
+})
+const osmActive = computed(() => {
+  void packTick.value
+  return isOsmNetwork()
+})
 /**
  * 上色策略由站点包 `colorPolicy` 决定（IKP5DM 起 Z/GZ 均为 `'all'`：全段按等级上色，
  * 灰只表示数据不可用/陈旧，不再表示「这段没摄像头」）。
  * 图钉与上色策略**解耦**：图钉只画源台账 6 路，图例按 `pins.length` 显隐（见模板）。
  */
-const pins = cameraPins()
+/** 摄像头图钉（随包变化：Z 站 6 路源台账 / GZ 站 0 路） */
+const pins = computed(() => {
+  void packTick.value
+  return cameraPins()
+})
 
 // ---- 路段染色（四级 / 指数两种视图） ----
 
@@ -358,9 +384,10 @@ function heatOf(seg: DemoSegment): number {
  * 旧 21 段对照包（Z21）没有 `segmentDirections`：整包**一支箭头都不画**，
  * 图例写明「本包无方向字段」——不能像现在这样给每个点画灰 `?`，让人误读成"未标定数据"。
  */
-const directionsAvailable = computed<boolean>(
-  () => Object.keys(activePack().segmentDirections ?? {}).length > 0,
-)
+const directionsAvailable = computed<boolean>(() => {
+  void packTick.value // 切站后包变了，方向字段有无也跟着变，必须重算
+  return Object.keys(activePack().segmentDirections ?? {}).length > 0
+})
 /** 真正可画 = 包里方向字段在该 + 顶栏「设置」里开关开着 */
 const directionDrawable = computed<boolean>(() => directionsAvailable.value && directionsVisible.value)
 
@@ -400,7 +427,7 @@ function offsetByNormal(
 function directionGeoJson(): FeatureCollection {
   if (!directionDrawable.value) return { type: 'FeatureCollection', features: [] }
   const features: Feature<Point>[] = []
-  for (const seg of net) {
+  for (const seg of net.value) {
     const kind = directionKindOf(directionOf(seg.segment_id))
     const bearing = bearingDeg(seg.coords)
     if (kind === 'bidirectional') {
@@ -541,7 +568,7 @@ function routeGeoJson(): FeatureCollection {
   const emphasize = routeEmphasisOn.value
   return {
     type: 'FeatureCollection',
-    features: net.map((seg) => {
+    features: net.value.map((seg) => {
       // 非路线段统一压灰（Issue IKP5CK）：不再按 level 上色，改用中性浅灰细线。
       // heat 一并归零——否则指数视图还会在灰线外圈漫出一层等级色，等于没压。
       const emphasisGray = emphasize && !routed.has(seg.segment_id)
@@ -844,7 +871,7 @@ onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
  * "有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
  */
 function addCameraPins(map: MapLibreMap): void {
-  for (const p of pins) {
+  for (const p of pins.value) {
     const el = document.createElement('div')
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
     el.textContent = p.cid.replace('C-', '')
@@ -998,8 +1025,8 @@ function syncVehicles(map: MapLibreMap | null): void {
 
 /** 视野适配到整张路网（边界留白，避免线贴边） */
 function fitToNetwork(map: MapLibreMap): void {
-  const lons = net.flatMap((s) => s.coords.map((c) => c[0]))
-  const lats = net.flatMap((s) => s.coords.map((c) => c[1]))
+  const lons = net.value.flatMap((s) => s.coords.map((c) => c[0]))
+  const lats = net.value.flatMap((s) => s.coords.map((c) => c[1]))
   if (lons.length === 0) return
   map.fitBounds(
     [
@@ -1231,7 +1258,7 @@ const chipStyle = computed(() => {
   const m = mouse.value
   void camTick.value // 地图动过就重算
   if (!map || !m || !props.selectedId || !props.hoverChip) return {}
-  const seg = net.find((s) => s.segment_id === props.selectedId)
+  const seg = net.value.find((s) => s.segment_id === props.selectedId)
   if (!seg) return {}
   let best = map.project(seg.coords[0] as [number, number])
   let bestD = Number.POSITIVE_INFINITY
@@ -1356,6 +1383,36 @@ watch(
   },
 )
 
+// ---- 原地切站（Issue IKPFR4）----
+//
+// 切站时**只换数据、不动渲染器**：
+//   · 换 `net` 引用（几何已由 `switchStation()` → `resetNetwork()` 按新包重建）；
+//   · `applyViewState` 把路网 / 方向两个 GeoJSON source `setData` 成新包几何，重贴全部 filter；
+//   · 摄像头图钉 / 落客点场区是 DOM Marker，按新包**重建**（不重建不刷新，几何变了没处贴）；
+//   · 重新取景（Z 61 段与 GZ 708 段的经纬度范围完全不同，不取景会停在旧站的视野里看空气）。
+//
+// ⚠️ 这里**不许** `map.remove()` + 新建 Map，也**不许** `setStyle`：底图瓦片是公共资源，
+//    重建一次就是几 MB 重下 + 一次白屏，正是本单要消灭的。路网是自家 GeoJSON，换 data 即可。
+function applyPackChange(): void {
+  const map = mapRef.value
+  net.value = DEMO_NETWORK.segments
+  // 悬停浮牌指向的是上一站的图钉/点位，切站即清空（业主裁定：站内状态一律重置）
+  pin.value = null
+  landmarkPin.value = null
+  if (!map || !ready.value || disposed) return
+  camMarkers.forEach((m) => m.remove())
+  camMarkers = []
+  addCameraPins(map)
+  landmarkMarkers.forEach((m) => m.remove())
+  landmarkMarkers = []
+  addLandmarkPins(map)
+  // 方向图层：图标已在 map 里（同一套 canvas 图标），只需重贴数据与显隐
+  applyViewState(map)
+  fitToNetwork(map)
+}
+
+watch(packTick, applyPackChange)
+
 /**
  * 路线高亮按**内容**监听，不按数组引用：父组件传的是 computed 产物，快照刷新时会重建引用，
  * 按引用监听的写法会在每次刷新时白跑一遍 `setFilter`。
@@ -1431,6 +1488,7 @@ onMounted(async () => {
 
 onUnmounted(() => {
   disposed = true
+  offPackTick()
   window.clearTimeout(retryTimer)
   inflightCtrl?.abort()
   camMarkers.forEach((m) => m.remove())

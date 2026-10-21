@@ -52,7 +52,9 @@ import {
   lanesOf,
   oppositeOf,
 } from '../../shared/directions'
-import { activePack, activePackKey, packItems, switchPack } from '../../station-packs/index'
+import { activePack, activePackKey, onPackChange, packItems, packNote, packVersion } from '../../station-packs/index'
+import { bindStationSwitch, switchStation } from '../../shared/stationSwitch'
+import { schedulePrewarm, writeStationCache, type StationSnapshotCache } from '../../shared/stationCache'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
 import {
@@ -253,10 +255,34 @@ function onBarMouseDown(e: MouseEvent): void {
   lastBarDown = { at: now, x: e.clientX, y: e.clientY }
 }
 
+/**
+ * 包键代号（Issue IKPFR4）：切站时 +1。
+ * `activePack()` / `demoSegment()` 读的是**模块级变量**，Vue 不知道它变了 —— 所有
+ * "由站点包派生"的 computed 显式读一次 `packTick.value`，切站才能自动重算。
+ */
+const packTick = ref(packVersion())
+/** 当前包键（工具条按钮的选中态 / 切站早退判断用）：跟着 packTick 走，不再是一次性常量 */
+const currentPackKey = ref<string>(activePackKey())
+const offPackTick = onPackChange(() => {
+  packTick.value = packVersion()
+  currentPackKey.value = activePackKey()
+})
+
 /** 路网来源短文案(页面页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
-const sourceLabel = networkSourceLabel()
+const sourceLabel = computed(() => {
+  void packTick.value
+  return networkSourceLabel()
+})
 /** 路网几何出处(真值 / 示例样例)—— 真几何与示意几何不能混说(见 demoNetwork.networkGeometryNote) */
-const geometryNote = networkGeometryNote()
+const geometryNote = computed(() => {
+  void packTick.value
+  return networkGeometryNote()
+})
+/** 页脚站点包自检（`packNote()`：包键 + 这个包是什么）——切站后跟着换，不只报站名 */
+const packLine = computed<string>(() => {
+  void packTick.value
+  return packNote()
+})
 
 /** 中栏工具条上的底图口径:顶栏「设置」里的**底图开关**状态直接反映出来(业主 2026-10-16) */
 const basemapTag = computed(() =>
@@ -268,11 +294,22 @@ const basemapTag = computed(() =>
 /** 图下注脚:底图关掉时**不许**再写"底图来源:OpenFreeMap" —— 页面不撒谎 */
 const mapCaption = computed(() =>
   basemapEnabled.value
-    ? `底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:${geometryNote}`
-    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote} · OSM 署名见地图内`,
+    ? `底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:${geometryNote.value}`
+    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote.value} · OSM 署名见地图内`,
 )
-/** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
-const stationName = ref(activePack().station.name)
+/**
+ * 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径。
+ *
+ * ⚠️ IKPFR4：兜底值改成 computed（原先是 `ref(activePack().station.name)` 的 setup 期快照，
+ *    切站不刷新就永远停在上一站的站名）。meta 那份仍存在独立的 ref 里，切站即清空 ——
+ *    让"站名先回落站点包、meta 回来再覆盖"，两站之间不串味。
+ */
+const metaStationName = ref<string | null>(null)
+const stationName = computed<string>(() => {
+  if (metaStationName.value) return metaStationName.value
+  void packTick.value
+  return activePack().station.name
+})
 /** 接口层 meta(真接口模式:页脚数据来源 / 站点范围 / 快照段数如实取自响应;mock 侧字段可缺省) */
 const metaInfo = ref<TrafficMeta | null>(null)
 /**
@@ -307,7 +344,10 @@ const footStationLine = computed<string>(() => {
 // ---------- 本站范围与路段数（Issue IKM4B4）----------
 // 来源：`work/twin/site-ranges.json`（每站一份登记表）→ 站点包 station 字段 → 本页只展示。
 // 口径：范围是**脚本推定 / 人工圈定**的结果，不是官方划定；页面不报精度数字。
-const siteMeta = computed(() => activePack().station)
+const siteMeta = computed(() => {
+  void packTick.value
+  return activePack().station
+})
 const RANGE_SOURCE_LABEL: Record<string, string> = {
   manual: '人工圈定',
   script: '脚本推定',
@@ -315,13 +355,13 @@ const RANGE_SOURCE_LABEL: Record<string, string> = {
 }
 
 // 大屏工具条上的「路网版本」切换（IKMDKY 子单①；IKP5D3 起只剩 Z=61 段 / GZ=708 段两个真站包，Z21 旧包已删）。
-// 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
+// 与顶栏「线路图切换器」**共用同一支** `switchStation()`（IKPFR4）：
+// 切包 → 重建路网几何 → 站内状态一律重置 → 缓存优先渲染首屏 → 后台补拉 → 同步 URL。
+// 不再整页刷新（原因见 `shared/stationSwitch.ts` 头部与本文件 `resetStationState()`）。
 const packChoices = packItems()
-const currentPackKey = activePackKey()
-function onPackChange(key: string): void {
-  if (key === currentPackKey) return
-  switchPack(key)
-  window.location.reload()
+function onPackButton(key: string): void {
+  if (key === currentPackKey.value) return
+  switchStation(key)
 }
 
 // ---------- 快照状态 ----------
@@ -490,10 +530,46 @@ async function loadSelectedSide(segmentId: string | null): Promise<void> {
  * 否则先发出、后返回的旧响应会覆盖新快照(页面显示上一版数据)。
  */
 let refreshSeq = 0
+/**
+ * 在途刷新的中止句柄（Issue IKPFR4）。切站时**必须**把上一站的请求掐掉：否则旧站响应会在
+ * 几百毫秒后回来，把刚渲染好的新站首屏覆盖成旧站数据 —— 那正是"把 Z 的数据当 GZ 显示"。
+ * 与"响应回来时校验站点键"是**两道闸**，都留着（中止省带宽，校验兜底）。
+ */
+let refreshCtrl: AbortController | null = null
+/** 首屏之后是否已经排过预热（只排一次，避免每次 SSE 刷新都替别站重拉） */
+let prewarmed = false
 /** 本次刷新中失败的接口(页头提示用;失败面板保留旧值但必须标"上一版",不得冒充当前) */
 const failedPanels = ref<string[]>([])
 /** SSE 刷新通道连接状态:断开时页面不会自动刷新,必须显式提示(TC-06 断流降级) */
 const sseConnected = ref(true)
+
+/** 切站加载态：无缓存时才亮（极简骨架条），有缓存不走这里 */
+const switching = ref(false)
+/** 是否正在显示缓存快照：后台刷新回来立刻清掉 —— 缓存数据不得冒充最新（业主口径） */
+const servedFromCache = ref(false)
+/** 缓存写入时刻（ms），提示条据此写"缓存于 N s 前" */
+const cacheStamp = ref(0)
+/**
+ * 「缓存于 N s 前」的时钟源（PR !76 审查意见）。
+ * 为什么需要单独一个 ref：`Date.now()` 不是响应式的 —— 没有它，秒数会**停在切站那一刻**
+ * （数据没错，但"几秒前"这句话会变成假的）。只在亮着缓存条时开 1 s 定时器，条件一变就停。
+ */
+const cacheClockTick = ref(0)
+let cacheClockTimer = 0
+watch(servedFromCache, (on) => {
+  window.clearInterval(cacheClockTimer)
+  if (!on) return
+  cacheClockTimer = window.setInterval(() => {
+    cacheClockTick.value += 1
+  }, 1000)
+})
+/** 缓存提示文案；空 = 当前数据就是这次网络拉到的，不用标"缓存" */
+const cacheNote = computed<string>(() => {
+  if (!servedFromCache.value) return ''
+  void cacheClockTick.value // 每秒 +1，让"几秒前"跟着走（见上）
+  const age = Math.max(0, Math.round((Date.now() - cacheStamp.value) / 1000))
+  return `当前显示「${stationName.value}」的缓存快照（缓存于 ${age} s 前）· 正在后台刷新，新数据到达即替换 —— 缓存数据不代表最新态势`
+})
 
 const PANEL_LABEL: Record<string, string> = {
   overview: 'KPI',
@@ -507,20 +583,31 @@ const PANEL_LABEL: Record<string, string> = {
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
+  // ⚠️ 这里**不掐**上一轮：慢后端（GZ 站远端首载可到十几秒，见 README 23.9 登记）会碰上 SSE 每 2 s 的一次
+  //    刷新 —— 每轮都 abort 的话所有请求都在半路被杀，数据永远落不下来。上一轮的响应靠
+  //    `refreshSeq` 作废即可（见下方两道闸），abort 只在**切站**时用（`resetStationState`）。
+  const ctrl = new AbortController()
+  refreshCtrl = ctrl
+  // 这一轮请求配属的站键：写缓存、校验响应都以它为准（不要用 activePackKey() 事后现取）
+  const stationKey = activePackKey()
+  const opts = { signal: ctrl.signal }
   // Issue IKP5BZ（方案 A）：不再请求 `/api/traffic/network`——落客点/场区唯一真值源是前端站点包，
   // 这条端点的 dropoffs/zones 与本站真网段号对不上（Z 是 SEG-### 样例点、GZ 为空表），
   // 取了也不用；留着只会在页头打「本次刷新未取到：路网」，而页面上并没有路网面板。
   const [ov, seg, veh, al, fa, meta, matrix, thr] = await Promise.allSettled([
-    getTrafficOverview(),
-    getTrafficSegments(),
-    getTrafficVehicles(),
-    getTrafficAlerts(),
-    getTrafficFactors(),
-    getTrafficMeta(),
-    getTrafficHeatMatrix(12, 60),
-    getTrafficThresholds(),
+    getTrafficOverview(opts),
+    getTrafficSegments(opts),
+    getTrafficVehicles(opts),
+    getTrafficAlerts(opts),
+    getTrafficFactors(undefined, opts),
+    getTrafficMeta(opts),
+    getTrafficHeatMatrix(12, 60, opts),
+    getTrafficThresholds(opts),
   ])
   if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
+  // 第二道闸:站点键已换(切站) → 这批响应属于上一站,一律丢弃
+  if (stationKey !== activePackKey()) return
+  switching.value = false
   const failed: string[] = []
   const track = (name: string, ok: boolean): void => {
     if (!ok) failed.push(PANEL_LABEL[name] ?? name)
@@ -547,14 +634,141 @@ async function refresh(): Promise<void> {
   // 站名只用于顶栏 chip:取不到就保持站点包里的名字,不因此把整页标成"上一版数据"
   if (meta.status === 'fulfilled') {
     metaInfo.value = meta.value
-    stationName.value = meta.value.station.name
+    metaStationName.value = meta.value.station.name
   }
   failedPanels.value = failed
+  // 只有真的拿到新快照才撤掉"缓存"标识：这一轮全挂时页面上仍是缓存数据，
+  // 撤标就等于让缓存冒充最新（上面那条失败提示条负责说明"看到的是上一版"）
+  if (seg.status === 'fulfilled' || ov.status === 'fulfilled') {
+    servedFromCache.value = false
+    cacheStamp.value = 0
+  }
+  // 把这一轮拿到的字段写进**该站自己的**缓存桶（切站时就是靠它秒开）
+  writeStationCache(stationKey, {
+    ...(ov.status === 'fulfilled' ? { overview: ov.value } : {}),
+    ...(seg.status === 'fulfilled' ? { segments: seg.value } : {}),
+    ...(meta.status === 'fulfilled' ? { meta: meta.value } : {}),
+    ...(thr.status === 'fulfilled' ? { thresholds: thr.value } : {}),
+    ...(al.status === 'fulfilled' ? { alerts: al.value } : {}),
+    ...(fa.status === 'fulfilled' ? { factors: fa.value.factors } : {}),
+    ...(matrix.status === 'fulfilled' ? { matrix: matrix.value } : {}),
+  })
+  // 首屏就位后再预热（不抢首屏带宽；失败静默）
+  if (!prewarmed && seg.status === 'fulfilled') {
+    prewarmed = true
+    schedulePrewarm()
+  }
   await loadSelectedSide(selectedId.value)
 }
 
 watch(selectedId, (id) => {
   void loadSelectedSide(id)
+})
+
+// ---------- 原地切站（Issue IKPFR4，业主 2026-10-21 裁定）----------
+//
+// 三件正事，顺序就是 `switchStation()` 里的调用顺序：
+//   ① `resetStationState()` —— 站内状态**一律重置**，不做跨站恢复：
+//      selectedId / 监控范围（热力带选中）/ 路线 session / 推荐与定位 / 深链选中 / 失败面板 /
+//      上一站的 meta 与快照，一律清空；页面回到顶部；在途请求中止。
+//   ② `applyCachedSnapshot()` —— 缓存优先：目标站有缓存就**同步**渲染首屏（不白屏、不加载态）；
+//      没缓存才亮骨架条，等第 ③ 步的网络结果。
+//   ③ `refresh()` —— 后台补拉一次（不等 SSE 的下一个 2 s tick），新数据到达后按字段替换。
+
+/** 页面回到顶部：整页 + 三栏内部滚动容器（左「路段监测」/ 右「路段信息」） */
+function scrollPageToTop(): void {
+  window.scrollTo({ top: 0 })
+  for (const el of document.querySelectorAll<HTMLElement>('.td-scroll, .seg-list')) el.scrollTop = 0
+}
+
+/** 站内状态一律重置（业主裁定：切站不跨站恢复任何选中态） */
+function resetStationState(): void {
+  // 中止上一站的在途请求：序号也 +1，让"已经飞出去但还没回来的"那一轮认不出自己是最新的
+  refreshCtrl?.abort()
+  refreshCtrl = null
+  refreshSeq += 1
+
+  selectedId.value = null
+  scope.value = null
+  deepApplied = false
+  // 路线 / 定位 / 双源 / 走势：都是"按某个段、某个 session 取回来的"，跨站一律不保留
+  selectedSession.value = ''
+  recommend.value = null
+  recommendError.value = ''
+  routeOptions.value = null
+  routeOptionsError.value = ''
+  pair.value = null
+  segFactors.value = []
+  history.value = null
+  locateInfo.value = null
+  locateError.value = ''
+  startConfirmed.value = false
+  manualStart.value = false
+  manualStartId.value = ''
+  // 快照侧：先清空，再由缓存或新一轮刷新填回来（清空这一步保证绝不会把上一站的数据当本站显示）
+  overview.value = null
+  segments.value = []
+  vehicles.value = []
+  alerts.value = []
+  allFactors.value = []
+  thresholds.value = null
+  heat.value = null
+  metaInfo.value = null
+  metaStationName.value = null
+  snapshotTs.value = ''
+  failedPanels.value = []
+  servedFromCache.value = false
+  cacheStamp.value = 0
+  switching.value = false
+
+  scrollPageToTop()
+}
+
+/** 缓存优先渲染：同步把缓存快照铺到首屏 */
+function applyCachedSnapshot(snapshot: StationSnapshotCache | null): void {
+  if (!snapshot) {
+    // 没有缓存（首次访问该站 / 预热还没完成）：只亮骨架条，页面本身不白屏
+    switching.value = true
+    return
+  }
+  // 缓存里若连 segments 都没有（当初那个接口就没取到）：列表/地图仍空，骨架条照样亮着
+  switching.value = !snapshot.segments
+  servedFromCache.value = true
+  cacheStamp.value = snapshot.ts
+  overview.value = snapshot.overview
+  if (snapshot.segments) {
+    segments.value = snapshot.segments.segments
+    snapshotTs.value = snapshot.segments.ts
+  }
+  alerts.value = snapshot.alerts?.alerts ?? []
+  allFactors.value = snapshot.factors ?? []
+  thresholds.value = snapshot.thresholds
+  heat.value = snapshot.matrix
+  metaInfo.value = snapshot.meta
+  metaStationName.value = snapshot.meta?.station.name ?? null
+  // 车辆动点不入缓存：宁可空着等下一轮刷新，也不画"上一次看到的车"（位置流每 2 s 就过期）
+  vehicles.value = []
+}
+
+/** 注销钩子（组件卸载时必须调，否则切站会往已卸载的页面里写数据） */
+const unbindStationSwitch = bindStationSwitch({
+  resetStationState,
+  applyCachedSnapshot,
+  refresh: () => {
+    void refresh()
+    // 路线产物是**按站**出的（引擎每个站一份 routes.json）：切站后重新取一次 OD 选项，
+    // 别让右栏停在上一站的 session 上（这是"站内状态一律重置"里"路线 session"那一条）
+    void loadRouteOptions()
+  },
+})
+onUnmounted(() => {
+  unbindStationSwitch()
+  offPackTick()
+  // 卸载时把在途请求一并掐掉（切页 / 关页都不该让响应回来往空组件里写）
+  refreshCtrl?.abort()
+  refreshCtrl = null
+  // 「缓存于 N s 前」的时钟也一起停，别让定时器在已卸载的页面上空转
+  window.clearInterval(cacheClockTimer)
 })
 
 // ---------- 推荐路线（Issue IKMF1W）----------
@@ -580,9 +794,19 @@ const recommendError = ref('')
 /** 三态切换：全部 / 推荐 / 备选 / 离站（截图三态用同一套按钮） */
 const routeView = ref<RouteView>('all')
 /** 当前站点包内的段数（卡片文案用；切包后不写死 61） */
-const packSegmentCount = computed(() => activePack().segments.length)
-/** 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线 */
-const packSegmentIds = new Set(activePack().segments.map((s) => s.segment_id))
+const packSegmentCount = computed(() => {
+  void packTick.value
+  return activePack().segments.length
+})
+/**
+ * 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线。
+ * ⚠️ IKPFR4：原先是 setup 期的 `Set` 常量 —— 切站后仍是上一站的段号集合（Z 61 段看 GZ 708 段
+ *    的路线会全部被判"不在包里"）。改成 computed，用它的地方一律取 `.value`。
+ */
+const packSegmentIds = computed<Set<string>>(() => {
+  void packTick.value
+  return new Set(activePack().segments.map((s) => s.segment_id))
+})
 
 // ---------- 整条路线规划（Issue IKNAUI）----------
 //
@@ -705,7 +929,10 @@ const startConfirmed = ref(false)
 const manualStartId = ref('')
 const manualStart = ref(false)
 
-const packSegments = computed(() => activePack().segments)
+const packSegments = computed(() => {
+  void packTick.value
+  return activePack().segments
+})
 
 /** 当前起点：手动选择优先 → /locate 结果 → 推荐响应自带的 location（失败降级，不编） */
 const currentStart = computed<{
@@ -994,7 +1221,7 @@ const routeCards = computed<RouteCard[]>(() => {
 const routeMissing = computed<string[]>(() => {
   const missing = new Set<string>()
   for (const g of routeHighlights.value) {
-    for (const id of g.segments) if (!packSegmentIds.has(id)) missing.add(id)
+    for (const id of g.segments) if (!packSegmentIds.value.has(id)) missing.add(id)
   }
   return [...missing]
 })
@@ -1502,6 +1729,17 @@ function onCommandChanged(): void {
       <button class="td-btn sm" type="button" @click="refresh">立即刷新</button>
     </div>
 
+    <!-- 切站缓存提示（Issue IKPFR4）：缓存数据必须有标识，不得冒充最新。
+         有缓存 = 首屏已秒开，这里只说明"这是缓存、正在刷新"；没缓存才亮下面的骨架条。 -->
+    <div v-if="cacheNote" class="cache-bar" role="status">
+      缓存 · 刷新中 —— {{ cacheNote }}
+    </div>
+    <div v-if="switching" class="switch-bar" role="status" aria-live="polite">
+      <span class="switch-spinner" aria-hidden="true" />
+      正在加载「{{ stationName }}」的首屏快照（该站暂无内存缓存：首次访问 / 预热尚未完成）—— 数据到达即渲染，不刷新整页。
+      <span class="switch-skeleton" aria-hidden="true"><i /><i /><i /></span>
+    </div>
+
     <!-- KPI 条(取代页头) -->
     <div class="td-card kpi-bar">
       <div class="kpi-cell">
@@ -1690,7 +1928,13 @@ function onCommandChanged(): void {
                       </template>
                     </div>
                     <p v-if="segRows.length === 0" class="empty">
-                      {{ scope === null ? '快照为空(接口层未起?)' : '该范围当前没有路段' }}
+                      {{
+                        switching
+                          ? '正在加载该站首屏快照…'
+                          : scope === null
+                            ? '快照为空(接口层未起?)'
+                            : '该范围当前没有路段'
+                      }}
                     </p>
                   </template>
                 </div>
@@ -1718,7 +1962,7 @@ function onCommandChanged(): void {
                       class="pack-switch-item"
                       :class="{ on: p.key === currentPackKey }"
                       :aria-pressed="p.key === currentPackKey"
-                      @click="onPackChange(p.key)"
+                      @click="onPackButton(p.key)"
                     >
                       {{ p.name }}
                     </button>
@@ -2269,8 +2513,11 @@ function onCommandChanged(): void {
 
     <template #foot>
       <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <!-- 切站缓存标识（IKPFR4）：页脚也要能看出"这不是刚拉到的" -->
+      <span v-if="servedFromCache">数据标识:内存缓存快照 · 后台刷新中</span>
       <span>{{ footStationLine }}</span>
       <span>数据来源:{{ footDataSource }} · 底图:{{ sourceLabel }}</span>
+      <span>{{ packLine }}</span>
       <span>
         颜色模式:{{ isFlow ? '纯车流量（q 四档，仅展示，不代表拥堵结论）' : '决策拥堵（接口 level）' }}
       </span>
@@ -2380,6 +2627,87 @@ function onCommandChanged(): void {
 .view-seg .td-seg-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ---------- 切站提示条 / 骨架（Issue IKPFR4）----------
+   口径：① 「缓存 · 刷新中」用中性琥珀（说明性状态，不是告警、不用等级色、不抢品牌蓝）；
+        ② 无缓存时的骨架条只有一行 + 三根呼吸条，**不做整屏 spinner、不白屏** ——
+           切站是同一页内的局部刷新，不是重新打开一个应用。 */
+.cache-bar {
+  flex: 0 0 auto;
+  margin: 10px 16px 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: var(--td-radius-sm);
+  border: 1px dashed #e0a800;
+  background: var(--td-warning-color-1);
+  color: #8a5b00;
+}
+.switch-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: var(--td-radius-sm);
+  border: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+}
+.switch-spinner {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--td-brand-color-1);
+  border-top-color: var(--td-brand-color);
+  animation: switch-spin 0.9s linear infinite;
+}
+@keyframes switch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* 骨架：三根长度不一的呼吸条，暗示"内容正在来"，但不假装已经有数字 */
+.switch-skeleton {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 4px;
+}
+.switch-skeleton i {
+  display: block;
+  width: 42px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--td-component-border);
+  animation: switch-breathe 1.2s ease-in-out infinite;
+}
+.switch-skeleton i:nth-child(2) {
+  width: 30px;
+  animation-delay: 0.15s;
+}
+.switch-skeleton i:nth-child(3) {
+  width: 54px;
+  animation-delay: 0.3s;
+}
+@keyframes switch-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch-spinner,
+  .switch-skeleton i {
+    animation: none;
+  }
 }
 
 /* ---------- KPI 条 ---------- */

@@ -53,9 +53,19 @@ export function networkHint(): string {
 
 export interface RequestOptions {
   body?: unknown
+  /** 调用方中止信号（切页 / 切站丢弃在途请求）：不加头、不改路径与契约，只多一个中止通道 */
   signal?: AbortSignal
   /** 覆盖默认超时(毫秒) */
   timeoutMs?: number
+  /**
+   * 把**这一次请求**钉在指定站点包上（Issue IKPFR4 两站常驻预热用）。
+   *
+   * 为什么需要：预热要替**另一个站**取一份快照，而当前页面正跑着的是本站 —— 不显式指定
+   * 就会把本站的数据写进别站的缓存（这正是"把 Z 的数据当 GZ 显示"的来源）。
+   * 请求头仍只有 `X-Station-Pack` 一个、值仍是包键：只是取值的来源换成显式参数，
+   * **不新增请求头、不改契约**。缺省（不传）= 现取 `activePackKey()`，与既有行为一致。
+   */
+  station?: string
 }
 
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
@@ -65,7 +75,7 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   // 天生拿不到浏览器状态 —— 所以每个请求把当前包键带上,mock 按它现取包。
   // 真接口 traffic.py（IKNB9F 起）同样按这个头切站；并用查询参数 `station` 兜底
   // （某些浏览器/代理对自定义请求头不友好时仍能按站取数；mock 侧只认头，两条通道不冲突）。
-  const stationKey = activePackKey()
+  const stationKey = opts.station ?? activePackKey()
   headers['X-Station-Pack'] = stationKey
   const requestPath = USE_MOCK
     ? path

@@ -436,3 +436,113 @@ python work/assembly/monitor_check.py            # 进程 / 端口 / 数据陈�
 ## 八、大文件
 
 压测日志、运行产物放 `logs/` 与 `out/`（已 gitignore）。模型权重、视频放共享盘。
+
+## 九、快照缓存键与失效条件（mtime+size，IKPFR4）
+
+**为什么有这一节**：接口层是「只读快照」，但**装配快照本身也要花钱**。改前 `_is_stale()`
+每判一条记录就重读一次 `stations/thresholds.json`（`_grading()` → `station_json()` → `read_json()`，
+没有记忆化）：`/overview` 对广州南 708 段要读两千多次文件、`/heat-matrix` 七百多次；
+8 个刷新端点又各自装配一遍快照，`/heat-matrix` 一个请求里装配两次。页面一轮刷新就卡在
+4~7 s。本单落地四件事：文件读按 mtime+size 记忆化、每请求只装配一次快照、循环外取阈值、
+启动预热两站。
+
+### 9.1 缓存键是什么
+
+`read_json_cached(path)`（`work/assembly/traffic.py`）的键是**三元组**：
+
+```text
+(绝对路径, st_mtime_ns, st_size)
+```
+
+值 = **已经解析好的 dict**（不是文件字节、也不是 JSON 字符串）。同一份文件在同一状态下被
+反复读时，只有第一次真的「打开 + 解析」。非默认站由真网产物**合成**的 `network.json`
+（`_synthesized_network()`）另有一份同口径记忆化，键 = `(绝对路径, mtime_ns, size, 站点包键)`——
+广州南每次合成要重建上千条节点 / 边，而一个请求里 `_network_edges_by_segment()` 与
+`_segment_display_names()` 各要一份。
+
+### 9.2 什么时候失效
+
+- **产物一改（内容或 mtime）键就变**：下一个请求直接读新内容。`touch` 一下也会重读，
+  因为键带 `mtime_ns`（代价是白重解析一次，不会读到错数据）；
+- **同一路径的旧键在插入新键时立刻清掉**（不回放旧内容）；条目总数另有
+  `JSON_CACHE_MAX_ENTRIES = 64` 兜底（按插入序淘汰最早用到的），不会因 mtime 频繁变化而无限涨；
+- **不需要重启**：这正是「只按路径永久缓存」被禁的原因——那种写法换代产物永远读不到，
+  只有重启才恢复。
+
+**只缓「只读静态产物」**：`station_json()`（站点包 / 合成 network）、`_site_ranges()`、
+站点登记表（`_station_registry()`）、`_routes_layers()`（引擎路线层）、`_read_if_exists()`
+（链路 / 运行产物）。`read_json()` 本身**不缓存**：写端点与健康端点对 mtime 的敏感行为照旧。
+
+**共享 dict 的红线**：缓存返回的是同一份 dict 本体。调用方只许读；凡是要
+`payload[...] = ...` / `.append` / `.update` / `setdefault` 的地方，必须先 `copy.deepcopy`
+或另造新 dict —— 不许为了性能让两个响应互相污染（写端点之后尤其明显）。改完做过逐端点
+审计：8 个刷新端点×两站 + 写端点（factors / scenario）+ 跨站切换，缓存条目零变化、响应零变化。
+
+### 9.3 请求级快照复用的边界
+
+`request_snapshot()`：一个请求内只装配一次 `build_segments_snapshot()`，多个 `build_*` 共用。
+
+- 存在请求级 `contextvar`（`_SNAPSHOT_CTX`）里，值带**当前站点**（`_active_station_key()`），
+  `X-Station-Pack` 切换不会拿错站；
+- `_station_middleware` 在**每个请求入口**把它清成 `None`（`try/finally` 里 set / reset），
+  异常路径也走同一段 —— **不会跨请求复用**；
+- 缓存的是**只读**对象：下游 `build_*` 不得原地改 snapshot 或其 payload
+  （`_attach_runtime_state()` 只在装配时跑一次）；
+- **不做跨请求缓存**：`data_age_s` / `data_freshness_s` 是按「装配那一刻」算的，跨请求复用会把
+  新鲜度冻住，「陈旧」判断就会漂 —— 宁可每个请求重算，也不让语义漂。
+
+`/heat-matrix` 只在 `api_heat_matrix()` 里装配一次；`build_heat_matrix(window, bucket, snapshot=None)`
+接受外部快照（缺省才取请求快照），不再自己建。同一份快照装配次数实测：**1**（改前 2）。
+阈值同理：`_is_stale(record, grading=None)` / `_usable_records(records, grading=None)` 接受
+**已解析好**的 grading，`build_overview()` / `build_heat_matrix()` 在循环外取一次，
+不再逐段读文件（`data_freshness_s` 缺省回落到 `STALE_AFTER_S` 的口径未变）。
+
+### 9.4 预热的时机
+
+`warmup_stations()` 在 FastAPI `lifespan` 启动阶段跑：遍历 `work/twin/site-ranges.json` 登记表里的
+**每个站**（现在 Z / GZ），把 `_STATION_CTX` set 成该站后各算一次快照 + 阈值 + 站点登记 +
+路线层 + 数据时间戳，最后 reset（不污染主线程默认站点）。预热**只读不写**，失败只 `_warn`、
+**不阻断启动**。启动日志能看到：
+
+```text
+[traffic.py] 预热站点 Z：61 段 · 数据源 perception.video+twin.latest
+[traffic.py] 预热站点 GZ：708 段 · 数据源 twin.latest
+```
+
+### 9.5 怎么验：`scripts/perf_snapshot.py`
+
+```bash
+python scripts/perf_snapshot.py                                     # 探 127.0.0.1:8000
+python scripts/perf_snapshot.py --base-url http://127.0.0.1:8010 --assert   # 临时实例 + 卡阈值
+python scripts/perf_snapshot.py --json                              # 机器可读，便于对比两次提交
+```
+
+打法与页面一致：**同一轮**打 8 个刷新端点（`overview / segments / vehicles / alerts / factors /
+meta / heat-matrix?window=12&bucket=60 / thresholds`），站点用请求头 `X-Station-Pack` 指定。
+两种计法分开看：「**单独墙钟**」= 端点一次只被一个请求打着（单端点阈值卡它）；
+「**并发轮内**」= 8 个同时发（整轮阈值卡它）。预热轮不进统计。
+
+`--assert` 阈值：GZ `/overview` 单端 ≤ 0.30 s、GZ `/heat-matrix` 单端 ≤ 0.30 s、
+GZ 一轮 8 端点并发 ≤ 1.50 s、Z 一轮 ≤ 0.92 s（不退化）。退出码：0 达标 / 1 未达标 / 2 参数错。
+
+**实测（本机 Windows，临时实例 8010，3 轮中位数；改前改后同机同脚本）**：
+
+| 口径 | 改前 | 改后 |
+|---|---|---|
+| GZ `/overview`（并发轮内） | 7.26 s | **0.291 s** |
+| GZ `/heat-matrix`（并发轮内） | 4.74 s | **0.298 s** |
+| GZ 一轮 8 端点并发 | 7.26 s | **0.302 s** |
+| Z `/overview`（并发轮内） | 0.542 s | 0.235 s |
+| Z 一轮 8 端点并发 | 0.542 s | **0.235 s** |
+| GZ `/overview`（单独墙钟） | — | 0.094 s |
+| GZ `/heat-matrix`（单独墙钟） | — | 0.097 s |
+
+（Issue 里记录的基线是 GZ `/overview` 4.16 s / `/heat-matrix` 2.27 s / Z `/overview` 0.34 s，
+那是另一台机器上的数字；同一组端点在不同机器上绝对值不同，看的是**同一台机器改前改后的倍率**。）
+
+### 9.6 这一节不做什么
+
+- 不缓存「跨请求」的快照，也不按路径永久缓存文件（两条都会让新鲜度 / 换代产物读出旧值）；
+- 不改任何契约字段、不改判级逻辑与判定值、不碰 `stations/*.json`：缓存只是「同样的解析结果
+  不重复算」，响应字节与改前逐字一致（Z / GZ 各 12 个端点做过旧实例 vs 新实例逐字节比对）；
+- 不靠「预热」掩盖慢：无预热的第一次请求也只多一次装配（冷身），不会回到秒级。

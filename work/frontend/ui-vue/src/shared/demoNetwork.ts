@@ -11,8 +11,16 @@
 // ⚠️ 这里**故意不在模块初始化时读包**:模块在 `import` 阶段就被求值,而包键是入口
 // (`main.ts` / vite 配置)在挂载前才注入的。所以几何统一走 `ensureInit()` 惰性构建 ——
 // 谁先用到谁触发,触发时包键一定已经就位。
+//
+// ⚠️ IKPFR4：**按包键校验**惰性构建(不再"构建一次管一辈子")。切站不再整页刷新,
+//    包键会在同一个 JS 上下文里换掉;如果还沿用第一次构建的那份 segments,画面就会出现
+//    「标题写着 GZ、线还是 Z 的 61 段」这种跨站串味。所以 `initedKey` 记住这份几何是
+//    按哪个包建的,读到包键不一致就重建成新包的。`resetNetwork()` 是显式的同一件事。
+//
+// ⚠️ 另一层保障在 `switchStation()`（`shared/stationSwitch.ts`）：切站时**先**调
+//    `resetNetwork()` 再渲染首屏,所以正常情况下第一次读就已经是新包了。
 
-import { activePack } from '../station-packs/index.ts'
+import { activePack, activePackKey } from '../station-packs/index.ts'
 import type { PackSegment } from '../station-packs/types.ts'
 
 export interface DemoSegment {
@@ -26,6 +34,8 @@ export interface DemoSegment {
 const state: { note: string; segments: DemoSegment[] } = { note: '', segments: [] }
 const SEGMENT_MAP = new Map<string, DemoSegment>()
 let inited = false
+/** 这份几何是按哪个包键建的(切站校验用;null = 还没建过) */
+let initedKey: string | null = null
 
 /** 深拷贝包里的路段:`applyNetworkOverride()` 会**原地**替换这份副本,包里的常量不能被改 */
 function cloneSegments(src: PackSegment[]): DemoSegment[] {
@@ -38,13 +48,36 @@ function cloneSegments(src: PackSegment[]): DemoSegment[] {
 }
 
 function ensureInit(): void {
-  if (inited) return
+  const key = activePackKey()
+  if (inited && initedKey === key) return
   inited = true
+  initedKey = key
   const pack = activePack()
   state.note = pack.source.label
+  // 换一个**新数组**:地图那边用 `shallowRef` 持有这份引用,原地 splice 它察觉不到
   state.segments = cloneSegments(pack.segments)
   SEGMENT_MAP.clear()
   for (const s of state.segments) SEGMENT_MAP.set(s.segment_id, s)
+}
+
+/**
+ * 丢弃当前几何并按**现在生效的包**重建（Issue IKPFR4 原地切站用）。
+ *
+ * 为什么需要显式一支:虽然 `ensureInit()` 已经会按包键自愈,但切站那一刻地图组件、
+ * 面板、路线校验可能各自在不同时序上读几何 —— 先统一重建一次,后面的读取就都是新包了,
+ * 不会出现"半秒内新旧两套几何各自被引用"的窗口。
+ *
+ * ⚠️ 桥接真路网覆盖(`applyNetworkOverride`,见下)在切站后**不再保留**:覆盖是"给当前站
+ *    换个几何源"的一次性动作,跨站沿用就等于把甲站的线画到乙站上。两站包都声明
+ *    `bridge.enabled=false`,正常情况下这条根本不会触发。
+ */
+export function resetNetwork(): void {
+  inited = false
+  initedKey = null
+  state.segments = []
+  SEGMENT_MAP.clear()
+  NETWORK_SOURCE.twin = false
+  ensureInit()
 }
 
 /** 当前包的路网(惰性初始化;`applyNetworkOverride()` 原地改的就是这里的 segments) */
