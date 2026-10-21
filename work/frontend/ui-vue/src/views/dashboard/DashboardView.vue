@@ -34,8 +34,10 @@ import {
   getTrafficThresholds,
   getTrafficVehicles,
   postRouteRecommend,
+  postTrafficLocate,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
+import type { LocateResult } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
 import { basemapEnabled } from '../../shared/settings'
 import { USE_MOCK } from '../../shared/env'
@@ -639,6 +641,8 @@ async function loadRecommend(sessionId?: string): Promise<void> {
     recommendError.value = `推荐接口不可达（${e instanceof Error ? e.message : '未知错误'}）：保持不画路线，不编造演示路线`
   } finally {
     recommendLoading.value = false
+    // 起点与推荐同源（同一份引擎产物）：每次取推荐后同步刷新 /locate，避免两块显示两个起点
+    void refreshLocate()
   }
 }
 
@@ -678,6 +682,131 @@ function onRouteSessionChange(): void {
   if (!selectedSession.value) return
   void loadRecommend(selectedSession.value)
 }
+
+// ---------- 起点 / 终点确认（Issue IKP5C6）----------
+//
+// 一期口径：起点是**孪生真值**（接口 `/api/traffic/locate` 直读引擎产物 `requests[].location`，
+// 接口层不做地图匹配），所以这里的“确认”只是把这份真值显式摆给使用者看并留下一个确认动作，
+// **不是用户定位**；未确认时页面必须写明「按孪生真值演示」，不得暗示“已确认你的位置”。
+// TC-05 展示侧兜底：定位不可用 / 置信度低时，可从当前站点包手动选一段作为起点（流程不中断）。
+const locateInfo = ref<LocateResult | null>(null)
+const locateLoading = ref(false)
+const locateError = ref('')
+/** 使用者是否点过「以这里为起点」（切换 session 后重置） */
+const startConfirmed = ref(false)
+/** 手动选起点（兜底）：从当前站点包路段下拉里选一段 */
+const manualStartId = ref('')
+const manualStart = ref(false)
+
+const packSegments = computed(() => activePack().segments)
+
+/** 当前起点：手动选择优先 → /locate 结果 → 推荐响应自带的 location（失败降级，不编） */
+const currentStart = computed<{
+  segment_id: string
+  offset_m: number | null
+  match_confidence: number | null
+  source: string
+} | null>(() => {
+  if (manualStart.value && manualStartId.value) {
+    return { segment_id: manualStartId.value, offset_m: 0, match_confidence: null, source: 'manual' }
+  }
+  const loc = locateInfo.value
+  if (loc && loc.segment_id) {
+    return {
+      segment_id: loc.segment_id,
+      offset_m: loc.offset_m,
+      match_confidence: loc.match_confidence,
+      source: loc.source,
+    }
+  }
+  const rec = recommend.value?.location
+  if (rec) {
+    return {
+      segment_id: rec.segment_id,
+      offset_m: rec.offset_m,
+      match_confidence: rec.match_confidence ?? null,
+      source: rec.source,
+    }
+  }
+  return null
+})
+const startName = computed(() => (currentStart.value ? nameOf(currentStart.value.segment_id) : '—'))
+const startSourceLabel = computed(() => {
+  const source = currentStart.value?.source
+  if (source === 'twin') return '孪生真值'
+  if (source === 'app_gnss') return 'App 定位'
+  if (source === 'manual') return '手动选择'
+  return source || '—'
+})
+const confidenceText = computed(() => {
+  const c = currentStart.value?.match_confidence
+  return typeof c === 'number' && Number.isFinite(c) ? c.toFixed(2) : '—'
+})
+const offsetText = computed(() => {
+  const v = currentStart.value?.offset_m
+  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(1) : '—'
+})
+/** 与 `work/engine/locate.py` 的 MATCH_CONFIDENCE_MIN 同口径：< 0.6 提示定位不稳定（不改判定） */
+const confidenceLow = computed(() => {
+  const c = currentStart.value?.match_confidence
+  return typeof c === 'number' && Number.isFinite(c) && c < 0.6
+})
+
+/** 终点：优先 `arrival_route.dropoff_point`；为 null 时给 `why` 里的具体原因 + 末段兜底 */
+const tripEnd = computed(() => {
+  const r = recommend.value
+  if (!r) return null
+  const segs = r.arrival_route.segments ?? []
+  const last = segs.length > 0 ? segs[segs.length - 1]! : null
+  const drop = r.arrival_route.dropoff_point ?? null
+  const landmark = drop
+    ? [...activePack().dropoffs, ...activePack().zones].find((p) => p.id === drop)
+    : undefined
+  // why 里的原因用 [] 括起（引擎口径）；只挑与终点 / 点位相关的条目，别把离站原因混进来
+  const notes = (r.why.match(/\[[^\]]+\]/g) ?? []).filter((n) => /落客|上客|点位|终点/.test(n))
+  return {
+    drop,
+    pointName: landmark?.name ?? null,
+    last,
+    lastName: last ? nameOf(last) : '—',
+    reason: notes.join(' '),
+  }
+})
+
+/** 拉一次 /locate（真接口才有；mock 如实标注降级，不编起点） */
+async function refreshLocate(): Promise<void> {
+  locateError.value = ''
+  locateInfo.value = null
+  startConfirmed.value = false
+  manualStart.value = false
+  manualStartId.value = ''
+  if (USE_MOCK) {
+    locateError.value = 'mock 模式无 /api/traffic/locate 端点（辅助端点仅真接口提供）'
+    return
+  }
+  locateLoading.value = true
+  try {
+    locateInfo.value = await postTrafficLocate({ session_id: selectedSession.value || undefined })
+  } catch (e) {
+    locateError.value = `定位接口不可达（${
+      e instanceof Error ? e.message : '未知错误'
+    }）；当前按推荐响应自带的 location 显示，不编起点`
+  } finally {
+    locateLoading.value = false
+  }
+}
+
+function confirmStart(): void {
+  if (currentStart.value) startConfirmed.value = true
+}
+
+function applyManualStart(): void {
+  if (!manualStartId.value) return
+  manualStart.value = true
+  startConfirmed.value = true
+}
+
+
 
 /** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
 const routeHighlights = computed<RouteHighlight[]>(() => {
@@ -1597,10 +1726,84 @@ function onCommandChanged(): void {
               </div>
               <div class="route-meta">
                 <span class="route-badge">演示数据（模拟）</span>
-                <span>
-                  起点 {{ recommend.location.segment_id }} · 定位来源
-                  {{ recommend.location.source === 'twin' ? '孪生真值' : 'App 定位' }}
-                </span>
+                <span>路线来自引擎算路产物 · 本页不重算</span>
+              </div>
+              <!-- IKP5C6：起点 / 终点确认（起点=孪生真值，不是用户定位；终点优先 dropoff_point，空窗给原因 + 末段兜底） -->
+              <div class="start-end">
+                <div class="se-block">
+                  <div class="se-head">
+                    本次起点
+                    <span class="se-tag" :class="{ warn: !startConfirmed }">
+                      {{ startConfirmed ? '已确认' : '未确认' }}
+                    </span>
+                    <span v-if="locateLoading" class="se-tag">读取定位中</span>
+                  </div>
+                  <div class="se-line">
+                    段号 <b class="td-mono">{{ currentStart?.segment_id ?? '—' }}</b> · 路段名 {{ startName }}
+                  </div>
+                  <div class="se-line">
+                    来源 {{ startSourceLabel }} · offset {{ offsetText }} m · match_confidence
+                    {{ confidenceText }}
+                  </div>
+                  <p v-if="!startConfirmed" class="se-note">
+                    起点未确认（按{{ startSourceLabel }}演示）：点「以这里为起点」表示认可此起点后再看路线。
+                  </p>
+                  <p v-if="confidenceLow" class="se-warn">
+                    定位不稳定（match_confidence &lt; 0.6）：可改用下方手动选起点。
+                  </p>
+                  <p v-if="locateError" class="se-note">{{ locateError }}</p>
+                  <div class="se-actions">
+                    <button
+                      type="button"
+                      class="se-btn"
+                      :disabled="!currentStart"
+                      @click="confirmStart"
+                    >
+                      以这里为起点
+                    </button>
+                    <select
+                      v-model="manualStartId"
+                      class="route-select se-select"
+                      aria-label="手动选择起点路段"
+                    >
+                      <option value="">手动选起点（兜底）…</option>
+                      <option v-for="seg in packSegments" :key="seg.segment_id" :value="seg.segment_id">
+                        {{ seg.segment_id }} · {{ seg.name }}
+                      </option>
+                    </select>
+                    <button
+                      type="button"
+                      class="se-btn"
+                      :disabled="!manualStartId"
+                      @click="applyManualStart"
+                    >
+                      用这段
+                    </button>
+                  </div>
+                </div>
+                <div class="se-block">
+                  <div class="se-head">本次终点 <span class="se-tag">落客点</span></div>
+                  <template v-if="tripEnd?.drop">
+                    <div class="se-line">
+                      点位 <b class="td-mono">{{ tripEnd.drop }}</b>
+                      <template v-if="tripEnd.pointName"> · {{ tripEnd.pointName }}</template>
+                    </div>
+                    <div class="se-line">
+                      所在末段 <b class="td-mono">{{ tripEnd.last ?? '—' }}</b> · {{ tripEnd.lastName }}
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="se-line">落客点位：引擎产物未给（如实空窗）</div>
+                    <p v-if="tripEnd?.reason" class="se-note">原因：{{ tripEnd.reason }}</p>
+                    <p v-else class="se-note">
+                      原因：引擎 why 未附说明（点位表未登记真网段号，补齐归 IKMHMX）。
+                    </p>
+                    <div class="se-line">
+                      替代信息：终点所在末段 <b class="td-mono">{{ tripEnd?.last ?? '—' }}</b> ·
+                      {{ tripEnd?.lastName ?? '—' }}
+                    </div>
+                  </template>
+                </div>
               </div>
               <p v-if="routeSourceNote" class="route-source">{{ routeSourceNote }}</p>
               <div v-for="c in routeCards" :key="c.key" class="route-item" :class="c.kind">
@@ -2742,6 +2945,85 @@ function onCommandChanged(): void {
   line-height: 1.5;
   color: var(--td-text-color-secondary);
   word-break: break-all;
+}
+
+/* ---------- 起点 / 终点确认（Issue IKP5C6） ---------- */
+.start-end {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+.se-block {
+  padding: 6px 8px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-left: 3px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
+}
+.se-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-primary);
+}
+.se-tag {
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--td-brand-color);
+  background: var(--td-brand-color-1);
+  border-radius: 2px;
+}
+.se-tag.warn {
+  color: var(--td-warning-color);
+  background: var(--td-warning-color-1);
+}
+.se-line {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+}
+.se-note,
+.se-warn {
+  margin: 3px 0 0;
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
+.se-warn {
+  color: var(--td-warning-color);
+}
+.se-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+.se-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.se-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--td-brand-color);
+  cursor: pointer;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
+}
+.se-btn:disabled {
+  color: var(--td-text-color-disabled);
+  cursor: not-allowed;
+  border-color: var(--td-component-border);
 }
 
 /* 右栏顺序（Issue IKMS18）：点路段后**先看路段信息**（关联摄像头 / 决策计算摘要 / 直接下令），
