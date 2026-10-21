@@ -142,6 +142,10 @@ export interface RecommendResult {
   departure_route: RoutePath | null
   pickup_route: RoutePath | null
   alternatives: AlternativePath[] // 契约:备选 ≥2 条
+  // 契约 §2.2 的唯一候选例外（Issue IKP5CE）：引擎产物已产出，
+  // 决策层路线规划要如实显示「为什么没有两条备选」，不能凑数；接口层透传时可能缺省。
+  no_alternative?: boolean
+  no_alternative_reason?: string
   reservation: ReservationBlock
   why: string
   is_simulated: true
