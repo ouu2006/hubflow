@@ -78,6 +78,11 @@ import {
   directionsVisible,
 } from '../../../shared/settings'
 import { activePack } from '../../../station-packs/index'
+import {
+  landmarkKindLabel,
+  landmarkPins,
+  type PackLandmarkView,
+} from '../../../shared/landmarks'
 // IKOQEJ：方向标记（只读 enriched 字段；不是判级/契约数据）
 import {
   bearingDeg,
@@ -179,6 +184,8 @@ const CHIP_W = 210
 const CHIP_H = 26
 /** 摄像头浮牌宽度（与 <style> 中 .cam-chip 的 width 保持一致；窄屏 CSS 会用 min() 收小） */
 const CAM_CHIP_W = 192
+/** 落客点 / 场区浮牌宽度（与 <style> 中 .lm-chip 的 width 保持一致；窄屏同样用 min() 收小） */
+const LM_CHIP_W = 220
 
 /** 'level' = 四级视图（默认） · 'index' = 拥挤指数视图 */
 type MapMode = CongestionViewMode
@@ -719,6 +726,59 @@ function addCameraPins(map: MapLibreMap): void {
   }
 }
 
+// ---- 落客点 / 场区（Issue IKP5BZ） ----
+
+/**
+ * 落客点 + 场区 Marker（唯一数据源 = 前端站点包，见 `shared/landmarks.ts`）。
+ *
+ * 与摄像头图钉同族：20 px 左右、细描边、轻投影、悬停出浮牌；
+ * 靠**形状 + 颜色**区分：摄像头 = 圆形深灰；落客点 = 圆角方「落」青；
+ * 场区（停车场 / 候客 / 蓄车）= 圆角方「场」棕。坐标是路段折线上的**演示点**，
+ * 不是踏勘点位——浮牌与列表都标明「演示点」（不新增接口字段、不动 stations/*.json）。
+ */
+let landmarkMarkers: Marker[] = []
+/** 被悬停的落客点 / 场区（浮牌钉在标记上方，与摄像头浮牌是两套） */
+const landmarkPin = ref<PackLandmarkView | null>(null)
+
+function landmarkTitle(p: PackLandmarkView): string {
+  return `${p.name} · 所属路段 ${p.segment_id || '未标定'}（最近折线推定） · ${p.id} · 演示点`
+}
+
+function addLandmarkPins(map: MapLibreMap): void {
+  for (const p of landmarkPins()) {
+    const el = document.createElement('div')
+    el.className = `lm-pin ${p.kind}`
+    el.textContent = p.kind === 'dropoff' ? '落' : '场'
+    el.title = `${landmarkTitle(p)} · 点击选中该路段`
+    el.addEventListener('mouseenter', () => {
+      landmarkPin.value = p
+    })
+    el.addEventListener('mouseleave', () => {
+      landmarkPin.value = null
+    })
+    // 图上点不到路段时，标记本身就是入口：点它选中推定路段
+    el.addEventListener('click', (event) => {
+      event.stopPropagation()
+      if (p.segment_id) emit('select', p.segment_id)
+    })
+    landmarkMarkers.push(new Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map))
+  }
+}
+
+/** 落客点 / 场区浮牌落点 = 标记正上方（与摄像头浮牌同一套夹边逻辑，宽度不同） */
+const landmarkChipStyle = computed(() => {
+  const map = mapRef.value
+  const p = landmarkPin.value
+  void camTick.value
+  if (!map || !p) return {}
+  const pt = map.project([p.lon, p.lat])
+  const w = containerRef.value?.clientWidth ?? 0
+  const half = LM_CHIP_W / 2
+  const rawLeft = Math.max(6, pt.x - half)
+  const left = w > LM_CHIP_W + 12 ? Math.min(rawLeft, w - LM_CHIP_W - 6) : 6
+  return { left: `${left}px`, top: `${Math.max(6, pt.y - 66)}px` }
+})
+
 // ---- 车辆动点（自绘视图搬来：`transform` 过渡 = 平滑移动） ----
 
 const VEH_LABEL: Record<DriverType, string> = {
@@ -1080,6 +1140,7 @@ function initMap(): void {
   map.on('load', () => {
     addRouteLayers(map)
     addCameraPins(map)
+    addLandmarkPins(map)
     fitToNetwork(map)
     ready.value = true
     // 车辆要在 ready 之后再同步（`syncVehicles` 以 ready 为前置）
@@ -1177,6 +1238,8 @@ onUnmounted(() => {
   inflightCtrl?.abort()
   camMarkers.forEach((m) => m.remove())
   camMarkers = []
+  landmarkMarkers.forEach((m) => m.remove())
+  landmarkMarkers = []
   vehMarkers.forEach((v) => v.marker.remove())
   vehMarkers.clear()
   mapRef.value?.remove()
@@ -1219,6 +1282,15 @@ onUnmounted(() => {
       <b>{{ pin.cid }}</b> {{ pin.name }}
       <span class="cam-chip-sub">
         {{ pin.segment_id }} · 源台账：{{ pin.hasVideo ? '有样本视频源（演示，非本站现场）' : '无独立视频源（演示复用见右栏路段卡）' }} · 点击进感知层
+      </span>
+    </div>
+
+    <!-- 落客点 / 场区浮牌（悬停标记时；Issue IKP5BZ）——名称 · 所属路段 · 点位 id，一律标「演示点」 -->
+    <div v-if="landmarkPin" class="lm-chip" :style="landmarkChipStyle">
+      <b>{{ landmarkPin.name }}</b>
+      <span class="lm-chip-sub">
+        {{ landmarkKindLabel(landmarkPin.kind) }} · 所属路段 {{ landmarkPin.segment_id || '未标定' }}（最近折线推定）
+        · {{ landmarkPin.id }} · 演示点
       </span>
     </div>
 
@@ -1589,6 +1661,26 @@ onUnmounted(() => {
   display: block;
   color: #666666;
 }
+/* 落客点 / 场区浮牌（Issue IKP5BZ）：与摄像头浮牌同一族，宽度略大以容纳「所属路段 + 点位 id」 */
+.lm-chip {
+  position: absolute;
+  width: 220px;
+  padding: 5px 9px;
+  background: #ffffff;
+  border: 1.2px solid #0f766e;
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  font-size: 11px;
+  color: #1a1a1a;
+  line-height: 1.5;
+  pointer-events: none;
+  z-index: 5;
+}
+.lm-chip-sub {
+  display: block;
+  color: #666666;
+}
+
 
 /* MapLibre 自己生成的 DOM 不在 scoped 作用域内，须用 :deep() 才生效。
    署名控件只调字号，**不隐藏、不遮挡**（OSM/ODbL 署名义务）。 */
@@ -1621,6 +1713,28 @@ onUnmounted(() => {
   background: #ffffff;
   color: #455a64;
 }
+/* 落客点 / 场区（Issue IKP5BZ）：与摄像头图钉同族（20 px、细边、轻投影、悬停浮牌），
+   靠形状（圆角方 vs 圆）+ 颜色区分：落客点=青「落」，场区=棕「场」。
+   坐标是路段折线上的演示点，不是踏勘点位。 */
+:deep(.lm-pin) {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 2px solid #ffffff;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 14px;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+:deep(.lm-pin.dropoff) {
+  background: #0f766e;
+}
+:deep(.lm-pin.zone) {
+  background: #8a5a2b;
+}
+
 
 /* ==========================================================================
    响应式（Issue IKP3EV）
@@ -1729,6 +1843,9 @@ onUnmounted(() => {
   }
   .cam-chip {
     width: min(192px, calc(100% - 16px));
+  }
+  .lm-chip {
+    width: min(220px, calc(100% - 16px));
   }
 }
 

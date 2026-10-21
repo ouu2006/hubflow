@@ -26,7 +26,6 @@ import {
   getTrafficFactors,
   getTrafficHeatMatrix,
   getTrafficMeta,
-  getTrafficNetwork,
   getTrafficOverview,
   getTrafficRouteOptions,
   getTrafficSegmentSources,
@@ -38,6 +37,7 @@ import {
 } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
 import { basemapEnabled } from '../../shared/settings'
+import { landmarksNearSegment } from '../../shared/landmarks'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
 // IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成字段；缺值→未标定，不编）
@@ -79,7 +79,6 @@ import {
   type ThresholdSnapshot,
   type TrafficAlert,
   type TrafficMeta,
-  type TrafficNetwork,
   type TrafficOverview,
   type VehicleRecord,
 } from '../../shared/traffic'
@@ -326,7 +325,6 @@ function onPackChange(key: string): void {
 const overview = ref<TrafficOverview | null>(null)
 const segments = ref<SegmentRecord[]>([])
 const vehicles = ref<VehicleRecord[]>([])
-const network = ref<TrafficNetwork | null>(null)
 const alerts = ref<TrafficAlert[]>([])
 /** 全网生效因素(各路段 factors_applied 展平,供 KPI 第 4 格取前 3 条) */
 const allFactors = ref<(FactorApplied & { segment_id: string })[]>([])
@@ -405,6 +403,15 @@ const selectedName = computed<string>(() => {
   if (!id) return '—'
   return demoSegment(id)?.name ?? selected.value?.segment_id ?? id
 })
+
+// ---------- IKP5BZ：本段附近的落客点 / 场区（唯一真值源 = 前端站点包） ----------
+// 图上 Marker 之外再给一处**文字入口**：选中路段时列出同段 / 邻近段（≤150 m）的点位，
+// 点条目 → 选中其所属路段（地图上点不到时仍可查）。坐标是演示点，不是踏勘点位。
+const nearbyLandmarks = computed(() => landmarksNearSegment(selectedId.value ?? ''))
+/** 距离显示（米）：非有限值如实「未标定」，不写 0 */
+function landmarkDistance(v: number): string {
+  return Number.isFinite(v) ? `约 ${Math.round(v)} m` : '距离未标定'
+}
 
 // ---------- IKOQEJ：方向 / 车道 / 对向 / 贯通（只读站点包字段，非契约、不参与判级） ----------
 const segDirection = computed(() => directionOf(selectedId.value ?? ''))
@@ -489,7 +496,6 @@ const PANEL_LABEL: Record<string, string> = {
   overview: 'KPI',
   segments: '路段监测',
   vehicles: '车辆',
-  network: '路网',
   alerts: '告警',
   factors: '因素',
   matrix: '热力矩阵',
@@ -498,11 +504,13 @@ const PANEL_LABEL: Record<string, string> = {
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
-  const [ov, seg, veh, net, al, fa, meta, matrix, thr] = await Promise.allSettled([
+  // Issue IKP5BZ（方案 A）：不再请求 `/api/traffic/network`——落客点/场区唯一真值源是前端站点包，
+  // 这条端点的 dropoffs/zones 与本站真网段号对不上（Z 是 SEG-### 样例点、GZ 为空表），
+  // 取了也不用；留着只会在页头打「本次刷新未取到：路网」，而页面上并没有路网面板。
+  const [ov, seg, veh, al, fa, meta, matrix, thr] = await Promise.allSettled([
     getTrafficOverview(),
     getTrafficSegments(),
     getTrafficVehicles(),
-    getTrafficNetwork(),
     getTrafficAlerts(),
     getTrafficFactors(),
     getTrafficMeta(),
@@ -525,8 +533,6 @@ async function refresh(): Promise<void> {
   track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
   track('vehicles', veh.status === 'fulfilled')
-  if (net.status === 'fulfilled') network.value = net.value
-  track('network', net.status === 'fulfilled')
   if (al.status === 'fulfilled') alerts.value = al.value.alerts
   track('alerts', al.status === 'fulfilled')
   if (fa.status === 'fulfilled') allFactors.value = fa.value.factors
@@ -1013,8 +1019,8 @@ const rankRows = computed(() =>
 )
 
 // ---------- 中栏 · 地图 ----------
-// 极简口径(业主 2026-10-14):图上只画路段线,断面/落客点/场区/站点不再下发地图;
-// 文字只出现在跟随鼠标的浮牌(hover-chip)里。
+// 2026-10-14 极简口径只画路段线；Issue IKP5BZ 起补回落客点 / 场区 Marker（唯一真值源 = 前端站点包）——
+// 断面仍未上图，路段摘要仍只用跟随鼠标的浮牌（hover-chip）。
 
 /** 选中 chip:路段拥堵 · 摄像头 2 路 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
 const mapChip = computed<string>(() => {
@@ -1700,6 +1706,38 @@ function onCommandChanged(): void {
                 </p>
               </div>
 
+              <!-- IKP5BZ · 本段附近的落客点 / 场区：图上 Marker 之外的第二入口（文字可查、可点选） -->
+              <div class="lm-block">
+                <div class="sec-head">
+                  本段附近的落客点 / 场区<span class="sub-tag">{{ nearbyLandmarks.length }} 个 · 演示点</span>
+                </div>
+                <p v-if="nearbyLandmarks.length === 0" class="lm-empty">
+                  本段 150 m 内暂无登记点位（数据源：本站站点包）。图上标记仍可在全图范围内悬停查看。
+                </p>
+                <ul v-else class="lm-list">
+                  <li v-for="p in nearbyLandmarks" :key="`${p.kind}-${p.id}`">
+                    <button
+                      type="button"
+                      class="lm-item"
+                      :title="`${p.name} · 所属路段 ${p.segment_id || '未标定'} · ${p.id} · 演示点 · 点击选中该路段`"
+                      @click="onSelect(p.segment_id)"
+                    >
+                      <span class="lm-icon" :class="p.kind">{{ p.kind === 'dropoff' ? '落' : '场' }}</span>
+                      <span class="lm-main">
+                        <span class="lm-name">{{ p.name }}</span>
+                        <span class="lm-meta">
+                          {{ p.segment_id || '路段未标定' }} · {{ p.id }} · {{ landmarkDistance(p.distance_m) }}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                </ul>
+                <p class="lm-note">
+                  数据源：本站站点包（唯一真值源）· 坐标为路段折线上的<b>演示点</b>，不是踏勘点位 ·
+                  点击条目选中其所属路段（所属路段按最近折线推定）。
+                </p>
+              </div>
+
               <!-- ① 关联摄像头（Issue IKMS18）：该段登记摄像头 + 感知服务真实帧预览 / 如实空窗 -->
               <SegmentCameraCard :segment-id="selectedId || ''" />
 
@@ -2378,6 +2416,78 @@ function onCommandChanged(): void {
 }
 .dir-note {
   margin: 4px 0 2px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+/* IKP5BZ · 本段附近的落客点 / 场区（与地图 Marker 同一份演示点位） */
+.lm-block {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--td-component-stroke);
+}
+.lm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lm-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 6px;
+  text-align: left;
+  font: inherit;
+  background: var(--td-bg-color-container-hover);
+  border: 1px solid transparent;
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.lm-item:hover {
+  border-color: var(--td-brand-color);
+}
+.lm-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+.lm-icon.dropoff {
+  background: #0f766e;
+}
+.lm-icon.zone {
+  background: #8a5a2b;
+}
+.lm-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lm-name {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--td-text-color-primary);
+}
+.lm-meta {
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+}
+.lm-empty {
+  margin: 2px 0;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+.lm-note {
+  margin: 5px 0 0;
   font-size: 10px;
   line-height: 1.6;
   color: var(--td-text-color-placeholder);
