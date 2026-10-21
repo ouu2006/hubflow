@@ -1447,3 +1447,92 @@ cd ../../.. && python scripts/doc_gate.py         # 8/8
 ```
 
 切站链路自检要点：切 Z↔GZ 后路网段数应为 61 / 708（`activePack().segments.length`，页脚「站点包路网 N 段」可读）、`selectedId` 已归零、地址栏带 `?pack=`、浏览器**不会**重新请求 document（Network 面板不出现第二个 index.html）。
+
+---
+
+## 二十五、大屏全国地图与切站镜头（Issue IKPFVN，2026-10-21）
+
+业主 2026-10-21 交办：「实时渲染的全国大地图，选到对应高铁站再放大展示路网，其他站的路线不展示；切换高铁站要有动作展示：地图缩小 → 移动到对应高铁站 → 放大 → 路线显示、信息切换。目前只做肇庆东和广州南。」
+
+一期只做 Z / GZ 两站，**没有全国路况数据源**，所以本节的「实时渲染」口径是：底图与站点层由 MapLibre 实时绘制（在线矢量瓦片），**站区路况仍走现有 2 s SSE 快照**；除这两个站之外不画路线、不上色。
+
+### 25.1 全国站表：一份生成物，三处共用
+
+| 是什么 | 在哪 |
+|---|---|
+| **真值源** | `work/twin/site-ranges.json`（每站一份：锚点 / 范围 / 段数 / 段号前缀） |
+| **生成脚本** | `work/frontend/tools/gen_station_registry.py` → `src/station-packs/stations.generated.ts` |
+| **对账脚本** | `scripts/check_station_registry.py`（`--self-test` 反向自测） |
+| **前端入口** | `station-packs/index.ts` 的 `stationEntries()` / `STATIONS`（`{key, name, lon, lat, range_m, segment_count, pack}`） |
+
+生成物**不许手改**。加一个站 = 改登记表 + 加一个站点包 + 重跑生成脚本 + 跑对账，**页面与引擎代码不动**（手册 §8.4）。
+
+对账脚本钉住四件事：① `PACKS` 的键与站表**一一对应**；② 登记表 `anchor_lonlat` 与该包 `stations[0]` 经纬度**容差 1 m**（超了 pin 就和站区错位）；③ 缺字段 / 重复键直接失败；④ `pack` 指向的文件真的在、`segment_count` 与该包真实段数一致。
+
+### 25.2 两个概念，别混
+
+- **看哪个站** = 站点包键（`activePackKey()`），切站只有一个入口 `shared/stationSwitch.ts` 的 `switchStation()`（§二十四）。
+- **看多远** = `mapScope: 'national' | 'station'`，由 `DashboardView` 持有、传给 `MapLibreViewer` 的 `mapMode` prop（⚠️ 与「四级 / 指数」那个 `mode` prop 不是一回事）。
+
+镜头运动全在 `src/shared/mapMotion.ts`：`MOTION`（缩远 700 / 平移 550 / 放大 950 ms）、`CHINA_BBOX`、`overviewCamera()` / `stationCamera(key)` / `stationPadding()` / `flyToStation()` / `flyToOverview()` / `cancelMotion()`。
+
+### 25.3 镜头状态机与「只有一个动画在跑」
+
+```text
+national --(选站)--> leaving --(缩远到 ≤5.5)--> panning --(平移)--> entering --(放大 + 路网淡入)--> station
+```
+
+`flyToStation()` 用 `easeTo` + `fitBounds` 链，**不用 `setInterval` 逐帧改 center**（Vue 不参与逐帧渲染）。模块级 `runSeq` 保证单通道：每次发起 `++runSeq; map.stop()`，每一步 `await waitMoveEnd()` 后校验代次，代次变了立刻返回 `cancelled` 且后续步骤一步都不跑 —— 于是 T1/T2/T3 任意时刻点另一站，都是从**当前相机**重开，最终状态必然等于**最后点的那个站**（连点不叠加、不排队）。
+
+`prefers-reduced-motion: reduce` 时取消缩远 / 平移，只做一次 200 ms 的 `fitBounds` 直接到站区，站名 / 路网 / 信息照旧。
+
+### 25.4 图层规则（「其他站的路线不展示」落到开关上）
+
+唯一开关在 `MapLibreViewer.vue` 的 `applyModeLayers()`，按 `motionPhase` 分派：
+
+| 图层族 | 全国 | 过渡中 | 站区 |
+|---|---|---|---|
+| 路网 / 热力 / 选中 / 路线（`hubflow-route-*`） | 隐藏 | 隐藏 | 显示 |
+| 方向标记 | 隐藏 | 隐藏 | 按顶栏「设置」开关 |
+| 站点 pin（命中层 / 实心点 / 站名） | 显示 | 显示 | 隐藏 |
+| 兜底轮廓（中国示意） | 底图不可用时显示 | 同左 | 隐藏 |
+| 摄像头 / 落客点 / 起终点 / 车辆（DOM Marker） | 隐藏（`.mode-national`） | 隐藏 | 显示 |
+
+路线 source **只装当前站**的 `RouteHighlight`：切站开始即 `setData(empty)`，目标站路线等 `route/recommend` 返回且镜头到站后才写入。换底图样式后 `applyViewState()` 会重贴 data / filter / image / visibility（否则 `setStyle` 会把 visibility 打回 visible）。
+
+### 25.5 切站时序（信息不串站）
+
+1. **选站**（pin / 全国浮层卡片 / 工具条按钮 / 顶栏切换器，全部走 `pickStation()` → `switchStation()`）：站内状态一律重置、在途请求中止、`arriving = true`（数据先挂住不上屏）。
+2. **镜头**：`national → leaving → panning → entering → station`；左右栏在全国模式收起（250 ms 宽度过渡），到站前 `map.resize()` 再 `fitBounds`（否则宽高还是旧的，取景会偏）。
+3. **到站**（地图 `emit('arrived')`）；`refresh()` 拿到的响应 `await whenArrived()` 之后才提交面板；缓存快照同样先挂在 `pending`，到站后一次铺上。**4 s 兜底**：动画异常时不至于让数据永远不落地。
+4. **路线**：`route/recommend` 返回后淡入。失败 → 镜头仍到站区，面板如实「本次未取到 + 重试」，**不回退成上一站数据**。
+
+### 25.6 入口与深链
+
+- 工具条新增「← 全国」；顶栏「线路图切换器」与大屏工具条两个入口仍然是**同一支** `switchStation()`。
+- URL：`?station=Z|GZ` 直达站区；`?pack=` 是 §二十四 已有的**等价参数**（同一语义，两个都认、写回时同值，旧深链不失效）。缺省 → 全国视角首屏。
+- **首屏策略（业主推荐的 A 方案）**：默认全国；`localStorage['hubflow.stationPack']` 有上次站点时 **1.2 s 后自动飞入**，用户一碰（点 pin / 卡片 / 工具条 / 「← 全国」）即取消；`?station=` / `?pack=` 可直达。
+- 地图容器挂 `data-map-mode` / `data-station` / `data-motion-phase`；dev 下 `window.__hubflowMap` 是地图实例（生产构建摇掉），供验收脚本读 `map.getZoom()` 与 `querySourceFeatures`。
+
+### 25.7 底图兜底与署名
+
+- 底图仍是 OpenFreeMap Liberty（`shared/basemap.ts`），**切站不 `setStyle`、不重建 Map**：站点 pin 与路网图层一次挂好，只改 `visibility` / `opacity` / `data`。
+- 底图拉不到时画本地 `src/assets/geo/china-outline.geojson`（中国轮廓 + 两站 pin + 提示「底图不可用 · 仅显示站点与站区路网」），**不白屏**。
+- 该轮廓由 `work/frontend/tools/gen_china_outline.py` 从 **Natural Earth 1:110m admin-0**（**公有领域**）抽稀生成，`4.3 KB`；源数据不进仓库。**口径**：轮廓简化、仅作示意、**不代表边界主张**，不用于判读距离与范围；许可与义务见 [`docs/条款核实.md`](../../docs/条款核实.md) §1.5（NE-01~NE-03）。OSM / ODbL 署名照旧保留。
+- 站名标签用 canvas 图片 symbol 图层而不是 `text-field`（兜底样式没有 glyphs，`text-field` 会直接报错并画不出字）。两站相距约 100 km，全国缩放下 pin 只差约 7 px，标签交给 MapLibre 碰撞检测 —— **精确选站以全国浮层卡片与悬停浮牌为准**。
+
+### 25.8 复核命令
+
+```bash
+cd work/frontend/ui-vue
+npm run build                                     # exit 0（vue-tsc 类型检查）
+grep -rn "location.reload" src/                   # 代码 0 命中（只剩历史注释）
+
+cd ../../..
+python work/frontend/tools/gen_station_registry.py --check   # 站表与登记表一致
+python scripts/check_station_registry.py                     # 键/锚点/字段/段数四项对账
+python work/frontend/tools/gen_china_outline.py --check      # 兜底轮廓产物在场
+python scripts/doc_gate.py                                   # 8/8
+```
+
+浏览器侧看四件事：① 首屏 `data-map-mode="national"` 且 `map.getZoom()` 在 3–6；② 点站后连续几帧能看到「缩远到 ≤5.5 → 平移 → 放大到 ≥14」；③ 到站后 `querySourceFeatures` 里的路线段号全属于该站（Z 全 `SZ-` / GZ 全 `GZ-`）；④ 断网屏蔽 `tiles.openfreemap.org` 后仍有中国轮廓 + 两站 pin + 提示。
