@@ -5,7 +5,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, useSlots } from 'vue'
 import { RouterLink } from 'vue-router'
 import { APP_TABS, DEMO_BADGE, SOURCE_ITEMS, type AppTabKey, type SourceMode } from '../shared/nav'
-import { basemapEnabled, setBasemapEnabled } from '../shared/settings'
+import {
+  basemapEnabled,
+  directionsVisible,
+  setBasemapEnabled,
+  setDirectionsVisible,
+} from '../shared/settings'
 import { formatStamp } from '../shared/traffic'
 import { TD } from '../shared/theme'
 import { activePack, activePackKey, packItems, switchPack } from '../station-packs/index'
@@ -59,9 +64,10 @@ function choosePack(key: string): void {
   window.location.reload()
 }
 
-// ---- 设置（业主 2026-10-16）：大屏地图的**底图开关** ----
-// 开 = 矢量底图（OpenFreeMap，OSM 数据）+ 描出的路网；关 = **只画路网**（原来「示例路网」那个观感），
+// ---- 设置（业主 2026-10-16 / Issue IKP5BD）：大屏地图的**底图开关 + 方向标记开关** ----
+// 底图：开 = 矢量底图（OpenFreeMap，OSM 数据）+ 描出的路网；关 = **只画路网**（原来「示例路网」那个观感），
 // 一个底图请求都不发。底图那一层挂掉也不影响路网（见 `MapLibreViewer.vue`：本地兜底样式建图）。
+// 方向标记：开 = 画方向箭头；关 = 一支都不画（图例同步写「已隐藏方向标记」）。
 const settingsOpen = ref(false)
 
 // ---- 弹出层（线路图切换器 / 设置）的关闭规则 ----
@@ -185,6 +191,27 @@ onBeforeUnmount(() => {
                 :aria-checked="basemapEnabled"
                 aria-label="矢量底图开关"
                 @click="setBasemapEnabled(!basemapEnabled)"
+              >
+                <span class="td-switch-knob" />
+              </button>
+            </div>
+            <!-- 方向标记开关（Issue IKP5BD）：默认开；关掉后地图一支箭头都不画，图例写「已隐藏方向标记」 -->
+            <div class="td-set-row td-set-row-gap">
+              <span class="td-set-main">
+                <span class="td-set-name">方向标记</span>
+                <span class="td-set-note">
+                  开：路段上画方向箭头（双向段中点前后各一支）<br>
+                  关：一支都不画，图例标注「已隐藏方向标记」
+                </span>
+              </span>
+              <button
+                type="button"
+                class="td-switch"
+                :class="{ on: directionsVisible }"
+                role="switch"
+                :aria-checked="directionsVisible"
+                aria-label="方向标记开关"
+                @click="setDirectionsVisible(!directionsVisible)"
               >
                 <span class="td-switch-knob" />
               </button>
@@ -346,6 +373,12 @@ onBeforeUnmount(() => {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+/* 第二项起与前一项用细线隔开（Issue IKP5BD），与菜单底部「td-set-foot」的分隔线同族 */
+.td-set-row-gap {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid #f0f0f0;
 }
 .td-set-main {
   display: flex;
