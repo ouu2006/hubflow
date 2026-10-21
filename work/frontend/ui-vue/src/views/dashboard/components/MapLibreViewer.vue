@@ -52,7 +52,7 @@ import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?url'
 // ⚠️ 也必须显式 import：`tsconfig.app.json` 的 `types: ["vite/client"]` 只放行 vite/client，
 //    所以 `@types/geojson` 的全局 `GeoJSON` 命名空间**不可见**（用 `GeoJSON.FeatureCollection`
 //    会报 TS2503 Cannot find namespace 'GeoJSON'）。
-import type { FeatureCollection } from 'geojson'
+import type { Feature, FeatureCollection, Point } from 'geojson'
 import 'maplibre-gl/dist/maplibre-gl.css'
 
 setWorkerUrl(maplibreWorkerUrl)
@@ -73,7 +73,11 @@ import {
   type CameraPin,
 } from '../../../shared/cameras'
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
-import { basemapEnabled } from '../../../shared/settings'
+import {
+  basemapEnabled,
+  directionsVisible,
+} from '../../../shared/settings'
+import { activePack } from '../../../station-packs/index'
 // IKOQEJ：方向标记（只读 enriched 字段；不是判级/契约数据）
 import {
   bearingDeg,
@@ -315,29 +319,91 @@ function heatOf(seg: DemoSegment): number {
 }
 
 /**
- * 方向标记 GeoJSON（IKOQEJ）：每段一个点（折线中段），带图标名与旋转角。
+ * 当前站点包有没有方向字段（Issue IKP5BD 第④条）。
+ * 旧 21 段对照包（Z21）没有 `segmentDirections`：整包**一支箭头都不画**，
+ * 图例写明「本包无方向字段」——不能像现在这样给每个点画灰 `?`，让人误读成"未标定数据"。
+ */
+const directionsAvailable = computed<boolean>(
+  () => Object.keys(activePack().segmentDirections ?? {}).length > 0,
+)
+/** 真正可画 = 包里方向字段在该 + 顶栏「设置」里开关开着 */
+const directionDrawable = computed<boolean>(() => directionsAvailable.value && directionsVisible.value)
+
+/**
+ * 双向段的箭头横向偏移（米）。取 14 m 而不是几米：默认视野（fitBounds 后约 16~17 档，
+ * 1.4~1.6 m/px）下约 9 px，两支反向箭头分列折线两侧还能看出"一来一回"；
+ * 再小就会被箭头图标自身盖住。
+ */
+const DIR_BIDIR_OFFSET_M = 14
+/** 双向段两支箭头的沿线位置（中点前后）：不用 0.45/0.55——短段（本包中位约 53 m）会叠在一起 */
+const DIR_BIDIR_FRACTIONS: readonly [number, number] = [0.35, 0.65]
+
+/** 沿走向法向偏移一个点（米 → 度；近似平面，只用于展示落点） */
+function offsetByNormal(
+  point: [number, number],
+  bearing: number,
+  offsetM: number,
+): [number, number] {
+  const rad = (bearing * Math.PI) / 180
+  // 走向单位向量（东, 北）；右法向 = (cos b, -sin b)
+  const east = Math.cos(rad) * offsetM
+  const north = -Math.sin(rad) * offsetM
+  const lat = point[1] + north / 111_320
+  const lon = point[0] + east / (111_320 * Math.cos((point[1] * Math.PI) / 180))
+  return [lon, lat]
+}
+
+/**
+ * 方向标记 GeoJSON（IKOQEJ；Issue IKP5BD 改双向画法）。
  *   · forward/backward → 单箭头（沿走向旋转；backward 加 180°）；
- *   · bidirectional → 双向箭头（双头，沿走向旋转，表达"有来有回"）；
- *   · 未标定 → 灰色「?」（不画真箭头，避免把缺字段读成单向）。
+ *   · bidirectional → **中点前后各一支**：两支反向箭头分别偏到折线两侧（法向 ±14 m），
+ *     一支顺走向、一支逆走向，形成"有来有回"；不再用单个 `↕` 字形；
+ *   · 未标定 → 灰色「?」（只针对**包里有方向字段、该段缺值**的情况）。
+ * 包整体缺方向字段 / 开关关掉 → 返回空集合（一支都不画）。
  * 字段只读自站点包（enriched 生成物），不参与判级 / 路线。
  */
 function directionGeoJson(): FeatureCollection {
-  const features = net.map((seg) => {
+  if (!directionDrawable.value) return { type: 'FeatureCollection', features: [] }
+  const features: Feature<Point>[] = []
+  for (const seg of net) {
     const kind = directionKindOf(directionOf(seg.segment_id))
     const bearing = bearingDeg(seg.coords)
+    if (kind === 'bidirectional') {
+      DIR_BIDIR_FRACTIONS.forEach((fraction, i) => {
+        const base = pointAtFraction(seg.coords, fraction)
+        // 第一支偏左、顺走向；第二支偏右、逆走向
+        const offset = i === 0 ? DIR_BIDIR_OFFSET_M : -DIR_BIDIR_OFFSET_M
+        const [lon, lat] = offsetByNormal(base, bearing, offset)
+        const rotate = i === 0 ? bearing : (bearing + 180) % 360
+        features.push({
+          type: 'Feature',
+          properties: {
+            segment_id: seg.segment_id,
+            dir_kind: kind,
+            icon: DIR_ICON_PREFIX + kind,
+            rotate,
+            // 双向段两支箭头略小（0.8×），否则默认视野下两支图标互相盖住
+            icon_scale: 0.8,
+          },
+          geometry: { type: 'Point', coordinates: [lon, lat] },
+        })
+      })
+      continue
+    }
     const rotate = kind === 'backward' ? (bearing + 180) % 360 : bearing
     const [lon, lat] = pointAtFraction(seg.coords, 0.5)
-    return {
-      type: 'Feature' as const,
+    features.push({
+      type: 'Feature',
       properties: {
         segment_id: seg.segment_id,
         dir_kind: kind,
         icon: DIR_ICON_PREFIX + kind,
         rotate,
+        icon_scale: 1,
       },
-      geometry: { type: 'Point' as const, coordinates: [lon, lat] },
-    }
-  })
+      geometry: { type: 'Point', coordinates: [lon, lat] },
+    })
+  }
   return { type: 'FeatureCollection', features }
 }
 
@@ -349,7 +415,10 @@ function directionIconImage(kind: DirectionKind): ImageData {
   canvas.height = size
   const ctx = canvas.getContext('2d')
   if (!ctx) return new ImageData(size, size)
-  const glyph = kind === 'bidirectional' ? '↕' : kind === 'unknown' ? '?' : '↑'
+  // Issue IKP5BD：双向段不再用 `↕` 字形 —— 由 `directionGeoJson()` 生成两支单箭头
+  // （各自带 rotate、分列折线两侧），图标本身保持单箭头形状，只是染双向语义色。
+  const glyph = kind === 'unknown' ? '?' : '↑'
+
   ctx.clearRect(0, 0, size, size)
   ctx.font = 'bold 44px "Segoe UI Symbol", "Noto Sans Symbols", system-ui, sans-serif'
   ctx.textAlign = 'center'
@@ -379,13 +448,30 @@ function directionLayerSpec(): SymbolLayerSpecification {
     source: DIR_SRC,
     layout: {
       'icon-image': ['get', 'icon'],
-      'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
+      // 双向段用 `icon_scale` 收小（0.8×）；单/双向共用同一套随缩放尺寸
+      'icon-size': [
+        '*',
+        ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
+        ['get', 'icon_scale'],
+      ],
       'icon-rotate': ['get', 'rotate'],
       'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
+      // 关掉 / 包无方向字段时不画：换样式重建图层也要带上，否则一开底图就又把箭头画回来
+      visibility: directionDrawable.value ? 'visible' : 'none',
     },
   }
+}
+
+/** 把方向标记显隐贴到图层（开关切换时调用；图层还没建就跳过，建图层时会再带一次） */
+function applyDirectionVisibility(map: MapLibreMap): void {
+  if (!map.getLayer(LAYER_DIRECTION)) return
+  map.setLayoutProperty(
+    LAYER_DIRECTION,
+    'visibility',
+    directionDrawable.value ? 'visible' : 'none',
+  )
 }
 
 /** 建图 / 换样式后把方向源与图层挂上（源/图层存在则跳过；图标缺则补） */
@@ -398,6 +484,7 @@ function addDirectionLayers(map: MapLibreMap): void {
     const before = map.getLayer(LAYER_ROUTE_ALT_HALO) ? LAYER_ROUTE_ALT_HALO : undefined
     map.addLayer(directionLayerSpec(), before)
   }
+  applyDirectionVisibility(map)
 }
 
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
@@ -857,6 +944,7 @@ async function waitForBasemapTiles(
 function applyViewState(map: MapLibreMap): void {
   // 换样式会清空 image 资源：先把方向图标补回去，再更新方向源
   addDirectionImages(map)
+  applyDirectionVisibility(map)
   const dirSrc = map.getSource(DIR_SRC) as GeoJSONSource | undefined
   if (dirSrc) void dirSrc.setData(directionGeoJson())
   const src = map.getSource(SRC) as GeoJSONSource | undefined
@@ -1061,6 +1149,13 @@ watch(basemapEnabled, () => {
   void applyBasemap(map)
 })
 
+/** 方向标记显隐（Issue IKP5BD）：关掉后地图一支箭头都不留，图例同步改写 */
+watch(directionsVisible, () => {
+  const map = mapRef.value
+  if (!map || !ready.value) return
+  applyViewState(map)
+})
+
 watch(
   () => props.vehicles,
   () => {
@@ -1147,14 +1242,25 @@ onUnmounted(() => {
         {{ legendOpen ? '图例 ▾' : '图例 ▸' }}
       </button>
       <div class="legend">
-      <!-- IKOQEJ · 方向标记图例：两种颜色模式都有（方向标不随拥堵/流量换色） -->
-      <div class="lg-title">方向标记（只读 enriched）</div>
-      <div class="lg-row">
-        <span class="dir-mark" :style="{ color: '#1D5FD8' }">↑</span>单向 ·
-        <span class="dir-mark both" :style="{ color: '#6D28D9' }">↕</span>双向（左右两向）·
-        <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
-      </div>
-      <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，非实测）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
+      <!-- IKOQEJ · 方向标记图例（IKP5BD：三行与开关状态一致；包无方向字段时明确说明） -->
+      <template v-if="!directionsAvailable">
+        <div class="lg-title">方向标记</div>
+        <div class="lg-row">本包无方向字段（旧 21 段对照包）：不绘制方向标记</div>
+        <div class="lg-note">方向字段只在 Z / GZ 站点包提供；旧 21 段包仅用于路网对照，不给每个点画灰「?」。</div>
+      </template>
+      <template v-else-if="!directionsVisible">
+        <div class="lg-title">方向标记（只读 enriched）</div>
+        <div class="lg-row">已隐藏方向标记（顶栏「设置 → 方向标记」可开）</div>
+      </template>
+      <template v-else>
+        <div class="lg-title">方向标记（只读 enriched）</div>
+        <div class="lg-row">
+          <span class="dir-mark" :style="{ color: '#1D5FD8' }">↑</span>单向 ·
+          <span class="dir-mark both" :style="{ color: '#6D28D9' }"><span>↑</span><span class="flip">↑</span></span>双向（中点前后各一支）·
+          <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
+        </div>
+        <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
+      </template>
       <div class="lg-sep" />
       <template v-if="isFlow">
         <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>
@@ -1394,6 +1500,15 @@ onUnmounted(() => {
 }
 .lg-row .dir-mark:first-child {
   margin-left: 0;
+}
+/* 双向图例：两支反向箭头（与地图上「中点前后各一支」的画法对应） */
+.lg-row .dir-mark.both {
+  width: auto;
+  gap: 1px;
+}
+.lg-row .dir-mark.both .flip {
+  display: inline-block;
+  transform: rotate(180deg);
 }
 .lg-row.ts {
   color: #999999;
