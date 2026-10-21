@@ -85,6 +85,7 @@ import re
 import sys
 import threading
 import traceback
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -126,6 +127,12 @@ DEFAULT_STATION_KEY = "Z"
 CODE_STATION_NOT_FOUND = "STATION_NOT_FOUND"
 _STATION_CTX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "traffic_station", default=None
+)
+#: 请求级路段快照（IKPFR4 / A2）：值 = {"station_key": 当前站, "snapshot": 已装配好的快照}。
+#: 每个请求开始时清空（见 `_station_middleware`），所以同一请求内的 8 个 build_* 共一份快照，
+#: 不同请求 / 不同站点之间不会串。
+_SNAPSHOT_CTX: contextvars.ContextVar[dict[str, Any] | None] = contextvars.ContextVar(
+    "traffic_request_snapshot", default=None
 )
 _STARTUP_STATION_KEY: str = DEFAULT_STATION_KEY
 
@@ -252,6 +259,64 @@ def read_json(path: Path) -> dict[str, Any] | None:
         _warn(f"{path} 顶层不是对象，按缺失处理")
         return None
     return payload
+
+
+#: 文件读缓存条目上限（IKPFR4 / A1）。产物每被重写一次就多一个键（同路径旧键在插入新键时即清掉），
+#: 上限只是兜底：防止有人把一堆一次性文件也塞进缓存时长成无界内存。
+JSON_CACHE_MAX_ENTRIES = 64
+
+#: 键 = (绝对路径, st_mtime_ns, st_size) → 已经解析好的 dict。**不按路径缓存**：
+#: 产物换代（重写 / touch）后 mtime 变了就是新键，下一个请求直接读新内容，不需要重启。
+_JSON_CACHE: dict[tuple[str, int, int], dict[str, Any]] = {}
+_JSON_CACHE_LOCK = threading.Lock()
+
+
+def read_json_cached(path: Path) -> dict[str, Any] | None:
+    """`read_json` 的记忆化版本：只给**只读静态产物**用（IKPFR4 / A1）。
+
+    为什么有它：只读快照接口层每判断一条记录是否陈旧都要查一次阈值（`_is_stale` →
+    `_grading` → `station_json("thresholds.json")`），广州南 708 段一轮就是两千多次
+    「打开 + 解析 JSON」，`/overview` 因此到 4~7 s 级。文件内容在一轮请求里不会变，
+    重复解析纯属浪费。
+
+    缓存键带 `mtime_ns` 与 `size`：文件被重写 / touch 后键就换了，**下一次请求立即读到新内容**，
+    不需要重启（这也是为什么**不能**只按路径永久缓存）。同一路径的旧键在插入新键时清掉。
+
+    ⚠️ **返回的是缓存里那一份 dict 本体**——调用方只许读。凡是要 `payload[...] = ...`、
+    `.append`、`.update`、`setdefault` 的地方，先 `copy.deepcopy(...)` 再改，
+    否则会把同进程里其它请求的响应改脏（写端点之后尤其明显）。
+
+    文件不存在 / 不可解析时与 `read_json` 同口径：返回 None，不抛异常。
+    """
+    try:
+        if not path.is_file():
+            return None
+        resolved = path.resolve()
+        stat = resolved.stat()
+    except OSError as exc:
+        _warn(f"读取 {path} 失败：{exc}")
+        return None
+    key = (str(resolved), stat.st_mtime_ns, stat.st_size)
+    with _JSON_CACHE_LOCK:
+        cached = _JSON_CACHE.get(key)
+    if cached is not None:
+        return cached
+    payload = read_json(resolved)
+    if payload is None:
+        return None
+    with _JSON_CACHE_LOCK:
+        for stale_key in [item for item in _JSON_CACHE if item[0] == key[0]]:
+            del _JSON_CACHE[stale_key]
+        _JSON_CACHE[key] = payload
+        while len(_JSON_CACHE) > JSON_CACHE_MAX_ENTRIES:
+            _JSON_CACHE.pop(next(iter(_JSON_CACHE)))  # 插入序 = 最早用到的先淘汰
+    return payload
+
+
+def _json_cache_clear() -> None:
+    """清空文件读缓存（自检 / 排障用；正常请求**不需要**它——mtime 变了键自然就换）。"""
+    with _JSON_CACHE_LOCK:
+        _JSON_CACHE.clear()
 
 
 def _num(value: Any) -> float | None:
@@ -665,7 +730,7 @@ def _repo_path(rel: str) -> Path:
 
 
 def _station_registry() -> dict[str, Any]:
-    return read_json(SITE_RANGES) or {}
+    return read_json_cached(SITE_RANGES) or {}
 
 
 def _default_site_record() -> dict[str, Any]:
@@ -777,7 +842,19 @@ def _station_paths(station_key: str | None = None) -> dict[str, Any]:
 
 
 def _read_if_exists(path: Path | None) -> dict[str, Any] | None:
-    return read_json(path) if path is not None else None
+    """读一条链路产物 / 运行产物（只读静态文件）→ 走文件读缓存（IKPFR4 / A1）。
+
+    产物是「一次落盘、整个演示周期不再改」的静态文件，但会被多个端点反复读；
+    缓存按 mtime+size 失效，产物换代后下一个请求就读到新的。
+    ⚠️ 调用方只许读返回值（缓存返回同一份 dict 本体），要改先 `copy.deepcopy`。
+    """
+    return read_json_cached(path) if path is not None else None
+
+
+#: 非默认站的 network.json 是「由真网产物合成」的：合成结果也按文件 mtime+size 记忆化，
+#: 键 = (绝对路径, mtime_ns, size, 站点包键)。广州南 708 段每次合成要重建上千条节点/边，
+#: 而一个请求里 `_network_edges_by_segment()` / `_segment_display_names()` 各要一份。
+_SYNTH_NETWORK_CACHE: dict[tuple[str, int, int, str], dict[str, Any]] = {}
 
 
 def _synthesized_network(site: dict[str, Any]) -> dict[str, Any] | None:
@@ -785,11 +862,27 @@ def _synthesized_network(site: dict[str, Any]) -> dict[str, Any] | None:
 
     只做字段映射，不编数值：speed_limit / capacity_vph 一律 null（与真网产物一致，
     判级/容量由 thresholds.grading 回落）；节点只给经纬度与 boundary 标记。
+
+    合成结果按「源文件 mtime+size + 站点包键」记忆化（IKPFR4 / A1）：源产物换代后自动重算；
+    返回的 dict 由调用方**只读**（与 `read_json_cached` 同一条约束）。
     """
     network_json = _station_paths()["network_json"]
-    if network_json is None or not Path(network_json).is_file():
+    if network_json is None:
         return None
-    network = read_json(Path(network_json)) or {}
+    source = Path(network_json)
+    try:
+        if not source.is_file():
+            return None
+        stat = source.stat()
+    except OSError as exc:
+        _warn(f"读取 {source} 失败：{exc}")
+        return None
+    memo_key = (str(source), stat.st_mtime_ns, stat.st_size, _site_pack_key(site))
+    with _JSON_CACHE_LOCK:
+        memo = _SYNTH_NETWORK_CACHE.get(memo_key)
+    if memo is not None:
+        return memo
+    network = read_json_cached(source) or {}
     nodes: list[dict[str, Any]] = []
     for node in network.get("nodes") or []:
         if not isinstance(node, dict):
@@ -824,7 +917,7 @@ def _synthesized_network(site: dict[str, Any]) -> dict[str, Any] | None:
             "capacity_vph": None,
             "coords": edge.get("coords") or [],
         })
-    return {
+    payload = {
         "is_simulated": True,
         "site": site.get("site_name"),
         "range_m": _num(site.get("range_m")),
@@ -836,6 +929,16 @@ def _synthesized_network(site: dict[str, Any]) -> dict[str, Any] | None:
         "nodes": nodes,
         "edges": edges,
     }
+    with _JSON_CACHE_LOCK:
+        for stale_key in [
+            key for key in _SYNTH_NETWORK_CACHE
+            if key[0] == memo_key[0] and key[3] == memo_key[3]
+        ]:
+            del _SYNTH_NETWORK_CACHE[stale_key]
+        _SYNTH_NETWORK_CACHE[memo_key] = payload
+        while len(_SYNTH_NETWORK_CACHE) > JSON_CACHE_MAX_ENTRIES:
+            _SYNTH_NETWORK_CACHE.pop(next(iter(_SYNTH_NETWORK_CACHE)))
+    return payload
 
 
 # ---------------------------------------------------------------- 站点包（stations/*.json）
@@ -852,9 +955,9 @@ def station_json(name: str) -> dict[str, Any] | None:
     """
     site = _active_site()
     if _is_default_station(site):
-        return read_json(STATIONS_DIR / name)
+        return read_json_cached(STATIONS_DIR / name)
     if name == "thresholds.json":
-        return read_json(STATIONS_DIR / name)
+        return read_json_cached(STATIONS_DIR / name)
     if name == "network.json":
         return _synthesized_network(site)
     if name == "points.json":
@@ -913,7 +1016,7 @@ def _segment_name(segment_id: str, names: dict[str, str] | None = None) -> str:
 
 
 def _site_ranges() -> dict[str, Any]:
-    return read_json(SITE_RANGES) or {}
+    return read_json_cached(SITE_RANGES) or {}
 
 
 def _site_meta() -> dict[str, Any]:
@@ -1192,16 +1295,50 @@ def build_segments_snapshot() -> dict[str, Any]:
     })
 
 
-def _is_stale(record: dict[str, Any]) -> bool:
+def request_snapshot() -> dict[str, Any]:
+    """**本请求**的路段快照（IKPFR4 / A2）：一个请求只装配一次，多个 build_* 共用。
+
+    为什么：改前 8 个刷新端点各自 `build_segments_snapshot()`，`/heat-matrix` 更是在同一个
+    请求里建两次（端点一次 + `build_heat_matrix()` 内部一次），而一次装配要读两条链路产物
+    并归一上千条记录。
+
+    边界：
+      · 键带当前站点（`_active_station_key()`）：同一请求内站点不变量，跨站不会拿错快照；
+      · 值存在 contextvar 里，`_station_middleware` 在每个请求入口把它清成 None，
+        所以**不会跨请求复用**；
+      · 缓存的是**只读**对象：下游 `build_*` 不得原地改 snapshot 或其 payload
+        （`_attach_runtime_state` 只在装配时跑一次）。
+    """
+    station_key = _active_station_key()
+    cached = _SNAPSHOT_CTX.get()
+    if cached is not None and cached.get("station_key") == station_key:
+        return cached["snapshot"]
+    snapshot = build_segments_snapshot()
+    _SNAPSHOT_CTX.set({"station_key": station_key, "snapshot": snapshot})
+    return snapshot
+
+
+def _is_stale(record: dict[str, Any], grading: dict[str, Any] | None = None) -> bool:
+    """记录是否陈旧（IKPFR4 / A3：`grading` 可以在循环外取一次传进来）。
+
+    `grading` 缺省时自己去取一次（单条调用的旧路径）；否则用调用方已解析好的那份，
+    不再逐条读 `thresholds.json`。语义与改前完全一致：`data_freshness_s` 缺失 / 非数
+    时回落到 `STALE_AFTER_S`。
+    """
     age = _num(record.get("data_age_s"))
     if age is None:
         return True
-    limit = _num(_grading().get("data_freshness_s")) or STALE_AFTER_S
+    if grading is None:
+        grading = _grading()
+    limit = _num(grading.get("data_freshness_s")) or STALE_AFTER_S
     return age > limit
 
 
-def _usable_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [record for record in records if not _is_stale(record)]
+def _usable_records(
+    records: list[dict[str, Any]], grading: dict[str, Any] | None = None
+) -> list[dict[str, Any]]:
+    resolved = _grading() if grading is None else grading
+    return [record for record in records if not _is_stale(record, resolved)]
 
 
 # ---------------------------------------------------------------- 各端点数据装配
@@ -1252,11 +1389,11 @@ def build_meta(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_segment_detail(segment_id: str) -> dict[str, Any] | None:
-    return build_segments_snapshot()["records"].get(segment_id)
+    return request_snapshot()["records"].get(segment_id)
 
 
 def build_segment_sources(segment_id: str) -> dict[str, Any] | None:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     channels = snapshot["channels"]
     video = channels["video"].get(segment_id)
     twin = channels["twin"].get(segment_id)
@@ -1344,7 +1481,8 @@ def build_vehicles() -> dict[str, Any]:
 
 def build_overview(snapshot: dict[str, Any]) -> dict[str, Any]:
     segments = snapshot["payload"]["segments"]
-    usable = _usable_records(segments)
+    grading = _grading()  # A3：循环外取一次阈值，不在 708 段里逐条读 thresholds.json
+    usable = _usable_records(segments, grading)
 
     q_sum = 0.0
     weighted_speed = 0.0
@@ -1387,7 +1525,10 @@ def build_overview(snapshot: dict[str, Any]) -> dict[str, Any]:
         }
         for level in LEVEL_ORDER
     ]
-    unavailable_count = sum(1 for record in segments if _is_stale(record) or not _valid_level(record.get("level")))
+    unavailable_count = sum(
+        1 for record in segments
+        if _is_stale(record, grading) or not _valid_level(record.get("level"))
+    )
     level_distribution.append({"level": 0, "name": LEVEL_NAME_FALLBACK, "count": unavailable_count})
 
     # 无可用运行指标 → avg_speed/delta 给 null（不是 0.0：0 会被读成"实测均速 0"）
@@ -1553,7 +1694,7 @@ def build_factors(segment_id: str | None = None) -> dict[str, Any]:
     写端点登记的因素带 `injected: true, pending_recompute: true`：只表示**已登记**、
     判级待感知层统一重算 —— 接口层不改 level / ci（口径红线）。
     """
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     factors: list[dict[str, Any]] = []
     for record in snapshot["payload"]["segments"]:
         if segment_id and record.get("segment_id") != segment_id:
@@ -1743,17 +1884,22 @@ def build_alerts(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def _find_alert(alert_id: str) -> dict[str, Any] | None:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     for alert in _derive_alerts(snapshot):
         if alert.get("alert_id") == alert_id:
             return alert
     return None
 
 
-def build_heat_matrix(window: int, bucket: int) -> dict[str, Any]:
+def build_heat_matrix(
+    window: int, bucket: int, snapshot: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """热力矩阵。`snapshot` 缺省时取**本请求**的快照（IKPFR4 / A2：端点只装配一次）。"""
     count = min(24, max(4, int(window)))
     bucket_sec = max(1, int(bucket))
-    snapshot = build_segments_snapshot()
+    if snapshot is None:
+        snapshot = request_snapshot()
+    grading = _grading()  # A3：循环外取一次，逐段不再重读阈值
     base_time = _parse_iso(snapshot["payload"].get("ts")) or _now()
     labels = [
         _format_clock(base_time - timedelta(seconds=(count - 1 - index) * bucket_sec))
@@ -1763,7 +1909,7 @@ def build_heat_matrix(window: int, bucket: int) -> dict[str, Any]:
     rows: list[dict[str, Any]] = []
     for record in snapshot["payload"]["segments"]:
         ci = _num(record.get("ci"))
-        current = None if _is_stale(record) or ci is None else ci
+        current = None if _is_stale(record, grading) or ci is None else ci
         # 接口层没有时序历史：只回当前快照这一个桶，其余桶给 null（灰格），不用 0 冒充
         buckets: list[float | None] = [None] * (count - 1) + [current]
         segment_id = str(record.get("segment_id"))
@@ -1789,15 +1935,18 @@ def build_heat_matrix(window: int, bucket: int) -> dict[str, Any]:
     return payload
 
 
-def build_ci_history(segment_id: str, points: int) -> dict[str, Any] | None:
+def build_ci_history(
+    segment_id: str, points: int, snapshot: dict[str, Any] | None = None
+) -> dict[str, Any] | None:
     del points  # 无时序历史：点数参数只做入参校验，不倒推编造序列
-    snapshot = build_segments_snapshot()
+    if snapshot is None:
+        snapshot = request_snapshot()
     record = snapshot["records"].get(segment_id)
     if record is None:
         return None
     ci = _num(record.get("ci"))
     series: list[dict[str, Any]] = []
-    if ci is not None and not _is_stale(record) and _valid_level(record.get("level")):
+    if ci is not None and not _is_stale(record, _grading()) and _valid_level(record.get("level")):
         series.append({
             "ts": _format_clock(_parse_iso(snapshot["payload"].get("ts"))),
             "ci": ci,
@@ -1825,7 +1974,7 @@ def build_predict(segment_id: str | None, horizon: int | None) -> dict[str, Any]
     if not segment_id:
         return "PREDICT_INVALID"
     del horizon  # 一期 L0 只有 15 / 30 分钟两档；接口层不代算预测值
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     record = snapshot["records"].get(segment_id)
     if record is None:
         return "SEGMENT_NOT_FOUND"
@@ -2007,7 +2156,7 @@ def _attach_runtime_state(snapshot: dict[str, Any]) -> dict[str, Any]:
 
 
 def build_context() -> dict[str, Any]:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     moment = _parse_iso(snapshot["payload"].get("ts")) or _now()
     clock = _format_clock(moment)
     session = _SCENARIO_STATE.get("session") or _session_of_clock(moment.hour)
@@ -2126,7 +2275,7 @@ def _routes_layers() -> list[tuple[str, dict[str, Any]]]:
     """在场的引擎路线层（real 优先，sample 回退）；顶层无 requests 的按缺失处理。"""
     layers: list[tuple[str, dict[str, Any]]] = []
     for key, path in _route_layer_paths():
-        payload = read_json(path)
+        payload = read_json_cached(path)
         if payload and isinstance(payload.get("requests"), list) and payload["requests"]:
             layers.append((key, payload))
     return layers
@@ -2260,7 +2409,7 @@ def _route_response_meta(
     match_meta: dict[str, Any],
 ) -> dict[str, Any]:
     """路线响应的来源 / 段号口径说明（附加字段，不改引擎契约字段）。"""
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     snapshot_ids = set(snapshot["records"])
     route_ids: set[str] = set()
     for request in payload.get("requests") or []:
@@ -2328,6 +2477,54 @@ def _routes_payload() -> dict[str, Any] | None:
 
 # ---------------------------------------------------------------- FastAPI 应用
 
+
+def warmup_stations() -> None:
+    """进程启动预热（IKPFR4 / A4）：登记表里的每个站各算一次快照，把文件读缓存先热起来。
+
+    为什么要预热：`/overview` 的第一次请求要把两条链路产物读进来并归一上千条记录，
+    不预热的话页面首次刷新就吃这一下（改前广州南是 4~7 s 级，预热后只剩毫秒级）。
+    预热只做「读文件 + 归一」，**不写任何产物、不改写端点内存态**。
+
+    边界：预热失败只 `_warn`，**不阻断启动**（数据缺本来就有三层回落口径，服务该起还是起）；
+    `_STATION_CTX` 用 set / reset 成对操作，不污染主线程默认站点。
+    """
+    sites = [site for site in (_station_registry().get("sites") or []) if isinstance(site, dict)]
+    keys: list[str] = []
+    for site in sites:
+        key = _site_pack_key(site)
+        if key and key not in keys:
+            keys.append(key)
+    if not keys:
+        keys = [DEFAULT_STATION_KEY]
+    for key in keys:
+        if _site_by_station_key(key) is None:
+            _warn(f"登记表里的站点 {key!r} 解析不出站点包键，跳过预热")
+            continue
+        token = _STATION_CTX.set(key)
+        try:
+            snapshot = build_segments_snapshot()
+            _grading()  # 阈值也热一遍（`_is_stale` 缺省路径要读它）
+            _site_ranges()
+            _routes_layers()
+            _latest_data_ts()
+            print(
+                f"[traffic.py] 预热站点 {key}：{len(snapshot['payload']['segments'])} 段 · "
+                f"数据源 {snapshot['source']}",
+                flush=True,
+            )
+        except Exception as exc:  # noqa: BLE001 - 预热失败不能挡启动
+            _warn(f"预热站点 {key} 失败（不影响启动）：{exc}")
+        finally:
+            _STATION_CTX.reset(token)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    """启动时预热两站（IKPFR4 / A4）；退出无需清理（缓存全是只读的衍生数据）。"""
+    warmup_stations()
+    yield
+
+
 app = FastAPI(
     title="hubflow 接口层 /api/traffic/*",
     description=(
@@ -2336,6 +2533,7 @@ app = FastAPI(
         "人工置位 / 场景注入为进程内存态、不重算判级。"
     ),
     version="1.2",
+    lifespan=_lifespan,
 )
 
 
@@ -2362,22 +2560,27 @@ async def _station_middleware(request: Request, call_next):
     """按请求选站（IKNB9F）：`X-Station-Pack` 优先，其次 `?station=`；缺省用 --station。
 
     未知站点直接 404 + note（不静默拿默认站数据冒充）；已知站点在请求内生效。
+    另：请求入口把请求级快照清空（IKPFR4 / A2），避免上一个请求的快照泄到这一个（含异常路径）。
     """
-    # 运维端点例外（IKP58M）：health 回答的是「服务活没活」，站点写错也要返回 200，
-    # 由端点自己在 body 里如实标 resolved=false —— 排障时不该被站点校验挡成 404。
-    if request.url.path == "/api/traffic/health":
-        return await call_next(request)
-    raw = request.headers.get(STATION_HEADER) or request.query_params.get(STATION_QUERY_KEY)
-    if not raw:
-        return await call_next(request)
-    key, note = _resolve_station_key(raw)
-    if key is None:
-        return _error(404, CODE_STATION_NOT_FOUND, f"未知站点：{raw}", note=note)
-    token = _STATION_CTX.set(key)
+    snapshot_token = _SNAPSHOT_CTX.set(None)  # 每个请求从「没有快照」开始
+    station_token: contextvars.Token[str | None] | None = None
     try:
+        # 运维端点例外（IKP58M）：health 回答的是「服务活没活」，站点写错也要返回 200，
+        # 由端点自己在 body 里如实标 resolved=false —— 排障时不该被站点校验挡成 404。
+        if request.url.path == "/api/traffic/health":
+            return await call_next(request)
+        raw = request.headers.get(STATION_HEADER) or request.query_params.get(STATION_QUERY_KEY)
+        if not raw:
+            return await call_next(request)
+        key, note = _resolve_station_key(raw)
+        if key is None:
+            return _error(404, CODE_STATION_NOT_FOUND, f"未知站点：{raw}", note=note)
+        station_token = _STATION_CTX.set(key)
         return await call_next(request)
     finally:
-        _STATION_CTX.reset(token)
+        if station_token is not None:
+            _STATION_CTX.reset(station_token)
+        _SNAPSHOT_CTX.reset(snapshot_token)
 
 
 async def _read_body(request: Request) -> dict[str, Any]:
@@ -2565,25 +2768,25 @@ def api_health(request: Request) -> JSONResponse:
 
 @app.get("/api/traffic/meta")
 def api_meta() -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(build_meta(snapshot), source=snapshot["source"])
 
 
 @app.get("/api/traffic/overview")
 def api_overview() -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(build_overview(snapshot), source=snapshot["source"])
 
 
 @app.get("/api/traffic/segments")
 def api_segments() -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(snapshot["payload"], source=snapshot["source"])
 
 
 @app.get("/api/traffic/segments/{segment_id}/sources")
 def api_segment_sources(segment_id: str) -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     payload = build_segment_sources(segment_id)
     if payload is None:
         return _error(404, CODE_SEGMENT_NOT_FOUND, f"路段不存在: {segment_id}", source=snapshot["source"])
@@ -2592,7 +2795,7 @@ def api_segment_sources(segment_id: str) -> JSONResponse:
 
 @app.get("/api/traffic/segments/{segment_id}")
 def api_segment_detail(segment_id: str) -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     payload = snapshot["records"].get(segment_id)
     if payload is None:
         return _error(404, CODE_SEGMENT_NOT_FOUND, f"路段不存在: {segment_id}", source=snapshot["source"])
@@ -2616,7 +2819,7 @@ def api_thresholds() -> JSONResponse:
 
 @app.get("/api/traffic/factors")
 def api_factors(segment_id: str | None = Query(default=None)) -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(build_factors(segment_id), source=snapshot["source"])
 
 
@@ -2628,7 +2831,7 @@ def api_assimilation() -> JSONResponse:
 
 @app.get("/api/traffic/alerts")
 def api_alerts() -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(build_alerts(snapshot), source=snapshot["source"])
 
 
@@ -2646,14 +2849,14 @@ def api_predict(segment_id: str | None = Query(default=None),
         return _error(400, "PREDICT_INVALID", "缺少 segment_id")
     if payload == "SEGMENT_NOT_FOUND":
         return _error(404, CODE_SEGMENT_NOT_FOUND, f"路段不存在: {segment_id}")
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(payload, source=snapshot["source"])
 
 
 @app.get("/api/traffic/heat-matrix")
 def api_heat_matrix(window: int = Query(default=12), bucket: int = Query(default=60)) -> JSONResponse:
-    snapshot = build_segments_snapshot()
-    return _json(build_heat_matrix(window, bucket), source=snapshot["source"])
+    snapshot = request_snapshot()  # A2：只在这里装配一次，`build_heat_matrix()` 不再重算
+    return _json(build_heat_matrix(window, bucket, snapshot), source=snapshot["source"])
 
 
 @app.get("/api/traffic/ci-history")
@@ -2661,8 +2864,8 @@ def api_ci_history(segment_id: str | None = Query(default=None),
                    points: int = Query(default=12)) -> JSONResponse:
     if not segment_id:
         return _error(400, "CI_HISTORY_INVALID", "缺少 segment_id")
-    snapshot = build_segments_snapshot()
-    payload = build_ci_history(segment_id, points)
+    snapshot = request_snapshot()
+    payload = build_ci_history(segment_id, points, snapshot)
     if payload is None:
         return _error(404, CODE_SEGMENT_NOT_FOUND, f"路段不存在: {segment_id}", source=snapshot["source"])
     return _json(payload, source=snapshot["source"])
@@ -2670,7 +2873,7 @@ def api_ci_history(segment_id: str | None = Query(default=None),
 
 @app.get("/api/traffic/context")
 def api_context() -> JSONResponse:
-    snapshot = build_segments_snapshot()
+    snapshot = request_snapshot()
     return _json(build_context(), source=snapshot["source"])
 
 
