@@ -26,6 +26,24 @@ import { readStationCache, schedulePrewarm, type StationSnapshotCache } from './
 
 /** URL 上的站键参数名（深链 `#/dashboard?pack=GZ`） */
 export const PACK_QUERY_KEY = 'pack'
+/**
+ * IKPFVN 新增的等价参数：`?station=Z|GZ`。
+ *
+ * 为什么两个都留：`pack=` 是 IKPFR4 已有的深链 / 自动化在用的形式，`station=` 是业主口径
+ * “指定当前站”的自然说法。两者**语义完全相同**（都是“当前站是哪个”），读的时候两个都认，
+ * 写的时候两个都写同一个值 —— 这样既不会出现“一个说 Z、一个说 GZ”的打架，也不必让旧的
+ * 深链失效。
+ */
+export const STATION_QUERY_KEY = 'station'
+
+/** 从一组查询参数里取站键（`station=` 优先，回退 `pack=`；不合法就 null） */
+function packKeyFromParams(params: URLSearchParams): string | null {
+  for (const name of [STATION_QUERY_KEY, PACK_QUERY_KEY]) {
+    const value = params.get(name)
+    if (value && PACKS[value]) return value
+  }
+  return null
+}
 
 /**
  * 页面级切站钩子（由监控大屏注册）。
@@ -65,13 +83,12 @@ export const stationRemountKey = ref(0)
 /** 从当前 URL 读 `?pack=`（hash 路由下参数在 hash 里；也兼容真实的 search 段） */
 export function readPackKeyFromUrl(): string | null {
   if (typeof window === 'undefined') return null
-  const fromSearch = new URLSearchParams(window.location.search).get(PACK_QUERY_KEY)
-  if (fromSearch && PACKS[fromSearch]) return fromSearch
+  const fromSearch = packKeyFromParams(new URLSearchParams(window.location.search))
+  if (fromSearch) return fromSearch
   const hash = window.location.hash || ''
   const q = hash.indexOf('?')
   if (q < 0) return null
-  const fromHash = new URLSearchParams(hash.slice(q + 1)).get(PACK_QUERY_KEY)
-  return fromHash && PACKS[fromHash] ? fromHash : null
+  return packKeyFromParams(new URLSearchParams(hash.slice(q + 1)))
 }
 
 /**
@@ -88,8 +105,10 @@ export function syncPackUrl(key: string): void {
     const q = hashBody.indexOf('?')
     const path = q < 0 ? hashBody : hashBody.slice(0, q)
     const params = new URLSearchParams(q < 0 ? '' : hashBody.slice(q + 1))
-    if (params.get(PACK_QUERY_KEY) === key) return
+    if (params.get(PACK_QUERY_KEY) === key && params.get(STATION_QUERY_KEY) === key) return
+    // 两个参数写成同一个值（见 STATION_QUERY_KEY 的注释：同一语义，两个名字都留着）
     params.set(PACK_QUERY_KEY, key)
+    params.set(STATION_QUERY_KEY, key)
     url.hash = `#${path}?${params.toString()}`
     window.history.replaceState(window.history.state, '', url.toString())
   } catch {

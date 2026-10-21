@@ -266,6 +266,9 @@ const currentPackKey = ref<string>(activePackKey())
 const offPackTick = onPackChange(() => {
   packTick.value = packVersion()
   currentPackKey.value = activePackKey()
+  // IKPFVN E2：顶栏「线路图切换器」也走同一个 `switchStation()`，本页只收到包键变更通知 ——
+  // 据它把视角切到站区，否则用户从顶栏选了站、大屏还停在全国视角看 pin。
+  if (mapScope.value !== 'station') mapScope.value = 'station'
 })
 
 /** 路网来源短文案(页面页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
@@ -359,9 +362,139 @@ const RANGE_SOURCE_LABEL: Record<string, string> = {
 // 切包 → 重建路网几何 → 站内状态一律重置 → 缓存优先渲染首屏 → 后台补拉 → 同步 URL。
 // 不再整页刷新（原因见 `shared/stationSwitch.ts` 头部与本文件 `resetStationState()`）。
 const packChoices = packItems()
-function onPackButton(key: string): void {
-  if (key === currentPackKey.value) return
+/** 合法包键集合（URL 参数校验 / 自动飞入校验共用，不另址一份名单） */
+const PACK_KEYS = new Set(packChoices.map((p) => p.key))
+
+// ---------- 全国视角 / 站区视角（Issue IKPFVN）----------
+//
+// 业主 2026-10-21 口径：「实时渲染的全国大地图，选到对应高铁站再放大展示路网，其他站的路线不展示；
+// 切换高铁站要有动作展示：地图缩小 → 移动到对应高铁站 → 放大 → 路线显示、信息切换。」
+//
+// 两个概念分开，别混：
+//   · `mapScope` —— 看多远（全国 / 站区），本页管；镜头运动在 `MapLibreViewer` 里按它跑；
+//   · 站点包键 —— 看哪个站（`activePackKey()`），切站唯一入口仍是 `switchStation()`。
+//
+// ⚠️ 地图组件**始终挂载**（只切左/右栏内容的显隐）：把整块 `v-if` 掉会销毁并重建 Map 实例，
+//    那就把 IKPFR4“不重建 Map、不 setStyle”的成果一次性丢掉了。
+type MapScope = 'national' | 'station'
+
+/**
+ * 首屏视角：`?station=Z|GZ` 直达站区；`?pack=` 是 IKPFR4 已有的**等价参数**（同一语义：指定当前站），
+ * 两个都认（取值相同不会打架）；缺省 → 全国视角首屏。
+ */
+function initialMapScope(): MapScope {
+  const raw = route.query.station ?? route.query.pack
+  const key = typeof raw === 'string' ? raw : ''
+  return PACK_KEYS.has(key) ? 'station' : 'national'
+}
+const mapScope = ref<MapScope>(initialMapScope())
+
+/**
+ * 到站门控（IKPFVN D 节时序）：业主口径是“镜头到站 → 路线显示、信息切换”，
+ * 所以页面数据要**等到站再落地**：
+ *   · `arriving = true`（切站一开始）→ `refresh()` 的响应先挂住不写面板，骨架屏继续亮；
+ *   · 地图组件 `arrived` → `markArrived()` 放行，数据一次性铺上去；
+ *   · 兜底 4 s：镜头动画异常 / 地图还没建好（`arrived` 不会来）时，数据不能永远不落地。
+ */
+const arriving = ref(false)
+const ARRIVE_TIMEOUT_MS = 4000
+let arriveWaiters: (() => void)[] = []
+let arriveTimer = 0
+
+function whenArrived(): Promise<void> {
+  if (!arriving.value) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    arriveWaiters.push(resolve)
+    window.clearTimeout(arriveTimer)
+    arriveTimer = window.setTimeout(() => markArrived(), ARRIVE_TIMEOUT_MS)
+  })
+}
+
+function markArrived(): void {
+  window.clearTimeout(arriveTimer)
+  arriveTimer = 0
+  if (arriving.value) {
+    arriving.value = false
+    const waiters = arriveWaiters
+    arriveWaiters = []
+    for (const resolve of waiters) resolve()
+  }
+  flushPendingCache()
+}
+
+/** 缓存快照先挂在一边，到站后再铺（见 `arriving` 的说明） */
+let pendingCache: StationSnapshotCache | null = null
+let pendingCacheReady = false
+
+function flushPendingCache(): void {
+  if (!pendingCacheReady) return
+  const snapshot = pendingCache
+  pendingCacheReady = false
+  pendingCache = null
+  commitCachedSnapshot(snapshot)
+}
+
+// 首屏自动飞入（IKPFVN E4，业主推荐的 A 方案）：
+// 默认全国视角；上次选过的站（`localStorage` 里那份）在 1.2 s 后自动飞进去 ——
+// 但**用户一碰就取消**（点 pin / 点浮层卡片 / 点工具条 / 点「← 全国」）。
+const AUTO_FLY_DELAY_MS = 1200
+const AUTO_FLY_STORAGE_KEY = 'hubflow.stationPack'
+let autoFlyTimer = 0
+let autoFlyCancelled = false
+
+function cancelAutoFly(): void {
+  autoFlyCancelled = true
+  window.clearTimeout(autoFlyTimer)
+  autoFlyTimer = 0
+}
+
+function scheduleAutoFly(): void {
+  if (mapScope.value !== 'national') return
+  let saved: string | null = null
+  try {
+    saved = localStorage.getItem(AUTO_FLY_STORAGE_KEY)
+  } catch {
+    saved = null // 隐私模式：读不到就不飞，首屏保持全国视角，不算错
+  }
+  if (!saved || !PACK_KEYS.has(saved)) return
+  const key = saved
+  autoFlyTimer = window.setTimeout(() => {
+    autoFlyTimer = 0
+    if (autoFlyCancelled || mapScope.value !== 'national') return
+    pickStation(key)
+  }, AUTO_FLY_DELAY_MS)
+}
+
+/**
+ * 选站（全国浮层卡片 / 站点 pin / 工具条按钮三处**共用**这一个入口）。
+ *
+ * 切站本身仍只走 `shared/stationSwitch.ts` 的 `switchStation()`；这里只多做两件事：
+ * “把视角切到站区”（镜头由地图组件按 `mapScope` 跑）与取消首屏自动飞入。
+ */
+function pickStation(key: string): void {
+  cancelAutoFly()
+  if (!PACK_KEYS.has(key)) {
+    mapScope.value = 'national'
+    return
+  }
+  mapScope.value = 'station'
+  // `switchStation` 返回 false = 就是当前站：包没变，但镜头仍要从全国飞进去一次。
+  // 过渡期并行拉目标站数据：`refresh()` 会拿目标站的 8 个只读快照，并写进该站自己的
+  // `stationCache` 桶（等价于预热；再额外调一次 `prefetchStation` 只会把每个接口打两遍）。
+  // 数据真正上屏在“到站”之后，见 `arriving` / `whenArrived()`。
   switchStation(key)
+}
+
+/** 退回全国视角（工具条「← 全国」）：包不换，只换看多远；站内选中态一并清掉 */
+function enterNational(): void {
+  cancelAutoFly()
+  mapScope.value = 'national'
+  selectedId.value = null
+}
+
+/** 地图组件报“镜头已落到站区” —— 放行页面数据 */
+function onMotionArrived(): void {
+  markArrived()
 }
 
 // ---------- 快照状态 ----------
@@ -607,6 +740,13 @@ async function refresh(): Promise<void> {
   if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
   // 第二道闸:站点键已换(切站) → 这批响应属于上一站,一律丢弃
   if (stationKey !== activePackKey()) return
+  // IKPFVN D2：镜头还在飞就先挂住响应 —— 到站后再一次性铺数据（骨架屏继续亮）。
+  // ⚠️ await 之后必须**重新验证两道闸**：等镜头这几秒里用户完全可能又点了一个站。
+  if (arriving.value) {
+    await whenArrived()
+    if (seq !== refreshSeq) return
+    if (stationKey !== activePackKey()) return
+  }
   switching.value = false
   const failed: string[] = []
   const track = (name: string, ok: boolean): void => {
@@ -719,13 +859,32 @@ function resetStationState(): void {
   failedPanels.value = []
   servedFromCache.value = false
   cacheStamp.value = 0
-  switching.value = false
+  // IKPFVN D 节：从这一行起，页面数据等“镜头到站”再上屏（骨架屏先亮着）；
+  // `markArrived()`（地图组件报 arrived / 4 s 兜底）会把它放行。
+  arriving.value = true
+  switching.value = true
 
   scrollPageToTop()
 }
 
-/** 缓存优先渲染：同步把缓存快照铺到首屏 */
+/**
+ * 缓存优先渲染（切站钩子）。
+ *
+ * IKPFVN D 节：镜头还在飞的时候**不往面板上铺**（业主口径是“到站再信息切换”），
+ * 先把快照挂在一边，`markArrived()` 时再走 `commitCachedSnapshot()`。
+ * 本函数仍保持**同步**语义（只是存一下，不等网络）——秒开靠的是“不等网络”，与何时上屏无关。
+ */
 function applyCachedSnapshot(snapshot: StationSnapshotCache | null): void {
+  if (arriving.value) {
+    pendingCache = snapshot
+    pendingCacheReady = true
+    return
+  }
+  commitCachedSnapshot(snapshot)
+}
+
+/** 真正把缓存铺到首屏（切站开始时与到站后各可能调一次） */
+function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
   if (!snapshot) {
     // 没有缓存（首次访问该站 / 预热还没完成）：只亮骨架条，页面本身不白屏
     switching.value = true
@@ -1267,10 +1426,15 @@ onMounted(() => {
       if (connected) void refresh()
     },
   )
+  // IKPFVN E4：首屏默认全国视角；上次选过的站 1.2 s 后自动飞入（用户一碰就取消）
+  scheduleAutoFly()
 })
 
 onUnmounted(() => {
   unsubscribe?.()
+  // 首屏自动飞入 / 到站门控的定时器一起停：它们会往已卸载的页面里写状态
+  window.clearTimeout(autoFlyTimer)
+  window.clearTimeout(arriveTimer)
 })
 
 // ---------- 文案 / 格式化助手 ----------
@@ -1809,13 +1973,20 @@ function onCommandChanged(): void {
          bar 宽度为 0(只有 16px dragger 绝对定位),栏间距由 .spl-gap 补回 10px。
          中栏不传 size → 弹性伸缩(默认仍是弹性栏,口径红线第 3 条)。 -->
     <div class="td-body">
-      <el-splitter class="el-splitter td-splitter" @resize-end="saveColMem" @mousedown="onBarMouseDown">
+      <el-splitter
+        class="el-splitter td-splitter"
+        :class="{ 'is-national': mapScope === 'national' }"
+        @resize-end="saveColMem"
+        @mousedown="onBarMouseDown"
+      >
         <!-- `v-model:size` 而不是 `:size`:单向绑定不会把 ElSplitter 拖出来的 px 宽度
              回写到 colLeft/colRight,那样 @resize-end 存的一直是默认值,记忆功能等于没有。
              两个 ref 都是 `number | string`(元素自身声明 `size: { type: [String, Number] }`)。 -->
         <el-splitter-panel v-model:size="colLeft" :min="COL_MIN_LEFT">
-          <!-- 左栏 · 选择监控 -->
-          <div class="td-col col-left">
+          <!-- 左栏 · 选择监控。
+               IKPFVN：全国视角下左栏整体收起（v-if 卸掉内容 + `is-national` 把面板宽压到 0），
+               地图占满内容区；站区视角再滑入。 -->
+          <div v-if="mapScope === 'station'" class="td-col col-left">
             <section class="td-card">
               <div class="td-card-head">
                 选择监控<span class="td-head-tag">{{ distTotal }} 个路段</span>
@@ -1949,20 +2120,35 @@ function onCommandChanged(): void {
             <section class="td-card map-card">
               <div class="map-toolbar">
                 <div class="map-toolbar-left">
-                  <span class="map-title">全路段状态</span>
+                  <span class="map-title">{{ mapScope === 'national' ? '全国地图' : '全路段状态' }}</span>
                   <span class="map-tag">{{ basemapTag }}</span>
                 </div>
                 <!-- 路网版本切换（IKMDKY 子单①；IKP5D3 起 Z21 旧包已删，只剩 Z / GZ） -->
                 <div class="map-toolbar-right">
-                  <span class="pack-switch" role="group" aria-label="切换路网版本">
+                  <!-- IKPFVN E2：「← 全国」与站点按钮走同一条链路（`pickStation` / `enterNational`），
+                       不刷新、不重建地图，只换视角与镜头。 -->
+                  <button
+                    v-if="mapScope === 'station'"
+                    type="button"
+                    class="map-back-btn"
+                    title="退回全国视角（地图缩远到中国范围，站点 pin 重新出现）"
+                    @click="enterNational"
+                  >
+                    ← 全国
+                  </button>
+                  <span
+                    class="pack-switch"
+                    role="group"
+                    aria-label="已接入车站（切站：缩远 → 移动 → 放大）"
+                  >
                     <button
                       v-for="p in packChoices"
                       :key="p.key"
                       type="button"
                       class="pack-switch-item"
-                      :class="{ on: p.key === currentPackKey }"
-                      :aria-pressed="p.key === currentPackKey"
-                      @click="onPackButton(p.key)"
+                      :class="{ on: p.key === currentPackKey && mapScope === 'station' }"
+                      :aria-pressed="p.key === currentPackKey && mapScope === 'station'"
+                      @click="pickStation(p.key)"
                     >
                       {{ p.name }}
                     </button>
@@ -1998,10 +2184,13 @@ function onCommandChanged(): void {
                   :route-end="routeEndMarker"
                   :mode="viewMode"
                   :color-mode="colorMode"
+                  :map-mode="mapScope"
                   :ts="snapshotTs"
                   :hover-chip="mapChip"
                   :legend="true"
                   @select="onSelect"
+                  @switch-station="pickStation"
+                  @arrived="onMotionArrived"
                 />
               </div>
               <div class="map-caption">
@@ -2012,8 +2201,8 @@ function onCommandChanged(): void {
         </el-splitter-panel>
 
         <el-splitter-panel v-model:size="colRight" :min="COL_MIN_RIGHT">
-          <!-- 右栏 · 路段信息 -->
-          <div class="td-col col-right td-scroll">
+          <!-- 右栏 · 路段信息（IKPFVN：全国视角下同样收起，见左栏注释） -->
+          <div v-if="mapScope === 'station'" class="td-col col-right td-scroll">
         <!-- 推荐路线（Issue IKMF1W）：三态切换 + 来源标注；接口不可达时不画路线、不编造假路线 -->
         <section class="td-card route-card">
           <div class="td-card-head">
@@ -2437,8 +2626,12 @@ function onCommandChanged(): void {
       </el-splitter>
     </div>
 
-    <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径) -->
-    <div class="heat-band">
+    <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径)
+         IKPFVN E1：全国视角下整条收起 —— 它三块内容全是"当前站"的路段维度
+         （档位分布 / 路段×时间矩阵 / CI 色阶），站在全国视角时既没有当前站也不该占高度；
+         收起后地图才真的"占满内容区"（NS 视角拿到的地图高度从 ~377 px 涨到 ~680 px，
+         全国取景的 zoom 也随之落在 3–6 档，而不是挤在 2 档）。 -->
+    <div v-if="mapScope === 'station'" class="heat-band">
       <section class="td-card band-card">
         <div class="td-card-head">
           档位分布 · 当前时刻<span class="td-head-tag">
@@ -4033,5 +4226,54 @@ function onCommandChanged(): void {
     margin-top: 5px;
     gap: 4px 10px;
   }
+}
+
+/* ==========================================================================
+   全国视角：左右栏收起（Issue IKPFVN E1）
+   ==========================================================================
+   为什么用 CSS 把面板宽压到 0 + `!important`，而不是改 `colLeft/colRight`：
+   ElSplitter 把尺寸写在 panel 的**行内 style** 上（`flex-basis: 296px`），
+   且 `:min` 会把它钳住（220 / 280），改成 0 会被 elast 回去；只有带 !important 的
+   外部分类能稳定盖住行内值。宽度过渡 250 ms 与地图 `resize()` 配套（见 MapLibreViewer）。
+   ⚠️ 本区块放在**所有媒体查询之后**：≤1366 / ≤1180 那两个区块也用 !important 改面板尺寸，
+   同权重时按源顺序生效，放最后才能保证“全国视角一定收起”。 */
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-panel:first-child),
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-panel:last-child) {
+  flex: 0 0 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  opacity: 0;
+  transition: flex-basis 250ms ease, opacity 250ms ease;
+}
+/* 两条分隔条也不需要了：少了左右栏，留着就是两根拖不动的死横线 */
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-bar) {
+  display: none !important;
+}
+/* 中栏（地图）自己接住腾出来的宽度：ElSplitter 是按“总宽 - 两侧 size”把 px 写在中栏
+   行内 `flex-basis` 上的（实测：两侧压成 0 后中栏仍停在 876px，右侧留一大片空白）。
+   外部分类把它改成 flex:1，不依赖 ElSplitter 自己重算。 */
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-panel:nth-child(3)) {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+/* 工具条上的「← 全国」小按钮：中性描边，不用品牌蓝（品牌蓝只给“当前 / 已选 / 可操作”） */
+.map-back-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.map-back-btn:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
 }
 </style>
