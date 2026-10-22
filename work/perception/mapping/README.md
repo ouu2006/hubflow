@@ -57,3 +57,10 @@
 2. 跑 `python work/perception/tools/gen_station_channels.py` 重新生成前端通道表（**不要手改生成物**）；
 3. 跑 `python work/perception/tools/check_camera_map.py` + `python scripts/doc_gate.py`；
 4. 感知服务重启后 `/api/perception/streams` 的每条 meta 会带 `segment_id` / `cam_id` / `cid` / `mapping_status` / `mapping_note`（由 `server.py` 从本表补，不改 `data/monitor/*/meta.json` 数据文件）。
+
+## 五、一期布点规划（Issue IKP5DM）
+
+> 规划表：[camera-plan.json](camera-plan.json) / [camera-plan.md](camera-plan.md)，生成器 `work/perception/tools/gen_camera_plan.py`（`--check` 只校验不写盘）。
+> 本登记表 6 条 source ledger 每条都有 `plan_ref` / `plan_version` 指向规划行；规划行用 `source_ledger_cam_id` 回指本表，双向可查。
+> 规划表区分两层：`planned=true` 是规划层布点（未来 `points.json` 的 detector，归 IKMHMX），`demo_camera_id` 是演示层 N 段 N 路编号；
+> 本表**不扩**到 61/708 条，`video_streams` 仍只有 `road2` / `track1` 两路。

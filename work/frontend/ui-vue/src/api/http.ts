@@ -10,6 +10,7 @@
 //
 // 失败必须可读:网络不可达 / 请求超时 / 后端错误码 三类分开报,页面据此显式降级(TC-06/TC-11)。
 
+import { ref } from 'vue'
 import { activePackKey } from '../station-packs/index'
 import { USE_MOCK } from '../shared/env'
 
@@ -31,7 +32,19 @@ export class ApiError extends Error {
 /** 默认超时(毫秒):接口层只读快照,正常 < 1s;10s 还没回按失败处理(不无限转圈) */
 export const REQUEST_TIMEOUT_MS = 10_000
 
-/** 网络不可达时的可读提示(按当前运行模式给排障指向,不笼统说"网络错误") */
+/**
+ * 后端可达性(顶栏「运行模式」chip 用,Issue IKP58M)。
+ *
+ * - `null` = 本次会话还没发出过请求 —— 不臆断「能连上」,也不先报红;
+ * - `true` / `false` = 最近一次**真实请求**的结论。
+ *
+ * 只在 remote 模式更新:mock 模式的 `/api` 由 vite 中间件回答,它成功不代表 traffic.py 活着。
+ * 不新造轮询 —— 页面每次取数、每次重试、SSE 重连都会经过 `request()`,状态自然跟着刷新;
+ * 单开一个 setInterval 探活只会多一份要维护的假数据源。
+ */
+export const backendReachable = ref<boolean | null>(null)
+
+/** 后端不可达时的可读提示(按当前运行模式给排障指向,不笼统说"网络错误") */
 export function networkHint(): string {
   return USE_MOCK
     ? '后端不可达:mock 模式下请确认 vite dev server 在跑(不依赖 traffic.py)'
@@ -40,9 +53,19 @@ export function networkHint(): string {
 
 export interface RequestOptions {
   body?: unknown
+  /** 调用方中止信号（切页 / 切站丢弃在途请求）：不加头、不改路径与契约，只多一个中止通道 */
   signal?: AbortSignal
   /** 覆盖默认超时(毫秒) */
   timeoutMs?: number
+  /**
+   * 把**这一次请求**钉在指定站点包上（Issue IKPFR4 两站常驻预热用）。
+   *
+   * 为什么需要：预热要替**另一个站**取一份快照，而当前页面正跑着的是本站 —— 不显式指定
+   * 就会把本站的数据写进别站的缓存（这正是"把 Z 的数据当 GZ 显示"的来源）。
+   * 请求头仍只有 `X-Station-Pack` 一个、值仍是包键：只是取值的来源换成显式参数，
+   * **不新增请求头、不改契约**。缺省（不传）= 现取 `activePackKey()`，与既有行为一致。
+   */
+  station?: string
 }
 
 export async function request<T>(method: string, path: string, opts: RequestOptions = {}): Promise<T> {
@@ -52,7 +75,7 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
   // 天生拿不到浏览器状态 —— 所以每个请求把当前包键带上,mock 按它现取包。
   // 真接口 traffic.py（IKNB9F 起）同样按这个头切站；并用查询参数 `station` 兜底
   // （某些浏览器/代理对自定义请求头不友好时仍能按站取数；mock 侧只认头，两条通道不冲突）。
-  const stationKey = activePackKey()
+  const stationKey = opts.station ?? activePackKey()
   headers['X-Station-Pack'] = stationKey
   const requestPath = USE_MOCK
     ? path
@@ -75,6 +98,12 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
       body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
       signal: controller.signal,
     })
+
+    // 502/503/504 是 vite 代理「后端没起」的固定表现（见下方错误分支）：先按不可达记；
+    // 其余 HTTP 状态说明后端至少回了话，可达性为真（端点级错误由 ApiError 继续抛）。
+    if (!USE_MOCK) {
+      backendReachable.value = !(res.status === 502 || res.status === 503 || res.status === 504)
+    }
 
     if (!res.ok) {
       let code = `HTTP_${res.status}`
@@ -110,6 +139,8 @@ export async function request<T>(method: string, path: string, opts: RequestOpti
     // 调用方主动取消(切页 / 丢弃过期响应):原样抛出,页面按 AbortError 处理
     if (e instanceof ApiError) throw e
     if (opts.signal?.aborted) throw e
+    // 走到这里的只剩「请求没拿到任何 HTTP 响应」:网络不可达 / 超时 —— 顶栏 chip 据此转警示色
+    if (!USE_MOCK) backendReachable.value = false
     if (e instanceof DOMException && e.name === 'AbortError') {
       throw new ApiError(0, 'TIMEOUT', `请求超时(${timeoutMs}ms):${method} ${path} —— ${networkHint()}`, true)
     }

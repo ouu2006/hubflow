@@ -96,4 +96,33 @@ function cellTitle(label: string, v: number | null): string {
   font-size: 12px;
   color: var(--td-text-color-placeholder);
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）
+   12 个时间桶在 360px 宽里会被压成 17px/格、标签糊成一片：
+   窄屏改为「行保持最小宽度 + 整个矩阵内部横向滚动」，不撑破页面。
+   断点与 DashboardView 一致：768 / 560。
+   ========================================================================== */
+@media (max-width: 768px) {
+  .hm {
+    /* .td-scroll 已给 overflow-y:auto，这里只补横向；内部滚动不向外传递。 */
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .hm-row {
+    min-width: 600px;
+  }
+  .hm-name {
+    flex: 0 0 96px;
+  }
+}
+
+@media (max-width: 560px) {
+  .hm {
+    padding: 6px 8px 8px;
+  }
+  .hm-row {
+    min-width: 560px;
+  }
+}
 </style>

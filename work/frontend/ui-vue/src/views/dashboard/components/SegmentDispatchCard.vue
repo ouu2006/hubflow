@@ -520,4 +520,46 @@ async function doAck(): Promise<void> {
   color: var(--td-brand-color);
   text-decoration: none;
 }
+
+/* ==========================================================================
+   响应式（Issue IKP3EV）
+   断点与 DashboardView 一致：1180 / 768 / 560。
+   组件本身都是 flex-wrap 的，这里只处理「渠道 chips / 滑杆 / 回写输入框」
+   在手机宽度下被挤成看不清的窄列。
+   ========================================================================== */
+@media (max-width: 1180px) {
+  /* 堆叠后右栏整行宽：不要让渠道选项和滑杆拉成一条超长的线，限制控制行内容宽度。 */
+  .ctl-row .chips {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  .ctl-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .ctl-row .range {
+    flex: 1 1 120px;
+  }
+  .wb-row {
+    flex-wrap: wrap;
+  }
+  /* 认领人 / 处置动作两个输入框各占一整行（否则各剩 ~130px 宽）。 */
+  .wd,
+  .wd.grow {
+    flex: 1 1 100%;
+  }
+  .td-input {
+    width: 100%;
+  }
+  /* 两排按钮在窄屏下等宽铺开，保证可点面积。 */
+  .btn-row .td-btn {
+    flex: 1 1 auto;
+  }
+  .deep-link {
+    display: block;
+    margin-top: 8px;
+  }
+}
 </style>

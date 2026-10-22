@@ -2,7 +2,7 @@
 
 > **⚠️ 一期口径变更（业主 2026-10-18，Issue IKNB9I + IKNBT2 纠正）—— 以下为最新口径，优先于本文件历史表述**：
 > **N 段 = N 摄像头 = N 视频**（业主 IKNBT2 纠正：不是六路——有多少段路就有多少摄像头/视频）；一期视频/摄像头**全部为 mock（演示复用同一份样本视频）**、**YOLO 模型不实装**（「YOLO」只是项目代号/展示占位，不载入/不训练模型）；前端/大屏用视频顶替真实数据并显示「**模拟识别（演示）**」/「演示复用视频（非本站现场）」角标；一期**只用虚拟数据**。
-> **登记表 `camera-segments.json` 的 6 条仅作「源台账/初始映射」，不是一期摄像头总数**；Z 站 61 段 = 61 路演示摄像头、GZ 站 433 段 = 433 路演示摄像头，每段都有复用视频。
+> **登记表 `camera-segments.json` 的 6 条仅作「源台账/初始映射」，不是一期摄像头总数**；Z 站 61 段 = 61 路演示摄像头、GZ 站 708 段 = 708 路演示摄像头，每段都有复用视频。
 > 本文件历史记录中的「实测 / 真实帧 / 浏览器实测」等表述**只指当时本机工程自测**，**不代表现场实测/真实识别**；对外**不出现「实测 / 实时 / 现场」**、不得宣称「真实 YOLO 识别 / 模型已实装」。
 > 页面代码文案（页头「YOLO 视频链路」、摄像头卡「无独立摄像头」等）**已于 IKNC4J 按本口径落实**（摄像头卡显示「演示摄像头 · 复用样本视频（按路段数 N 路）」、感知页页头带「模拟识别（演示）」限定）；本 README 只登记口径。口径细见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一。
 
@@ -429,10 +429,10 @@ npm run dev:z            # 同一个包 Z,起在 http://localhost:6895(同包不
 | 项 | 包 Z(唯一站点包 · OSM 真路网) |
 |---|---|
 | 站名 | 肇庆东站(副标:真路网 · 站区 500 m（脚本推定）/ 61 段 · 吉庆大道 / 鼎湖大道 / 场区通道) |
-| 路段 | **61 条**(`SZ-001` … `SZ-061`;旧 21 段 `SZ-##` 留作 Z21 对照包) |
+| 路段 | **61 条**(`SZ-001` … `SZ-061`；旧 21 段 `SZ-##` 的 Z21 对照包已随 IKP5D3 删除——后端站点登记表只登记 Z/GZ，留着切包即全站 404) |
 | 断面 / 点位 | **mock 数据已落**(IKM4TE):11 条候选断面(5 boundary / 6 internal,`待队长签字冻结`)、3 落客点、2 候客/蓄车区 |
-| 上色口径 | **演示摄像头覆盖口径：N 段 = N 路演示摄像头**（2026-10-18 IKNBT2；Z 61/61、GZ 433/433 每段都有演示摄像头+复用视频，不再按登记表 6 路）；无数据段灰轮廓 + 数据不可用档 |
-| 基线来源 | 预置演示值（每段全演示基线；IKNB9F GZ 433 段同口径） |
+| 上色口径 | **演示摄像头覆盖口径：N 段 = N 路演示摄像头**（2026-10-18 IKNBT2；Z 61/61、GZ 708/708 每段都有演示摄像头+复用视频，不再按登记表 6 路）；无数据段灰轮廓 + 数据不可用档 |
+| 基线来源 | 预置演示值（每段全演示基线；IKNB9F GZ 708 段同口径） |
 | 告警 / 场景 / 分流 | **mock 数据已落**(IKM4TE):4 条告警(四态各 1,id 带 `DEMO-` 前缀)、1 条预置下发回执、2 条分流建议、5 个**环境侧**场景预设（key 与 `ScenarioInjectPanel.applyPreset` 对齐,可一键注入重算） |
 | 几何来源 | **OSM 真值**(`work/twin/netpack/build_junction_pack.py` 产物)+ OSM 署名 |
 | 孪生桥接(:8102) | **不接**——本站几何已是 OSM 真值,接上反而会把另一份选段口径画进来 |
@@ -778,7 +778,7 @@ cd work/frontend/ui-vue && npm run dev:remote
 |---|---|---|
 | 监控大屏 | meta / overview / segments / vehicles / network / alerts / factors / heat-matrix / thresholds / segments/{id}/sources / ci-history / route/recommend + SSE | KPI / 路段 / 热力 / 告警 / 路线 / 摄像头图钉全部走接口；页脚「数据来源」改为接口 `meta.data_sources`（路段快照源 / 路线真网或样例 / 写端点内存态），不再写死“mock 示例快照”；路线卡按响应 `data_source` 标「真网算路产物（IKMS11）」/「样例产物」，`session_matched:false` 时显式提示“非该车行程” |
 | 决策层 | alerts / segments / context / thresholds / assimilation / segments/{id}/sources + factors、plan、scenario 写端点 | 处置队列四态、下发回执、回写流转可用；因素面板标「接口层内存态（重启复位）」且成功文案写明**不重算判级**；场景注入只显示「已注入 + 折算环境因素」，接口 `effects` 为空时显示其 `effects_note`，不伪造等级变化；效果对比先读 `/report/compare`（rows 0 条 + note 如实展示），A/B/C 三组改标「前端演示脚本」 |
-| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | **按 2026-10-18 IKNBT2 口径：N 段 = N 摄像头 = N 视频**——Z 61/61、GZ 433/433 每段有演示摄像头 + 演示复用视频（mock 复用样本）；登记表 6 条仅源台账；页面文案「无独立摄像头」→「演示摄像头 N 路」**已于 IKNC4J 落地**；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
+| 感知层 | `/perception-api/*`（感知服务）+ traffic 的 segments / context / assimilation / sources | **按 2026-10-18 IKNBT2 口径：N 段 = N 摄像头 = N 视频**——Z 61/61、GZ 708/708 每段有演示摄像头 + 演示复用视频（mock 复用样本）；登记表 6 条仅源台账；页面文案「无独立摄像头」→「演示摄像头 N 路」**已于 IKNC4J 落地**；环境条缺数显示「—」；感知服务断开显示「未连接 + 重试」并每 5 s 自动重连 |
 
 **数据源口径**：所有响应 `is_simulated=true`；页面角标「演示数据(模拟)· 双数据源」保留；
 写端点响应另带 `level_recomputed:false` / `recomputed:false` / `note` ——
@@ -879,11 +879,11 @@ cd work/frontend/ui-vue && npm run dev
 
 > 业主 2026-10-18 口径：**全部路段都要有视频显示**（视频重复利用，不要求每路独立拍摄）；
 > 同时要能看见**整条路线的路线规划**。本单不新增真实摄像头、不改登记表，也不在前端重算路线 / ETA。
-> **与 IKNBT2 口径的关系（现行）**：按业主纠正，**N 段 = N 摄像头 = N 视频**（每段 1 路演示摄像头 + 复用 mock 视频）——本节的「全路段复用」正是该口径的展示实现（Z **61/61**、GZ **433/433**）；**登记表 6 条仅源台账/初始映射，不是一期总数**，不再要求补 6 路 mock 视频（见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一）。
+> **与 IKNBT2 口径的关系（现行）**：按业主纠正，**N 段 = N 摄像头 = N 视频**（每段 1 路演示摄像头 + 复用 mock 视频）——本节的「全路段复用」正是该口径的展示实现（Z **61/61**、GZ **708/708**）；**登记表 6 条仅源台账/初始映射，不是一期总数**，不再要求补 6 路 mock 视频（见 [docs/口径裁定-20261018.md](../../docs/口径裁定-20261018.md) §十一）。
 
 ### 17.1 全路段视频复用（`SegmentCameraCard.vue`）
 
-- **对没有真实登记摄像头的路段、或登记摄像头均无视频源的路段**启用（`camerasOfSegment(segmentId).length === 0` 或该段摄像头全部 `hasVideo:false`；按 IKNBT2 口径 **N 段 = N 路演示摄像头**，无真实登记源段走演示复用 → **Z 61/61、GZ 433/433 段都有画面**）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
+- **对没有真实登记摄像头的路段、或登记摄像头均无视频源的路段**启用（`camerasOfSegment(segmentId).length === 0` 或该段摄像头全部 `hasVideo:false`；按 IKNBT2 口径 **N 段 = N 路演示摄像头**，无真实登记源段走演示复用 → **Z 61/61、GZ 708/708 段都有画面**）：从现有 2 路样本视频 `road2` / `track1` 中按 `segment_id` **确定性**选一路
   （字符串 hash 取模，同一段永远同一路，不用随机），显示该通道**真实抽帧**
   （`/perception-api/streams/{source}/frames/{n}.jpg`，与感知页同一路径、可暂停）。
 - 角标与文案按业主口径固定：
@@ -1032,10 +1032,10 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 
 | 项 | 口径 |
 |---|---|
-| 数量 | **N 段 = N 摄像头 = N 视频**：Z 站 **61 段 = 61 路演示摄像头**、GZ 站 **433 段 = 433 路演示摄像头**；每段 1 路演示摄像头 + 1 段复用 mock 视频 |
+| 数量 | **N 段 = N 摄像头 = N 视频**：Z 站 **61 段 = 61 路演示摄像头**、GZ 站 **708 段 = 708 路演示摄像头**；每段 1 路演示摄像头 + 1 段复用 mock 视频 |
 | 登记表 | `camera-segments.json` 的 **6 条仅作「源台账/初始映射」**，**不是一期摄像头总数**；不要求扩到 N 条 |
 | 视频 | 一期全部 **mock 复用样本视频**（`road2` / `track1` 可被多路复用），标「**演示复用 / 非本站现场 / 非实时**」；**不要求每路独立拍摄** |
-| 覆盖证据 | Z **61/61**（IKNAUI / PR !55 全路段复用）；GZ **433/433**（IKNB9F / PR !61，`stationGZ.network.ts` 433 段） |
+| 覆盖证据 | Z **61/61**（IKNAUI / PR !55 全路段复用）；GZ **708/708**（IKNB9F / PR !61 建站包；IKOQEI 扩到 1000 m / 708 段） |
 | 验收 | **M1-9 = 通过（演示口径，待池·Q 复核）**（台账已按本口径重判；旧「6 路真实视频」判据作废留痕） |
 | 页面文案（IKNC4J 已落实） | 摄像头卡显示「**演示摄像头 N 路 / 演示复用视频**」；感知页页头已改为「模拟识别（演示）· 视频链路（YOLO 仅项目代号）」；本 README 只登记口径 |
 | 不造假 | 全部 mock/复用；不写实测/实时/现场；不声称真实摄像头/视频已接入；真实接入归 **IKMHMX** |
@@ -1051,7 +1051,7 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 | 项 | 说明 |
 |---|---|
 | 数据源 | `work/twin/netpack/network_junction.enriched.json`（Z，61 段）/ `work/twin/netpack/guangzhounan/network_junction.enriched.json`（GZ，**enriched 708 段**；IKOQEI 把 GZ 范围 800→1000 m）的 `edges[]`：`direction` / `lanes_forward/backward/total` / `opposite_segment_id` / `continuity` / `field_sources` |
-| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **433/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
+| 生成范围 | **只生成前端站点包网络里存在的段**（Z 61/61；GZ 当前 **708/708**）：enriched 比前端包多出的段不写字段（不给页面不存在的段号），其余等前端 `stationGZ.network.ts` 同步后重跑；生成器打印 `[WARN] GZ: enriched 比前端网络多 N 段` |
 | 生成器 | `work/frontend/tools/gen_station_directions.py`（**只读 enriched**，绝不改它）；`--check` 可校验生成物是否与 enriched 同步 |
 | 生成物 | `src/station-packs/stationZ.directions.generated.ts` / `stationGZ.directions.generated.ts`（`Record<segment_id, PackSegmentDirection>`，一段一行） |
 | 类型 | `station-packs/types.ts` 新增 `PackSegmentDirection` / `PackContinuity`；`StationPack.segmentDirections?`（缺省=老包未标定） |
@@ -1079,8 +1079,8 @@ cd work/frontend/ui-vue && npm run build   # exit 0
   - `#/dashboard?segment=SZ-018`（双向）→ 地图双头紫色方向标 + 详情「双向（左右两向）」；
   - `#/dashboard?segment=SZ-001`（单向正向、尾端未贯通）→ 详情「贯通性待核（gap 0 m，节点/相切待核）」；
   - `#/dashboard?segment=SZ-002`（单向、车道 5/0/5）→ 详情「车道（前 / 后 / 共）5 / 0 / 5 · 来源 默认演示值」；
-- GZ 站（前端网络 433 段；enriched 708 段中 433 段有交集）：双向 15 / 单向正向 418；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
-  其余 275 段 enriched 段号（GZ-434…GZ-708）待前端站点包同步后才会出现方向字段。
+- GZ 站（前端网络 708 段；enriched 708 段全覆盖）：双向 44 / 单向正向 664；`#/dashboard?segment=GZ-146`（双向）、`GZ-075`（车道 4/0/4）抽样可见；
+  **433 为 800 m 旧范围口径**（旧 800 m 裁剪只覆盖 GZ-001…GZ-433）；!67 已把前端包同步到 708 段，方向字段 708 段全部命中。
 - 截图（不入库）：`D:\hubflow\_scratch\ikoqej\`：
   `Z-bidirectional-SZ-018.png`、`Z-oneway-tailgap-SZ-001.png`、`Z-oneway-lanes-SZ-002.png`、
   `Z-opposite-SZ-013.png`（对向段跳转）、`GZ-bidirectional-GZ-146.png`、`GZ-lanes-GZ-075.png`、
@@ -1090,16 +1090,16 @@ cd work/frontend/ui-vue && npm run build   # exit 0
 
 ### 20.4 遗留 / 说明
 
-1. **Z21 旧包**没有方向字段（enriched 只覆盖现行 Z/GZ）→ 地图画灰色「?」、详情「未标定」，不编数据。
+1. **缺方向字段的包**（Z21 过渡包已随 IKP5D3 删除；此条留作通用兜底口径）：整包不画方向箭头、图例写「本包无方向字段」，不再画一屏灰色「?」；单段缺值仍显示「未标定」，不编数据。
 2. 车道数多数为 `null`（enriched 里 OSM 没查到 lanes，按默认/推导口径）→ 页面如实「—」并标来源；
    真实车道标定不在本单。
 3. 方向标是**每段一个**（中段位置），不做逐车道级箭头/车道线渲染；双向语义用双头箭头表达。
 4. 对向段跳转只切换大屏选中段（同一页），不改路线/判级；对向字段 Z 8 段 / GZ 13 段有值（enriched derived）；
    GZ 部分对向段号落在 434+（前端包尚未同步）→ 详情显示段号 +「不在当前路网（前端站点包待同步，暂不可跳转）」，不做假跳转。
-5. **GZ 前端站点包待同步**：enriched 已 708 段（IKOQEI，范围 1000 m），前端 `stationGZ.network.ts` 仍 433 段；
+5. **GZ 前端站点包待同步（历史条目，已过期）**：enriched 已 708 段（IKOQEI，范围 1000 m），当时前端 `stationGZ.network.ts` 仍 433 段（433 = 旧 800 m 口径）；
    本单只生成 433 段交集字段，待前端包同步后重跑生成器即可覆盖新增段（`--check` 校验）。
 
-> ⚠️ 上面第 5 条**已过期**：`!67` 已把前端 `stationGZ.network.ts` 同步到 708 段、
+> ⚠️ 上面第 5 条**已过期**（433 = 800 m 旧范围口径，IKOQEI 已扩到 1000 m / 708 段）：`!67` 已把前端 `stationGZ.network.ts` 同步到 708 段、
 > `stationGZ.directions.generated.ts` 也已是 708 段全部命中（文件头 sha256 `0747d9df…`）。
 
 ## 二十一、广州南站点位：落客点 / 候客区补齐（2026-10-19）
@@ -1196,417 +1196,399 @@ python scripts/doc_gate.py
 3. 两处 `stationGZ.ts` 必须同时更新（生成器只写 `work/twin/netpack/guangzhounan/` 那份，
    前端那份靠手工同步）——**这个不同步是历史踩过的坑**，改完务必两份 sha256 对齐。
 
-## 二十二、地图图例可收起 / 可展开（业主 2026-10-19）
+## 二十二、管理端 Web 自适应：1080×1920 及以下屏幕（Issue IKP3EV，2026-10-20）
 
-> 来源：业主 2026-10-19 直接提的两点 ——「我圈起来的这个方格在右上角放一个叉键，点击叉键可以关掉，
-> 这个有点挡住后面的图了，然后打开这个方格按键就放在 z·61 段的左边」。
-> 圈的那块是地图左下角的**图例面板**（.legend），它压在路网上、内容又长，
-> 想看左下角那一片的车流就得先把面板收起来。
+> 业主 2026-10-20 交办：给前端加自适应，要求适应 1080×1920 以下的屏幕。
+> 范围：`work/frontend/ui-vue/src/style.css`、`components/AppShell.vue`、三页 `views/**`；不改数据/接口/契约，不改用户可见口径文案。
 
-### 22.1 改了什么
+### 22.1 问题与目标
 
-| 位置 | 改动 |
+三页（监控大屏 / 决策层 / 感知层）原按 **1920×1080 一屏** 设计：顶栏单行、三栏固定宽、`.td-page` 锁 `height:100%` 内部滚动。窄屏下三栏互相挤压、页面横向溢出、地图与监控墙被压成细条。
+
+目标：**1920×1080 桌面视觉一条不改**；1080 宽竖屏（1080×1920）、1024×768、768×1024、390×844 完整可用；页面级横向滚动恒为 0。
+
+### 22.2 断点表（集中在 `src/style.css` 末尾「响应式断点」区块）
+
+| 断点 | 作用 |
 |---|---|
-| src/views/dashboard/components/MapLibreViewer.vue | 图例面板 `.legend` 内首行加一个**右上角叉键**（`.lg-close`，`×`，`title` / `aria-label` 均为「收起图例」）；面板内容收进 `.lg-body` 一层（滚动发生在这一层，叉键钉在外层不跟着滚）；新增 `emit('close-legend')`（收起由父组件决定，因为重开按钮在工具条上） |
-| src/views/dashboard/DashboardView.vue | `:legend="true"` 改成 `:legend="legendVisible"`；监听 `@close-legend="setLegendVisible(false)"`；地图工具条 `.map-toolbar-right` 内、`.pack-switch` **之前**加一个「图例」按钮（`v-if="!legendVisible"`，即只在收起时出现） |
-| src/shared/settings.ts | 新增 `legendVisible: Ref<boolean>`（默认 `true`）、`setLegendVisible(on)`、存储键 `hubflow.settings.legend`；`restoreSettings()` 里一并读回（与底图开关同一体例：读不到 / 内容坏了**静默退回默认值**，不抛错） |
+| ≥1441 | 现状（宽屏大屏），规则一条不动 |
+| ≤1366 | 压缩横向留白 / 卡片内边距；隐藏品牌副题；顶栏锁 nowrap，避免被挤成竖排字 |
+| ≤1180 | **三栏 → 单列 + 整页纵向滚动**（`html/body/#app/.td-page` 放开高度、`.td-main` 不再 flex:1、`.td-body` 纵向、`.td-col` 自然高）；顶栏换行、页签独占一行可横滑 |
+| ≤1080 | 本单主验收尺寸（1080×1920 竖屏）：单列、地图 / 列表 / 热力带可读 |
+| ≤900 | 监控墙 3 → 2 列；环境上下文条折行；页头留白再收 |
+| ≤768 | 卡片正文内部横向滚动（宽表不撑破页面）；按钮 / 列表行加到 28~32px；顶栏快照时间让位（页头/页脚仍有快照） |
+| ≤560 | 监控墙 1 列；KPI 2 列、页头整行；字号 / 留白再压一档 |
+| `max-height≤1000` 且宽度 >1180 | **感知页**整页滚动：该页在 `td-body` 之外还有环境条 / 数据供给面板，锁一屏会裁掉监控墙；1920×1080 不命中 |
+| `max-height≤800 / ≤700` 且宽度 >1180 | 低高度桌面压缩 KPI / 页头 / 卡片内边距；≤700 隐藏页头副题（**数据不隐藏**） |
 
-### 22.2 两处必须解释的样式决定（不写清楚下次会被改回去）
+### 22.3 三页行为
 
-1. **`pointer-events` 从 `none` 改成 `auto`**：原先整块面板「纯展示、不挡鼠标」，`none` 下**叉键点不动**。
-   代价是这块面板下方不再透传地图拖拽 —— 纯展示面板本来也不需要，地图拖拽可用地图其余部分。
-2. **面板加了 `max-height: calc(100% - 24px)` + `max-width: 320px`**：
-   - 不加 `max-height`：面板内容比地图高时，**上半截会被地图容器 `overflow: hidden` 裁掉**（这是**改之前就有**的现象，不是本单引入），叉键钉在右上角就会跟着飞出可视区、点不到。现在超高时面板内部滚（`.lg-body` 的 `overflow-y: auto`），面板永远落在地图内。
-   - 不加 `max-width`：绝对定位元素的 shrink-to-fit 取 **max-content**，面板会按最长那句说明的单行宽度被拉满整幅地图，叉键跑到地图中间去。320 px 是「刚好容纳现有最长一行说明」的紧凑值。
+- **大屏 `DashboardView`**：ElSplitter 在 ≤1180 纵向堆叠（拖拽条隐藏，panel 内联 `flex-basis` 用 CSS `!important` 覆盖）；左栏路段列表 400px 内部滚动、地图 `clamp(320px, 52vh, 560px)`、右栏自然高；地图图例 ≤1180 收成「图例 ▸」可折叠浮层（默认收起）；热力带 / 告警条纵向堆叠；KPI ≤900 两列。
+- **决策页 `DecisionView`**：≤1180 三视图单列、取消列级滚动（交给整页）；决策流程图 `auto-fill` 网格 ≤768 两列 / ≤560 单列；效果对比宽表 ≤768 容器内横向滚动 / ≤560 双向滚动；滑块 / 输入行窄屏全宽。
+- **感知页 `PerceptionView`**：≤1180 三栏单列；监控墙 ≤900 两列 / ≤560 单列；环境上下文条、数据供给面板折行；≤1000 高桌面整页滚动（栏目恢复自然高度）。
+- **壳层 `AppShell`**：≤1180 顶栏换行、页签整行横滑；线路图 / 设置弹层宽度 `min(…, calc(100vw - 24px))`，不超出视口。
 
-### 22.3 自检（本单真跑，2026-10-20）
+### 22.4 验证
+
+- `cd work/frontend/ui-vue && npm run build` → exit 0（`vue-tsc -b` + `vite build`）。
+- `npx vue-tsc --noEmit -p tsconfig.app.json` → exit 0。
+- `python scripts/doc_gate.py` → 8/8。
+- 多视口审计（8 视口 × 3 页，每次强制整页 reload）：`document.documentElement.scrollWidth - clientWidth` **全部为 0**；1920×1080 三页布局与改前一致。
+  视口：1920×1080 / 1440×900 / 1366×768 / 1080×1920 / 1024×768 / 768×1024 / 390×844 / 320×568。
+- 证据截图：`work/frontend/ui-vue/.evidence/responsive-20261020/`（桌面基线、1080 竖屏、手机各页 + 感知页 1366×768 低高度）。
+- 口径：未改任何用户可见文案（不出现「实测 / 实时 / 现场」），未改数据 / 接口 / 契约。
+
+### 22.5 边界与遗留
+
+1. 本单的「自适应」指**同一套 Web 管理端在窄视口可用**，不是新增手机 App；触屏只加高可点区域，未重做交互模型。
+2. 1366×768 这类「宽 >1180 且矮」的桌面：大屏 / 决策页仍保持一屏 + 栏内滚动；感知页因 `td-body` 外还有环境条 / 数据供给面板，改为整页滚动（`max-height:1000px`）。
+3. 竖屏手机的地图以缩放 / 拖拽为主，未做手势级优化。
+4. 新增页面请沿用同一套断点，不要另起一套；窄屏规则集中在各文件末尾的 `/* ---------- 响应式（Issue IKP3EV） ---------- */` 区块。
+
+## 二十三、2026-10-20 业主交办八单收口（IKP58M / IKP5BD / IKP5BZ / IKP5C6 / IKP5CK / IKP5CE / IKP5D3 / IKP5DM）
+
+> 本批八单同属「业主 2026-10-20 交办」的一轮问题清单，2026-10-21 一次收口。**判级算法、契约字段形状、`stations/*.json` 数据、引擎候选生成均未改动**；页面与文档仍按一期口径标注「演示数据（模拟）」，不把 mock 复用写成真实接入。
+
+### 23.1 先回答「现在跑的是哪种模式」：依赖 / 健康端点 / 环境自检 / 顶栏 chip（IKP58M）
+
+「加载失败、总显示连接不上」的主因不是页面降级没写好，而是**没人告诉使用者该起什么**。本单把这件事补齐：
+
+- **依赖清单**：仓库根新增 `requirements.txt`（实际 import 全集只有 `fastapi` / `starlette` / `uvicorn`，其余标准库）；`README.md`「怎么开始」补「装依赖 → 起接口层 → 起前端」三条命令，并写明 mock / remote 两种模式的区别。
+- **健康端点**：`GET /api/traffic/health`（**运维端点、非契约端点**）恒返回 200，逐源给出 `present / fallback / missing` + `used` + 路径，另含 `station` / `version` / `ts` / `missing` / `data_ok` / `resolved` / `is_simulated: true`；与 `traffic.py --check` 共用 `build_health()`，不各写一套。服务活着 ≠ 数据齐，**无数据也 200**；未知 `?station=` 同样 200（`resolved:false`）。
+- **环境自检**：`python scripts/env_check.py` 探 `8000 / 8101 / 5173`，HTTP 200 才算过；失败项直接打印该敲的命令；退出码 0 = 全绿、1 = 有缺。支持 `--json`、`--self-test` 与 `--traffic-port/--perception-port/--frontend-port` 覆盖。
+- **顶栏运行模式 chip**：`src/api/http.ts` 维护 `backendReachable`（只在 remote 更新，由真实请求成功/失败刷新，**不新造轮询**）；`AppShell.vue` 显示「运行 mock / 运行 remote」，remote 不可达转琥珀警示色，`title` 直接给「起 `traffic.py`」的命令。它与顶栏「数据源（视频链路 / 孪生链路 / 并排）」是两个维度，文案已区分。
+- **端口策略**：`vite.config.ts` 开 `strictPort: true` —— 5173 被占**直接启动失败并提示**，不再静默顺延到 5174（README 全篇写的是 5173）。`dev:z` 仍按 `VITE_DEV_PORT` 起在 6895。
+
+#### 23.1.1 mock / remote 端点差异总表
+
+**mock 不是「没有后端也能跑全部端点」**：`/api/traffic/*` 绝大多数由 vite mock 中间件回答，但两条辅助端点只在 remote（真接口）存在；感知面 `/perception-api/*` **两种模式都要起感知服务**。
+
+| 端点 | mock（`npm run dev`） | remote（`npm run dev:remote`） | 页面怎么降级 / 说明 |
+|---|---|---|---|
+| `/segments`、`/segments/{id}`、`/segments/{id}/sources`、`/overview`、`/meta`、`/vehicles`、`/alerts`、`/factors`、`/thresholds`、`/heat-matrix`、`/ci-history`、`/predict`、`/context`、`/assimilation`、`/scenario`、`/plan/*`、`/stream`（SSE）等 | **200**（`src/mock/traffic.ts` 按当前站点包现造） | **200**（`traffic.py` 读快照 / 运行态；缺产物空壳 + note） | 两模式页面形状一致；字段口径以 `src/shared/traffic.ts` 为准 |
+| `/api/traffic/route/options` | **404**（mock 未实现） | **200**（真网产物优先、样例回退；缺产物如实 404 + note） | 大屏 `loadRouteOptions()` 在 `USE_MOCK` 时**直接不发请求**，提示「mock 模式无该端点」并回退演示会话路线 |
+| `/api/traffic/report/compare` | **404**（mock 未实现） | **200 空壳**（`rows: []` + note） | 决策页 `EffectCompare` 在 `USE_MOCK` 时同样不发请求，按演示脚本展示；remote 空行时显示 note，不伪造结论 |
+| `/api/traffic/health` | **404**（mock 未实现，前端也不消费） | **200**（运维端点） | 顶栏 chip 只读 `request()` 成功/失败，不轮询 health |
+| `/perception-api/*` | 代理 → `127.0.0.1:8101` | 同左 | **mock 模式也要起感知服务**才有视频画面；没起时显示「未连接 + 重试」 |
+| `/twin-api/*`（可选） | 代理 → `127.0.0.1:8102` | 同左 | 没起孪生预览服务按不可达降级，不影响三页主链路 |
+
+> 口径：mock 只接管 `/api`，未匹配路径一律 404 是**刻意设计**（不臆造端点）；新增端点必须 mock / 真接口两边同步。前端只认同源相对路径，模式差异只由 `VITE_USE_MOCK` 决定。
+
+### 23.2 方向标记：显示开关 + 双向两侧箭头 + 缺字段兜底（IKP5BD）
+
+- **开关**：`shared/settings.ts` 新增 `directionsVisible`（默认开，键 `hubflow.settings.directions`），顶栏「设置」新增「方向标记」开关；关掉后地图上一支箭头都不留，图例同步写「当前已隐藏方向标记」。
+- **双向画法**：`bidirectional` 段不再用单个 `↕` 字形，而是在折线 35% / 65% 处各放一支箭头，沿法向 ±14 m 分列两侧、一支顺走向一支逆走向；`forward / backward` 保持单支。Z 站 61 段里 33 段双向（GZ 44 段），默认视野下能看出「有来有回」。
+- **缺字段兜底**：包整体没有 `segmentDirections` 时**整包不画方向标记**，图例写「本包无方向字段（旧 21 段对照包）」；不再画一屏灰色 `?`。单段缺值仍显示「未标定」。
+- **口径**：方向来自 **OSM oneway + 只读 enriched**（演示标注），不改方向字段与生成器。
+
+### 23.3 落客点 / 场区（停车场）标注（IKP5BZ）
+
+- **唯一真值源 = 前端站点包**（`activePack().dropoffs` / `.zones`）：Z 站 3 个落客点 + 2 个场区，GZ 站 5 + 4，坐标是**路段折线上的演示点**，不是踏勘点位。
+- 地图新增两组 Marker（「落」青 / 「场」棕，与摄像头图钉同族但形状颜色区分），悬停浮牌显示「名称 · 所属路段 · 点位 id · 演示点」；右栏「路段信息」新增「本段附近的落客点 / 场区」文字入口（选中路段时列出 150 m 内点位，可点击选中其路段）。
+- **删掉 `GET /api/traffic/network` 的前端请求**：落客点/场区已不从接口取，`network` ref、`PANEL_LABEL.network`、`track('network')` 一并移除——页头不再出现「本次刷新未取到：路网」而页面上根本没有路网面板。
+- **口径**：`/api/traffic/network` 保持「前端不消费」（Z 站是 `SEG-###` 样例网、GZ 站点位为空表），真点位补齐归 IKMHMX。
+
+### 23.4 起点 / 终点确认（IKP5C6）
+
+- **起点**：路线卡新增「本次起点」块——段号 + 路段名 + 来源角标（`twin` 孪生真值 / `app_gnss` App 定位 / `manual` 手动选择）+ `offset_m` + `match_confidence`；未点「以这里为起点」时明确标「**未确认**（按孪生真值演示）」。前端新增 `api/traffic.ts::postTrafficLocate()` 接 `POST /api/traffic/locate`，失败（含 mock 无该端点）如实降级到推荐响应自带 `location`，**不编起点**。
+- **终点**：优先 `arrival_route.dropoff_point`（能对上站点包点位时带名称）+ 所在末段段号/路段名；为 `null` 时显示「引擎产物未给落客点（如实空窗）」+ 从 `why` 抽出的具体原因（「终点不是落客/上客点」或「点位未在站点包登记」）+ **末段兜底**。
+- **兜底入口**：`match_confidence < 0.6`（与 `work/engine/locate.py` 的 `MATCH_CONFIDENCE_MIN` 同口径）提示「定位不稳定」，可从当前站点包路段下拉手动选起点。
+- **接口层原因**：`work/engine/run.py` 的 `build_request()` 与 `_build_cooperative_request()` 补上「终点不是落客/上客点（节点类型 intersection）」的原因进 `why`（真网原先该分支永不命中、`dropoff_point` 静默 null）；不新增契约字段。
+- **台账订正**：`docs/验收台账-20261018.md` 的 TC-18 依据与 `docs/口径裁定-20261018.md` 的「定位空壳」表述按 `locate.py` 现状更正（`locate()` 真值直读、`add_gnss_noise()`、`locate_check.py` 可复跑）；**TC-18 判定状态未改**：① 一致率 1.0（164/164）可复算，② σ=20 m 因统一图缺 WGS-84 锚点未测。
+- **地图「起 / 终」标注 + OD 口径修正（业主 2026-10-21 追加）**：地图新增两个标记——「起」（品牌蓝圆底）放在推荐路线实际起点路段的折线上（外围入口段，站点包 `sections.role=boundary` 的 `P-Bxx`，如 `SZ-003 = P-B02`）；「终」（琥珀圆底）放在**停车场落客点**（站点包 `dropoffs` 演示点，优先 `arrival_route.dropoff_point`，否则按末段就近匹配，如 `DROP-02`）。浮牌显示段号 / 点位 / 演示点说明，图例同步两行；`OD` 下拉与「本次起点」块都显示起点段号与「外围边界断面 P-Bxx / 路网内部段」。同时修正 `work/engine/realnet.py` 的 OD 推导：进场边界只认 `entry`（Z 站 `SZ-001/003/055/059` 四个外围入口），行程终点优先**场区内部节点**（停车场 / 服务道路），Z 站由 27 个 OD 收敛为 **4 个 OD**，默认第一条 **OD-R-001 = 起点 `SZ-004`（东侧外围入口 `N-040`）→ 终点 `SZ-036` 末端 `N-028`**（`SZ-036`/`SZ-024` 交界，对应 `DROP-02`）——不再生成「从停车场内部通道出发」的路线，也不再停在停车场通道中途。**方向校正**：`align_oneway_to_osm.py --site-id zhaoqingdong` 按 OSM way 节点顺序把吉庆大道 14 段 `oneway` 翻为 `-1`（只改方向、不改几何/段号），Z 站方向分布 forward 14 / backward 14 / bidirectional 33（拓扑侧 `reverse` 在前端展示枚举里映射为 `backward`）；进/出口变为 `N-040`/`N-002` 进、`N-001`/`N-003`/`N-038` 出。口径：起终点都是**演示坐标**，不参与算路 / ETA。
+
+### 23.5 大屏路线绘制：一主二备三色 + 非路线段压灰（IKP5CK）
+
+- **四种语义色**：推荐品牌蓝 `#0052D9` 实线；备选 1 青 `#0E7490` 长虚线 `12/6`、`line-offset:-2`；备选 2 琥珀 `#B45309` 短虚线 `2.5/4.5`、`offset:+2`；离站紫 `#7B61FF` 实线。四色避开四级判级色、数据不可用灰与品牌蓝；两条备选叠在同一段时靠**颜色 + 虚线节律 + 平行偏移**三重区分。
+- `RouteHighlight` 加可选 `index`（**前端展示类型，非契约**）；`alternatives` 不再压进同一个 `alternative` 分组。
+- **「凸显路线」开关**（默认开、键 `hubflow.settings.routeEmphasis`，入口在地图工具条）：开且确有路线时，不在任何路线上的路段画 `#C9CDD4` 细线、透明度 0.55、无虚线、热力晕染归零，不再按 level 上色；关掉恢复满图等级色。压灰色与「数据不可用灰」`#8B8B8B` 视觉可区分。
+- **备选不足如实说明**：路线卡在 `alternatives.length < 2` 时显示「本 OD 仅 N 条候选（契约要求 ≥2 条备选）」+ `no_alternative_reason`；图例同时显示实际备选条数，不补画等价路线。
+- **数据侧违规登记**：引擎产物 103 条请求中 45 条「备选 <2 且未标 `no_alternative`」（Z 8 / GZ 37）——本单只负责页面如实呈现，不改 `work/engine/candidates.py` / `run.py`，引擎侧另单处理。
+
+### 23.6 决策层 · 路线规划视图（IKP5CE）
+
+- `DecisionView.vue` 新增第四个 tab「路线规划」（`flow / queue / compare / route`），新建 `views/decision/components/RoutePlanView.vue`。
+- **链路条**：起点（段号 + 路段名 + `location.source`）→ 场区 / 落客点（`dropoff_point`，缺失给原因 + 末段兜底）→ 终点（到达末段）→ 离站方向（`departure_route`，`null` 如实说明）。
+- **一主二备**：推荐 + `alternatives` 的 `eta_min` / `reason`；备选不足显示「本 OD 仅 N 条候选」+ `no_alternative_reason`。
+- **变化效果（方案 A：只读产物）**：两个 session 选择器各调一次 `POST /route/recommend`，左右并排链路 + ETA 差值 + 引擎 `why`；页面单列「路线是否随参数变化」表，明确回答**场景注入 / 人工置位 / 告警下发不会触发算路、路线不变**——「路线来自固定产物，本页不重算」，不编造路线、不代算 ETA。
+- **mock 降级**：`/route/options` 在 mock 下 404，页面不发请求、写明「mock 无该辅助端点」并回退演示会话单列。
+
+### 23.7 路网对账：Z21 切包 404 + `/network` 真值源 + GZ 433→708（IKP5D3）
+
+- **Z21 全站 404（方案 A）**：`PACKS` 移除 `Z21`、删除 `stationZ21.ts` / `stationZ21.network.ts`。`restorePackKey()` 的 `PACKS[k]` 兜底会把浏览器里残留的 `localStorage['hubflow.stationPack']='Z21'` 落回注入值；`switchPack()` 对未知键首行 `return`、**不写坏键**。顶栏切换器现在只有 Z（61 段）/ GZ（708 段）两个真站包。
+- **`/network` 真值源裁定：前端不消费**。保留端点作接口存在性 / 调试用途；`build_network()` 的 `note` 与 `work/assembly/README.md` 已写明「前端不消费；Z 站为 `SEG-###` 样例网，勿用于真路网绘制」；前端那次请求已删除（见 23.3）。
+- **GZ 433 → 708**：`docs/口径裁定-20261018.md`、`docs/验收台账-20261018.md`、本 README 中作为**当前段数**的 433 已全部改为 708；历史留痕（PR !61 当时的 433 段）保留并统一标「旧 800 m 口径」；台账追加「433 为 800 m 旧范围口径，已由 IKOQEI 扩到 1000 m / 708 段」。判定值本身一字未动。
+- **路网对账表（Z / GZ × 前端包 / 后端接口 / 引擎产物）**：
+
+| 站点 | 一方 | 段数 | 命名空间 | 几何来源 | sections | dropoffs | zones | 摄像头条数 | 真值源文件 |
+|---|---|---|---|---|---|---|---|---|---|
+| **Z** | 前端包 | **61** | `SZ-###` | OSM 真几何 | **11**（候选·待签字冻结） | **3**（演示点） | **2**（演示点） | **6**（源台账，2 路有视频源） | `stationZ.network.ts` + `stationZ.ts` |
+| **Z** | 后端 `/network` | **17**（差异：样例网） | `SEG-###`（差异） | 占位坐标（coords 全空） | **2**（差异：样例 detector） | **1**（差异） | **2**（同数不同源） | **0**（接口不含摄像头字段） | `stations/network.json` + `stations/points.json`（样例件） |
+| **Z** | 引擎产物 | **61** | `SZ-###` | OSM 真几何（netpack） | — | — | — | — | `work/twin/netpack/network_junction.json` |
+| **GZ** | 前端包 | **708** | `GZ-###` | OSM 真几何 | **49**（全 boundary） | **5**（演示点） | **4**（演示点） | **0**（`channels: []`，展示走演示复用） | `stationGZ.network.ts` + `stationGZ.ts` |
+| **GZ** | 后端 `/network` | **708** | `GZ-###` | 真网产物合成 | **0**（差异：非默认站空表） | **0**（差异） | **0**（差异） | **0** | `guangzhounan/network_junction.json` + 空点位表 |
+| **GZ** | 引擎产物 | **708** | `GZ-###` | OSM 真几何（netpack） | — | — | — | — | `guangzhounan/network_junction.json` + `routes.json`（54 条请求；2026-10-21 规则 + 方向校正后，修正前 91） |
+
+**差异归属**：Z 站 `/network` 的 17 段 / 2 sections / 1 dropoff 全部来自 `stations/` 的样例件 → 真点位与真断面归 **IKMHMX**（T1 真表）/ 开发B；GZ 站 sections / dropoffs / zones 为 0 是非默认站空点位表所致 → 同上。**本单只裁定「前端不消费」并如实登记，不改 `stations/*.json`。**
+
+**断面 / 摄像头缺口（Z 站）**：手册 §10.5 要求每条路段至少 1 个断面 → 61 段应有 **61 个 detector**，`stations/points.json` 现有 **2 个**（且都在 `SEG-###` 样例网）→ **缺 59 个**；摄像头源台账 **6 路**（2 路有视频源），**55 段没有源台账摄像头**，页面按 IKNBT2「N 段 = N 演示摄像头（mock 复用）」兜底——**不是真实接入**，补齐归 IKMHMX。
+
+### 23.8 摄像头布点规划：Z 61 + GZ 708 行 + 登记表对齐（IKP5DM）
+
+- 新增 **`work/perception/mapping/camera-plan.json`（机器可读）+ `camera-plan.md`（人读）**：每行 = 一个路段，含 `segment_id` / 路段名 / `planned` / `offset_m` / **布点理由** / `demo_camera_id` / `detector_id`（规划编号）/ `source_ledger_cam_id` / `needs_video_source`。Z **61 行（布点 25 / 不布点 36）**、GZ **708 行（布点 416 / 不布点 292）**，合计规划 detector **441 个**；每行理由具体、无空行、无「待定」。
+- **生成器**：`work/perception/tools/gen_camera_plan.py`（可重复生成，`--check` 只校验不写盘，连续重跑 sha 一致）；规划编号是**待 IKMHMX 落 `points.json` 的规划值**，不冒充已登记。
+- **登记表对齐**：`camera-segments.json` 的 6 条各加 `plan_ref` / `plan_version`，与规划表双向可查；`cameras` 仍 **6 条**、`video_streams` 仍只有 `road2` / `track1` **两路**，`needs_video_source=true` 仅 `cam-02` / `cam-05`。**不扩表、不伪造视频源。**
+- **上色策略统一（方案 A）**：`stationZ.ts` 的 `colorPolicy` 由 `'camera-covered'` 改为 `'all'`，与 GZ 一致——Z 站 61 段全部按等级上色，**不再 55 段恒灰**；图钉仍只画源台账 6 路（`MapLibreViewer` 图例与上色策略已解耦，灰只表示数据不可用/陈旧，不再表示「没摄像头」）。
+- **文档**：`work/perception/README.md` 第十节、`work/perception/mapping/README.md` 第五节补「一期布点规划」；`check_camera_map.py` 新增规划表行数 / 字段完整性 / 双向映射 / 视频源两路校验（`--self-test` 20 用例）。
+
+### 23.9 复核与门禁
 
 ```bash
-cd work/frontend/ui-vue
-npx vue-tsc -b        # exit 0
-npx vite build        # exit 0（1712 modules，1.24 s）
-
-# 仓库门禁
-python scripts/doc_gate.py   # 8/8 通过
+# 前端构建（含 vue-tsc 类型检查）
+cd work/frontend/ui-vue && npm run build
+# 仓库门禁（编码 / 大文件 / 链接 / JSON / 密钥 / 契约命名 / 台账）
+python scripts/doc_gate.py
+# 摄像头规划表与登记表
+python work/perception/tools/check_camera_map.py && python work/perception/tools/check_camera_map.py --self-test
+python work/perception/tools/gen_camera_plan.py --check
+# 环境自检（只起前端时退出码 1 是预期：缺 traffic.py / 感知服务）
+python scripts/env_check.py
+# 健康端点（起接口层后；无数据也应 200）
+curl -s http://127.0.0.1:8000/api/traffic/health
+# Z21 清理与 433 复核（剩下的 433 必须都标「旧 800 m 口径」）
+grep -rn "stationZ21\|Z21" work/frontend/ui-vue/src --include=*.ts --include=*.vue
+grep -n "433" docs/口径裁定-20261018.md docs/验收台账-20261018.md work/frontend/README.md
 ```
 
-- `npx vite --port 5173` 起本机大屏（mock 模式，站点包 Z · 61 段），人工点过两个方向：
-  - 点面板右上角 × → 面板收起，工具条上「Z · 61 段」**左边**出现「图例」按钮（截图核对过位置）；
-  - 点「图例」→ 面板重新展开，「图例」按钮消失（展开时不重复出现，避免两处入口并存）。
-- 截图（不入库，本机 http://localhost:5173/#/dashboard）：收起态 / 展开态各一张，见本次交付说明。
-- 编码：三个改动文件均 **UTF-8 无 BOM、纯 LF**（settings.ts 4366 B / 102 LF、DashboardView.vue 108929 B / 2811 LF、MapLibreViewer.vue 62493 B / 1576 LF）。
+**证据落点**：`work/frontend/ui-vue/.evidence/IKP5CE-20261021/`（决策层路线规划 3 张截图）+ `work/frontend/ui-vue/.evidence/IKP5-batch-20261021/`（大屏方向标记 / 落客点场区 / 起点终点 / 凸显路线 / Z21 兜底 共 8 张，README 逐个对应判定）。GZ 站 remote 首载 `/overview` 11–27 s 的既有性能问题在证据 README 里如实登记，不作为本批通过依据。
 
-### 22.4 遗留 / 说明
+## 二十四、切站：为什么不再整页刷新（IKPFR4）
 
-1. **只做了「收起 / 展开」，没动图例内容与位置**：面板仍是左下角、内容与文案一字未改（图例口径归 IKOQEJ）。
-2. **显隐是「记住的」**：落在 localStorage 的 hubflow.settings.legend，刷新 / 重进页面后保持上次的样子；
-   想恢复默认（展开）就点「图例」按钮，或清掉该键。
-3. **切站点包（Z⇄GZ）会整页刷新**（onPackChange 里 window.location.reload()），图例显隐跟着 localStorage 一起保持，不会退回展开。
-4. **另一套包切换器没动**：顶栏 AppShell.vue 的线路图下拉（.net-switch）与地图工具条的 .pack-switch 是两套 UI，本单只在地图工具条那套旁边加按钮。
+> 本单只动**前端的切站链路**：契约字段、端点路径、响应形状、判级 / 引擎 / 站点包几何（`station-packs/*.network.ts`）**一个字未改**，也没有新增任何业务端点。站点包仍是 `Z`（肇庆东，61 段）/ `GZ`（广州南，708 段）两个。
 
-## 二十三、方向箭头随缩放变小 + 显隐开关（业主 2026-10-19，含 2026-10-20 三改定版）
+### 24.1 旧做法为什么只能刷新
 
-> 来源：业主 2026-10-19 口径 ——「我在缩小地图和放大地图的时候箭头的大小都是不变的，
-> 但是一旦我把地图缩小，箭头就会挤在一起，导致缩小的地图被箭头挡住，所以当地图缩小到
-> 一定大小就开始随着地图大小缩小，然后加一个可以关闭或打开的箭头的选项」。
-> 按钮位置：业主先说「就在我圈的里面」，随后改成「算了，按键你自己看着放吧」，
-> 故本单自行决定 —— 放在地图工具条 `.map-toolbar-right` 内、「图例」键之后、`.pack-switch` **之前**。
->
-> **⚠️ 缩放曲线被业主改过三次，本文件只保留定版口径（2026-10-20）**：
-> 原话「算了，让箭头的大小不要变了，就是默认值的大小固定，然后缩小地图，箭头也跟着缩小」。
-> 即**默认视野档的尺寸固定、放大不再变大**，只有**缩远才跟着缩小**；前一版的 `icon-opacity` 淡出也一并删掉
-> （淡到看不见就不叫「跟着缩小」了，低缩放真正挡图的是第二十四章的摄像头图钉）。
-> 前两版的插值实现只在本章 23.3 留作踩坑记录，**代码里已经没有 zoom 插值**。
+切站过去是 `switchPack(key)` + `window.location.reload()`（顶栏切换器与大屏工具条各一份）。原因不是懒：页面里有一批**在 setup 期拍下的快照**，它们读的是模块级变量（`activePack()` / `activePackKey()`），Vue 的响应式系统根本不知道"包键"这个东西存在，改键不会让任何 computed 失效 —— 不整页重来，就只能看着旧数据：
 
-### 23.1 改之前为什么会「挤成一团」
+| 位置 | 旧的快照 | 后果 |
+|---|---|---|
+| `shared/demoNetwork.ts` | 模块单例 `state` + `inited` | 切包后仍返回上一站的几何 |
+| `DashboardView.vue` | `const currentPackKey = activePackKey()` | 工具条按钮的选中态不动 |
+| `DashboardView.vue` | `const packSegmentIds = new Set(...)` | 路线校验用上一站的段号集合，GZ 的路线整条被判"不在包里" |
+| `DashboardView.vue` | `const sourceLabel / geometryNote` | 页脚与图下注脚停在上一站口径 |
+| `DashboardView.vue` | `stationName = ref(activePack().station.name)` | 顶栏站名不动 |
+| `MapLibreViewer.vue` | `const net = DEMO_NETWORK.segments` | 地图画的是上一站的路网 |
+| `MapLibreViewer.vue` | `pins = cameraPins()` / `sourceLabel` | 图钉与水源地标签停在上一站 |
 
-`MapLibreViewer.vue` 的 `directionLayerSpec()` 原本只有两档插值：
+### 24.2 版本号 + 订阅：让"模块级键"变成可观察的
+
+`src/station-packs/index.ts` 新增三样东西（**该文件保持零依赖**，因为它同时被 `vite.config.ts` 的 Node 侧 mock 引用，所以这里没有也不许有 `import { ref } from 'vue'`）：
 
 ```ts
-'icon-size': ['interpolate', ['linear'], ['zoom'], 12, 0.5, 15, 0.85],
-'icon-allow-overlap': true,
-'icon-ignore-placement': true,
+let version = 0
+const listeners = new Set<() => void>()
+export function packVersion(): number
+export function onPackChange(fn: () => void): () => void   // 返回取消订阅
 ```
 
-两个原因叠加：
+- `switchPack(key)` 只在**键真的变了**之后 `version++` 并通知订阅者；同一个键重复点不重跑流程。
+- `setActivePackKey()`（入口注入 / mock 每请求现取站）**故意不发通知**：前者发生在挂载前、后者在 Node 进程里，都不是"用户切站"。
+- 订阅回调是**同步**跑的，所以只让它改响应式 ref（各组件自建 `packTick`），真正的重绘交给 Vue 的 watch —— 那时几何已经按新包重建完了。
 
-1. `icon-size` 在 zoom ≤ 12 时被 **clamp 在 0.5**，再往下缩一个像素都不减；
-2. `icon-allow-overlap` / `icon-ignore-placement` 都是 `true`，意思是**每根箭头强制画、不参与避让**。
+所有 setup 期快照随之改造：`demoNetwork.ts` 增加 `resetNetwork()`，且 `ensureInit()` 现在**按包键自校验**（`initedKey !== activePackKey()` 就重建）；`currentPackKey` 改 `ref`；`packSegmentIds` / `packSegmentCount` / `siteMeta` / `packSegments` / `sourceLabel` / `geometryNote` / `packNote()` / `stationName` 兜底 / `directionsAvailable` 改 computed；`MapLibreViewer` 的 `net` 改 `shallowRef`，`pins`、`sourceLabel` 改 computed。
 
-于是缩小时屏幕上的路段越来越短、箭头却维持原尺寸，密到糊成一片把路段线盖住 —— 这就是业主看到的现象。
-反过来说，这两个 `true` 不能简单改 `false`：MapLibre 的避让是**按优先级随机丢标**，
-会让部分路段的箭头凭空消失（「变小可以，缺失不行」）。
+### 24.3 切站唯一入口：`shared/stationSwitch.ts`
 
-### 23.2 改了什么
+顶栏「线路图切换器」与大屏工具条**共用** `switchStation(key)`，顺序固定：
 
-| 位置 | 改动 |
+1. `switchPack(key)` —— 换键、`version++`、广播；
+2. `resetNetwork()` —— 路网几何按新包重建；
+3. **站内状态一律重置** + 中止在途请求（业主 2026-10-21 裁定，见 24.5）；
+4. **缓存优先**：同步吃内存缓存渲染首屏（有缓存就不显示加载态）；
+5. 后台立刻补拉一次（不等 SSE 的下一个 2 s tick）；
+6. 同步 URL `?pack=`。
+
+地图这边**只换数据**：`source.setData(...)` + 重贴 filter + 重建图钉/落客点/方向层 + `fitToNetwork` 重新取景；**不重建 `Map` 实例、不 `setStyle`** —— 底图瓦片是跨站可复用的公共资源，重建一次就是几 MB 重下加一次白屏。
+
+`src/` 下 `grep -rn "location.reload"` 现在**只剩两句注释**（说明历史做法），代码里 0 命中。
+
+### 24.4 缓存优先：键、预热时机、失效规则
+
+新增 `src/shared/stationCache.ts`：内存 `Map<string, StationSnapshotCache>`，**只存两站**，结构 `{ key, overview, segments, meta, thresholds, alerts, factors, matrix, ts }`（字段取自 `shared/traffic.ts` 的类型）。
+
+- **缓存键 = 站点包键**（`Z` / `GZ`）。写和读都按这个键分桶；替别站预热时用 `SnapshotFetchOptions.station` 把请求钉在目标站上（仍是同一个 `X-Station-Pack` 头，只是取值来源换成显式参数）—— 绝不允许"拿本站响应写别站桶"。
+- **预热时机**：首屏 `refresh()` 成功之后，`requestIdleCallback`（无此 API 的浏览器用 `setTimeout` 1 s 兜底）把两站各拉一次 `overview / segments / meta / thresholds / alerts / factors`。预热**失败静默**：不弹错、不进 `failedPanels`，切过去自然走骨架屏 + 正常刷新。
+- **失效规则只有两条**：① 页面进程结束即全部失效（内存 Map 的自然属性，**不写 localStorage** —— 缓存快照会过期，落盘就成了"昨天的路况"且无人察觉）；② 条目超过 `CACHE_TTL_MS`（10 min）视为过期，`readStationCache()` 直接返回 `null`。除此之外切站即刷新、新数据按字段替换，不做"手动清缓存"。
+- **两档体验**：热缓存 = 同步吃缓存，首屏立刻可见（目标 ≤0.3 s，不出现加载态）；冷缓存（首次访问该站 / 预热未完成）= 一条**极简骨架条**「正在加载「GZ」的首屏快照…」，页面主体不白屏，目标 ≤1.5 s 出数据。
+- **不许冒充最新**：用缓存渲染期间，页面上有「缓存 · 刷新中 —— 当前显示「GZ」的缓存快照（缓存于 N s 前）…」提示条，页脚同时标「数据标识:内存缓存快照 · 后台刷新中」；后台刷新一回来两处同时撤掉。
+
+### 24.5 业主裁定：切站时站内状态一律重置
+
+`selectedId`、`hoverChip`（地图浮牌与图钉浮牌）、路线 session（`recommended` / `routeOptions` / 手动起点 / 定位结果）、热力带选中（监控范围筛选）、深链选中（`?segment=` 重新生效一次）、页面滚动位置（整页 + 左右两栏的内部滚动容器）—— **全部清空、回到顶部，不做跨站恢复**。理由：段号、session、点位都是各站自己的命名空间，跨站"恢复"只会把 A 站的段号塞进 B 站。
+
+清空之后：有缓存就用缓存把首屏铺满；没有缓存就骨架条 + 等这一轮刷新。防御上还有一道闸：`refresh()` 记下发请求时的站键，响应回来后若 `activePackKey()` 已变，整批响应**直接丢弃**，同时切站时会 `AbortController.abort()` 掉在途请求 —— 两道都留，中止省带宽、校验兜底。
+
+### 24.6 `?pack=` 深链与 SSE
+
+- 入口（`main.ts`）读一次 URL 的 `pack`（hash 路由下取 `#/…?pack=GZ` 的查询段，也兼容真实 search 段）：命中 `PACKS` 就 `switchPack()`（同时写 `localStorage['hubflow.stationPack']`）；**坏键不报错、不写盘**，落回 `restorePackKey()` 的既有守卫语义（未知键 → 注入值 / 默认包）。
+- 切站后用 `history.replaceState` 把 `?pack=` 写回地址栏（不触发路由跳转 —— 跳转会重建页面组件，等于把省下来的刷新又加回去）。
+- **SSE 不随站切换重连**：`subscribeTrafficSnapshot()` 本来就是不带站的裸通道，切站不重建连接；但切站后**立刻补拉一次**（`switchStation` 的第 ⑤ 步），不用等下一个 2 s tick。
+
+### 24.7 非大屏页面怎么办
+
+决策层 / 感知层没接缓存链路，只靠 `App.vue` 的 `<router-view :key="stationRemountKey">` 兜底：切站时换 key → 页面组件重新 setup、按新包重取数据，**不重新请求文档、不重下底图**。监控大屏自己注册了原地切站钩子，**不会**走这条重挂载。
+
+### 24.8 复核
+
+```bash
+cd work/frontend/ui-vue && npm run build          # vue-tsc 类型检查 + 打包
+grep -rn "location.reload" src/                   # 代码里 0 命中（只剩说明历史做法的注释）
+cd ../../.. && python scripts/doc_gate.py         # 8/8
+```
+
+切站链路自检要点：切 Z↔GZ 后路网段数应为 61 / 708（`activePack().segments.length`，页脚「站点包路网 N 段」可读）、`selectedId` 已归零、地址栏带 `?pack=`、浏览器**不会**重新请求 document（Network 面板不出现第二个 index.html）。
+
+---
+
+## 二十五、大屏全国地图与切站镜头（Issue IKPFVN，2026-10-21）
+
+业主 2026-10-21 交办：「实时渲染的全国大地图，选到对应高铁站再放大展示路网，其他站的路线不展示；切换高铁站要有动作展示：地图缩小 → 移动到对应高铁站 → 放大 → 路线显示、信息切换。目前只做肇庆东和广州南。」
+
+一期只做 Z / GZ 两站，**没有全国路况数据源**，所以本节的「实时渲染」口径是：底图与站点层由 MapLibre 实时绘制（在线矢量瓦片），**站区路况仍走现有 2 s SSE 快照**；除这两个站之外不画路线、不上色。
+
+### 25.1 全国站表：一份生成物，三处共用
+
+| 是什么 | 在哪 |
 |---|---|
-| `src/views/dashboard/components/MapLibreViewer.vue` | **删除 `icon-size` 的 zoom 插值与 `paint['icon-opacity']` 淡出**（插值是编译期常量，锚不住 fitBounds 之后才知道的默认档；淡出与「跟着缩小」口径冲突）。新增模块级 `let fitZoom = 14`（`fitToNetwork()` 里 `fitBounds` 之后记下 `map.getZoom()`）与基准常量 `const DIR_ICON_BASE = 0.8`；新增 `dirIconSizeOf(zoom)` = 比默认档缩远 `d` 档就取 `max(0.04, 0.8 × 2^-d)`、**`d ≤ 0`（默认档与放大）一律 `0.8`**；新增 `applyDirectionScale(map)` 用 `setLayoutProperty(LAYER_DIRECTION, 'icon-size', …)` 逐帧贴回；`directionLayerSpec()` 里 `icon-size` 只留基准值 `DIR_ICON_BASE`；`layout` 末尾加 `visibility`（值取 `directionsVisible`，换样式重建图层时也带上）；新增 `applyDirectionVisibility(map)`（图层不在就静默 return）；调用点四处：`addDirectionLayers()` 末尾、`fitToNetwork()` 末尾、`applyViewState()` 刷完数据后、`map.on('move')` 里；新增 `watch(directionsVisible)` 只切 `visibility`、不重建数据源 |
-| `src/views/dashboard/DashboardView.vue` | 工具条加「箭头」常驻按钮（`.legend-toggle` + `.on` 态，`aria-pressed` 同步），点了调 `setDirectionsVisible(!directionsVisible)`；新增 `.legend-toggle.on { border-color: v-bind('TD.brand'); color: v-bind('TD.brand') }` |
-| `src/shared/settings.ts` | 新增 `directionsVisible: Ref<boolean>`（默认 `true`）、`setDirectionsVisible(on)`、存储键 `hubflow.settings.directions`；`restoreSettings()` 加第三个 `try` 块读回（读不到 / 内容坏了静默退回默认） |
+| **真值源** | `work/twin/site-ranges.json`（每站一份：锚点 / 范围 / 段数 / 段号前缀） |
+| **生成脚本** | `work/frontend/tools/gen_station_registry.py` → `src/station-packs/stations.generated.ts` |
+| **对账脚本** | `scripts/check_station_registry.py`（`--self-test` 反向自测） |
+| **前端入口** | `station-packs/index.ts` 的 `stationEntries()` / `STATIONS`（`{key, name, lon, lat, range_m, segment_count, pack}`） |
 
-图例内同时加了两行说明（在「方向标记（只读 enriched）」那一段里）：
+生成物**不许手改**。加一个站 = 改登记表 + 加一个站点包 + 重跑生成脚本 + 跑对账，**页面与引擎代码不动**（手册 §8.4）。
 
-- `v-if="!directionsVisible"` 时显示「当前已隐藏方向箭头（工具条「箭头」键可打开）」——
-  否则图例上还画着三种箭头、图上却一个都没有，会被当成画丢了；
-- 常显一行「箭头随缩放变小：放大看细节，缩小只看走向，不会糊住路段线。」——把这条口径写进界面。
+对账脚本钉住四件事：① `PACKS` 的键与站表**一一对应**；② 登记表 `anchor_lonlat` 与该包 `stations[0]` 经纬度**容差 1 m**（超了 pin 就和站区错位）；③ 缺字段 / 重复键直接失败；④ `pack` 指向的文件真的在、`segment_count` 与该包真实段数一致。
 
-### 23.3 缩放曲线为什么不能写成 zoom 插值（三次改的踩坑记录）
+### 25.2 两个概念，别混
 
-最直觉的做法是让箭头跟着地图一起等比缩（MapLibre 的 zoom 每 +1 视野线性减半，等价于图标每降一档 ×2）。
-**第一次没敢这么做**：等比意味着放大时单个图标会持续变大，反而把路段线盖死 ——
-业主的诉求是「缩小时别糊住地图」，不是「任何缩放级别下箭头都同比占屏」。
+- **看哪个站** = 站点包键（`activePackKey()`），切站只有一个入口 `shared/stationSwitch.ts` 的 `switchStation()`（§二十四）。
+- **看多远** = `mapScope: 'national' | 'station'`，由 `DashboardView` 持有、传给 `MapLibreViewer` 的 `mapMode` prop（⚠️ 与「四级 / 指数」那个 `mode` prop 不是一回事）。
 
-三次改动如下（前两次都作废，只留作记录）：
+镜头运动全在 `src/shared/mapMotion.ts`：`MOTION`（缩远 700 / 平移 550 / 放大 950 ms）、`CHINA_BBOX`、`overviewCamera()` / `stationCamera(key)` / `stationPadding()` / `flyToStation()` / `flyToOverview()` / `cancelMotion()`。
 
-| 次数 | 曲线 | 为什么退回 |
-|---|---|---|
-| 一 | 每档 **×0.7**（0.8 → 0.52 → 0.38 → 0.27 → 0.18 → 0.11） | 业主当场退回「还是没变」—— 本站演示范围只有 500 m，缩到 zoom 11 时整张路网在屏幕上只剩几十像素，×0.7 的箭头照样比路段粗 |
-| 二 | `exponential 2` 两点式（12 档 0.09、15 档 0.8）+ **11.5 档淡出到 0** | 业主第二次退回，并给出定版口径「默认值的大小固定，然后缩小地图，箭头也跟着缩小」：① 放大还会变大不符合「固定」；② 淡出到看不见不符合「跟着缩小」；③ 锚点写死 15 档，而各站默认档不同（Z 500 m / GZ 1000 m） |
-| 三（定版） | **运行时算**：`max(0.04, 0.8 × 2^-(fitZoom - zoom))`，`zoom ≥ fitZoom` 一律 `0.8` | — |
+### 25.3 镜头状态机与「只有一个动画在跑」
 
-**关键是第三次为什么必须离开样式表达式**：`icon-size` 的 `interpolate` 是编译期常量，
-而「默认视野档」要 `fitBounds` 之后才知道（各站演示范围不同）。所以尺寸改为在
-`move` 事件里用 `setLayoutProperty` 逐帧贴回 —— 基准 `fitZoom` 由 `fitToNetwork()` 写入，
-缩放比例取「每降 1 档减半」：视野每缩远一倍，同样大小的东西在屏幕上就该小一半。
-`icon-allow-overlap` / `icon-ignore-placement` **保持 `true` 不动**，理由见 23.1。
+```text
+national --(选站)--> leaving --(缩远到 ≤5.5)--> panning --(平移)--> entering --(放大 + 路网淡入)--> station
+```
 
-### 23.4 自检（本单真跑，2026-10-20）
+`flyToStation()` 用 `easeTo` + `fitBounds` 链，**不用 `setInterval` 逐帧改 center**（Vue 不参与逐帧渲染）。模块级 `runSeq` 保证单通道：每次发起 `++runSeq; map.stop()`，每一步 `await waitMoveEnd()` 后校验代次，代次变了立刻返回 `cancelled` 且后续步骤一步都不跑 —— 于是 T1/T2/T3 任意时刻点另一站，都是从**当前相机**重开，最终状态必然等于**最后点的那个站**（连点不叠加、不排队）。
+
+`prefers-reduced-motion: reduce` 时取消缩远 / 平移，只做一次 200 ms 的 `fitBounds` 直接到站区，站名 / 路网 / 信息照旧。
+
+### 25.4 图层规则（「其他站的路线不展示」落到开关上）
+
+唯一开关在 `MapLibreViewer.vue` 的 `applyModeLayers()`，按 `motionPhase` 分派：
+
+| 图层族 | 全国 | 过渡中 | 站区 |
+|---|---|---|---|
+| 路网 / 热力 / 选中 / 路线（`hubflow-route-*`） | 隐藏 | 隐藏 | 显示 |
+| 方向标记 | 隐藏 | 隐藏 | 按顶栏「设置」开关 |
+| 站点 pin（命中层 / 实心点 / 站名） | 显示 | 显示 | 隐藏 |
+| 兜底轮廓（中国示意） | 底图不可用时显示 | 同左 | 隐藏 |
+| 摄像头 / 落客点 / 起终点 / 车辆（DOM Marker） | 隐藏（`.mode-national`） | 隐藏 | 显示 |
+
+路线 source **只装当前站**的 `RouteHighlight`：切站开始即 `setData(empty)`，目标站路线等 `route/recommend` 返回且镜头到站后才写入。换底图样式后 `applyViewState()` 会重贴 data / filter / image / visibility（否则 `setStyle` 会把 visibility 打回 visible）。
+
+### 25.5 切站时序（信息不串站）
+
+1. **选站**（pin / 全国浮层卡片 / 工具条按钮 / 顶栏切换器，全部走 `pickStation()` → `switchStation()`）：站内状态一律重置、在途请求中止、`arriving = true`（数据先挂住不上屏）。
+2. **镜头**：`national → leaving → panning → entering → station`；左右栏在全国模式收起（250 ms 宽度过渡），到站前 `map.resize()` 再 `fitBounds`（否则宽高还是旧的，取景会偏）。
+3. **到站**（地图 `emit('arrived')`）；`refresh()` 拿到的响应 `await whenArrived()` 之后才提交面板；缓存快照同样先挂在 `pending`，到站后一次铺上。**4 s 兜底**：动画异常时不至于让数据永远不落地。
+4. **路线**：`route/recommend` 返回后淡入。失败 → 镜头仍到站区，面板如实「本次未取到 + 重试」，**不回退成上一站数据**。
+
+### 25.6 入口与深链
+
+- 工具条新增「← 全国」；顶栏「线路图切换器」与大屏工具条两个入口仍然是**同一支** `switchStation()`。
+- URL：`?station=Z|GZ` 直达站区；`?pack=` 是 §二十四 已有的**等价参数**（同一语义，两个都认、写回时同值，旧深链不失效）。缺省 → 全国视角首屏。
+- **首屏策略（业主推荐的 A 方案）**：默认全国；`localStorage['hubflow.stationPack']` 有上次站点时 **1.2 s 后自动飞入**，用户一碰（点 pin / 卡片 / 工具条 / 「← 全国」）即取消；`?station=` / `?pack=` 可直达。
+- 地图容器挂 `data-map-mode` / `data-station` / `data-motion-phase`；dev 下 `window.__hubflowMap` 是地图实例（生产构建摇掉），供验收脚本读 `map.getZoom()` 与 `querySourceFeatures`。
+
+### 25.7 底图兜底与署名
+
+- 底图仍是 OpenFreeMap Liberty（`shared/basemap.ts`），**切站不 `setStyle`、不重建 Map**：站点 pin 与路网图层一次挂好，只改 `visibility` / `opacity` / `data`。
+- 底图拉不到时画本地 `src/assets/geo/china-outline.geojson`（中国轮廓 + 两站 pin + 提示「底图不可用 · 仅显示站点与站区路网」），**不白屏**。
+- 该轮廓由 `work/frontend/tools/gen_china_outline.py` 从 **Natural Earth 1:110m admin-0**（**公有领域**）抽稀生成，`4.3 KB`；源数据不进仓库。**口径**：轮廓简化、仅作示意、**不代表边界主张**，不用于判读距离与范围；许可与义务见 [`docs/条款核实.md`](../../docs/条款核实.md) §1.5（NE-01~NE-03）。OSM / ODbL 署名照旧保留。
+- 站名标签用 canvas 图片 symbol 图层而不是 `text-field`（兜底样式没有 glyphs，`text-field` 会直接报错并画不出字）。两站相距约 100 km，全国缩放下 pin 只差约 7 px，标签交给 MapLibre 碰撞检测 —— **精确选站以全国浮层卡片与悬停浮牌为准**。
+
+### 25.8 复核命令
 
 ```bash
 cd work/frontend/ui-vue
-npx vue-tsc -b        # exit 0
-npx vite build        # exit 0（1712 modules，957 ms）
+npm run build                                     # exit 0（vue-tsc 类型检查）
+grep -rn "location.reload" src/                   # 代码 0 命中（只剩历史注释）
 
-# 仓库门禁
-python scripts/doc_gate.py   # 8/8 通过
+cd ../../..
+python work/frontend/tools/gen_station_registry.py --check   # 站表与登记表一致
+python scripts/check_station_registry.py                     # 键/锚点/字段/段数四项对账
+python work/frontend/tools/gen_china_outline.py --check      # 兜底轮廓产物在场
+python scripts/doc_gate.py                                   # 8/8
 ```
 
-人工点验（本机 http://localhost:5173/#/dashboard，mock 模式，站点包 Z · 61 段）：
+浏览器侧看四件事：① 首屏 `data-map-mode="national"` 且 `map.getZoom()` 在 3–6；② 点站后连续几帧能看到「缩远到 ≤5.5 → 平移 → 放大到 ≥14」；③ 到站后 `querySourceFeatures` 里的路线段号全属于该站（Z 全 `SZ-` / GZ 全 `GZ-`）；④ 断网屏蔽 `tiles.openfreemap.org` 后仍有中国轮廓 + 两站 pin + 提示。
 
-- **默认视野**：箭头为基准尺寸，路段线可辨；
-- **滚轮缩远 1–2 档**：箭头跟着变小（不是变淡），路段线始终看得见 —— 定版诉求成立；
-- **再放大回默认档以上**：箭头尺寸**不再增大**，停在基准值；
-- **点「箭头」键**：图上箭头全部消失，图例出现「当前已隐藏方向箭头（工具条「箭头」键可打开）」，按钮不再是蓝边态；
-- **再点一次**：箭头恢复显示，提示消失，按钮回到蓝边态；
-- **关掉箭头后 Ctrl+F5**：刷新后仍是隐藏态（`localStorage` 的 `hubflow.settings.directions` 生效）。
+---
 
-像素取证（同一窗口 1400×831 预览，`windows_computer_use` 截图 + PIL 连通域按 `DIR_COLORS` 计数）：
-默认视野下紫色双向箭头最大块 10×8 px，缩远两档后降到 4~7 px。**注意**：缩远后仍会觉得「挤」，
-那是下一章的**摄像头图钉**（DOM Marker，屏幕像素固定）在挡，不是箭头。
+## 二十六、缩放时路网不再糊成一片：线宽 / 热力 / 图钉 / 图例四件事（业主 2026-10-19~20 交办）
 
-编码：三个改动文件均 **UTF-8 无 BOM、纯 LF**。
+> 本单只动**显示层**：判级、契约字段、`stations/*.json`、引擎产物一律没动。
+> 四条口径全部来自业主当面反馈，逐条对应下文。
 
-### 23.5 遗留 / 说明
+### 26.1 问题原话与根因
 
-1. **只做「变小 + 可关」，没动箭头图形本身**：仍是 canvas 画的 `↑ / ↕ / ?` 三个字形（64×64，
-   `bold 44px "Segoe UI Symbol"`），颜色仍取 `DIR_COLORS`，本单没碰图标形状与配色。
-2. **显隐是「记住的」**：落在 `localStorage` 的 `hubflow.settings.directions`，刷新 / 切站点包后保持上次的样子；
-   想恢复默认（显示）就再点一次「箭头」键，或清掉该键。
-3. **`.legend-toggle` 这个类名现在被两个按钮共用**（「图例」与「箭头」）：样式上只差 `.on` 态。
-   下一单若要再加第三个小按钮，建议把类名抽成 `.map-tool` 之类的中性名字，别继续往上堆。
-4. **`icon-allow-overlap` 仍是 `true`**：低缩放时箭头彼此仍可能重叠，只是足够小、不影响看线。
-   真要彻底不重叠得改成避让 + 分级显示，那是另一单的口径（会牵到「哪些路段优先显示」的判级取舍）。
+业主第一次反馈：「**一缩小就全都缩一块了，就好像外面包裹的那一层颜色有点看着难受，但是这个颜色又不能完全去掉**」。
+第二次追加：「还是和一坨一样，就是每个道路都要颜色，然后周围还有往外衍生的一圈淡淡的颜色，把那个去掉怎么样」。
 
-## 二十四、摄像头图钉随缩放缩小 / 淡出（业主 2026-10-19 追加）
+根因不是颜色，是**宽度单位**：`line-width` / `line-opacity` 的取值单位是**屏幕像素**，缩放时**不跟着变**；
+而路网在屏幕上的**跨度**按 `2^-d` 缩、**面积**按 `4^-d` 缩。线宽不收，同样的线在更小的地盘上重叠，
+覆盖率就按 `2^d` 爆（缩 2 档 ×4、3 档 ×8），于是糊成一团、外面像包了层同色雾。
+三层里最猛的是 `LAYER_HEAT` 基准 26/22 px（彩色主线 5.5/4.5 的 4.7 倍）且半透明。
 
-> 来源：业主 2026-10-19 同一条需求的**后半段** —— 箭头改小之后仍反馈「缩小地图后还是挤在一起，
-> 根本看不清地图」。追查发现：箭头已经不是元凶，真正盖住路网的是**摄像头图钉**。
+第二层原因是**摄像头图钉**：`new Marker({ element })` 造的是 DOM 元素，屏幕像素恒定、天然不随 zoom 缩。
+61 段几乎每段挂一个 20 px 圆，缩远后路网只剩几十像素，图钉却还是 20 px。
 
-### 24.1 为什么图钉必须单独处理
+### 26.2 四项改动
 
-图钉是 `addCameraPins()` 里用 `new Marker({ element })` 造的 **DOM 元素**（`MapLibreViewer.vue`），
-不是 MapLibre 图层里的 symbol —— DOM Marker **天然不随 zoom 缩**，屏幕像素尺寸恒定。
-61 个路段几乎各挂一个 20 px 圆，缩到 zoom ≈ 11–12 时全部叠在同一小块上，把路网糊成一个点。
-这跟方向箭头（symbol 图层，改 `icon-size` 就跟着缩）是**两套机制**，必须分别处理。
-
-### 24.2 改了什么
-
-| 位置 | 改动 |
-|---|---|
-| `MapLibreViewer.vue` 模块级 | 新增 `let camPinEls: HTMLElement[] = []`（图钉外壳数组）、`let fitZoom = 14`（默认视野档，由 `fitToNetwork()` 在 `map.fitBounds()` 之后写入 `map.getZoom()`） |
-| `camPinScaleOf(zoom)` | `Math.min(1.15, Math.max(0.28, Math.pow(2, (zoom - fitZoom) * 0.36)))` —— **以默认视野档为基准**、越缩越小，不是写死 zoom 14（Z 站 500 m 与 GZ 站 1000 m 的默认档不同） |
-| `camPinOpacityOf(zoom)` | 比默认视野缩远 **1 档开始淡、1.6 档彻底淡出**：`d <= 1 → 1`、`d >= 1.6 → 0`、中间线性。61 个钉即使各 6 px 叠在同一小块上照样糊成一片，远景只看路网形状 |
-| `applyCameraPinScale(map)` | 把折算值写进每个外壳的 `--cam-pin-scale` / `--cam-pin-opacity`，并在完全透明时置 `pointer-events: none`（隐形钉不吃点击） |
-| `addCameraPins()` | 改为**两层结构**：外层 `div.cam-pin-wrap`（交给 Marker 定位）+ 内层原 `.cam-pin`（承接缩放）。**MapLibre 自己在 Marker 元素上写 `transform` 做平移，缩放必须落里层**，否则图钉会跑位 |
-| `map.on('move')` / `map.on('load')` | `move` 里 `camTick.value++` 后调一次；`load` 里 `fitToNetwork()` 之后**再调一次**（fitBounds 才刚定下默认档） |
-| CSS `:deep(.cam-pin-wrap)` / `:deep(.cam-pin)` | 外壳 `line-height: 0` 不参与缩放；里层消费 `transform: scale(var(--cam-pin-scale, 1)); transform-origin: center center; opacity: var(--cam-pin-opacity, 1)`，加 0.12s 过渡。**缩放原点必须取圆心**，否则放大时向右下漂半个身位 |
-
-### 24.3 自检（本单真跑，2026-10-20）
-
-`npx vue-tsc -b` exit 0；`npx vite build` exit 0；`python scripts/doc_gate.py` 8/8 通过。
-
-人工 + 像素取证（本机 mock 模式，Z · 61 段，Edge 窗口 3072×1824 / 预览 1400×831）：
-
-- **默认视野**：孤立图钉环 **20×20 px**（20px 圆 + 2px 描边，`scale = 1`）；
-- **滚轮缩远约 2 档**：图钉环降到 **6×7 px**，蓝色像素总量从 2528 降到 1934；
-- **再缩 1 档以上**：图钉整体淡出到 0，路网线条完整可见；
-- **放大回默认视野**：图钉淡入、尺寸恢复，编号可读。
-
-### 24.4 遗留 / 说明
-
-1. **只在「缩远」方向生效**：放大（zoom > fitZoom）时 `camPinScaleOf` 上限锁在 **1.15**，图钉最多大 15%，
-   不会跟着无限放大 —— 防止放大后一个钉占掉半屏。若需可读性更强可后续调上限。
-2. **淡出阈值是相对默认视野的**：换站点包（Z ⇄ GZ）后 `fitZoom` 会重新记录（`fitToNetwork()` 每次都写），
-   所以 GZ 站（1000 m 范围）的淡出起点会自适应，不需要单独配置。
-3. **图钉语义未变**：仍是 IKLX5Y / IKNBT2 口径的**源台账布点**（初始映射，不代表一期摄像头总数），
-   本单只改尺寸与透明度，没碰位置、编号、点击跳转。
-4. **没有独立的图钉开关**：业主只要求「别挡图」，本单用「缩远自动淡出」达成。
-   若以后要像箭头那样给一个显隐键，可复用 `settings.ts` 的同一套体例（第三个 KEY + ref + setter + restore 分支）。
-
-
-## 二十五、落客点 / 候客区上界面（业主 2026-10-20；先只上广州南站）
-
-> 来源：业主 2026-10-20 口径 —— 站点包里已经有落客点 / 候客区数据，但界面上一个都看不到，
-> 要求**先把广州南站的放出来**，别的站先不要动。
-> 前置事实：这份数据是 A 单（`!IKM4TE`）补进站点包的，入库时只到「数据层」，
-> 前端快照带上了、页面却没人消费（详见 21.5 遗留第 1 条）。
-
-### 25.1 卡在哪一层（动手前先查清的三处断点）
-
-| 层 | 现状 | 结论 |
+| # | 事项 | 做法 |
 |---|---|---|
-| 站点包数据 | `stationGZ.ts` 有 `dropoffs` 5 个 + `zones` 4 个 | ✅ 现成，本单不动数据 |
-| 前端快照 | `mock/traffic.ts` 把 `pack.dropoffs` / `pack.zones` 映射进 `network`，真跑 `/api/traffic/network` + `X-Station-Pack: GZ` 返回 `dropoffs=5 / zones=4` | ✅ 有数据 |
-| 前端界面 | 全仓 `network.value` 只赋值不使用；`MapLibreViewer` 的 props 无点位入参 | ❌ 断点 |
-| 后端接口 | `work/assembly/traffic.py` 对**非默认站**直接给 `points: []`（note：「该站暂未登记点位表（T1 点位数据归池·S）；本接口如实返回空表」） | ❌ 断点，且不属本单领地 |
-| 引擎产物 | `work/engine/out/real/sites/guangzhounan/routes.json` 91 条请求 `dropoff_point` **全 null**（`work/engine/README.md` 规定真网无点位表就如实给 null，不补假点位） | ❌ 断点 |
+| ① | 线宽随缩放收缩 | 新增 `lineScaleOf()`：`fitZoom` 及更近恒为 1（默认视野观感不动），比默认档缩远则 `2^-d`，下限 0.15。`applyLineScale()` 逐帧贴回三层 `line-width` |
+| ② | 热力额外淡出 | `heatFadeOf()`：`2^(-0.8d)`，下限 0.25 —— **不归零**，业主明确「颜色不能完全去掉」 |
+| ③ | 图钉随缩放收缩/淡出 | 两层 DOM：外层 `.cam-pin-wrap` 交给 Marker 定位（不能碰它的 `transform`），内层 `.cam-pin` 承接 `scale()`。`camPinScaleOf()` 下限 0.28；`camPinOpacityOf()` 缩远 1 档开始淡、1.6 档淡尽并放开 `pointer-events` |
+| ④ | 桌面端图例可收起 | 原先只有 ≤1180 窄屏有收起键（桌面 `.legend-toggle { display:none }`），图例压住左下角路网没法收。改为桌面也出收起键，状态共用全局 `legendVisible` 并落 `localStorage` |
 
-所以本单**只做一件事**：在右栏加一张读站点包的文字卡。地图不画（业主 2026-10-14 极简口径
-「图上只画路段线，断面 / 落客点 / 场区 / 站点不再下发地图」仍然有效，见 `DashboardView.vue` 脚本区注释），
-后端 points 表不碰（池·S 领地），引擎 null 不改（如实空窗是既定口径）。
+### 26.3 四级视图不再画热力晕染
 
-### 25.2 改了什么（单文件：`src/views/dashboard/DashboardView.vue`，+152 行）
+`LAYER_HEAT` 的注释从第一版起就写着「只指数视图有值；四级视图 heat 恒 0，等于不画」，
+但实现里只有「流量版返 0」「摄像头未覆盖返 0」两条守卫，**漏了 `isIndex` 判断** ——
+四级视图下每段照样给 `0.1–0.6`，26 px 同色半透明宽带在 708 段密度下互叠成一整团雾。
+`heatOf()` 开头补 `if (!isIndex.value) return 0`。属**代码与注释不一致**，这里补齐，不是口径变更。
 
-| 位置 | 改动 |
-|---|---|
-| 脚本区（`packSegmentIds` 之后） | 新增 `LANDMARK_ENABLED_PACKS = ['GZ']`（开放名单，一期只放广州南站）、`landmarksVisible`（名单内才显示）、`packDropoffs` / `packZones`（直取 `activePack()`）、`landmarkCount`、`landmarkPackKey`、`landmarkArrivalDropoff`（读 `recommend.arrival_dropoff_point`）、`fmtLonLat(lon, lat)`（6 位小数） |
-| 模板（推荐路线卡之后、路段信息卡之前） | 新增 `section.td-card.landmark-card`：卡头「落客点 / 候客区」+ `td-head-tag`「站点包 · 演示数据」；说明段明写**不是踏勘实测**；两组 `.landmark-group`（落客点 / 候客·蓄车区）各带条数，逐项列 `id` / 名称 / 经纬度；空态写「该站点包未登记…（不补造）」；卡脚标来源站点包 key、推荐落客点、语义出处 `docs/hubflow-data/06_站点事实_广州南站.md` |
-| 样式 | `.landmark-note` / `.landmark-group` / `.landmark-group-head` / `.landmark-count` / `.landmark-list` / `.landmark-item`（`grid-template-columns: 64px 1fr`，`id` 占两行）/ `.landmark-id` / `.landmark-name` / `.landmark-ll` / `.landmark-empty` / `.landmark-foot` |
-| 右栏顺序 | `.col-right > .td-card.landmark-card { order: 3 }` —— 排最后。选择器必须写**两个类**：上面 `.col-right > .td-card:not(.route-card)` 的特异性是 3 个类，只写 `.landmark-card`（2 个类）压不过它，会掉回 `order: 1` 跟路段信息并列 |
+### 26.4 `fitZoom` 为什么不能写死
 
-三条口径写进了脚本注释，改的人不用再猜：
+取景函数 `fitStationInstant()` / `fitOverviewInstant()` 在 `fitBounds()` **之后**才写 `fitZoom = map.getZoom()`
+—— Z 站演示范围 500 m、GZ 站 1000 m，两站默认档本来就不同，写死 zoom 14 会一站准一站错。
 
-1. **只吃站点包、不吃接口** —— 接口侧非默认站恒空表，拿它渲染只会在真接口模式下变成假空态；
-2. **坐标是路段折线上的演示点，不是实测** —— 卡上必须写清，不能当实测发布；
-3. **不画到地图** —— 业主 2026-10-14 极简口径只管地图，文字卡不违反它，也不去改 `MapLibreViewer`。
+### 26.5 自检（本单真跑）
 
-### 25.3 自检（本单真跑，2026-10-20）
+- `vue-tsc -b` exit 0、`vite build` exit 0、`python scripts/doc_gate.py` 8/8
+- 墨水量像素取证（关底图、关「凸显路线」、广州南站 708 段、同为 1 km 档）：
+  四级视图旧版 4.53% → 新版 4.04%；指数视图旧版 4.54% → 新版 6.72%。
+  **关键比值**：旧版两个视图几乎相等（1.00）= 晕染没区分；新版 1.66 = 四级视图确实不画晕染
+- 真机点验：缩远 2 档线宽跟着收、图钉变小变淡直至主路网完整可见；桌面端点收起键图例消失、刷新后保持收起
 
-- `npx vue-tsc -b` exit 0（`$env:PATH` 需前置 node 目录后调 `node_modules/.bin/vue-tsc.CMD`）；
-- `npx vite build` exit 0；
-- `python scripts/doc_gate.py` 8/8 通过；
-- 真机（本机 mock 模式，Edge + CDP 直读 DOM）：切到**广州南站 · 708 段**后
-  `document.querySelectorAll('.col-right > .td-card')` = `[route-card, landmark-card, td-card]`，
-  对应 computed `order` = `2 / 3 / 1`；`.landmark-card` 存在且 `innerText` 含 9 项
-  —— `GZ-DROP-01…05`（东/西出发平台、P3/P1/P5 快速接送区，坐标均为 6 位小数）+
-  `GZ-ZONE-01…04`（东广场网约车/出租车上客区、P9–P10 蓄车听单区、P8 C 区大巴上客点）；
-  分组计数 `drops = 5`、`zones = 4`；截图为证（`Page.captureScreenshot` 裁卡片本体，排版正常）。
-- 反过来验：仍在 **Z · 61 段** 时 `.landmark-card` **不在 DOM 里**（`landmarksVisible === false`），
-  证明「只上广州南站」这条限制真的生效，没顺手把肇庆东的 3+2 也放出来。
+### 26.6 遗留
 
-### 25.4 遗留 / 说明
-
-1. **Z / Z21 没开**：Z 包也有 3 落客点 + 2 候客区（`stationZ.ts:235` 同口径演示点），
-   这一轮业主明确「别的站先不要动」，所以开放名单只有 `['GZ']`。以后要开，改
-   `LANDMARK_ENABLED_PACKS` 一处即可，界面不用动。
-2. **数据不进地图**（仍是 B 单）：要画到 `MapLibreViewer` 必须先过业主 2026-10-14 极简口径，
-   那是另一单、要业主点头。
-3. **后端 `/network?station=GZ` 仍 `dropoffs = 0`**：本单没碰 `stations/points.json`（T1 点位数据归池·S）。
-   也就是说这张卡在**真接口模式**下照样能显示（它读站点包），但接口本身仍是空表 —— 两件事互不替代。
-4. **引擎 `dropoff_point` 仍是 null**：右栏「落客」那行读的是引擎产物，真网无点位表就如实空窗，
-   按 `work/engine/README.md` 的既定口径不改。这张新卡是**另一条来源**，卡脚已标明出处。
-5. **卡不会自己滚动到底**：右栏 `.td-scroll` 的卡片顺序是 route(2) → 其他(1) → landmark(3)，
-   即路段信息卡（可达 1.6 万 px 高）在上，落客点卡排在最后。业主若要「一眼看到」，
-   可改成 `order: 0` 排最前 —— 一行改动，但会抢掉「点路段后先看运行指标」的既有优先级（IKMS18），需业主定。
-
-## 二十六、路网线宽 / 热力晕染随缩放收缩（业主 2026-10-20）
-
-> 来源：业主 2026-10-20 当面口径 —— 「一缩小就全都缩一块了，就好像外面包裹的那一层颜色
-> 有点看着难受，但是这个颜色又不能完全去掉」。业主在四个方案里选定 **A：线宽随缩放收、
-> 热力又缩又淡**，并明确「默认视野的观感不许动，只改缩远之后」。
-> 前置：第 23 / 24 章已经把方向箭头、摄像头图钉做成「相对 `fitZoom` 折算」，
-> 本章是同一套算法的第三处应用 —— 它才是「缩小后糊成一片」的主因。
-
-### 26.1 为什么缩远会糊（根因不是颜色，是宽度单位）
-
-`line-width` / `line-opacity` 的单位全是**屏幕像素**，缩放时不变；而路网在屏幕上的
-**跨度**按 `2^-d` 缩、**面积**按 `4^-d` 缩（`d` = 比默认视野缩远了多少档）。
-线宽不跟着缩，同样的线画在更小的地盘上 → 重叠覆盖率按 `2^d` 爆：
-
-| 缩远 | 路网跨度 | 若线宽不变，覆盖率 | 观感 |
-|---|---|---|---|
-| `d = 0`（默认） | 100% | 100% | 正常 |
-| `d = 1` | 1/2 | ×2 | 开始糊 |
-| `d = 2` | 1/4 | ×4 | 一片，边界不清 |
-| `d = 3` | 1/8 | ×8 | 整块色斑，看不出路 |
-
-三层里**最猛的是热力晕染**：`LAYER_HEAT` 基准宽 `26 / 22 px`，是彩色主线 `5.5 / 4.5 px`
-的 **4.7 倍**，颜色与主线**同色**、半透明 —— 业主说的「外面包裹的那一层颜色」就是它。
-缩远后相邻段的热力宽带互相叠（单层 opacity 0.1–0.6，叠两三层就到 0.8+），
-于是整片路网被泡在一团同色的雾里。
-
-### 26.2 改了什么（单文件：`src/views/dashboard/components/MapLibreViewer.vue`，+78 / -5）
-
-| 位置 | 改动 |
-|---|---|
-| `widthExpr` 之后 | 新增基准线宽常量 `LINE_W_CASING = [11, 9]`、`LINE_W_HEAT = [26, 22]`、`LINE_W_LINE = [5.5, 4.5]` —— 把原先散在 `lineLayerSpecs()` 里的 6 个裸数字收成一处，改基准只改这里 |
-| 同上 | 新增 `lineScaleOf(zoom)`：`d = fitZoom - zoom`；`d <= 0`（默认视野及更近）**恒返 1**；`d > 0` 返 `max(0.15, 2^-d)` |
-| 同上 | 新增 `heatFadeOf(zoom)`：`d <= 0` 返 1；否则 `max(0.25, 2^(-0.8d))` —— 热力在「缩」之外再单独压一道透明度 |
-| 同上 | 新增 `applyLineScale(map, force = false)`：`setPaintProperty` 三处 `line-width`（用 `widthExpr(基准 × s, …)` 重建表达式）+ 一处 `line-opacity`（`['*', ['get','heat'], heatFadeOf(zoom)]`）。用 `lastLineScale` 挡掉无变化的重算（阈值 0.004） |
-| `lineLayerSpecs()` | 三层 `paint['line-width']` 改为引用上面三个常量，不再有裸数字 |
-| `fitToNetwork()` 末尾 | `applyCameraPinScale(map)` 之后加 `applyLineScale(map, true)` —— `fitZoom` 刚被改写，必须强制重贴 |
-| `applyViewState()` | `applyDirectionScale(map)` 之后加 `applyLineScale(map, true)` —— `setStyle()` 后 paint 全部回到基准值，不强制重贴会出现「底图加载完那一刻线宽突然变粗」 |
-| `map.on('move')` | `applyDirectionScale(map)` 之后加 `applyLineScale(map)`（每帧按当前档位折算） |
-
-三条口径写进注释，改的人不用猜：
-
-1. **`fitZoom` 及更近完全不动** —— 业主明确「默认视野的观感不许改」，所以主图、大屏投屏、
-   默认截图这一档的像素与改动前逐字节一致；
-2. **热力不能归零**（下限 0.25）—— 业主原话「这个颜色不能完全去掉」；热力是拥挤指数视图的
-   主要读图线索，远景也要能看出哪里红；
-3. **线宽下限 0.15** —— 再小主线不足 1 px，会被抗锯齿吃成虚影，不如留一根细线。
-
-### 26.3 自检（本单真跑，2026-10-20）
-
-- `npx vue-tsc -b` exit 0；`npx vite build` exit 0；`python scripts/doc_gate.py` 8/8 通过。
-- **墨水量像素取证**（CDP 直连 Edge，只截地图 canvas 787×307 CSS px；关底图、隐藏图例等浮层，
-  否则图例里固定的四级色块会混进「彩色像素」把比例压平）：
-
-  | 档位 | 彩色像素 | 占画布 | vs 默认 | 线宽不变时应有 | 结论 |
-  |---|---|---|---|---|---|
-  | 默认（`d=0`） | 37869 | 3.92% | 100% | 100% | 一致 |
-  | `d=1` | 7568 | 0.78% | **20.0%** | 50% | 收到 2/5 |
-  | `d=2` | 3732 | 0.39% | **9.9%** | 25% | 收到 2/5 |
-  | `d=3` | 2285 | 0.24% | **6.0%** | 12.5% | 收到 1/2 |
-  | `d=4` | 1536 | 0.16% | **4.1%** | 6.2% | 触底 |
-
-  实测衰减**明显快于「线宽不变」的 `2^-d`**；残留量来自抗锯齿与热力 0.25 的下限（符合设计）。
-- **A/B 截图肉眼对比**（广州南站 708 段，底图开启，`git stash` 切回改动前后各截一次）：
-  改动前 `d=1` 是「一团彩色雾 + 外面一圈同色包裹层」，改动后同一档只剩细的等级色线，
-  底图的村名 / 道路编号重新可读；`d=2 / d=3` 同理，路网缩成一个仍能分辨颜色的小块。
-- 截图脚本 `_ab.py`（CDP：起 Edge → 写 localStorage 关/开底图与站点包 → `Page.captureScreenshot`
-  按 canvas 的 `getBoundingClientRect()` clip），是判定这类「缩放后观感」问题最可靠的手段，
-  比截整屏再用肉眼找换算比靠谱。要注意：`Page.captureScreenshot` 截的是**合成后的页面**，
-  浮层也会进来，所以量像素前必须先把浮层藏掉。
-
-### 26.4 遗留 / 说明
-
-1. **只处理「缩远」**：`d <= 0` 恒返 1，也就是说放大路线不会因为这条改动而变粗 —— 与方向箭头
-   （第 23 章）、摄像头图钉（第 24 章）的定版口径保持一致，三处共用同一个 `fitZoom`。
-2. **基准宽度的绝对值没动**：默认视野下 `26 px` 热力仍偏猛，若要整体收敛需要另开一单并请业主确认
-   （会改默认观感，违反本轮「默认不许动」的口径）。
-3. **没做「低缩放聚合」**：708 段在广州南站 1000 m 演示范围里本来就很密，缩到 `d >= 4` 时颜色仍是
-   糊在一块，只是不再向外漫出。真要可读，需要按等级合并成「走廊级」符号，那是另一个量级的改动。
-4. **热力下限 0.25 是业主口径落的值**，不是物理量；若以后业主改口「远景可以完全不要热力」，
-   改 `heatFadeOf()` 的下限一处即可。
-
-
-## 二十七、四级视图不再画热力晕染（业主 2026-10-20）
-
-> 来源：业主 2026-10-20 当面口径（第 26 章发版后立刻追加）—— 「还是和一坨一样，
-> 就是每个道路都要颜色，然后周围还有往外衍生的一圈淡淡的颜色，把那个去掉怎么样」。
-> 也就是说：**等级色保留，往外漫出去的那圈雾去掉**。
-> 前置：第 26 章只处理了「缩远之后」的观感，解决了低缩放糊成一片；
-> 但**默认视野那一档**业主仍然觉得糊 —— 本章是那一档的根因。
-
-### 27.1 根因：`heatOf()` 漏了「只给指数视图」这条判断
-
-`LAYER_HEAT`（热力晕染）的图层注释从第一版起就写着「热力晕染：只指数视图有值；
-四级视图 heat 恒 0，等于不画」（`MapLibreViewer.vue` 里 `LAYER_HEAT` 定义处的原话），
-但 `heatOf()` 的实现里只有「流量版返 0」和「摄像头未覆盖返 0」两条守卫 ——
-**没有判断 `isIndex`**。于是四级视图（决策拥堵版，界面上叫「四级视图」）下，
-只要该段有摄像头覆盖且 CI 可用，`heat` 照样返回 `0.1–0.6`，
-每段都往两边各漫出十几像素的同色半透明宽带。
-
-单段看不出来；广州南站 708 段这种密度下，几百条晕染互相叠，就成了一整团雾 ——
-**颜色还在，但路的边界没了**。这和业主说的「一坨」是同一个现象，
-只是这一档发生在默认视野，第 26 章的缩放收缩管不到（那一档按口径恒不缩放）。
-
-### 27.2 改了什么（单文件，+9 / -1）
-
-| 位置 | 改动 |
-|---|---|
-| `heatOf()` 开头 | 加 `if (!isIndex.value) return 0` —— 四级视图 / 流量版一律不画晕染，只有拥挤指数视图画 |
-| 函数上方注释 | 从原一行扩写成完整说明：业主原话、「四级色本身已经把等级说清楚」「708 段密度下晕染互叠会糊成一坨」、以及「`LAYER_HEAT` 注释早写着四级视图恒 0，这里属于补齐代码与注释的不一致」 |
-
-`isIndex` 是既有 computed（`const isIndex = computed(() => props.mode === 'index')`），
-不新增状态、不新增 prop、不动任何调色板。
-
-**没有动的**：
-
-- `LAYER_HEAT` 的宽度（26 / 22 px）与颜色（`['get','color']`，与主线同色）—— 指数视图仍要它；
-- 第 26 章的 `lineScaleOf` / `heatFadeOf` / `applyLineScale` —— 指数视图缩远时仍按那套收与淡；
-- `LAYER_CASING`（白描边）与 `LAYER_LINE`（等级色主线）—— 业主明确「每个道路都要颜色」，
-  这两层是本视图的信息主体。
-
-### 27.3 自检（本单真跑，2026-10-20）
-
-- `npx vue-tsc -b` exit 0；`npx vite build` exit 0；`python scripts/doc_gate.py` 8/8 通过。
-- HMR 生效确认：`Invoke-WebRequest http://localhost:5173/src/views/dashboard/components/MapLibreViewer.vue`
-  的下发模块里能命中 `if (!isIndex.value) return 0`。
-- **A/B 截图肉眼对比**（`_ab2.py`：CDP 起 Edge 1860×1094 → 写 localStorage 开底图、**关方向箭头**、
-  选广州南站 708 段 → fit / 缩远 1 / 缩远 2 各截一次地图 canvas；`git stash` 切回改动前再截一轮）：
-
-  | 档位 | 改动前 | 改动后 |
-  |---|---|---|
-  | 默认视野（`d=0`） | 每条路外面一圈同色半透明雾，几百条叠成一大团橙绿雾，路口边界看不出 | 只剩「白描边 + 等级色主线」，每条路的走向与等级清晰可辨，底图路名可读 |
-  | 缩远 1 档 | 雾仍跟着路走，整体更糊 | 路网缩小、只剩细等级色线，雾完全消失 |
-  | 缩远 2 档 | 剩一团带雾的色块 | 剩一个能分辨颜色的小块，无雾 |
-
-  对比图脚本 `_ab2cmp.py`（左 BEFORE / 右 AFTER 并排，同一裁剪框）。
-
-- **注意**：A/B 取像时特意把方向箭头关掉了（`localStorage['hubflow.settings.directions'] = '0'`）。
-  箭头是 64 px 字体图标、单个盖住十几段，开着会把这个「雾」的差异完全遮住 ——
-  判定晕染问题必须在没有箭头的画面上看。
-
-### 27.4 遗留 / 说明
-
-1. **拥挤指数视图仍有晕染**：那是该视图的正常表达（CI 连续量本来就该用渐变表现出来）。
-   如果业主之后也觉得那一档糊，得单独定口径 —— 不是这条 bug 的延伸。
-2. **本单不改任何默认值**：不调宽度、不调调色板、不动 `d <= 0` 的缩放口径。
-   改的只有「四级视图这条分支该不该画热力」，严格说这是修一处「注释与实现不一致」。
-3. **四级视图的等级色仍靠颜色 + 竖条 + 文字三重编码**（图例里写着「四级编码（颜色·竖条·文字）」），
-   去掉晕染不影响任何一重编码的可读性，也不触发「数据不可用用灰档」那条口径。
-4. **低缩放下的密集仍是密度问题**：708 段在 1000 m 演示范围里，缩到 `d >= 4` 时颜色仍会挨在一起。
-   要根治需要「走廊级聚合」，与第 26 章遗留第 3 条是同一件事，属另一个量级的改动。
+- 方向箭头缩放**不在本单范围**（业主 2026-10-22 明确「箭头不用提上去，没达到预期，我到时候再改一下」），
+  本分支丢弃了原箭头缩放改动，main 上已有的箭头实现原样保留
+- 落客点 / 候客区界面**沿用 main 方案**（点路段 → 右栏「本段附近的落客点 / 场区」），
+  本分支丢弃了「站点包全量清单卡」方案（业主 2026-10-22 选定 main 那种方式）

@@ -1,0 +1,84 @@
+// 摄像头 ↔ 路段（Issue IKLX5Y）。
+//
+// 业主 2026-10-15 口径：
+//   ① 大屏**新增摄像头位置**，点击直接跳到感知层对应摄像头的画面；
+//   ② **只有摄像头监控下的路段才显示颜色（拥堵情况）**，其余只画灰色路网轮廓。
+//
+// 单一真值来源 = **站点包的 `channels`**：`segment_id` 说它监控哪条路，`lon`/`lat` 说它画在哪。
+// 摄像头数是**现算的**（`channels` 里命中该段的条数），不在包里另存一份数字——
+// 存两份迟早对不上（一条通道改段，数字忘了改，图上就撒谎）。
+//
+// ⚠️ 口径纪律：
+//   · 摄像头**没有视频源**（`hasVideo: false`）不等于"没有摄像头"，更不等于"数据可用"——
+//     三件事在页面上要分开说（见 `views/perception/`）；
+//   · 上色策略来自包（`colorPolicy`），**默认 `'all'` 是既有行为**，本站才用 `'camera-covered'`
+//     —— 当年是为了不让这一单的规则外溢到 A / B / Y 三个既有包（三者已随 IKM4KP / IKM4XX 删除）；
+//     将来加站仍按"上色策略由包声明"这条办。
+import { activePack } from '../station-packs/index.ts';
+function hasCoords(c) {
+    return typeof c.lon === 'number' && typeof c.lat === 'number';
+}
+/** 当前包的摄像头布点（按 `channels` 顺序；没坐标的不上图） */
+export function cameraPins() {
+    return activePack()
+        .channels.filter(hasCoords)
+        .map((c) => ({
+        cid: c.cid,
+        source: c.source,
+        name: c.name,
+        segment_id: c.segment_id,
+        lon: c.lon,
+        lat: c.lat,
+        hasVideo: c.hasVideo !== false,
+    }));
+}
+/** 路段 → 监控它的摄像头（可能多条） */
+export function camerasBySegment() {
+    const out = new Map();
+    for (const p of cameraPins()) {
+        const list = out.get(p.segment_id);
+        if (list)
+            list.push(p);
+        else
+            out.set(p.segment_id, [p]);
+    }
+    return out;
+}
+/**
+ * 某段源台账登记的摄像头（全量：含未上图 / 无坐标项）。
+ * ⚠️ 2026-10-18 口径（IKNBT2）：**N 段 = N 摄像头 = N 视频（演示）**——
+ * 源台账 0 路 **不等于**"该段没有摄像头/没有视频"：一期每段都有 1 路演示摄像头、画面为
+ * mock 复用样本视频（见 `demoCameraCount` 与大屏「关联摄像头」卡）。本函数只返回源台账条目。
+ */
+export function camerasOfSegment(segmentId) {
+    return activePack().channels.filter((channel) => channel.segment_id === segmentId);
+}
+/** 源台账摄像头数（0 = 源台账未登记该段；**不代表一期摄像头总数为 0**，见 IKNBT2 口径） */
+export function cameraCountOf(segmentId) {
+    return activePack().channels.filter((c) => c.segment_id === segmentId).length;
+}
+/**
+ * 一期演示口径的摄像头总数：**N 段 = N 摄像头 = N 视频（mock 复用）**。
+ * 返回当前站点包的路段数（Z=61 / GZ=433）；大屏/感知页用它标注"演示摄像头 N 路"，
+ * 与源台账（`channels` 条数，仅初始映射）分开说，不拿源台账当一期总数。
+ */
+export function demoCameraCount() {
+    return activePack().segments.length;
+}
+/** 当前包的上色策略（不写 = `'all'`，既有行为） */
+export function packColorPolicy() {
+    return activePack().colorPolicy ?? 'all';
+}
+/**
+ * 该段是否在"只摄像头段上色"的范围内。
+ * 策略为 `'all'` 时恒 true（不改变既有包的画法）。
+ */
+export function isCameraCovered(segmentId) {
+    if (packColorPolicy() !== 'camera-covered')
+        return true;
+    return cameraCountOf(segmentId) > 0;
+}
+/** 深链地址：大屏点摄像头 → 感知层该通道（`?source=` 与感知服务 stream_id 同值） */
+export function perceptionHref(source) {
+    return `#/perception?source=${encodeURIComponent(source)}`;
+}

@@ -133,7 +133,10 @@ function tick(): void {
 function measure(): void {
   const el = gridRef.value
   if (!el) return
-  cellW.value = el.clientWidth > 0 ? (el.clientWidth - GAP * 2) / 3 : 0
+  // 列数随断点变化（≤900 两列 / ≤560 单列），从计算样式里读实际轨道数，不再写死 3 列；
+  // 三列时的取值公式与改前完全一致（(宽 - 2 个间隙) / 3），1920×1080 的缩放显示不退化。
+  const tracks = (getComputedStyle(el).gridTemplateColumns || '').split(' ').filter(Boolean).length || 3
+  cellW.value = el.clientWidth > 0 ? (el.clientWidth - GAP * (tracks - 1)) / tracks : 0
 }
 
 function indexOf(source: string): number {
@@ -322,5 +325,44 @@ onUnmounted(() => {
   font-size: 11px;
   color: var(--td-text-color-secondary);
   margin: 0 auto;
+}
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤900：监控墙 3 列 → 2 列（窄屏下每格仍有足够画面尺寸） */
+@media (max-width: 900px) {
+  .wall-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .td-card-head .td-head-tag {
+    margin-left: 0;
+  }
+}
+/* ≤560：2 列 → 1 列；工具条 / 分页 / 空态说明按整宽换行，不横向溢出 */
+@media (max-width: 560px) {
+  .wall-grid {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 8px;
+  }
+  .wall-tools,
+  .wall-pager {
+    padding: 8px;
+    gap: 6px;
+  }
+  .wall-hint {
+    margin-left: 0;
+    width: 100%;
+    font-size: 10px;
+  }
+  .wall-empty {
+    padding: 24px 12px;
+    text-align: center;
+  }
+  .we-l2 {
+    overflow-wrap: anywhere;
+  }
 }
 </style>

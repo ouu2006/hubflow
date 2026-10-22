@@ -62,18 +62,20 @@ onMounted(async () => {
           报表来源:接口 GET /api/traffic/report/compare · rows {{ reportRows.length }} 条 · is_simulated = true
         </p>
         <p v-if="report.note" class="src warn">{{ report.note }}</p>
-        <table v-if="reportRows.length > 0" class="td-table">
-          <thead>
-            <tr>
-              <th v-for="key in reportColumns" :key="key">{{ key }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="(row, index) in reportRows" :key="index">
-              <td v-for="key in reportColumns" :key="key">{{ row[key] }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="tbl-wrap">
+          <table v-if="reportRows.length > 0" class="td-table">
+            <thead>
+              <tr>
+                <th v-for="key in reportColumns" :key="key">{{ key }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(row, index) in reportRows" :key="index">
+                <td v-for="key in reportColumns" :key="key">{{ row[key] }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </template>
       <p v-else class="src">正在读取接口报表…</p>
 
@@ -81,46 +83,50 @@ onMounted(async () => {
         以下 A/B/C 三组与处置前后对比为<b>前端演示脚本</b>(仿真对照,非接口数据;接口报表未接入前的兜底展示)
       </p>
       <p class="src">时间窗:{{ scenario.window }} · 来源:仿真对照 · is_simulated = true</p>
-      <table class="td-table">
-        <thead>
-          <tr>
-            <th>指标（同场景 · 同时段）</th>
-            <th class="num">A · 不推荐</th>
-            <th class="num">B · 此刻最快</th>
-            <th class="num hl">C · 协同推荐(本方案)</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="m in scenario.metrics" :key="m.name">
-            <td>
-              {{ m.name }}<span v-if="m.unit" class="unit">({{ m.unit }})</span>
-            </td>
-            <td class="num">{{ m.no_guide }}</td>
-            <td class="num">{{ m.fastest }}</td>
-            <td class="num hl">{{ m.cooperative }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="tbl-wrap">
+        <table class="td-table">
+          <thead>
+            <tr>
+              <th>指标（同场景 · 同时段）</th>
+              <th class="num">A · 不推荐</th>
+              <th class="num">B · 此刻最快</th>
+              <th class="num hl">C · 协同推荐(本方案)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="m in scenario.metrics" :key="m.name">
+              <td>
+                {{ m.name }}<span v-if="m.unit" class="unit">({{ m.unit }})</span>
+              </td>
+              <td class="num">{{ m.no_guide }}</td>
+              <td class="num">{{ m.fastest }}</td>
+              <td class="num hl">{{ m.cooperative }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <div class="sub">处置前后对比 · {{ ACK_COMPARISON.window }}</div>
-      <table class="td-table">
-        <thead>
-          <tr>
-            <th>指标（同场景 · 同时段）</th>
-            <th class="num">处置前</th>
-            <th class="num hl">处置后</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="r in ACK_COMPARISON.rows" :key="r.name">
-            <td>
-              {{ r.name }}<span v-if="r.unit" class="unit">({{ r.unit }})</span>
-            </td>
-            <td class="num">{{ r.before }}</td>
-            <td class="num hl">{{ r.after }}</td>
-          </tr>
-        </tbody>
-      </table>
+      <div class="tbl-wrap">
+        <table class="td-table">
+          <thead>
+            <tr>
+              <th>指标（同场景 · 同时段）</th>
+              <th class="num">处置前</th>
+              <th class="num hl">处置后</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="r in ACK_COMPARISON.rows" :key="r.name">
+              <td>
+                {{ r.name }}<span v-if="r.unit" class="unit">({{ r.unit }})</span>
+              </td>
+              <td class="num">{{ r.before }}</td>
+              <td class="num hl">{{ r.after }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
 
       <p class="note">演示数据（模拟）· 同一需求输入 · 三组对照 · 效果对比属仿真对照，不得称实测</p>
     </div>
@@ -163,5 +169,50 @@ onMounted(async () => {
   margin: 10px 0 0;
   font-size: 11px;
   color: var(--td-text-color-placeholder);
+}
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 桌面(≥1181)表格仍是卡片内 100% 宽的普通表格,包一层 .tbl-wrap 不影响视觉。
+   ≤768:宽表改为**容器内横向滚动**,表头 nowrap 不挤压指标列,页面无横向滚动。 */
+.tbl-wrap {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .td-card-body {
+    padding: 8px 10px;
+  }
+  .td-card-head {
+    flex-wrap: wrap;
+    gap: 4px 8px;
+  }
+}
+@media (max-width: 768px) {
+  .tbl-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .tbl-wrap .td-table {
+    min-width: 520px;
+  }
+  .seg {
+    margin-left: 0;
+  }
+}
+/* ≤560:对比表保持**双向滚动**(横 + 纵),指标列 / 数值列都可读,不撑破页面。 */
+@media (max-width: 560px) {
+  .tbl-wrap {
+    overflow: auto;
+    max-height: 60vh;
+  }
+  .tbl-wrap .td-table {
+    min-width: 480px;
+  }
+  .td-table th,
+  .td-table td {
+    padding: 6px;
+  }
+  .sub {
+    margin: 10px 0 6px;
+  }
 }
 </style>

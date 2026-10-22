@@ -8,8 +8,9 @@
 //
 // 几何来源：`work/twin/netpack/build_junction_pack.py`（先路线 → 再分段 → 再打标签，IKMERX）
 //   从 OSM 切片产出 **61 段（站区 500 m）**，见 `stationZ.network.ts`（脚本产物勿手改）。
-// **2026-10-17 IKMDKY 子单①：大屏切新段（21 段退役）**——段号由 2 位（SZ-01…）改 3 位（SZ-001…），
-//   旧 21 段保留在 `stationZ21.ts` 作为对照包（顶栏 / 大屏可切）。
+// **2026-10-17 IKMDKY 子单①：大屏切新段（21 段退役）**——段号由 2 位（SZ-01…）改 3 位（SZ-001…）。
+// **2026-10-21 IKP5D3：Z21 旧 21 段过渡包已删除**——后端站点登记表只登记 Z / GZ，
+//   留着 Z21 会让顶栏切到一个后端 404 的键（切包即全站 404），故与裁定一致地移出 PACKS。
 // **几何是真值（OSM）；路况指标一律是演示数据（模拟）。**
 // 本单不判定主干 / 分支；走廊落位另开单。
 
@@ -19,7 +20,7 @@ import { STATION_Z_DIRECTIONS } from './stationZ.directions.generated.ts'
 import { CAMERA_CHANNELS } from './cameraChannels.generated.ts'
 import type { PackSegmentBase, StationPack } from './types.ts'
 
-// ---- 摄像头布点（6 路）----
+// ---- 摄像头源台账（6 路）＋演示层 N 段 N 路 ----
 //
 // **唯一真值来源 = `work/perception/mapping/camera-segments.json`**（IKMDKY 三段映射登记表）；
 // 本文件**不再手写通道表**，只 import 生成物 `cameraChannels.generated.ts`
@@ -32,8 +33,10 @@ import type { PackSegmentBase, StationPack } from './types.ts'
 
 // ---- 路段基线（演示值）----
 //
-// **只给摄像头覆盖的 6 条段基线**——本站的上色策略是 `camera-covered`：
-// 只有这 6 段会显示颜色（新 61 段里的摄像头所在段），其余 55 段画灰轮廓（"这段没监控"）。
+// **只给摄像头源台账覆盖的 6 条段基线**——这 6 条是源台账初始映射所在段。
+// 上色策略自 IKP5DM 起改为 `all`（与 GZ 一致）：61 段都按等级上色，不再把其余 55 段
+// 画成"没监控"；图钉仍只画源台账 6 路，演示摄像头按 N 段 N 路（mock 复用），见
+// `work/perception/mapping/camera-plan.md`。
 // 数值是**编造的演示值**（一眼能看出是整数 / 整档），不是任何模型的输出。
 //
 // ⚠️ **`source` 一律取 `'twin'`（孪生链路 / 虚拟检测器）**，不是 `'video'`：
@@ -340,16 +343,19 @@ export const STATION_Z: StationPack = {
    * ⚠️ 注意别和"有没有视频源"混：6 路摄像头里 C-02/C-05 有**样本视频**（感知演示用，非本站现场），
    *    但样本视频**不产出本站段指标**，所以 video 槽位仍如实显示"不可用"（TC-19/TC-11），
    *    不拿编造的演示值冒充视频链路，也不把样本视频算成"本站实测"。
-   * ⚠️ 这与 `colorPolicy: 'camera-covered'` **不是一回事**：那条说的是"哪几条段**有摄像头**，
-   *    可以上色"（摄像头 = 布点，与有没有视频源无关）；本条说的是"哪几条段有**视频链路数据**"。
+   * ⚠️ 这与 `colorPolicy` **不是一回事**：那条说的是"路网按等级上色"（IKP5DM 起全段上色），
+   *    本条说的是"哪几条段有**视频链路数据**"。
    */
   videoCovered: [],
 
   /**
-   * 上色策略：**只有摄像头监控下的路段才显示颜色**（业主 2026-10-15 裁定）。
-   * 其余路段画中性灰轮廓 —— 一眼看出"这段没监控"。
+   * 上色策略：**全段按等级上色**（IKP5DM 选 A，与 GZ 一致）——一期口径是
+   * **N 段 = N 演示摄像头 = N 视频（mock 复用）**，若仍按源台账 6 路决定上色，
+   * 其余 55 段会被画成灰、读成"没监控"，与口径矛盾。
+   * 图钉仍只画源台账登记的 6 路（`channels` 只来自生成物）；演示摄像头按 N 段 N 路，
+   * 见 `work/perception/mapping/camera-plan.md`。无数据 / 陈旧段仍走灰档，与"没摄像头"不是一回事。
    */
-  colorPolicy: 'camera-covered',
+  colorPolicy: 'all',
 
   // 数据同化状态（IKM4TE mock 数据）：仅候选边界断面允许回灌；内部断面恒 false（TC-20 第②项）。
   // ⚠️ 本批是**演示值（mock）**，不是真实回灌；真实回灌 / 门控 / 熔断归 IKMHMX（M1-10 / TC-20）。

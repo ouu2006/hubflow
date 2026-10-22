@@ -291,17 +291,28 @@ python work/engine/predict_cli.py --segments work/engine/samples/segments_sample
 1. **边界节点** = `nodes[].boundary_role`（有向出入度：`entry` / `exit` / `both`；含 `topology.py`
    派生的、原 boundary 漏掉的边界，如本站 `N-006`）；没有该字段时退回有向出入度，不再用无向度数 1
    （多出边的边界节点会被无向度数漏掉）；
-2. **进场边界** = `entry` / `both`（本站 9 个）；**离场边界** = `exit` / `both`（本站 8 个）；
-3. 对每个进场边界，把**全部内部节点**当候选终点，取「**候选路线数最多**」的前 3 个（并列按自由流耗时、
-   节点 id）——候选路线数由真网拓扑 + 站点包 `k_candidates` / `max_path_overlap` 算出，所以这是
-   **数据 + 参数推出来的 OD**，不是手写；取 3 个是演示 OD 的覆盖广度（常量
-   `realnet.OD_DESTINATIONS_PER_ENTRY`，不是判据数值），目的是覆盖各进场方向、并让「备选 ≥2」的 OD 对存在（M1-4）；
+2. **进场边界** = `entry`（本站 4 个：`N-001`/`N-006`/`N-013`/`N-038`，对应段 `SZ-003`/`SZ-059`/`SZ-055`/`SZ-001`）；
+   **离场边界** = `exit`（本站 `N-002`/`N-003`/`N-040`）。`both` 是范围裁剪后**场区内部通道 / 服务道路**的断头
+   （如 `N-016`/`N-018`/`N-024`/`N-026`/`N-044`），**不算外围入口**——业主 2026-10-21 口径：
+   「那些大道最外面的路段就是起点」；只有整站没有纯 `entry` / `exit` 时才退回 `both`（老图兼容）；
+3. 对每个进场边界，行程终点优先级 = ①**站点包落客点映射到的真网节点**
+   （`work/engine/inputs/station-landmarks.json`，由 `work/twin/netpack/tools/gen_station_landmarks.py`
+   从站点包 `dropoffs` 生成；如 Z 站 `DROP-02` → `N-028`）→ ②**场区内部节点**（所有相邻边 `kind=ramp`）
+   → ③全部内部节点（兼容回退）。候选取「**候选路线数最多**」的前 3 个（并列按自由流耗时、节点 id）——
+   业主 2026-10-21 口径：「停车场落客点是终点」；候选路线数由真网拓扑 + 站点包
+   `k_candidates` / `max_path_overlap` 算出，所以这是**数据 + 参数推出来的 OD**，不是手写；取 3 个是演示 OD
+   的覆盖广度（常量 `realnet.OD_DESTINATIONS_PER_ENTRY`，不是判据数值），目的是覆盖各进场方向、并让
+   「备选 ≥2」的 OD 对存在（M1-4）；
 4. 每个 OD 的 `exit_node` = 从行程终点出发**自由流最快的可达离场边界**——终点是内部节点、出口是边界节点，
    两者必不相同，`departure_route` 才是真实离场路线（TC-12 必现）；
 5. 不可达 / 找不到出口的组合**跳过并留痕**（`od_derivation.skipped`），不顺延硬凑；
-6. 本站推导结果（IKNB9H 后）：**27 个 OD 对**（9 个进场边界 × 3 个终点），其中 **7 个 OD 有 ≥2 条备选**；
-   每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）**演示假设值**（无上游需求快照，产物标
-   `demand_source`，**不是实测**）。
+6. 本站推导结果（2026-10-21 规则 + 方向校正后）：**4 个 OD 对**；默认第一条 **OD-R-001 = `SZ-004`（`N-040` 东侧外围入口）→ `SZ-036` 末端 `N-028`**（`SZ-036` / `SZ-024` 交界，对应站点包 `DROP-02` 停车场北支落客区），其余 3 条为 `SZ-004` / `SZ-055` 到 `N-028` / `N-014` / `N-037`。每个 OD 的需求用 `DEMO_DEMAND_VPH`（=600 辆/小时）**演示假设值**（无上游需求快照，产物标 `demand_source`，**不是实测**）。GZ 站同一规则 + 同批方向校正（367 段）：54 个 OD。
+7. **方向校正（2026-10-21，业主复查）**：`build_junction_pack.py` 串同名 way 时会为端点吸附反转几何，但
+   `oneway=yes` 未同步翻转，导致吉庆大道整条路单行方向反了（OSM way `1090740692` 实际是 `N-040 → N-022 →
+   N-015` 东→西）。`work/twin/netpack/tools/align_oneway_to_osm.py --site-id zhaoqingdong` 按 OSM 节点顺序
+   把 14 段（12+2）`oneway` 由 `yes` 改为 `-1`（只改方向，不改几何/段号），进/出口随之变为
+   `N-040`/`N-002` 进、`N-001`/`N-003`/`N-038` 出；Z 站方向分布 forward 14 / reverse 14 / bidirectional 33。
+   GZ 同批校正 367 段（`--site-id guangzhounan`），方向 forward 297 / reverse 367 / bidirectional 44；GZ 引擎产物 54 条 OD。
 
 **产物（独立目录，不覆盖样例）**
 
@@ -352,7 +363,7 @@ exit=0；突发时刻在途 85 辆，封 SZ-002 → 改道 1 辆走 SZ-054
 ```text
 $ python work/engine/run.py --network real
 exit=0；写 out/real/routes.json（约 309 KB）+ run_log.json；读入 61 段 / 44 节点；
-27 个 OD（9 个进场边界 × 3 个终点）；7 个 OD 备选≥2；reservation.harm_check.passed=true 27 条；
+4 个 OD（4 个外围进场边界 × 落客点终点 N-028；2026-10-21 规则修正后）；reservation.harm_check.passed=true 4 条；
 响应段号全部 SZ-###（硬校验通过）；每条路线带 legs[]（方向/车道/U-turn）
 
 $ python work/engine/run.py --network real --compare
@@ -386,8 +397,9 @@ $ python work/engine/run.py --sample / --sample --compare
 | 范围 | **只在 `--network real` 生效**；`--sample` 走旧图结构，产物逐字节不变（自检锁定） |
 | 全 OD / 可达性 | `python work/engine/topology_check.py` 批量算全部边界 OD + 全部节点对，写 `work/engine/route_matrix.json`；单点算路 `--from N-001 --to N-005`（节点或段号均可） |
 
-**本轮 Z 站结果（2026-10-18，真跑）**：61 段（33 双向 / 28 单向）、94 条遍历边、9 个进场边界 / 8 个离场边界；
+**本轮 Z 站结果（2026-10-18 真跑；IKNB9H 时点）**：61 段（33 双向 / 28 单向）、94 条遍历边、9 个进场边界 / 8 个离场边界；
 27 个 OD；`route_matrix.json` 覆盖 61/61 段、0 条非法路线；边界 OD 67 对里 48 对可达，19 对如实 `unreachable`
+> 2026-10-21 业主口径修正后：进场边界只认 `entry`（4 个）、终点优先落客点映射节点（Z 站 N-028）→ **4 个 OD**；上表的 9/27 为 IKNB9H 历史值。
 （单向/边界方向决定的合法不可达，不是错）；样例基线仍逐字节一致。
 
 > **契约口径**：`legs[]` / `direction_counts` 是**追加字段**（不改既有字段、不改 `--sample` 产物）；

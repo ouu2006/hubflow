@@ -14,10 +14,12 @@
 // 决策层 · 决策工作台(Issue #77 三页收敛:页头视图扩为**决策可视化 / 处置队列 / 效果对比**三段)。
 // 业务口径继承旧 DecisionView.vue 与手册 §11.2 / README 第八·九节。
 //
-// 三个视图(页头分段切换,不影响顶栏数据源控件):
+// 四个视图(页头分段切换,不影响顶栏数据源控件):
 //   ① **决策可视化**(本单新增,排首位)= 全部输入数据 + 处理过程可视化 + 可调控演示 + 输出(业主口径);
 //   ② **处置队列** = 三栏:左四态队列 / 中处置工作台(建议 + 比例滑杆 + 渠道 + 回执 + 回写)/ 右因素置位 · 预测 · 同化;
-//   ③ **效果对比** = 三场景 A/B/C 仿真对照(TC-14 / TC-17)。
+//   ③ **效果对比** = 三场景 A/B/C 仿真对照(TC-14 / TC-17);
+//   ④ **路线规划**(Issue IKP5CE)= 读引擎产物做完整链路 + 一主二备 + 产物内 session 对比,
+//      不重算、不造路线；场景注入 / 人工置位不会让路线变化,页面如实回答。
 // 状态机硬口径(处置队列视图):
 //   认领:待认领 → 处置中(仅置本地标记);下发:→ 处置中(允许覆盖回执重下发);
 //   回写:**必须先有下发回执**(TC-07 闭环顺序:下发 → 回执 → 回写),无回执不得回写;
@@ -38,6 +40,7 @@ import DecisionFlowPanel from './components/DecisionFlowPanel.vue'
 import EffectCompare from './components/EffectCompare.vue'
 import FactorsPanel from './components/FactorsPanel.vue'
 import PredictPanel from './components/PredictPanel.vue'
+import RoutePlanView from './components/RoutePlanView.vue'
 import {
   getTrafficAlerts,
   getTrafficContext,
@@ -87,8 +90,8 @@ const deepSegment = computed<string>(() => {
   const raw = route.query.segment
   return typeof raw === 'string' ? raw : Array.isArray(raw) ? (raw[0] ?? '') : ''
 })
-/** 视图:决策可视化(新) / 处置队列 / 效果对比 */
-const view = ref<'flow' | 'queue' | 'compare'>('flow')
+/** 视图:决策可视化(新) / 处置队列 / 效果对比 / 路线规划(Issue IKP5CE) */
+const view = ref<'flow' | 'queue' | 'compare' | 'route'>('flow')
 const sourceMode = ref<SourceMode>('both')
 const selectedId = ref<string | null>(null)
 /** 决策可视化视图用的环境上下文与阈值(判级演算口径) */
@@ -519,7 +522,7 @@ function onFlowChanged(): void {
     :ts="snapshotDisplay"
     v-model:sourceMode="sourceMode"
     title="决策层"
-    subtitle="决策可视化 · 处置闭环(四态 / 下发回执 / 回写)· 效果对比"
+    subtitle="决策可视化 · 处置闭环(四态 / 下发回执 / 回写)· 效果对比 · 路线规划"
   >
     <template #headRight>
       <span class="td-seg" role="group" aria-label="视图切换">
@@ -549,6 +552,15 @@ function onFlowChanged(): void {
           @click="view = 'compare'"
         >
           效果对比
+        </span>
+        <span
+          class="td-seg-item"
+          :class="{ on: view === 'route' }"
+          role="button"
+          :aria-pressed="view === 'route'"
+          @click="view = 'route'"
+        >
+          路线规划
         </span>
       </span>
       <span class="snapshot td-mono">快照 {{ snapshotDisplay }}</span>
@@ -758,8 +770,13 @@ function onFlowChanged(): void {
       </template>
 
       <!-- 效果对比视图 -->
-      <div v-else class="td-col cmp-col td-scroll">
+      <div v-else-if="view === 'compare'" class="td-col cmp-col td-scroll">
         <EffectCompare />
+      </div>
+
+      <!-- 路线规划视图(Issue IKP5CE):完整链路 + 一主二备 + 产物内 session 对比 -->
+      <div v-else class="td-col route-col td-scroll">
+        <RoutePlanView />
       </div>
     </div>
 
@@ -786,6 +803,10 @@ function onFlowChanged(): void {
   flex: 0 0 380px;
 }
 .cmp-col {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.route-col {
   flex: 1 1 auto;
   min-width: 0;
 }
@@ -976,15 +997,133 @@ function onFlowChanged(): void {
   color: #ad352f;
 }
 
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* 断点与全局 foundation 对齐:1366 / 1180 / 1080 / 900 / 768 / 560(一律 max-width)。
+   全局在 ≤1180 负责「整页文档滚动」(.td-page 高度 auto、.td-main 不再 flex:1、
+   .td-body 纵向单列、.td-col 高度 auto 且 overflow visible),本文件不再重复定义整页高度,
+   只补决策页自己的列宽 / 列级滚动 / 间距 / 控件。 */
+
+/* ≤1180:三个视图(决策可视化单列 / 处置队列三栏 / 效果对比两列)一律占满整宽;
+   列级 .td-scroll 取消内滚动,统一交给整页文档滚动(避免滚动套滚动)。
+   断点内同时覆盖基础列宽,即使全局 foundation 尚未生效也不会横向溢出。 */
 @media (max-width: 1180px) {
   .td-body {
     flex-direction: column;
-    overflow-y: auto;
+    gap: 8px;
+    padding: 0 12px 10px;
   }
+  .flow-col,
+  .cmp-col,
+  .route-col,
   .col-queue,
-  .col-side,
-  .col-work {
+  .col-work,
+  .col-side {
     flex: 0 0 auto;
+    width: 100%;
+    min-width: 0;
+  }
+  .td-col {
+    overflow: visible;
+    min-height: 0;
+  }
+}
+
+/* ≤1080(含 1080×1920 竖屏):单列已成立,进一步压缩主体左右留白。 */
+@media (max-width: 1080px) {
+  .td-body {
+    padding: 0 10px 8px;
+  }
+}
+
+/* ≤900:页头右侧控件(视图切换 / 快照 / 复位按钮)可压缩换行;
+   工作台右侧竖排小注改横排(保留文案,不隐藏信息)。 */
+@media (max-width: 900px) {
+  .td-seg {
+    flex-wrap: wrap;
+  }
+  .snapshot {
+    font-size: 10px;
+  }
+  .wb-body {
+    flex-direction: column;
+    gap: 6px;
+  }
+  .wb-side {
+    writing-mode: horizontal-tb;
+    justify-content: flex-start;
+    padding: 6px 0 0;
+    border-left: none;
+    border-top: 1px dashed var(--td-component-stroke);
+    letter-spacing: 0;
+  }
+  .sec {
+    gap: 6px;
+    padding: 8px 0;
+  }
+}
+
+/* ≤768:工作台滑杆 / 输入行换行并全宽,按钮触摸高度抬到 32px。 */
+@media (max-width: 768px) {
+  .td-body {
+    padding: 0 10px 8px;
+  }
+  .slider-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .slider-row .range {
+    flex: 1 1 100%;
+  }
+  .wb-row {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .wd,
+  .wd.grow {
+    flex: 1 1 100%;
+  }
+  .td-input {
+    height: 32px;
+  }
+  .td-btn {
+    height: 32px;
+  }
+  .td-btn.sm {
+    height: 28px;
+  }
+  .band {
+    gap: 6px 12px;
+  }
+  .sec-head {
+    flex-wrap: wrap;
+  }
+  .sec-tag {
+    margin-left: 0;
+  }
+}
+
+/* ≤560:页头仅留视图切换与复位(快照时间在顶栏 / 页脚同源展示);分段控件占满整行。 */
+@media (max-width: 560px) {
+  .td-body {
+    padding: 0 8px 8px;
+  }
+  .snapshot {
+    display: none;
+  }
+  .td-seg {
+    width: 100%;
+  }
+  .td-seg-item {
+    flex: 1 1 0;
+    padding: 3px 4px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .td-btn {
+    padding: 0 10px;
+  }
+  .sec-head {
+    font-size: 11px;
   }
 }
 </style>

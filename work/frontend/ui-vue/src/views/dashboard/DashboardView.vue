@@ -26,7 +26,6 @@ import {
   getTrafficFactors,
   getTrafficHeatMatrix,
   getTrafficMeta,
-  getTrafficNetwork,
   getTrafficOverview,
   getTrafficRouteOptions,
   getTrafficSegmentSources,
@@ -34,16 +33,13 @@ import {
   getTrafficThresholds,
   getTrafficVehicles,
   postRouteRecommend,
+  postTrafficLocate,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
-import { demoSegment, networkGeometryNote, networkSourceLabel } from '../../shared/demoNetwork'
-import {
-  basemapEnabled,
-  directionsVisible,
-  legendVisible,
-  setDirectionsVisible,
-  setLegendVisible,
-} from '../../shared/settings'
+import type { LocateResult } from '../../api/traffic'
+import { demoSegment, networkGeometryNote, networkSourceLabel, pointAtOffset, segmentLengthM } from '../../shared/demoNetwork'
+import { basemapEnabled, routeEmphasisEnabled, setRouteEmphasisEnabled } from '../../shared/settings'
+import { landmarksNearSegment } from '../../shared/landmarks'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
 // IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成字段；缺值→未标定，不编）
@@ -56,7 +52,9 @@ import {
   lanesOf,
   oppositeOf,
 } from '../../shared/directions'
-import { activePack, activePackKey, packItems, switchPack } from '../../station-packs/index'
+import { activePack, activePackKey, onPackChange, packItems, packNote, packVersion } from '../../station-packs/index'
+import { bindStationSwitch, switchStation } from '../../shared/stationSwitch'
+import { schedulePrewarm, writeStationCache, type StationSnapshotCache } from '../../shared/stationCache'
 import type { SourceMode } from '../../shared/nav'
 import { TD } from '../../shared/theme'
 import {
@@ -78,6 +76,7 @@ import {
   type HeatMatrix,
   type RecommendResult,
   type RouteHighlight,
+  type RouteEndpointMarker,
   type RouteOption,
   type RouteOptionsSnapshot,
   type SegmentRecord,
@@ -85,7 +84,6 @@ import {
   type ThresholdSnapshot,
   type TrafficAlert,
   type TrafficMeta,
-  type TrafficNetwork,
   type TrafficOverview,
   type VehicleRecord,
 } from '../../shared/traffic'
@@ -257,10 +255,37 @@ function onBarMouseDown(e: MouseEvent): void {
   lastBarDown = { at: now, x: e.clientX, y: e.clientY }
 }
 
+/**
+ * 包键代号（Issue IKPFR4）：切站时 +1。
+ * `activePack()` / `demoSegment()` 读的是**模块级变量**，Vue 不知道它变了 —— 所有
+ * "由站点包派生"的 computed 显式读一次 `packTick.value`，切站才能自动重算。
+ */
+const packTick = ref(packVersion())
+/** 当前包键（工具条按钮的选中态 / 切站早退判断用）：跟着 packTick 走，不再是一次性常量 */
+const currentPackKey = ref<string>(activePackKey())
+const offPackTick = onPackChange(() => {
+  packTick.value = packVersion()
+  currentPackKey.value = activePackKey()
+  // IKPFVN E2：顶栏「线路图切换器」也走同一个 `switchStation()`，本页只收到包键变更通知 ——
+  // 据它把视角切到站区，否则用户从顶栏选了站、大屏还停在全国视角看 pin。
+  if (mapScope.value !== 'station') mapScope.value = 'station'
+})
+
 /** 路网来源短文案(页面页脚口径用):桥接覆盖过就是真路网,否则报包自己的口径 */
-const sourceLabel = networkSourceLabel()
+const sourceLabel = computed(() => {
+  void packTick.value
+  return networkSourceLabel()
+})
 /** 路网几何出处(真值 / 示例样例)—— 真几何与示意几何不能混说(见 demoNetwork.networkGeometryNote) */
-const geometryNote = networkGeometryNote()
+const geometryNote = computed(() => {
+  void packTick.value
+  return networkGeometryNote()
+})
+/** 页脚站点包自检（`packNote()`：包键 + 这个包是什么）——切站后跟着换，不只报站名 */
+const packLine = computed<string>(() => {
+  void packTick.value
+  return packNote()
+})
 
 /** 中栏工具条上的底图口径:顶栏「设置」里的**底图开关**状态直接反映出来(业主 2026-10-16) */
 const basemapTag = computed(() =>
@@ -272,11 +297,22 @@ const basemapTag = computed(() =>
 /** 图下注脚:底图关掉时**不许**再写"底图来源:OpenFreeMap" —— 页面不撒谎 */
 const mapCaption = computed(() =>
   basemapEnabled.value
-    ? `底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:${geometryNote}`
-    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote} · OSM 署名见地图内`,
+    ? `底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:${geometryNote.value}`
+    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote.value} · OSM 署名见地图内`,
 )
-/** 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径 */
-const stationName = ref(activePack().station.name)
+/**
+ * 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径。
+ *
+ * ⚠️ IKPFR4：兜底值改成 computed（原先是 `ref(activePack().station.name)` 的 setup 期快照，
+ *    切站不刷新就永远停在上一站的站名）。meta 那份仍存在独立的 ref 里，切站即清空 ——
+ *    让"站名先回落站点包、meta 回来再覆盖"，两站之间不串味。
+ */
+const metaStationName = ref<string | null>(null)
+const stationName = computed<string>(() => {
+  if (metaStationName.value) return metaStationName.value
+  void packTick.value
+  return activePack().station.name
+})
 /** 接口层 meta(真接口模式:页脚数据来源 / 站点范围 / 快照段数如实取自响应;mock 侧字段可缺省) */
 const metaInfo = ref<TrafficMeta | null>(null)
 /**
@@ -311,28 +347,160 @@ const footStationLine = computed<string>(() => {
 // ---------- 本站范围与路段数（Issue IKM4B4）----------
 // 来源：`work/twin/site-ranges.json`（每站一份登记表）→ 站点包 station 字段 → 本页只展示。
 // 口径：范围是**脚本推定 / 人工圈定**的结果，不是官方划定；页面不报精度数字。
-const siteMeta = computed(() => activePack().station)
+const siteMeta = computed(() => {
+  void packTick.value
+  return activePack().station
+})
 const RANGE_SOURCE_LABEL: Record<string, string> = {
   manual: '人工圈定',
   script: '脚本推定',
   'ai-assisted': 'AI 辅助候选（已人工确认）',
 }
 
-// 大屏工具条上的「路网版本」切换（IKMDKY 子单①）：Z = 61 段新几何 / Z21 = 旧 21 段对照。
-// 与顶栏「线路图切换器」同一支 switchPack()——整页刷新后路网、基线、摄像头映射一起换。
+// 大屏工具条上的「路网版本」切换（IKMDKY 子单①；IKP5D3 起只剩 Z=61 段 / GZ=708 段两个真站包，Z21 旧包已删）。
+// 与顶栏「线路图切换器」**共用同一支** `switchStation()`（IKPFR4）：
+// 切包 → 重建路网几何 → 站内状态一律重置 → 缓存优先渲染首屏 → 后台补拉 → 同步 URL。
+// 不再整页刷新（原因见 `shared/stationSwitch.ts` 头部与本文件 `resetStationState()`）。
 const packChoices = packItems()
-const currentPackKey = activePackKey()
-function onPackChange(key: string): void {
-  if (key === currentPackKey) return
-  switchPack(key)
-  window.location.reload()
+/** 合法包键集合（URL 参数校验 / 自动飞入校验共用，不另址一份名单） */
+const PACK_KEYS = new Set(packChoices.map((p) => p.key))
+
+// ---------- 全国视角 / 站区视角（Issue IKPFVN）----------
+//
+// 业主 2026-10-21 口径：「实时渲染的全国大地图，选到对应高铁站再放大展示路网，其他站的路线不展示；
+// 切换高铁站要有动作展示：地图缩小 → 移动到对应高铁站 → 放大 → 路线显示、信息切换。」
+//
+// 两个概念分开，别混：
+//   · `mapScope` —— 看多远（全国 / 站区），本页管；镜头运动在 `MapLibreViewer` 里按它跑；
+//   · 站点包键 —— 看哪个站（`activePackKey()`），切站唯一入口仍是 `switchStation()`。
+//
+// ⚠️ 地图组件**始终挂载**（只切左/右栏内容的显隐）：把整块 `v-if` 掉会销毁并重建 Map 实例，
+//    那就把 IKPFR4“不重建 Map、不 setStyle”的成果一次性丢掉了。
+type MapScope = 'national' | 'station'
+
+/**
+ * 首屏视角：`?station=Z|GZ` 直达站区；`?pack=` 是 IKPFR4 已有的**等价参数**（同一语义：指定当前站），
+ * 两个都认（取值相同不会打架）；缺省 → 全国视角首屏。
+ */
+function initialMapScope(): MapScope {
+  const raw = route.query.station ?? route.query.pack
+  const key = typeof raw === 'string' ? raw : ''
+  return PACK_KEYS.has(key) ? 'station' : 'national'
+}
+const mapScope = ref<MapScope>(initialMapScope())
+
+/**
+ * 到站门控（IKPFVN D 节时序）：业主口径是“镜头到站 → 路线显示、信息切换”，
+ * 所以页面数据要**等到站再落地**：
+ *   · `arriving = true`（切站一开始）→ `refresh()` 的响应先挂住不写面板，骨架屏继续亮；
+ *   · 地图组件 `arrived` → `markArrived()` 放行，数据一次性铺上去；
+ *   · 兜底 4 s：镜头动画异常 / 地图还没建好（`arrived` 不会来）时，数据不能永远不落地。
+ */
+const arriving = ref(false)
+const ARRIVE_TIMEOUT_MS = 4000
+let arriveWaiters: (() => void)[] = []
+let arriveTimer = 0
+
+function whenArrived(): Promise<void> {
+  if (!arriving.value) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    arriveWaiters.push(resolve)
+    window.clearTimeout(arriveTimer)
+    arriveTimer = window.setTimeout(() => markArrived(), ARRIVE_TIMEOUT_MS)
+  })
+}
+
+function markArrived(): void {
+  window.clearTimeout(arriveTimer)
+  arriveTimer = 0
+  if (arriving.value) {
+    arriving.value = false
+    const waiters = arriveWaiters
+    arriveWaiters = []
+    for (const resolve of waiters) resolve()
+  }
+  flushPendingCache()
+}
+
+/** 缓存快照先挂在一边，到站后再铺（见 `arriving` 的说明） */
+let pendingCache: StationSnapshotCache | null = null
+let pendingCacheReady = false
+
+function flushPendingCache(): void {
+  if (!pendingCacheReady) return
+  const snapshot = pendingCache
+  pendingCacheReady = false
+  pendingCache = null
+  commitCachedSnapshot(snapshot)
+}
+
+// 首屏自动飞入（IKPFVN E4，业主推荐的 A 方案）：
+// 默认全国视角；上次选过的站（`localStorage` 里那份）在 1.2 s 后自动飞进去 ——
+// 但**用户一碰就取消**（点 pin / 点浮层卡片 / 点工具条 / 点「← 全国」）。
+const AUTO_FLY_DELAY_MS = 1200
+const AUTO_FLY_STORAGE_KEY = 'hubflow.stationPack'
+let autoFlyTimer = 0
+let autoFlyCancelled = false
+
+function cancelAutoFly(): void {
+  autoFlyCancelled = true
+  window.clearTimeout(autoFlyTimer)
+  autoFlyTimer = 0
+}
+
+function scheduleAutoFly(): void {
+  if (mapScope.value !== 'national') return
+  let saved: string | null = null
+  try {
+    saved = localStorage.getItem(AUTO_FLY_STORAGE_KEY)
+  } catch {
+    saved = null // 隐私模式：读不到就不飞，首屏保持全国视角，不算错
+  }
+  if (!saved || !PACK_KEYS.has(saved)) return
+  const key = saved
+  autoFlyTimer = window.setTimeout(() => {
+    autoFlyTimer = 0
+    if (autoFlyCancelled || mapScope.value !== 'national') return
+    pickStation(key)
+  }, AUTO_FLY_DELAY_MS)
+}
+
+/**
+ * 选站（全国浮层卡片 / 站点 pin / 工具条按钮三处**共用**这一个入口）。
+ *
+ * 切站本身仍只走 `shared/stationSwitch.ts` 的 `switchStation()`；这里只多做两件事：
+ * “把视角切到站区”（镜头由地图组件按 `mapScope` 跑）与取消首屏自动飞入。
+ */
+function pickStation(key: string): void {
+  cancelAutoFly()
+  if (!PACK_KEYS.has(key)) {
+    mapScope.value = 'national'
+    return
+  }
+  mapScope.value = 'station'
+  // `switchStation` 返回 false = 就是当前站：包没变，但镜头仍要从全国飞进去一次。
+  // 过渡期并行拉目标站数据：`refresh()` 会拿目标站的 8 个只读快照，并写进该站自己的
+  // `stationCache` 桶（等价于预热；再额外调一次 `prefetchStation` 只会把每个接口打两遍）。
+  // 数据真正上屏在“到站”之后，见 `arriving` / `whenArrived()`。
+  switchStation(key)
+}
+
+/** 退回全国视角（工具条「← 全国」）：包不换，只换看多远；站内选中态一并清掉 */
+function enterNational(): void {
+  cancelAutoFly()
+  mapScope.value = 'national'
+  selectedId.value = null
+}
+
+/** 地图组件报“镜头已落到站区” —— 放行页面数据 */
+function onMotionArrived(): void {
+  markArrived()
 }
 
 // ---------- 快照状态 ----------
 const overview = ref<TrafficOverview | null>(null)
 const segments = ref<SegmentRecord[]>([])
 const vehicles = ref<VehicleRecord[]>([])
-const network = ref<TrafficNetwork | null>(null)
 const alerts = ref<TrafficAlert[]>([])
 /** 全网生效因素(各路段 factors_applied 展平,供 KPI 第 4 格取前 3 条) */
 const allFactors = ref<(FactorApplied & { segment_id: string })[]>([])
@@ -412,6 +580,15 @@ const selectedName = computed<string>(() => {
   return demoSegment(id)?.name ?? selected.value?.segment_id ?? id
 })
 
+// ---------- IKP5BZ：本段附近的落客点 / 场区（唯一真值源 = 前端站点包） ----------
+// 图上 Marker 之外再给一处**文字入口**：选中路段时列出同段 / 邻近段（≤150 m）的点位，
+// 点条目 → 选中其所属路段（地图上点不到时仍可查）。坐标是演示点，不是踏勘点位。
+const nearbyLandmarks = computed(() => landmarksNearSegment(selectedId.value ?? ''))
+/** 距离显示（米）：非有限值如实「未标定」，不写 0 */
+function landmarkDistance(v: number): string {
+  return Number.isFinite(v) ? `约 ${Math.round(v)} m` : '距离未标定'
+}
+
 // ---------- IKOQEJ：方向 / 车道 / 对向 / 贯通（只读站点包字段，非契约、不参与判级） ----------
 const segDirection = computed(() => directionOf(selectedId.value ?? ''))
 const segDirectionKind = computed(() => directionKindOf(segDirection.value))
@@ -486,16 +663,51 @@ async function loadSelectedSide(segmentId: string | null): Promise<void> {
  * 否则先发出、后返回的旧响应会覆盖新快照(页面显示上一版数据)。
  */
 let refreshSeq = 0
+/**
+ * 在途刷新的中止句柄（Issue IKPFR4）。切站时**必须**把上一站的请求掐掉：否则旧站响应会在
+ * 几百毫秒后回来，把刚渲染好的新站首屏覆盖成旧站数据 —— 那正是"把 Z 的数据当 GZ 显示"。
+ * 与"响应回来时校验站点键"是**两道闸**，都留着（中止省带宽，校验兜底）。
+ */
+let refreshCtrl: AbortController | null = null
+/** 首屏之后是否已经排过预热（只排一次，避免每次 SSE 刷新都替别站重拉） */
+let prewarmed = false
 /** 本次刷新中失败的接口(页头提示用;失败面板保留旧值但必须标"上一版",不得冒充当前) */
 const failedPanels = ref<string[]>([])
 /** SSE 刷新通道连接状态:断开时页面不会自动刷新,必须显式提示(TC-06 断流降级) */
 const sseConnected = ref(true)
 
+/** 切站加载态：无缓存时才亮（极简骨架条），有缓存不走这里 */
+const switching = ref(false)
+/** 是否正在显示缓存快照：后台刷新回来立刻清掉 —— 缓存数据不得冒充最新（业主口径） */
+const servedFromCache = ref(false)
+/** 缓存写入时刻（ms），提示条据此写"缓存于 N s 前" */
+const cacheStamp = ref(0)
+/**
+ * 「缓存于 N s 前」的时钟源（PR !76 审查意见）。
+ * 为什么需要单独一个 ref：`Date.now()` 不是响应式的 —— 没有它，秒数会**停在切站那一刻**
+ * （数据没错，但"几秒前"这句话会变成假的）。只在亮着缓存条时开 1 s 定时器，条件一变就停。
+ */
+const cacheClockTick = ref(0)
+let cacheClockTimer = 0
+watch(servedFromCache, (on) => {
+  window.clearInterval(cacheClockTimer)
+  if (!on) return
+  cacheClockTimer = window.setInterval(() => {
+    cacheClockTick.value += 1
+  }, 1000)
+})
+/** 缓存提示文案；空 = 当前数据就是这次网络拉到的，不用标"缓存" */
+const cacheNote = computed<string>(() => {
+  if (!servedFromCache.value) return ''
+  void cacheClockTick.value // 每秒 +1，让"几秒前"跟着走（见上）
+  const age = Math.max(0, Math.round((Date.now() - cacheStamp.value) / 1000))
+  return `当前显示「${stationName.value}」的缓存快照（缓存于 ${age} s 前）· 正在后台刷新，新数据到达即替换 —— 缓存数据不代表最新态势`
+})
+
 const PANEL_LABEL: Record<string, string> = {
   overview: 'KPI',
   segments: '路段监测',
   vehicles: '车辆',
-  network: '路网',
   alerts: '告警',
   factors: '因素',
   matrix: '热力矩阵',
@@ -504,18 +716,38 @@ const PANEL_LABEL: Record<string, string> = {
 
 async function refresh(): Promise<void> {
   const seq = ++refreshSeq
-  const [ov, seg, veh, net, al, fa, meta, matrix, thr] = await Promise.allSettled([
-    getTrafficOverview(),
-    getTrafficSegments(),
-    getTrafficVehicles(),
-    getTrafficNetwork(),
-    getTrafficAlerts(),
-    getTrafficFactors(),
-    getTrafficMeta(),
-    getTrafficHeatMatrix(12, 60),
-    getTrafficThresholds(),
+  // ⚠️ 这里**不掐**上一轮：慢后端（GZ 站远端首载可到十几秒，见 README 23.9 登记）会碰上 SSE 每 2 s 的一次
+  //    刷新 —— 每轮都 abort 的话所有请求都在半路被杀，数据永远落不下来。上一轮的响应靠
+  //    `refreshSeq` 作废即可（见下方两道闸），abort 只在**切站**时用（`resetStationState`）。
+  const ctrl = new AbortController()
+  refreshCtrl = ctrl
+  // 这一轮请求配属的站键：写缓存、校验响应都以它为准（不要用 activePackKey() 事后现取）
+  const stationKey = activePackKey()
+  const opts = { signal: ctrl.signal }
+  // Issue IKP5BZ（方案 A）：不再请求 `/api/traffic/network`——落客点/场区唯一真值源是前端站点包，
+  // 这条端点的 dropoffs/zones 与本站真网段号对不上（Z 是 SEG-### 样例点、GZ 为空表），
+  // 取了也不用；留着只会在页头打「本次刷新未取到：路网」，而页面上并没有路网面板。
+  const [ov, seg, veh, al, fa, meta, matrix, thr] = await Promise.allSettled([
+    getTrafficOverview(opts),
+    getTrafficSegments(opts),
+    getTrafficVehicles(opts),
+    getTrafficAlerts(opts),
+    getTrafficFactors(undefined, opts),
+    getTrafficMeta(opts),
+    getTrafficHeatMatrix(12, 60, opts),
+    getTrafficThresholds(opts),
   ])
   if (seq !== refreshSeq) return // 已被更晚的一次刷新取代:丢弃本次响应
+  // 第二道闸:站点键已换(切站) → 这批响应属于上一站,一律丢弃
+  if (stationKey !== activePackKey()) return
+  // IKPFVN D2：镜头还在飞就先挂住响应 —— 到站后再一次性铺数据（骨架屏继续亮）。
+  // ⚠️ await 之后必须**重新验证两道闸**：等镜头这几秒里用户完全可能又点了一个站。
+  if (arriving.value) {
+    await whenArrived()
+    if (seq !== refreshSeq) return
+    if (stationKey !== activePackKey()) return
+  }
+  switching.value = false
   const failed: string[] = []
   const track = (name: string, ok: boolean): void => {
     if (!ok) failed.push(PANEL_LABEL[name] ?? name)
@@ -531,8 +763,6 @@ async function refresh(): Promise<void> {
   track('segments', seg.status === 'fulfilled')
   if (veh.status === 'fulfilled') vehicles.value = veh.value.vehicles
   track('vehicles', veh.status === 'fulfilled')
-  if (net.status === 'fulfilled') network.value = net.value
-  track('network', net.status === 'fulfilled')
   if (al.status === 'fulfilled') alerts.value = al.value.alerts
   track('alerts', al.status === 'fulfilled')
   if (fa.status === 'fulfilled') allFactors.value = fa.value.factors
@@ -544,14 +774,160 @@ async function refresh(): Promise<void> {
   // 站名只用于顶栏 chip:取不到就保持站点包里的名字,不因此把整页标成"上一版数据"
   if (meta.status === 'fulfilled') {
     metaInfo.value = meta.value
-    stationName.value = meta.value.station.name
+    metaStationName.value = meta.value.station.name
   }
   failedPanels.value = failed
+  // 只有真的拿到新快照才撤掉"缓存"标识：这一轮全挂时页面上仍是缓存数据，
+  // 撤标就等于让缓存冒充最新（上面那条失败提示条负责说明"看到的是上一版"）
+  if (seg.status === 'fulfilled' || ov.status === 'fulfilled') {
+    servedFromCache.value = false
+    cacheStamp.value = 0
+  }
+  // 把这一轮拿到的字段写进**该站自己的**缓存桶（切站时就是靠它秒开）
+  writeStationCache(stationKey, {
+    ...(ov.status === 'fulfilled' ? { overview: ov.value } : {}),
+    ...(seg.status === 'fulfilled' ? { segments: seg.value } : {}),
+    ...(meta.status === 'fulfilled' ? { meta: meta.value } : {}),
+    ...(thr.status === 'fulfilled' ? { thresholds: thr.value } : {}),
+    ...(al.status === 'fulfilled' ? { alerts: al.value } : {}),
+    ...(fa.status === 'fulfilled' ? { factors: fa.value.factors } : {}),
+    ...(matrix.status === 'fulfilled' ? { matrix: matrix.value } : {}),
+  })
+  // 首屏就位后再预热（不抢首屏带宽；失败静默）
+  if (!prewarmed && seg.status === 'fulfilled') {
+    prewarmed = true
+    schedulePrewarm()
+  }
   await loadSelectedSide(selectedId.value)
 }
 
 watch(selectedId, (id) => {
   void loadSelectedSide(id)
+})
+
+// ---------- 原地切站（Issue IKPFR4，业主 2026-10-21 裁定）----------
+//
+// 三件正事，顺序就是 `switchStation()` 里的调用顺序：
+//   ① `resetStationState()` —— 站内状态**一律重置**，不做跨站恢复：
+//      selectedId / 监控范围（热力带选中）/ 路线 session / 推荐与定位 / 深链选中 / 失败面板 /
+//      上一站的 meta 与快照，一律清空；页面回到顶部；在途请求中止。
+//   ② `applyCachedSnapshot()` —— 缓存优先：目标站有缓存就**同步**渲染首屏（不白屏、不加载态）；
+//      没缓存才亮骨架条，等第 ③ 步的网络结果。
+//   ③ `refresh()` —— 后台补拉一次（不等 SSE 的下一个 2 s tick），新数据到达后按字段替换。
+
+/** 页面回到顶部：整页 + 三栏内部滚动容器（左「路段监测」/ 右「路段信息」） */
+function scrollPageToTop(): void {
+  window.scrollTo({ top: 0 })
+  for (const el of document.querySelectorAll<HTMLElement>('.td-scroll, .seg-list')) el.scrollTop = 0
+}
+
+/** 站内状态一律重置（业主裁定：切站不跨站恢复任何选中态） */
+function resetStationState(): void {
+  // 中止上一站的在途请求：序号也 +1，让"已经飞出去但还没回来的"那一轮认不出自己是最新的
+  refreshCtrl?.abort()
+  refreshCtrl = null
+  refreshSeq += 1
+
+  selectedId.value = null
+  scope.value = null
+  deepApplied = false
+  // 路线 / 定位 / 双源 / 走势：都是"按某个段、某个 session 取回来的"，跨站一律不保留
+  selectedSession.value = ''
+  recommend.value = null
+  recommendError.value = ''
+  routeOptions.value = null
+  routeOptionsError.value = ''
+  pair.value = null
+  segFactors.value = []
+  history.value = null
+  locateInfo.value = null
+  locateError.value = ''
+  startConfirmed.value = false
+  manualStart.value = false
+  manualStartId.value = ''
+  // 快照侧：先清空，再由缓存或新一轮刷新填回来（清空这一步保证绝不会把上一站的数据当本站显示）
+  overview.value = null
+  segments.value = []
+  vehicles.value = []
+  alerts.value = []
+  allFactors.value = []
+  thresholds.value = null
+  heat.value = null
+  metaInfo.value = null
+  metaStationName.value = null
+  snapshotTs.value = ''
+  failedPanels.value = []
+  servedFromCache.value = false
+  cacheStamp.value = 0
+  // IKPFVN D 节：从这一行起，页面数据等“镜头到站”再上屏（骨架屏先亮着）；
+  // `markArrived()`（地图组件报 arrived / 4 s 兜底）会把它放行。
+  arriving.value = true
+  switching.value = true
+
+  scrollPageToTop()
+}
+
+/**
+ * 缓存优先渲染（切站钩子）。
+ *
+ * IKPFVN D 节：镜头还在飞的时候**不往面板上铺**（业主口径是“到站再信息切换”），
+ * 先把快照挂在一边，`markArrived()` 时再走 `commitCachedSnapshot()`。
+ * 本函数仍保持**同步**语义（只是存一下，不等网络）——秒开靠的是“不等网络”，与何时上屏无关。
+ */
+function applyCachedSnapshot(snapshot: StationSnapshotCache | null): void {
+  if (arriving.value) {
+    pendingCache = snapshot
+    pendingCacheReady = true
+    return
+  }
+  commitCachedSnapshot(snapshot)
+}
+
+/** 真正把缓存铺到首屏（切站开始时与到站后各可能调一次） */
+function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
+  if (!snapshot) {
+    // 没有缓存（首次访问该站 / 预热还没完成）：只亮骨架条，页面本身不白屏
+    switching.value = true
+    return
+  }
+  // 缓存里若连 segments 都没有（当初那个接口就没取到）：列表/地图仍空，骨架条照样亮着
+  switching.value = !snapshot.segments
+  servedFromCache.value = true
+  cacheStamp.value = snapshot.ts
+  overview.value = snapshot.overview
+  if (snapshot.segments) {
+    segments.value = snapshot.segments.segments
+    snapshotTs.value = snapshot.segments.ts
+  }
+  alerts.value = snapshot.alerts?.alerts ?? []
+  allFactors.value = snapshot.factors ?? []
+  thresholds.value = snapshot.thresholds
+  heat.value = snapshot.matrix
+  metaInfo.value = snapshot.meta
+  metaStationName.value = snapshot.meta?.station.name ?? null
+  // 车辆动点不入缓存：宁可空着等下一轮刷新，也不画"上一次看到的车"（位置流每 2 s 就过期）
+  vehicles.value = []
+}
+
+/** 注销钩子（组件卸载时必须调，否则切站会往已卸载的页面里写数据） */
+const unbindStationSwitch = bindStationSwitch({
+  resetStationState,
+  applyCachedSnapshot,
+  refresh: () => {
+    void refresh()
+    // 路线产物是**按站**出的（引擎每个站一份 routes.json）：切站后重新取一次 OD 选项，
+    // 别让右栏停在上一站的 session 上（这是"站内状态一律重置"里"路线 session"那一条）
+    void loadRouteOptions()
+  },
+})
+onUnmounted(() => {
+  unbindStationSwitch()
+  offPackTick()
+  // 卸载时把在途请求一并掐掉（切页 / 关页都不该让响应回来往空组件里写）
+  refreshCtrl?.abort()
+  refreshCtrl = null
+  // 「缓存于 N s 前」的时钟也一起停，别让定时器在已卸载的页面上空转
+  window.clearInterval(cacheClockTimer)
 })
 
 // ---------- 推荐路线（Issue IKMF1W）----------
@@ -577,30 +953,19 @@ const recommendError = ref('')
 /** 三态切换：全部 / 推荐 / 备选 / 离站（截图三态用同一套按钮） */
 const routeView = ref<RouteView>('all')
 /** 当前站点包内的段数（卡片文案用；切包后不写死 61） */
-const packSegmentCount = computed(() => activePack().segments.length)
-/** 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线 */
-const packSegmentIds = new Set(activePack().segments.map((s) => s.segment_id))
-
-// ---------- 落客点 / 候客区（业主 2026-10-20：先只上广州南站，别站先不动）----------
-//
-// 数据只吃**站点包**（`stationGZ.ts` 的 `dropoffs` / `zones`），不吃接口：
-//   · 接口侧 `GET /network` 对非默认站恒返回空点位表（`work/assembly/traffic.py` 如实给
-//     `points: []`，T1 点位表归池·S），拿它渲染只会在真接口模式下变成「没点位」的假空态；
-//   · 站点包里的坐标是**所在路段折线上的演示点**，不是踏勘实测 —— 卡上必须写清，不能当实测发布。
-// 开放范围先只到 GZ：Z（肇庆东）包也已有 3+2 个同类演示点，但业主这一轮只要广州南站，
-// 不擅自把别的站也放上界面；以后要开，改 `LANDMARK_ENABLED_PACKS` 一处即可。
-const LANDMARK_ENABLED_PACKS = ['GZ']
-const landmarksVisible = computed<boolean>(() => LANDMARK_ENABLED_PACKS.includes(activePack().key))
-const packDropoffs = computed(() => activePack().dropoffs)
-const packZones = computed(() => activePack().zones)
-const landmarkCount = computed<number>(() => packDropoffs.value.length + packZones.value.length)
-/** 卡脚注用的两个字段（站点包键 / 推荐的落客点），单独取成 computed，免得模板里反复调 activePack() */
-const landmarkPackKey = computed<string>(() => activePack().key)
-const landmarkArrivalDropoff = computed<string>(() => activePack().recommend.arrival_dropoff_point || '—')
-/** 经纬度展示：6 位小数 ≈ 0.1 m，够看清演示点落位，不假装更高精度 */
-function fmtLonLat(lon: number, lat: number): string {
-  return `${lon.toFixed(6)}, ${lat.toFixed(6)}`
-}
+const packSegmentCount = computed(() => {
+  void packTick.value
+  return activePack().segments.length
+})
+/**
+ * 当前站点包内的段号集合：路线引用的段必须都在包里，防悬空画假线。
+ * ⚠️ IKPFR4：原先是 setup 期的 `Set` 常量 —— 切站后仍是上一站的段号集合（Z 61 段看 GZ 708 段
+ *    的路线会全部被判"不在包里"）。改成 computed，用它的地方一律取 `.value`。
+ */
+const packSegmentIds = computed<Set<string>>(() => {
+  void packTick.value
+  return new Set(activePack().segments.map((s) => s.segment_id))
+})
 
 // ---------- 整条路线规划（Issue IKNAUI）----------
 //
@@ -666,6 +1031,8 @@ async function loadRecommend(sessionId?: string): Promise<void> {
     recommendError.value = `推荐接口不可达（${e instanceof Error ? e.message : '未知错误'}）：保持不画路线，不编造演示路线`
   } finally {
     recommendLoading.value = false
+    // 起点与推荐同源（同一份引擎产物）：每次取推荐后同步刷新 /locate，避免两块显示两个起点
+    void refreshLocate()
   }
 }
 
@@ -706,6 +1073,212 @@ function onRouteSessionChange(): void {
   void loadRecommend(selectedSession.value)
 }
 
+// ---------- 起点 / 终点确认（Issue IKP5C6）----------
+//
+// 一期口径：起点是**孪生真值**（接口 `/api/traffic/locate` 直读引擎产物 `requests[].location`，
+// 接口层不做地图匹配），所以这里的“确认”只是把这份真值显式摆给使用者看并留下一个确认动作，
+// **不是用户定位**；未确认时页面必须写明「按孪生真值演示」，不得暗示“已确认你的位置”。
+// TC-05 展示侧兜底：定位不可用 / 置信度低时，可从当前站点包手动选一段作为起点（流程不中断）。
+const locateInfo = ref<LocateResult | null>(null)
+const locateLoading = ref(false)
+const locateError = ref('')
+/** 使用者是否点过「以这里为起点」（切换 session 后重置） */
+const startConfirmed = ref(false)
+/** 手动选起点（兜底）：从当前站点包路段下拉里选一段 */
+const manualStartId = ref('')
+const manualStart = ref(false)
+
+const packSegments = computed(() => {
+  void packTick.value
+  return activePack().segments
+})
+
+/** 当前起点：手动选择优先 → /locate 结果 → 推荐响应自带的 location（失败降级，不编） */
+const currentStart = computed<{
+  segment_id: string
+  offset_m: number | null
+  match_confidence: number | null
+  source: string
+} | null>(() => {
+  if (manualStart.value && manualStartId.value) {
+    return { segment_id: manualStartId.value, offset_m: 0, match_confidence: null, source: 'manual' }
+  }
+  const loc = locateInfo.value
+  if (loc && loc.segment_id) {
+    return {
+      segment_id: loc.segment_id,
+      offset_m: loc.offset_m,
+      match_confidence: loc.match_confidence,
+      source: loc.source,
+    }
+  }
+  const rec = recommend.value?.location
+  if (rec) {
+    return {
+      segment_id: rec.segment_id,
+      offset_m: rec.offset_m,
+      match_confidence: rec.match_confidence ?? null,
+      source: rec.source,
+    }
+  }
+  return null
+})
+const startName = computed(() => (currentStart.value ? nameOf(currentStart.value.segment_id) : '—'))
+const startSourceLabel = computed(() => {
+  const source = currentStart.value?.source
+  if (source === 'twin') return '孪生真值'
+  if (source === 'app_gnss') return 'App 定位'
+  if (source === 'manual') return '手动选择'
+  return source || '—'
+})
+const confidenceText = computed(() => {
+  const c = currentStart.value?.match_confidence
+  return typeof c === 'number' && Number.isFinite(c) ? c.toFixed(2) : '—'
+})
+const offsetText = computed(() => {
+  const v = currentStart.value?.offset_m
+  return typeof v === 'number' && Number.isFinite(v) ? v.toFixed(1) : '—'
+})
+/** 与 `work/engine/locate.py` 的 MATCH_CONFIDENCE_MIN 同口径：< 0.6 提示定位不稳定（不改判定） */
+const confidenceLow = computed(() => {
+  const c = currentStart.value?.match_confidence
+  return typeof c === 'number' && Number.isFinite(c) && c < 0.6
+})
+
+/** 终点：优先 `arrival_route.dropoff_point`；为 null 时给 `why` 里的具体原因 + 末段兜底 */
+const tripEnd = computed(() => {
+  const r = recommend.value
+  if (!r) return null
+  const segs = r.arrival_route.segments ?? []
+  const last = segs.length > 0 ? segs[segs.length - 1]! : null
+  const drop = r.arrival_route.dropoff_point ?? null
+  const landmark = drop
+    ? [...activePack().dropoffs, ...activePack().zones].find((p) => p.id === drop)
+    : undefined
+  // why 里的原因用 [] 括起（引擎口径）；只挑与终点 / 点位相关的条目，别把离站原因混进来
+  const notes = (r.why.match(/\[[^\]]+\]/g) ?? []).filter((n) => /落客|上客|点位|终点/.test(n))
+  return {
+    drop,
+    pointName: landmark?.name ?? null,
+    last,
+    lastName: last ? nameOf(last) : '—',
+    reason: notes.join(' '),
+  }
+})
+
+// ---------- 地图上的「起点 / 终点」标注（业主 2026-10-21 口径） ----------
+// 「那些大道最外面的路段就是起点，然后停车场落客点是终点」：起点用推荐路线实际起点路段
+// （引擎边界推导的进场段，站点包里登记为 boundary 的 P-Bxx），终点优先对齐站点包里的
+// 停车场落客点（演示点），对不上才退回末段终点——只做展示，不改算路 / ETA。
+const startBoundarySection = computed(() => {
+  const id = currentStart.value?.segment_id
+  if (!id) return null
+  return (activePack().sections ?? []).find((s) => s.segment_id === id && s.role === 'boundary') ?? null
+})
+
+const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
+  const s = currentStart.value
+  if (!s) return null
+  const seg = demoSegment(s.segment_id)
+  if (!seg || seg.coords.length === 0) return null
+  const p = pointAtOffset(seg.coords, s.offset_m ?? 0)
+  return {
+    kind: 'start',
+    label: '起点',
+    segment_id: s.segment_id,
+    name: seg.name,
+    lon: p[0],
+    lat: p[1],
+    note: startBoundarySection.value
+      ? `外围边界断面 ${startBoundarySection.value.point_id}（演示）`
+      : '路网内部段（演示）',
+  }
+})
+
+const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
+  const r = recommend.value
+  if (!r) return null
+  const segs = r.arrival_route.segments ?? []
+  const last = segs.length > 0 ? segs[segs.length - 1]! : null
+  if (!last) return null
+  const seg = demoSegment(last)
+  const dropId = r.arrival_route.dropoff_point ?? null
+  if (dropId) {
+    const point = activePack().dropoffs.find((d) => d.id === dropId)
+    if (point) {
+      return {
+        kind: 'end',
+        label: '终点·落客点',
+        segment_id: last,
+        name: point.name,
+        lon: point.lon,
+        lat: point.lat,
+        note: `点位 ${dropId}（演示点）`,
+      }
+    }
+  }
+  const near = landmarksNearSegment(last)
+    .filter((x) => x.kind === 'dropoff')
+    .sort((a, b) => a.distance_m - b.distance_m)[0]
+  if (near) {
+    return {
+      kind: 'end',
+      label: '终点·落客点',
+      segment_id: last,
+      name: near.name,
+      lon: near.lon,
+      lat: near.lat,
+      note: `停车场落客点 ${near.id}（演示点）· 距末段 ${Math.round(near.distance_m)} m`,
+    }
+  }
+  if (!seg || seg.coords.length === 0) return null
+  const p = pointAtOffset(seg.coords, Math.max(0, segmentLengthM(seg.coords) - 1))
+  return {
+    kind: 'end',
+    label: '终点',
+    segment_id: last,
+    name: seg.name,
+    lon: p[0],
+    lat: p[1],
+    note: '引擎产物未给落客点；落在末段终点（演示）',
+  }
+})
+
+/** 拉一次 /locate（真接口才有；mock 如实标注降级，不编起点） */
+async function refreshLocate(): Promise<void> {
+  locateError.value = ''
+  locateInfo.value = null
+  startConfirmed.value = false
+  manualStart.value = false
+  manualStartId.value = ''
+  if (USE_MOCK) {
+    locateError.value = 'mock 模式无 /api/traffic/locate 端点（辅助端点仅真接口提供）'
+    return
+  }
+  locateLoading.value = true
+  try {
+    locateInfo.value = await postTrafficLocate({ session_id: selectedSession.value || undefined })
+  } catch (e) {
+    locateError.value = `定位接口不可达（${
+      e instanceof Error ? e.message : '未知错误'
+    }）；当前按推荐响应自带的 location 显示，不编起点`
+  } finally {
+    locateLoading.value = false
+  }
+}
+
+function confirmStart(): void {
+  if (currentStart.value) startConfirmed.value = true
+}
+
+function applyManualStart(): void {
+  if (!manualStartId.value) return
+  manualStart.value = true
+  startConfirmed.value = true
+}
+
+
+
 /** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
 const routeHighlights = computed<RouteHighlight[]>(() => {
   const r = recommend.value
@@ -715,9 +1288,13 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
     groups.push({ kind: 'arrival', segments: r.arrival_route.segments })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
-    for (const a of r.alternatives) {
-      if (a.segments && a.segments.length > 0) groups.push({ kind: 'alternative', segments: a.segments })
-    }
+    // Issue IKP5CK：备选不能再全压成同一个 `alternative` 分组（两条备选会画成同一套灰虚线）。
+    // `index` 是前端展示类型字段（非契约）：1 = 备选 1（青/长虚）、2 = 备选 2（琥珀/短虚）。
+    r.alternatives.forEach((a, i) => {
+      if (a.segments && a.segments.length > 0) {
+        groups.push({ kind: 'alternative', index: i + 1, segments: a.segments })
+      }
+    })
   }
   if (routeView.value === 'all' || routeView.value === 'departure') {
     if (r.departure_route && r.departure_route.segments.length > 0) {
@@ -735,6 +1312,13 @@ interface RouteCard {
   eta: number
   segments: string[]
   note: string
+  /**
+   * 同一份 recommend 的备选条数（Issue IKP5CK）。路线卡用它如实提示
+   * 「本 OD 仅 N 条候选（契约要求 ≥2 条备选）」；**不凑等价路线**。
+   */
+  alternativeCount: number
+  /** 引擎声明的 `no_alternative_reason`（只读；未声明 = null） */
+  noAlternativeReason: string | null
 }
 
 /** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
@@ -742,6 +1326,10 @@ const routeCards = computed<RouteCard[]>(() => {
   const r = recommend.value
   if (!r) return []
   const cards: RouteCard[] = []
+  // Issue IKP5CK：备选不足的判定依据（`alternatives.length` + 引擎 `no_alternative_reason`）
+  // 放进每张卡的数据结构，供路线卡区域如实提示；页面不据此补画等价路线。
+  const alternativeCount = r.alternatives.length
+  const noAlternativeReason = r.no_alternative_reason ?? null
   if (routeView.value === 'all' || routeView.value === 'arrival') {
     cards.push({
       key: 'arrival',
@@ -751,6 +1339,8 @@ const routeCards = computed<RouteCard[]>(() => {
       eta: r.arrival_route.eta_min,
       segments: r.arrival_route.segments,
       note: r.why,
+      alternativeCount,
+      noAlternativeReason,
     })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
@@ -763,6 +1353,8 @@ const routeCards = computed<RouteCard[]>(() => {
         eta: a.eta_min,
         segments: a.segments ?? [],
         note: a.reason,
+        alternativeCount,
+        noAlternativeReason,
       })
     })
   }
@@ -776,6 +1368,8 @@ const routeCards = computed<RouteCard[]>(() => {
         eta: r.departure_route.eta_min,
         segments: r.departure_route.segments,
         note: '送完人之后的离站方向（契约 departure_route）',
+        alternativeCount,
+        noAlternativeReason,
       })
     }
   }
@@ -786,7 +1380,7 @@ const routeCards = computed<RouteCard[]>(() => {
 const routeMissing = computed<string[]>(() => {
   const missing = new Set<string>()
   for (const g of routeHighlights.value) {
-    for (const id of g.segments) if (!packSegmentIds.has(id)) missing.add(id)
+    for (const id of g.segments) if (!packSegmentIds.value.has(id)) missing.add(id)
   }
   return [...missing]
 })
@@ -804,9 +1398,9 @@ const routeSourceNote = computed<string>(() => recommend.value?.data_source_note
 const routeWhyLine = computed<string>(() => {
   const source = recommend.value?.data_source
   if (source === 'engine.routes.real' || source === 'engine.routes.sample') {
-    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。'
+    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。'
   }
-  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，灰虚线 = 备选，紫色实线 = 离站。`
+  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。`
 })
 /** 路线降级说明（session 未匹配 / 段号命名空间不一致等，来自接口响应 note；无则空）。
  *  session 未匹配已在下方单独用显式警示段落呈现，这里去掉重复的第一句。 */
@@ -832,10 +1426,15 @@ onMounted(() => {
       if (connected) void refresh()
     },
   )
+  // IKPFVN E4：首屏默认全国视角；上次选过的站 1.2 s 后自动飞入（用户一碰就取消）
+  scheduleAutoFly()
 })
 
 onUnmounted(() => {
   unsubscribe?.()
+  // 首屏自动飞入 / 到站门控的定时器一起停：它们会往已卸载的页面里写状态
+  window.clearTimeout(autoFlyTimer)
+  window.clearTimeout(arriveTimer)
 })
 
 // ---------- 文案 / 格式化助手 ----------
@@ -1040,8 +1639,8 @@ const rankRows = computed(() =>
 )
 
 // ---------- 中栏 · 地图 ----------
-// 极简口径(业主 2026-10-14):图上只画路段线,断面/落客点/场区/站点不再下发地图;
-// 文字只出现在跟随鼠标的浮牌(hover-chip)里。
+// 2026-10-14 极简口径只画路段线；Issue IKP5BZ 起补回落客点 / 场区 Marker（唯一真值源 = 前端站点包）——
+// 断面仍未上图，路段摘要仍只用跟随鼠标的浮牌（hover-chip）。
 
 /** 选中 chip:路段拥堵 · 摄像头 2 路 · x 0.91 / 0.84(video/twin);video 不可用只显示 twin 并注明 */
 const mapChip = computed<string>(() => {
@@ -1294,6 +1893,17 @@ function onCommandChanged(): void {
       <button class="td-btn sm" type="button" @click="refresh">立即刷新</button>
     </div>
 
+    <!-- 切站缓存提示（Issue IKPFR4）：缓存数据必须有标识，不得冒充最新。
+         有缓存 = 首屏已秒开，这里只说明"这是缓存、正在刷新"；没缓存才亮下面的骨架条。 -->
+    <div v-if="cacheNote" class="cache-bar" role="status">
+      缓存 · 刷新中 —— {{ cacheNote }}
+    </div>
+    <div v-if="switching" class="switch-bar" role="status" aria-live="polite">
+      <span class="switch-spinner" aria-hidden="true" />
+      正在加载「{{ stationName }}」的首屏快照（该站暂无内存缓存：首次访问 / 预热尚未完成）—— 数据到达即渲染，不刷新整页。
+      <span class="switch-skeleton" aria-hidden="true"><i /><i /><i /></span>
+    </div>
+
     <!-- KPI 条(取代页头) -->
     <div class="td-card kpi-bar">
       <div class="kpi-cell">
@@ -1363,13 +1973,20 @@ function onCommandChanged(): void {
          bar 宽度为 0(只有 16px dragger 绝对定位),栏间距由 .spl-gap 补回 10px。
          中栏不传 size → 弹性伸缩(默认仍是弹性栏,口径红线第 3 条)。 -->
     <div class="td-body">
-      <el-splitter class="el-splitter td-splitter" @resize-end="saveColMem" @mousedown="onBarMouseDown">
+      <el-splitter
+        class="el-splitter td-splitter"
+        :class="{ 'is-national': mapScope === 'national' }"
+        @resize-end="saveColMem"
+        @mousedown="onBarMouseDown"
+      >
         <!-- `v-model:size` 而不是 `:size`:单向绑定不会把 ElSplitter 拖出来的 px 宽度
              回写到 colLeft/colRight,那样 @resize-end 存的一直是默认值,记忆功能等于没有。
              两个 ref 都是 `number | string`(元素自身声明 `size: { type: [String, Number] }`)。 -->
         <el-splitter-panel v-model:size="colLeft" :min="COL_MIN_LEFT">
-          <!-- 左栏 · 选择监控 -->
-          <div class="td-col col-left">
+          <!-- 左栏 · 选择监控。
+               IKPFVN：全国视角下左栏整体收起（v-if 卸掉内容 + `is-national` 把面板宽压到 0），
+               地图占满内容区；站区视角再滑入。 -->
+          <div v-if="mapScope === 'station'" class="td-col col-left">
             <section class="td-card">
               <div class="td-card-head">
                 选择监控<span class="td-head-tag">{{ distTotal }} 个路段</span>
@@ -1482,7 +2099,13 @@ function onCommandChanged(): void {
                       </template>
                     </div>
                     <p v-if="segRows.length === 0" class="empty">
-                      {{ scope === null ? '快照为空(接口层未起?)' : '该范围当前没有路段' }}
+                      {{
+                        switching
+                          ? '正在加载该站首屏快照…'
+                          : scope === null
+                            ? '快照为空(接口层未起?)'
+                            : '该范围当前没有路段'
+                      }}
                     </p>
                   </template>
                 </div>
@@ -1497,47 +2120,56 @@ function onCommandChanged(): void {
             <section class="td-card map-card">
               <div class="map-toolbar">
                 <div class="map-toolbar-left">
-                  <span class="map-title">全路段状态</span>
+                  <span class="map-title">{{ mapScope === 'national' ? '全国地图' : '全路段状态' }}</span>
                   <span class="map-tag">{{ basemapTag }}</span>
                 </div>
-                <!-- 路网版本切换（IKMDKY 子单①）：Z=61 段新几何 / Z21=旧 21 段对照 -->
+                <!-- 路网版本切换（IKMDKY 子单①；IKP5D3 起 Z21 旧包已删，只剩 Z / GZ） -->
                 <div class="map-toolbar-right">
-                  <!-- 图例重开（业主 2026-10-19）：图例面板压住地图左下角时可收起，
-                       收起后按钮就落在「Z · 61 段」左边；展开时不重复出现（面板里自带叉键） -->
+                  <!-- IKPFVN E2：「← 全国」与站点按钮走同一条链路（`pickStation` / `enterNational`），
+                       不刷新、不重建地图，只换视角与镜头。 -->
                   <button
-                    v-if="!legendVisible"
+                    v-if="mapScope === 'station'"
                     type="button"
-                    class="legend-toggle"
-                    title="展开图例"
-                    aria-label="展开图例"
-                    @click="setLegendVisible(true)"
+                    class="map-back-btn"
+                    title="退回全国视角（地图缩远到中国范围，站点 pin 重新出现）"
+                    @click="enterNational"
                   >
-                    图例
+                    ← 全国
                   </button>
-                  <!-- 方向箭头显隐（业主 2026-10-19）：路网密 / 缩放小时箭头会盖住线，
-                       关掉只留路段线；低缩放已经让箭头跟着缩小，这里是"完全不看"的出口 -->
-                  <button
-                    type="button"
-                    class="legend-toggle"
-                    :class="{ on: directionsVisible }"
-                    :aria-pressed="directionsVisible"
-                    :title="directionsVisible ? '隐藏方向箭头' : '显示方向箭头'"
-                    :aria-label="directionsVisible ? '隐藏方向箭头' : '显示方向箭头'"
-                    @click="setDirectionsVisible(!directionsVisible)"
+                  <span
+                    class="pack-switch"
+                    role="group"
+                    aria-label="已接入车站（切站：缩远 → 移动 → 放大）"
                   >
-                    箭头
-                  </button>
-                  <span class="pack-switch" role="group" aria-label="切换路网版本">
                     <button
                       v-for="p in packChoices"
                       :key="p.key"
                       type="button"
                       class="pack-switch-item"
-                      :class="{ on: p.key === currentPackKey }"
-                      :aria-pressed="p.key === currentPackKey"
-                      @click="onPackChange(p.key)"
+                      :class="{ on: p.key === currentPackKey && mapScope === 'station' }"
+                      :aria-pressed="p.key === currentPackKey && mapScope === 'station'"
+                      @click="pickStation(p.key)"
                     >
                       {{ p.name }}
+                    </button>
+                  </span>
+                  <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
+                       默认开，落 localStorage；状态在图上与图例里都能看到。 -->
+                  <span class="pack-switch" role="group" aria-label="凸显路线">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: routeEmphasisEnabled }"
+                      role="switch"
+                      :aria-checked="routeEmphasisEnabled"
+                      :title="
+                        routeEmphasisEnabled
+                          ? '凸显路线：开（非路线段中性灰细线，不按等级上色）；点击恢复满图等级色'
+                          : '凸显路线：关（满图等级色 + 路线叠加）；点击压灰非路线段'
+                      "
+                      @click="setRouteEmphasisEnabled(!routeEmphasisEnabled)"
+                    >
+                      凸显路线 {{ routeEmphasisEnabled ? '开' : '关' }}
                     </button>
                   </span>
                 </div>
@@ -1548,13 +2180,17 @@ function onCommandChanged(): void {
                   :vehicles="vehicles"
                   :selected-id="selectedId"
                   :routes="routeHighlights"
+                  :route-start="routeStartMarker"
+                  :route-end="routeEndMarker"
                   :mode="viewMode"
                   :color-mode="colorMode"
+                  :map-mode="mapScope"
                   :ts="snapshotTs"
                   :hover-chip="mapChip"
-                  :legend="legendVisible"
+                  :legend="true"
                   @select="onSelect"
-                  @close-legend="setLegendVisible(false)"
+                  @switch-station="pickStation"
+                  @arrived="onMotionArrived"
                 />
               </div>
               <div class="map-caption">
@@ -1565,8 +2201,8 @@ function onCommandChanged(): void {
         </el-splitter-panel>
 
         <el-splitter-panel v-model:size="colRight" :min="COL_MIN_RIGHT">
-          <!-- 右栏 · 路段信息 -->
-          <div class="td-col col-right td-scroll">
+          <!-- 右栏 · 路段信息（IKPFVN：全国视角下同样收起，见左栏注释） -->
+          <div v-if="mapScope === 'station'" class="td-col col-right td-scroll">
         <!-- 推荐路线（Issue IKMF1W）：三态切换 + 来源标注；接口不可达时不画路线、不编造假路线 -->
         <section class="td-card route-card">
           <div class="td-card-head">
@@ -1594,8 +2230,9 @@ function onCommandChanged(): void {
                     :key="option.session_id || option.request_id || ''"
                     :value="option.session_id || ''"
                   >
-                    {{ option.od_id ?? 'OD' }} · {{ option.session_id }} · 到达
-                    {{ fmtEta(option.arrival_route?.eta_min) }} min
+                    {{ option.od_id ?? 'OD' }} · 起点 {{ option.location.segment_id ?? '—' }}
+                    <template v-if="option.location.segment_id">（{{ nameOf(option.location.segment_id) }}）</template>
+                    · 到达 {{ fmtEta(option.arrival_route?.eta_min) }} min
                   </option>
                 </select>
                 <div v-if="tripSummary" class="trip-summary">
@@ -1650,10 +2287,89 @@ function onCommandChanged(): void {
               </div>
               <div class="route-meta">
                 <span class="route-badge">演示数据（模拟）</span>
-                <span>
-                  起点 {{ recommend.location.segment_id }} · 定位来源
-                  {{ recommend.location.source === 'twin' ? '孪生真值' : 'App 定位' }}
-                </span>
+                <span>路线来自引擎算路产物 · 本页不重算</span>
+              </div>
+              <!-- IKP5C6：起点 / 终点确认（起点=孪生真值，不是用户定位；终点优先 dropoff_point，空窗给原因 + 末段兜底） -->
+              <div class="start-end">
+                <div class="se-block">
+                  <div class="se-head">
+                    本次起点
+                    <span class="se-tag" :class="{ warn: !startConfirmed }">
+                      {{ startConfirmed ? '已确认' : '未确认' }}
+                    </span>
+                    <span v-if="locateLoading" class="se-tag">读取定位中</span>
+                  </div>
+                  <div class="se-line">
+                    段号 <b class="td-mono">{{ currentStart?.segment_id ?? '—' }}</b> · 路段名 {{ startName }}
+                  </div>
+                  <div class="se-line">
+                    位置类型
+                    <b>{{ startBoundarySection ? `外围边界断面 ${startBoundarySection.point_id}` : '路网内部段' }}</b>
+                    <span class="se-note">（演示口径：外围入口段 → 停车场落客点）</span>
+                  </div>
+                  <div class="se-line">
+                    来源 {{ startSourceLabel }} · offset {{ offsetText }} m · match_confidence
+                    {{ confidenceText }}
+                  </div>
+                  <p v-if="!startConfirmed" class="se-note">
+                    起点未确认（按{{ startSourceLabel }}演示）：点「以这里为起点」表示认可此起点后再看路线。
+                  </p>
+                  <p v-if="confidenceLow" class="se-warn">
+                    定位不稳定（match_confidence &lt; 0.6）：可改用下方手动选起点。
+                  </p>
+                  <p v-if="locateError" class="se-note">{{ locateError }}</p>
+                  <div class="se-actions">
+                    <button
+                      type="button"
+                      class="se-btn"
+                      :disabled="!currentStart"
+                      @click="confirmStart"
+                    >
+                      以这里为起点
+                    </button>
+                    <select
+                      v-model="manualStartId"
+                      class="route-select se-select"
+                      aria-label="手动选择起点路段"
+                    >
+                      <option value="">手动选起点（兜底）…</option>
+                      <option v-for="seg in packSegments" :key="seg.segment_id" :value="seg.segment_id">
+                        {{ seg.segment_id }} · {{ seg.name }}
+                      </option>
+                    </select>
+                    <button
+                      type="button"
+                      class="se-btn"
+                      :disabled="!manualStartId"
+                      @click="applyManualStart"
+                    >
+                      用这段
+                    </button>
+                  </div>
+                </div>
+                <div class="se-block">
+                  <div class="se-head">本次终点 <span class="se-tag">落客点</span></div>
+                  <template v-if="tripEnd?.drop">
+                    <div class="se-line">
+                      点位 <b class="td-mono">{{ tripEnd.drop }}</b>
+                      <template v-if="tripEnd.pointName"> · {{ tripEnd.pointName }}</template>
+                    </div>
+                    <div class="se-line">
+                      所在末段 <b class="td-mono">{{ tripEnd.last ?? '—' }}</b> · {{ tripEnd.lastName }}
+                    </div>
+                  </template>
+                  <template v-else>
+                    <div class="se-line">落客点位：引擎产物未给（如实空窗）</div>
+                    <p v-if="tripEnd?.reason" class="se-note">原因：{{ tripEnd.reason }}</p>
+                    <p v-else class="se-note">
+                      原因：引擎 why 未附说明（点位表未登记真网段号，补齐归 IKMHMX）。
+                    </p>
+                    <div class="se-line">
+                      替代信息：终点所在末段 <b class="td-mono">{{ tripEnd?.last ?? '—' }}</b> ·
+                      {{ tripEnd?.lastName ?? '—' }}
+                    </div>
+                  </template>
+                </div>
               </div>
               <p v-if="routeSourceNote" class="route-source">{{ routeSourceNote }}</p>
               <div v-for="c in routeCards" :key="c.key" class="route-item" :class="c.kind">
@@ -1664,6 +2380,12 @@ function onCommandChanged(): void {
                 <div class="route-segs td-mono">{{ c.segments.join(' → ') || '—' }}</div>
                 <div class="route-note">{{ c.note }}</div>
               </div>
+              <!-- IKP5CK：备选不足如实说明（契约要求 ≥2 条；不凑等价路线，不空白） -->
+              <p v-if="recommend.alternatives.length < 2" class="route-hint warn">
+                本 OD 仅 {{ recommend.alternatives.length }} 条候选（契约要求 ≥2 条备选）<template
+                  v-if="recommend.no_alternative_reason"
+                >：{{ recommend.no_alternative_reason }}</template>；不为凑数补画等价路线。
+              </p>
               <p v-if="routeMissing.length" class="route-hint warn">
                 路线里有 {{ routeMissing.length }} 段不在当前站点包（{{ routeMissing.join(', ') }}），这些段不会被画出；不补造数据。
               </p>
@@ -1677,58 +2399,6 @@ function onCommandChanged(): void {
             <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
           </div>
         </section>
-        <!-- 落客点 / 候客区（业主 2026-10-20；先只上广州南站）。
-             口径三条：① 只吃站点包、不吃 /network（非默认站接口侧恒空表，见脚本注释）；
-             ② 坐标是路段折线上的**演示点**，不是实测点位，卡头必须标「演示」；
-             ③ 不画到地图上 —— 业主 2026-10-14 极简口径只管地图（DashboardView 脚本区注释原文），
-                文字卡不违反它，也不去改 MapLibreViewer。 -->
-        <section v-if="landmarksVisible && landmarkCount > 0" class="td-card landmark-card">
-          <div class="td-card-head">
-            落客点 / 候客区<span class="td-head-tag">站点包 · 演示数据</span>
-          </div>
-          <div class="td-card-body">
-            <p class="landmark-note">
-              以下点位<b>不是踏勘实测</b>：坐标按站区 OSM 路段折线取弧长落点，用来标出「落客 / 候客」这类设施的
-              <b>相对位置与语义</b>；具体到哪根桥柱、哪个车位不对应。真实点位归 IKMHMX。
-            </p>
-
-            <div class="landmark-group">
-              <div class="landmark-group-head">
-                落客点<span class="landmark-count">{{ packDropoffs.length }} 个</span>
-              </div>
-              <ul v-if="packDropoffs.length" class="landmark-list">
-                <li v-for="d in packDropoffs" :key="d.id" class="landmark-item">
-                  <span class="landmark-id td-mono">{{ d.id }}</span>
-                  <span class="landmark-name">{{ d.name }}</span>
-                  <span class="landmark-ll td-mono">{{ fmtLonLat(d.lon, d.lat) }}</span>
-                </li>
-              </ul>
-              <p v-else class="landmark-empty">该站点包未登记落客点（不补造）。</p>
-            </div>
-
-            <div class="landmark-group">
-              <div class="landmark-group-head">
-                候客 / 蓄车区<span class="landmark-count">{{ packZones.length }} 个</span>
-              </div>
-              <ul v-if="packZones.length" class="landmark-list">
-                <li v-for="z in packZones" :key="z.id" class="landmark-item">
-                  <span class="landmark-id td-mono">{{ z.id }}</span>
-                  <span class="landmark-name">{{ z.name }}</span>
-                  <span class="landmark-ll td-mono">{{ fmtLonLat(z.lon, z.lat) }}</span>
-                </li>
-              </ul>
-              <p v-else class="landmark-empty">该站点包未登记候客 / 蓄车区（不补造）。</p>
-            </div>
-
-            <p class="landmark-foot">
-              来源：站点包 <span class="td-mono">{{ landmarkPackKey }}</span> ·
-              推荐落客点
-              <span class="td-mono">{{ landmarkArrivalDropoff }}</span> ·
-              语义出处见 <span class="td-mono">docs/hubflow-data/06_站点事实_广州南站.md</span>
-            </p>
-          </div>
-        </section>
-
         <section class="td-card">
           <div class="td-card-head">
             路段信息<span class="td-head-tag td-mono">{{ selected?.segment_id ?? selectedId ?? '—' }}</span>
@@ -1802,6 +2472,38 @@ function onCommandChanged(): void {
                   方向 / 车道 / 对向 / 贯通来自站点包<b>只读字段</b>（tools/gen_station_directions.py 从 enriched 生成）：
                   方向来自 OSM oneway，车道多为默认演示值——<b>不是实测车道/实测方向</b>；缺值一律「—/未标定」；
                   贯通性待核只提示，不改路网。
+                </p>
+              </div>
+
+              <!-- IKP5BZ · 本段附近的落客点 / 场区：图上 Marker 之外的第二入口（文字可查、可点选） -->
+              <div class="lm-block">
+                <div class="sec-head">
+                  本段附近的落客点 / 场区<span class="sub-tag">{{ nearbyLandmarks.length }} 个 · 演示点</span>
+                </div>
+                <p v-if="nearbyLandmarks.length === 0" class="lm-empty">
+                  本段 150 m 内暂无登记点位（数据源：本站站点包）。图上标记仍可在全图范围内悬停查看。
+                </p>
+                <ul v-else class="lm-list">
+                  <li v-for="p in nearbyLandmarks" :key="`${p.kind}-${p.id}`">
+                    <button
+                      type="button"
+                      class="lm-item"
+                      :title="`${p.name} · 所属路段 ${p.segment_id || '未标定'} · ${p.id} · 演示点 · 点击选中该路段`"
+                      @click="onSelect(p.segment_id)"
+                    >
+                      <span class="lm-icon" :class="p.kind">{{ p.kind === 'dropoff' ? '落' : '场' }}</span>
+                      <span class="lm-main">
+                        <span class="lm-name">{{ p.name }}</span>
+                        <span class="lm-meta">
+                          {{ p.segment_id || '路段未标定' }} · {{ p.id }} · {{ landmarkDistance(p.distance_m) }}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                </ul>
+                <p class="lm-note">
+                  数据源：本站站点包（唯一真值源）· 坐标为路段折线上的<b>演示点</b>，不是踏勘点位 ·
+                  点击条目选中其所属路段（所属路段按最近折线推定）。
                 </p>
               </div>
 
@@ -1924,8 +2626,12 @@ function onCommandChanged(): void {
       </el-splitter>
     </div>
 
-    <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径) -->
-    <div class="heat-band">
+    <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径)
+         IKPFVN E1：全国视角下整条收起 —— 它三块内容全是"当前站"的路段维度
+         （档位分布 / 路段×时间矩阵 / CI 色阶），站在全国视角时既没有当前站也不该占高度；
+         收起后地图才真的"占满内容区"（NS 视角拿到的地图高度从 ~377 px 涨到 ~680 px，
+         全国取景的 zoom 也随之落在 3–6 档，而不是挤在 2 档）。 -->
+    <div v-if="mapScope === 'station'" class="heat-band">
       <section class="td-card band-card">
         <div class="td-card-head">
           档位分布 · 当前时刻<span class="td-head-tag">
@@ -2000,8 +2706,11 @@ function onCommandChanged(): void {
 
     <template #foot>
       <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <!-- 切站缓存标识（IKPFR4）：页脚也要能看出"这不是刚拉到的" -->
+      <span v-if="servedFromCache">数据标识:内存缓存快照 · 后台刷新中</span>
       <span>{{ footStationLine }}</span>
       <span>数据来源:{{ footDataSource }} · 底图:{{ sourceLabel }}</span>
+      <span>{{ packLine }}</span>
       <span>
         颜色模式:{{ isFlow ? '纯车流量（q 四档，仅展示，不代表拥堵结论）' : '决策拥堵（接口 level）' }}
       </span>
@@ -2111,6 +2820,87 @@ function onCommandChanged(): void {
 .view-seg .td-seg-item.disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ---------- 切站提示条 / 骨架（Issue IKPFR4）----------
+   口径：① 「缓存 · 刷新中」用中性琥珀（说明性状态，不是告警、不用等级色、不抢品牌蓝）；
+        ② 无缓存时的骨架条只有一行 + 三根呼吸条，**不做整屏 spinner、不白屏** ——
+           切站是同一页内的局部刷新，不是重新打开一个应用。 */
+.cache-bar {
+  flex: 0 0 auto;
+  margin: 10px 16px 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: var(--td-radius-sm);
+  border: 1px dashed #e0a800;
+  background: var(--td-warning-color-1);
+  color: #8a5b00;
+}
+.switch-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 16px 0;
+  padding: 6px 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  border-radius: var(--td-radius-sm);
+  border: 1px solid var(--td-component-stroke);
+  background: var(--td-bg-color-secondarycontainer);
+  color: var(--td-text-color-secondary);
+}
+.switch-spinner {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid var(--td-brand-color-1);
+  border-top-color: var(--td-brand-color);
+  animation: switch-spin 0.9s linear infinite;
+}
+@keyframes switch-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* 骨架：三根长度不一的呼吸条，暗示"内容正在来"，但不假装已经有数字 */
+.switch-skeleton {
+  display: inline-flex;
+  gap: 6px;
+  margin-left: 4px;
+}
+.switch-skeleton i {
+  display: block;
+  width: 42px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--td-component-border);
+  animation: switch-breathe 1.2s ease-in-out infinite;
+}
+.switch-skeleton i:nth-child(2) {
+  width: 30px;
+  animation-delay: 0.15s;
+}
+.switch-skeleton i:nth-child(3) {
+  width: 54px;
+  animation-delay: 0.3s;
+}
+@keyframes switch-breathe {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .switch-spinner,
+  .switch-skeleton i {
+    animation: none;
+  }
 }
 
 /* ---------- KPI 条 ---------- */
@@ -2357,29 +3147,6 @@ function onCommandChanged(): void {
   align-items: center;
   gap: 8px;
 }
-/* 图例重开键（业主 2026-10-19）：图例收起后才出现，位置就在「Z · 61 段」左边。
-   观感与旁边的路网版本切换一致（细边小字），不复用品牌蓝实底 —— 它不是当前选中态。 */
-.legend-toggle {
-  padding: 3px 10px;
-  border: 1px solid var(--td-component-stroke);
-  border-radius: 4px;
-  background: #ffffff;
-  font: inherit;
-  font-size: 11px;
-  color: var(--td-text-color-secondary);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.legend-toggle:hover {
-  color: var(--td-text-color-primary);
-}
-/* 「箭头」键的**开**态（业主 2026-10-19）：这个键常驻、表示"现在箭头是显示的"，
-   所以需要有别于「图例」键的外观；用品牌蓝细边 + 蓝字，不填实底 ——
-   填实底会和旁边 pack-switch 的"当前站点包"那个选中态撞车。 */
-.legend-toggle.on {
-  border-color: v-bind('TD.brand');
-  color: v-bind('TD.brand');
-}
 /* 路网版本切换（IKMDKY 子单①）：两段式小按钮，选中态用品牌蓝 */
 .pack-switch {
   display: inline-flex;
@@ -2506,6 +3273,78 @@ function onCommandChanged(): void {
 }
 .dir-note {
   margin: 4px 0 2px;
+  font-size: 10px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+/* IKP5BZ · 本段附近的落客点 / 场区（与地图 Marker 同一份演示点位） */
+.lm-block {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--td-component-stroke);
+}
+.lm-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.lm-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 6px;
+  text-align: left;
+  font: inherit;
+  background: var(--td-bg-color-container-hover);
+  border: 1px solid transparent;
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.lm-item:hover {
+  border-color: var(--td-brand-color);
+}
+.lm-icon {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  color: #ffffff;
+  font-size: 10px;
+  line-height: 18px;
+  text-align: center;
+}
+.lm-icon.dropoff {
+  background: #0f766e;
+}
+.lm-icon.zone {
+  background: #8a5a2b;
+}
+.lm-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.lm-name {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--td-text-color-primary);
+}
+.lm-meta {
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+}
+.lm-empty {
+  margin: 2px 0;
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+.lm-note {
+  margin: 5px 0 0;
   font-size: 10px;
   line-height: 1.6;
   color: var(--td-text-color-placeholder);
@@ -2872,76 +3711,83 @@ function onCommandChanged(): void {
   word-break: break-all;
 }
 
-/* ---------- 落客点 / 候客区（业主 2026-10-20；先只上广州南站） ---------- */
-.landmark-note {
-  margin: 0 0 7px;
-  font-size: 11px;
-  line-height: 1.6;
-  color: var(--td-text-color-placeholder);
-}
-.landmark-note b {
-  color: var(--td-text-color-secondary);
-}
-.landmark-group + .landmark-group {
-  margin-top: 7px;
-}
-.landmark-group-head {
+/* ---------- 起点 / 终点确认（Issue IKP5C6） ---------- */
+.start-end {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 6px;
+}
+.se-block {
+  padding: 6px 8px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-left: 3px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
+}
+.se-head {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  margin-bottom: 3px;
   font-size: 12px;
   font-weight: 500;
   color: var(--td-text-color-primary);
 }
-.landmark-count {
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--td-text-color-placeholder);
-}
-.landmark-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.landmark-item {
-  display: grid;
-  grid-template-columns: 64px 1fr;
-  gap: 1px 6px;
-  padding: 4px 0;
-  border-top: 1px solid var(--td-component-stroke);
-  font-size: 11px;
-  line-height: 1.5;
-}
-.landmark-id {
-  grid-row: span 2;
-  align-self: start;
-  padding-top: 1px;
-  color: var(--td-brand-color);
+.se-tag {
+  padding: 0 5px;
   font-size: 10px;
-  word-break: break-all;
+  line-height: 16px;
+  color: var(--td-brand-color);
+  background: var(--td-brand-color-1);
+  border-radius: 2px;
 }
-.landmark-name {
+.se-tag.warn {
+  color: var(--td-warning-color);
+  background: var(--td-warning-color-1);
+}
+.se-line {
+  margin-top: 3px;
+  font-size: 11px;
+  line-height: 1.6;
   color: var(--td-text-color-primary);
 }
-.landmark-ll {
-  color: var(--td-text-color-placeholder);
+.se-note,
+.se-warn {
+  margin: 3px 0 0;
   font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
 }
-.landmark-empty {
-  margin: 0;
+.se-warn {
+  color: var(--td-warning-color);
+}
+.se-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
+}
+.se-select {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.se-btn {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
   font-size: 11px;
-  line-height: 1.6;
-  color: var(--td-text-color-placeholder);
+  color: var(--td-brand-color);
+  cursor: pointer;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
 }
-.landmark-foot {
-  margin: 8px 0 0;
-  padding-top: 6px;
-  border-top: 1px solid var(--td-component-stroke);
-  font-size: 10px;
-  line-height: 1.6;
-  color: var(--td-text-color-placeholder);
-  word-break: break-all;
+.se-btn:disabled {
+  color: var(--td-text-color-disabled);
+  cursor: not-allowed;
+  border-color: var(--td-component-border);
 }
 
 /* 右栏顺序（Issue IKMS18）：点路段后**先看路段信息**（关联摄像头 / 决策计算摘要 / 直接下令），
@@ -2953,11 +3799,481 @@ function onCommandChanged(): void {
 .col-right > .route-card {
   order: 2;
 }
-/* 落客点 / 候客区清单排最后：它是「本站有哪些设施」的背景信息，不抢点路段后要看的运行指标。
-   选择器必须写成 `.td-card.landmark-card`（两个类）：上面 `.td-card:not(.route-card)` 的
-   特异性是 3 个类，只写 `.landmark-card`（2 个类）压不过它，会掉回 order:1 跟路段信息并列。
-   与上面同一套 order 机制，不改 DOM 结构。 */
-.col-right > .td-card.landmark-card {
-  order: 3;
+
+/* ==========================================================================
+   响应式（Issue IKP3EV：管理端 Web 自适应，适配 1080×1920 及以下屏幕）
+   断点统一 max-width，由大到小：1366 → 1180 → 1080 → 900 → 768 → 560。
+   1920×1080 设计稿零变化：本区块所有规则都在媒体查询内，不覆盖上面任何桌面规则。
+   分工：页面壳层（.td-page / .td-main / .td-body / .td-foot / 顶栏）由全局
+   style.css + AppShell.vue 负责；本区块只管「大屏页内部」的栏堆叠、卡片高度、
+   KPI / 地图 / 热力带 / 告警条与宽表滚动。
+   ========================================================================== */
+
+/* ---------- ≤1366：三栏仍并排（1366×768 属于该区间），只收窄左右栏 + 压缩留白 ---------- */
+@media (max-width: 1366px) {
+  /* 仅该区间固定左右栏宽：296 / 396 是 1920 设计稿值，在 1366 屏上会把弹性中栏压到
+     不足 700px。这里用 !important 压过 ElSplitter 写在 panel 上的行内 flex-basis。
+     ⚠️ 本区间（>1180 且 ≤1366）用户拖拽记忆不生效：拖拽回调仍会存宽度，但视觉宽度
+        被这两条固定 —— 属于「窄屏优先保证地图与右栏可读」的有意取舍。 */
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:first-child) {
+    flex-basis: 240px !important;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:last-child) {
+    flex-basis: 320px !important;
+  }
+  .kpi-bar {
+    margin: 10px 12px 8px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .stale-bar {
+    margin: 10px 12px 0;
+  }
+  .kpi-cell {
+    padding: 9px 12px;
+  }
+  .kpi-value {
+    font-size: 20px;
+  }
+  .band-card {
+    flex: 0 0 210px;
+  }
+  .heat-band {
+    gap: 8px;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-bar) {
+    flex-basis: 12px;
+  }
+}
+
+/* ---------- ≤1180：三栏纵向堆叠，整页文档滚动（本单主断点） ---------- */
+@media (max-width: 1180px) {
+  /* ① ElSplitter 改为纵向：bar 隐藏，panel 的「宽度」换成「整行」。
+     panel 上有组件写的行内 flex-basis（px），纵向布局下会变成「高度」，
+     必须用 !important 覆盖成 auto，否则三栏会被钉成 296 / 396 高。 */
+  .el-splitter.td-splitter {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    gap: 10px;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-bar) {
+    display: none;
+  }
+  .el-splitter.td-splitter :deep(> .el-splitter-panel) {
+    flex: 0 0 auto !important;
+    width: 100%;
+    overflow: visible;
+  }
+  /* 再压一次 first/last：≤1366 区块给它们设了固定 flex-basis（那里是宽度），
+     堆叠后同一属性会变成高度，必须清回 auto（同权重、本块在后，按源顺序生效）。 */
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:first-child),
+  .el-splitter.td-splitter :deep(> .el-splitter-panel:last-child) {
+    flex-basis: auto !important;
+  }
+  /* ② 三栏自身回到自然高度；滚动交给各卡片内部，不再出第二层纵向滚动。 */
+  .col-left,
+  .col-mid,
+  .col-right {
+    height: auto;
+    overflow: visible;
+  }
+  /* .col-right 同时挂了全局 .td-scroll（overflow-y:auto），用双类确保堆叠后不再整栏滚动。 */
+  .col-right.td-scroll {
+    overflow: visible;
+  }
+
+  /* ③ 左栏：路段监测列表给固定高度 + 内部滚动（其余卡片自然高度）。 */
+  .seg-card {
+    flex: 0 0 auto;
+    height: 420px;
+  }
+
+  /* ④ 中栏地图：按视口占比给高度，上下限防止矮屏太小 / 超长竖屏太大。 */
+  .map-card {
+    flex: 0 0 auto;
+    height: clamp(320px, 56vh, 620px);
+    min-height: 320px;
+  }
+  .map-toolbar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .map-toolbar-left,
+  .map-toolbar-right {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  /* ⑤ 底部热力带：纵向堆叠；卡身不再裁剪（桌面为了一屏放下限制了 176px 高）。 */
+  .heat-band {
+    flex-direction: column;
+    gap: 10px;
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .band-card,
+  .band-card.wide {
+    flex: 0 0 auto;
+    width: 100%;
+  }
+  .band-card .td-card-body {
+    max-height: none;
+    overflow: visible;
+  }
+
+  /* ⑥ 底部告警条：允许换行，不再用 nowrap + 省略号硬挤。 */
+  .alert-bar {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    margin-left: 12px;
+    margin-right: 12px;
+  }
+  .alert-left {
+    flex-wrap: wrap;
+    row-gap: 4px;
+    min-width: 0;
+  }
+  .alert-right {
+    margin-left: 0;
+  }
+}
+
+/* ---------- ≤1080：本单主验收尺寸（1080×1920 竖屏） ---------- */
+@media (max-width: 1080px) {
+  .kpi-bar {
+    margin: 8px 10px 8px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+  .stale-bar {
+    margin: 8px 10px 0;
+  }
+  /* 竖屏 1920 高时 56vh≈1075 会被 clamp 上限 620 截住；这里再降到 560，
+     让「地图 + 左栏列表 + 底部热力带」在竖屏首屏内更接近完整可见。 */
+  .map-card {
+    height: clamp(320px, 52vh, 560px);
+  }
+  .seg-card {
+    height: 400px;
+  }
+}
+
+/* ---------- ≤900：平板竖屏 / 手机横屏 ---------- */
+@media (max-width: 900px) {
+  /* KPI 4 格一行在 900 以下会把数字挤换行 —— 改 2×2。
+     odd 去掉左分隔线（每行首格），第 3/4 格补上分隔线。 */
+  .kpi-bar {
+    flex-wrap: wrap;
+  }
+  .kpi-cell {
+    flex: 1 1 50%;
+    max-width: 50%;
+    border-left: 1px solid var(--td-component-stroke);
+  }
+  .kpi-cell:nth-child(odd) {
+    border-left: none;
+  }
+  .kpi-cell:nth-child(n + 3) {
+    border-top: 1px solid var(--td-component-stroke);
+  }
+  .seg-card {
+    height: 380px;
+  }
+  .map-card {
+    height: clamp(320px, 52vh, 520px);
+  }
+}
+
+/* ---------- ≤768：手机横屏 / 小平板 ---------- */
+@media (max-width: 768px) {
+  .kpi-bar {
+    margin: 8px 10px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 10px;
+    margin-right: 10px;
+  }
+  .color-mode-bar {
+    margin-bottom: 8px;
+  }
+  .stale-bar {
+    margin: 8px 10px 0;
+  }
+  .kpi-cell {
+    padding: 8px 10px;
+  }
+  .kpi-value {
+    font-size: 19px;
+  }
+  .seg-card {
+    height: 340px;
+  }
+  .map-card {
+    height: clamp(320px, 52vh, 460px);
+  }
+  .map-toolbar {
+    padding: 7px 10px;
+  }
+  .map-caption {
+    padding: 5px 10px;
+  }
+  /* 告警摘要允许自然换行：手机宽度下 nowrap + 省略号会把「触发依据」整段吃掉。 */
+  .alert-summary {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
+/* ---------- ≤560：手机竖屏（390×844 等） ---------- */
+@media (max-width: 560px) {
+  .kpi-bar {
+    margin: 8px 8px;
+  }
+  .color-mode-bar,
+  .heat-band,
+  .alert-bar {
+    margin-left: 8px;
+    margin-right: 8px;
+  }
+  .stale-bar {
+    margin: 8px 8px 0;
+  }
+  .cm-note {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+  .kpi-cell {
+    padding: 7px 8px;
+  }
+  .kpi-label {
+    font-size: 11px;
+  }
+  .kpi-value {
+    font-size: 18px;
+  }
+  .kpi-unit {
+    margin-left: 3px;
+    font-size: 11px;
+  }
+  .kpi-sub {
+    font-size: 10px;
+  }
+  .seg-card {
+    height: 320px;
+  }
+  .map-card {
+    height: clamp(320px, 50vh, 440px);
+  }
+  .map-toolbar-left,
+  .map-toolbar-right {
+    gap: 6px;
+  }
+  .pack-switch-item {
+    padding: 3px 8px;
+  }
+  .map-caption {
+    font-size: 10px;
+    line-height: 1.5;
+  }
+  /* 右栏预测两列在 340px 宽内会挤成窄条 —— 小屏单列。 */
+  .pred-grid {
+    grid-template-columns: 1fr;
+  }
+  /* 方向 / 车道 的键列从固定 106px 收到 84px，值列允许换行到下一行。 */
+  .dir-kv {
+    flex-wrap: wrap;
+    gap: 2px 8px;
+  }
+  .dir-kv .k {
+    flex: 0 0 84px;
+  }
+  .dir-kv .v {
+    flex: 1 1 160px;
+  }
+  .route-item-head {
+    flex-wrap: wrap;
+  }
+  .route-meta {
+    gap: 4px 8px;
+  }
+  .trip-segs {
+    margin-left: 0;
+  }
+  .alert-title {
+    white-space: normal;
+  }
+  .alert-summary {
+    flex: 1 1 100%;
+  }
+  .alert-right {
+    flex-wrap: wrap;
+  }
+  .sec-head {
+    margin: 10px 0 5px;
+  }
+  .act-btn {
+    height: 36px;
+  }
+  .heat-band {
+    margin-bottom: 6px;
+  }
+}
+
+/* ---------- 矮屏桌面（1366×768 / 1280×720 投影）：纵向留白再压一档 ----------
+   与 Lead 的全局 @media (max-height:800px) 同断点，只管大屏页内部：
+   不改数据、不改文案，只压 KPI / 颜色模式条 / 地图工具条的内边距，
+   把省下的高度还给地图（目标：地图可视高度 ≥300px、左栏列表 ≥2~3 行）。 */
+@media (max-height: 800px) and (min-width: 1181px) {
+  .kpi-bar {
+    margin: 6px 12px 6px;
+  }
+  .kpi-cell {
+    padding: 6px 10px;
+  }
+  .kpi-label {
+    font-size: 11px;
+  }
+  .kpi-value {
+    margin-top: 2px;
+    font-size: 18px;
+  }
+  .kpi-sub {
+    margin-top: 2px;
+    font-size: 10px;
+  }
+  .color-mode-bar {
+    margin-bottom: 4px;
+    padding: 4px 8px;
+  }
+  .cm-title {
+    font-size: 11px;
+  }
+  .cm-item {
+    height: 22px;
+    padding: 0 10px;
+    font-size: 11px;
+  }
+  .cm-note {
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  /* 地图工具条回到单行：底图口径文案单行省略（完整文案仍在页脚口径条），
+     不再因为换行多吃一行高度。 */
+  .map-toolbar {
+    padding: 4px 10px;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+  .map-toolbar-left {
+    flex: 1 1 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .map-title {
+    white-space: nowrap;
+    flex: 0 0 auto;
+  }
+  .map-tag {
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .map-toolbar-right {
+    flex: 0 0 auto;
+  }
+  .map-caption {
+    padding: 4px 10px;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  /* 热力带卡身裁剪 176px → 150px（内容本身有内部滚动，不藏数据） */
+  .band-card .td-card-body {
+    max-height: 150px;
+  }
+  .heat-band {
+    margin-bottom: 6px;
+  }
+  .alert-bar {
+    padding: 6px 10px;
+  }
+  .alert-title {
+    font-size: 11px;
+  }
+  .alert-summary,
+  .alert-counts,
+  .alert-link {
+    font-size: 10.5px;
+  }
+  /* 左栏「选择监控」内部收紧，把高度让给下方路段列表（多出 1~2 行可见） */
+  .view-seg {
+    margin-bottom: 6px;
+  }
+  .dist-legend {
+    margin-top: 5px;
+    gap: 4px 10px;
+  }
+}
+
+/* ==========================================================================
+   全国视角：左右栏收起（Issue IKPFVN E1）
+   ==========================================================================
+   为什么用 CSS 把面板宽压到 0 + `!important`，而不是改 `colLeft/colRight`：
+   ElSplitter 把尺寸写在 panel 的**行内 style** 上（`flex-basis: 296px`），
+   且 `:min` 会把它钳住（220 / 280），改成 0 会被 elast 回去；只有带 !important 的
+   外部分类能稳定盖住行内值。宽度过渡 250 ms 与地图 `resize()` 配套（见 MapLibreViewer）。
+   ⚠️ 本区块放在**所有媒体查询之后**：≤1366 / ≤1180 那两个区块也用 !important 改面板尺寸，
+   同权重时按源顺序生效，放最后才能保证“全国视角一定收起”。 */
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-panel:first-child),
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-panel:last-child) {
+  flex: 0 0 0 !important;
+  width: 0 !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  opacity: 0;
+  transition: flex-basis 250ms ease, opacity 250ms ease;
+}
+/* 两条分隔条也不需要了：少了左右栏，留着就是两根拖不动的死横线 */
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-bar) {
+  display: none !important;
+}
+/* 中栏（地图）自己接住腾出来的宽度：ElSplitter 是按“总宽 - 两侧 size”把 px 写在中栏
+   行内 `flex-basis` 上的（实测：两侧压成 0 后中栏仍停在 876px，右侧留一大片空白）。
+   外部分类把它改成 flex:1，不依赖 ElSplitter 自己重算。 */
+.el-splitter.td-splitter.is-national :deep(> .el-splitter-panel:nth-child(3)) {
+  flex: 1 1 auto !important;
+  width: auto !important;
+  min-width: 0 !important;
+}
+
+/* 工具条上的「← 全国」小按钮：中性描边，不用品牌蓝（品牌蓝只给“当前 / 已选 / 可操作”） */
+.map-back-btn {
+  padding: 3px 10px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: #ffffff;
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.map-back-btn:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
 }
 </style>

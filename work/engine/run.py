@@ -534,12 +534,23 @@ def build_request(
 
     # 点位登记情况也进 why:查不到**不退回图节点 id**,而是在这里说清(Issue #94 第①条)。
     # 只在**终点确是落客/上客点**时才说 —— 终点是路口这类节点时本就没有落客点位,不该报"未登记"。
+    # IKP5C6:真网节点类型统一是 `intersection`,旧分支永不命中 → dropoff_point 静默 null。
+    # 这里补上"不是落客/上客点"的原因,并覆盖 D2 行程 / 送客点未登记两种空值来源。
     dst_type = str(graph.node(dst).get("type"))
     if dst_type == "pickup":
         detail = f";对应点位 {stop['point_id']}" if stop else ";上客点位未在站点包登记"
         notes.append("终点是上客点,不写进 arrival_route.dropoff_point" + detail)
     elif dst_type == "dropoff" and stop is None:
         notes.append(f"落客点位未在站点包登记({dst} 的相邻路段里查不到 type=dropoff 的点位)")
+    elif dst_type == "dropoff" and not is_dropoff_stop:
+        notes.append(
+            f"行程类型 {driver_type} 不是送客(D1),不把 {stop['point_id']} 写进 arrival_route.dropoff_point"
+        )
+    elif stop is None:
+        notes.append(
+            f"终点不是落客/上客点(节点 {dst} 的 type={dst_type}),"
+            "arrival_route.dropoff_point 按契约留空;点位表未登记该段点位"
+        )
 
     request["reservation"] = None
     request["quota"] = None
@@ -1608,6 +1619,16 @@ def _build_cooperative_request(
         notes.append("终点是上客点,不写进 arrival_route.dropoff_point" + detail)
     elif dst_type == "dropoff" and stop is None:
         notes.append(f"落客点位未在站点包登记({dst} 的相邻路段里查不到 type=dropoff 的点位)")
+    elif dst_type == "dropoff" and not is_dropoff_stop:
+        notes.append(
+            f"行程类型 {driver_type} 不是送客(D1),不把 {stop['point_id']} 写进 arrival_route.dropoff_point"
+        )
+    elif stop is None:
+        # IKP5C6:真网节点类型统一是 intersection,旧分支永不命中 → dropoff_point 静默 null。
+        notes.append(
+            f"终点不是落客/上客点(节点 {dst} 的 type={dst_type}),"
+            "arrival_route.dropoff_point 按契约留空;点位表未登记该段点位"
+        )
 
     quota: dict[str, int] = {}
     for candidate_index in range(len(candidates_list)):

@@ -5,18 +5,25 @@ import App from './App.vue'
 import { router } from './router'
 import { applyNetworkOverride, type DemoSegment } from './shared/demoNetwork'
 import { restoreSettings } from './shared/settings'
-import { activePack, restorePackKey, setActivePackKey } from './station-packs/index'
+import { readPackKeyFromUrl } from './shared/stationSwitch'
+import { activePack, restorePackKey, setActivePackKey, switchPack } from './station-packs/index'
 import 'element-plus/dist/index.css'
 import './style.css'
 
 // 站点包注入(**必须早于任何用到包的模块求值**):`.env.z` 里写 `VITE_STATION_PACK=Z`,
 // `vite --mode z` 起来就是肇庆东站 OSM 真路网。取不到则落默认包 Z
-// —— 本仓现有两个包:Z(61 段现行)/ Z21(旧 21 段对照,IKMDKY 子单①起)。
+// —— 本仓现有两个站包:Z(肇庆东 61 段现行)/ GZ(广州南 708 段,IKNB9F;Z21 过渡包已随 IKP5D3 删除)。
 // ⚠️ 先问 `restorePackKey`:顶栏线路图切换器选完会整页刷新,而包键是模块级变量、刷新即丢 ——
 //    不读回 localStorage 的话,切换器选完就退回默认包(等于坏的)。
 // ⚠️ 这个兜底必须与 `vite.config.ts` 注入 mock 的默认值**同为 Z**:只改一处就会出现
 //    「页面画 Z 的路网、mock 发另一个包的基线」的错位画面。
 setActivePackKey(restorePackKey(import.meta.env.VITE_STATION_PACK ?? 'Z'))
+
+// `?pack=GZ` 深链（Issue IKPFR4）：命中 `PACKS` 就以它为准，并顺手写回
+// `localStorage['hubflow.stationPack']`（`switchPack` 内部完成两件事）。
+// 坏键（`?pack=XX`）**不报错、不写盘**：直接落回上面 `restorePackKey` 的结果 ——
+// 未知包键放进来就是全站 404，守卫语义与 `switchPack` 的首行判断完全一致。
+switchPack(readPackKeyFromUrl() ?? '')
 
 // 全局设置（顶栏「设置」）：矢量底图开关。**必须早于地图组件挂载**读回，
 // 否则会先按默认值拉一次底图、再被设置改回来（白拉一次）。

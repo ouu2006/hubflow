@@ -157,18 +157,51 @@ export interface RecommendResult {
   /** 路线引用、但当前路段快照里没有的段号（不并入指标、不混算） */
   segments_not_in_snapshot?: string[]
   segments_in_snapshot?: number
+  /**
+   * 契约 v2.4 §十.3 的例外标记：只有一条候选通过重叠度约束时，引擎输出
+   * `no_alternative: true` + `no_alternative_reason`。接口层原样透传（缺省 = 未声明）。
+   * **只读展示字段，不新增 / 不改契约形状**；页面据此如实提示「备选不足」。
+   */
+  no_alternative?: boolean
+  no_alternative_reason?: string | null
   note?: string
 }
 
 /**
- * 地图路线高亮分组（Issue IKMF1W）。
+ * 地图路线高亮分组（Issue IKMF1W；Issue IKP5CK 扩展备选序号）。
  * - `arrival`  推荐路线：品牌蓝实线（「当前 / 已选」语义，不用等级色）
- * - `alternative` 备选路线：灰虚线（可多条同时画）
+ * - `alternative` 备选路线：按 `index` 分「备选 1 / 备选 2」两色 + 不同虚线节律
  * - `departure` 离站路线：紫色实线（第三种语义色，与等级色 / 品牌蓝分开）
+ *
+ * ⚠️ 这是**前端展示类型**（不是后端契约字段）：`index` 只用于地图配色分组，
+ * 不参与接口 / 判级 / 路线计算；不传时按「备选 1」处理（兼容旧调用）。
  */
 export interface RouteHighlight {
   kind: 'arrival' | 'alternative' | 'departure'
   segments: string[]
+  /** 仅 `alternative` 用：1 = 备选 1，2 = 备选 2（>2 一并按备选 2 的画法，不新增第五色） */
+  index?: number
+}
+
+/**
+ * 路线起点 / 终点的地图标注（Issue IKP5C6 追加；业主 2026-10-21 口径：
+ * 「那些大道最外面的路段就是起点，然后停车场落客点是终点」）。
+ *
+ * **前端展示类型**，不是契约字段：坐标由前端按站点包路段折线 + 落客点演示点推出，
+ * 只用于地图上的「起 / 终」标记与浮牌，不参与算路、不改 ETA。
+ */
+export interface RouteEndpointMarker {
+  kind: 'start' | 'end'
+  /** 浮牌标题：起点 / 终点（落客点） */
+  label: string
+  /** 所属路段 */
+  segment_id: string
+  /** 路段名（起点）或点位名（终点） */
+  name: string
+  lon: number
+  lat: number
+  /** 补充说明：外围边界断面 / 场内落客点 / 演示点等 */
+  note?: string
 }
 
 // ---------- 整条路线规划选项（Issue IKNAUI；非契约辅助端点 /route/options） ----------

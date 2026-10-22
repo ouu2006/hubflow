@@ -87,6 +87,43 @@ cd hubflow
 > **一期真正要先装好的是 SUMO**（见 [`work/twin/README.md`](work/twin/README.md)）：装好 SUMO、设好 `$SUMO_HOME`、能用 `netconvert` 把站点 OSM 转成 `.net.xml`、能跑通官方示例。
 > **视频感知链路的检测/跟踪模型与样本视频不进代码仓**（视频、`.ckpt` 权重、数据集一律放共享盘，见 [`docs/开发规范.md`](docs/开发规范.md) 第 4 节）。**注意**：样本视频是**真实拍摄的，但不是肇庆东站现场**，对外仍一律标"**演示数据（模拟）**"，**不得**说成"现场实测"。
 
+### 装上就能跑：装依赖 → 起后端 → 起前端（三条命令）
+
+> Issue IKP58M：干净机器 clone 下来，先按下面三条命令走，不会再出现 `ModuleNotFoundError: fastapi`
+> 或「页面全 502、以为项目坏了」。三个终端并列开，顺序：① → ② → ③。
+
+```bash
+# ① 装 Python 依赖（一次性；接口层 + 感知演示服务用到的第三方包都在 requirements.txt）
+python -m pip install -r requirements.txt
+
+# ② 起两个后端（各占一个终端）
+python work/assembly/traffic.py --port 8000     # 接口层 :8000（remote 模式必需）
+python work/perception/server.py --port 8101    # 感知演示服务 :8101（感知页视频用；不起时页面显示「未连接」）
+
+# ③ 起前端（终端 3）—— mock / remote 二选一
+cd work/frontend/ui-vue
+npm run dev:remote   # remote：/api 走 vite 代理到 traffic.py:8000（联调 / 验收）
+# npm run dev        # mock：/api 由 vite mock 中间件回答，不需要 traffic.py（无后端也能演示）
+```
+
+| 运行模式 | 启动命令 | `/api/traffic/*` 从哪来 | 要不要先起 `traffic.py` |
+|---|---|---|---|
+| **mock** | `npm run dev` | vite mock 中间件（`src/mock/`） | 不用 |
+| **remote** | `npm run dev:remote` | vite 代理 → `http://127.0.0.1:8000` | **要** |
+
+**端口策略（2026-10-21 定，Issue IKP58M）**：前端**固定 5173**，`vite.config.ts` 已开
+`strictPort: true` —— **5173 被占时 vite 直接启动失败并提示端口占用，不会静默顺延到 5174**；
+请先关掉占用进程再启动（Windows：`netstat -ano | findstr :5173` 找到 PID 后结束；
+Linux / macOS：`lsof -i :5173`）。后端 8000 / 8101 被占时同理，先释放再起。
+
+**起完先自检**：在仓库根跑 `python scripts/env_check.py` —— 探 8000 / 8101 / 5173，
+逐项打勾 / 打叉，**缺哪项直接打印该敲的命令**；退出码 `0` = 三项全通，非 0 = 有缺。
+只起前端（mock 模式）时它会对 8000 / 8101 打叉，这是预期行为。
+
+> **health 是运维端点，不是契约端点**：接口层另有 `GET /api/traffic/health`（恒 200，
+> 报数据源在场 / 回落），只用于排障，**不属于** [`docs/数据契约.md`](docs/数据契约.md) §七 的契约面，
+> 见 [`work/assembly/README.md`](work/assembly/README.md) 第二节。
+
 ## 协作方式
 
 只教四条命令，够用（**一条任务一条短分支**，合并后删除；**不再有常驻个人分支**）：

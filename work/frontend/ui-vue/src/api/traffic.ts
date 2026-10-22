@@ -35,9 +35,20 @@ import type {
 import { TRAFFIC_SNAPSHOT_EVENT, type TrafficSnapshotPing } from '../shared/traffic'
 import { request } from './http'
 
+/**
+ * 快照类只读取数的可选参数（Issue IKPFR4）：
+ *   · `signal` —— 切页 / 切站时中止在途请求（旧站的响应不该再回来落地）；
+ *   · `station` —— 把这次请求钉在某个站键上（两站常驻预热时替另一站取数）。
+ * 两个都不改变端点路径、请求头与响应形状。
+ */
+export interface SnapshotFetchOptions {
+  signal?: AbortSignal
+  station?: string
+}
+
 // GET /api/traffic/segments → segments 快照(契约 v2.0)
-export function getTrafficSegments(): Promise<SegmentsSnapshot> {
-  return request<SegmentsSnapshot>('GET', '/api/traffic/segments')
+export function getTrafficSegments(opts: SnapshotFetchOptions = {}): Promise<SegmentsSnapshot> {
+  return request<SegmentsSnapshot>('GET', '/api/traffic/segments', opts)
 }
 
 // GET /api/traffic/segments/{id} → 单路段详情(含 factors_applied / pred),形状与列表元素一致
@@ -46,8 +57,8 @@ export function getTrafficSegment(segmentId: string): Promise<SegmentRecord> {
 }
 
 // GET /api/traffic/vehicles → 孪生车辆位置(仅一期演示用,二期端点下线)
-export function getTrafficVehicles(): Promise<VehiclesSnapshot> {
-  return request<VehiclesSnapshot>('GET', '/api/traffic/vehicles')
+export function getTrafficVehicles(opts: SnapshotFetchOptions = {}): Promise<VehiclesSnapshot> {
+  return request<VehiclesSnapshot>('GET', '/api/traffic/vehicles', opts)
 }
 
 // POST /api/traffic/route/recommend → 推荐路线快照(引擎写入 routes.json,接口层只端出来)
@@ -59,6 +70,27 @@ export function postRouteRecommend(body: { session_id: string; location: { segme
 // 供大屏「整条路线规划」选择器；缺产物时接口层如实 404，页面按空窗 + note 降级（不编 ETA）。
 export function getTrafficRouteOptions(): Promise<RouteOptionsSnapshot> {
   return request<RouteOptionsSnapshot>('GET', '/api/traffic/route/options')
+}
+
+// POST /api/traffic/locate → 一期定位结果（Issue IKP5C6；非契约辅助端点，真接口才有）
+// 口径：接口层只端引擎产物 `requests[].location`（孪生真值直读），**不做地图匹配、不编定位**；
+// 页面据此显示“本次起点”的来源/置信度，并给使用者一个显式确认动作。
+export interface LocateResult {
+  segment_id: string | null
+  offset_m: number | null
+  match_confidence: number | null
+  /** 'twin' = 孪生真值；二期才是 'app_gnss'。缺省按 twin 解释（接口层已兜底） */
+  source: string
+  data_source: string
+  data_source_note: string
+  session_matched: boolean
+  requested_session_id: string | null
+  is_simulated: true
+  note: string
+}
+
+export function postTrafficLocate(body: { session_id?: string } = {}): Promise<LocateResult> {
+  return request<LocateResult>('POST', '/api/traffic/locate', { body })
 }
 
 // GET /api/traffic/stream(SSE,事件 traffic_snapshot)→ 轻量刷新事件;页面收到后重新拉快照。
@@ -106,13 +138,13 @@ export function postTrafficFactorReset(): Promise<{ reset: boolean; is_simulated
 // =====================================================================================
 
 // GET /api/traffic/meta → 站点 / 数据源 / 顶栏页签 / 口径角标
-export function getTrafficMeta(): Promise<TrafficMeta> {
-  return request<TrafficMeta>('GET', '/api/traffic/meta')
+export function getTrafficMeta(opts: SnapshotFetchOptions = {}): Promise<TrafficMeta> {
+  return request<TrafficMeta>('GET', '/api/traffic/meta', opts)
 }
 
 // GET /api/traffic/overview → 全网 KPI(均速与环比 / 最堵路段 / 在途与采纳率 / 生效因素数 / 等级分布)
-export function getTrafficOverview(): Promise<TrafficOverview> {
-  return request<TrafficOverview>('GET', '/api/traffic/overview')
+export function getTrafficOverview(opts: SnapshotFetchOptions = {}): Promise<TrafficOverview> {
+  return request<TrafficOverview>('GET', '/api/traffic/overview', opts)
 }
 
 // GET /api/traffic/network → 路网几何 + 断面(边界/内部) + 落客点 + 场区(地图底图)
@@ -121,13 +153,20 @@ export function getTrafficNetwork(): Promise<TrafficNetwork> {
 }
 
 // GET /api/traffic/segments/{id}/sources → 同一路段 video / twin 并排 + 差值(TC-19 展示侧)
-export function getTrafficSegmentSources(segmentId: string): Promise<SegmentSourcePair> {
-  return request<SegmentSourcePair>('GET', `/api/traffic/segments/${encodeURIComponent(segmentId)}/sources`)
+export function getTrafficSegmentSources(
+  segmentId: string,
+  opts: SnapshotFetchOptions = {},
+): Promise<SegmentSourcePair> {
+  return request<SegmentSourcePair>(
+    'GET',
+    `/api/traffic/segments/${encodeURIComponent(segmentId)}/sources`,
+    opts,
+  )
 }
 
 // GET /api/traffic/alerts → 告警列表(四态 + 指标依据 + 首次观测时间)
-export function getTrafficAlerts(): Promise<AlertsSnapshot> {
-  return request<AlertsSnapshot>('GET', '/api/traffic/alerts')
+export function getTrafficAlerts(opts: SnapshotFetchOptions = {}): Promise<AlertsSnapshot> {
+  return request<AlertsSnapshot>('GET', '/api/traffic/alerts', opts)
 }
 
 // POST /api/traffic/alerts/reset → 复位告警下发 / 回写演示态(mock 侧内存态;刷新页面不清,要清走这里)
@@ -154,27 +193,44 @@ export function getTrafficPredict(segmentId: string, h: 15 | 30 | 60): Promise<P
 }
 
 // GET /api/traffic/thresholds → 判级阈值 + CI 加权构成 + 变更留痕(只读,P1)
-export function getTrafficThresholds(): Promise<ThresholdSnapshot> {
-  return request<ThresholdSnapshot>('GET', '/api/traffic/thresholds')
+export function getTrafficThresholds(opts: SnapshotFetchOptions = {}): Promise<ThresholdSnapshot> {
+  return request<ThresholdSnapshot>('GET', '/api/traffic/thresholds', opts)
 }
 
 // GET /api/traffic/heat-matrix?window=&bucket= → 路段 × 时间热力矩阵(近 window 个桶)
-export function getTrafficHeatMatrix(buckets = 12, bucketSec = 60): Promise<HeatMatrix> {
-  return request<HeatMatrix>('GET', `/api/traffic/heat-matrix?window=${buckets}&bucket=${bucketSec}`)
+export function getTrafficHeatMatrix(
+  buckets = 12,
+  bucketSec = 60,
+  opts: SnapshotFetchOptions = {},
+): Promise<HeatMatrix> {
+  return request<HeatMatrix>(
+    'GET',
+    `/api/traffic/heat-matrix?window=${buckets}&bucket=${bucketSec}`,
+    opts,
+  )
 }
 
 // GET /api/traffic/ci-history?segment_id=&points=12 → 单路段 CI 走势
-export function getTrafficCiHistory(segmentId: string, points = 12): Promise<CiHistory> {
+export function getTrafficCiHistory(
+  segmentId: string,
+  points = 12,
+  opts: SnapshotFetchOptions = {},
+): Promise<CiHistory> {
   return request<CiHistory>(
     'GET',
     `/api/traffic/ci-history?segment_id=${encodeURIComponent(segmentId)}&points=${points}`,
+    opts,
   )
 }
 
 // GET /api/traffic/factors?segment_id= → 当前生效因素清单(可选按路段过滤)
-export function getTrafficFactors(segmentId?: string): Promise<{ ts: string; is_simulated: true; factors: (FactorApplied & { segment_id: string })[] }> {
+/** 生效因素清单。`segmentId` 省略 = 全网(各路段展平);`opts` 见 `SnapshotFetchOptions` */
+export function getTrafficFactors(
+  segmentId?: string,
+  opts: SnapshotFetchOptions = {},
+): Promise<{ ts: string; is_simulated: true; factors: (FactorApplied & { segment_id: string })[] }> {
   const q = segmentId ? `?segment_id=${encodeURIComponent(segmentId)}` : ''
-  return request('GET', `/api/traffic/factors${q}`)
+  return request('GET', `/api/traffic/factors${q}`, opts)
 }
 
 // GET /api/traffic/assimilation → 数据同化状态(含断面 role:仅 role=boundary 允许回灌)

@@ -15,7 +15,7 @@
 //     —— 当年是为了不让这一单的规则外溢到 A / B / Y 三个既有包（三者已随 IKM4KP / IKM4XX 删除）；
 //     将来加站仍按"上色策略由包声明"这条办。
 
-import { activePack } from '../station-packs/index.ts'
+import { activePack } from '../station-packs/index'
 import type { PackChannel, PackColorPolicy } from '../station-packs/types.ts'
 
 /** 画在图上的摄像头（只有带了坐标的通道才上图画） */

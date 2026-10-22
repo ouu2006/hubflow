@@ -1,0 +1,134 @@
+// 切站唯一入口（Issue IKPFR4）——顶栏「线路图切换器」与监控大屏工具条**共用这一支**。
+//
+// 为什么要有这个文件：切站此前是两处各写一遍 `switchPack(key)` + `window.location.reload()`，
+// 于是"换个站"= 重新下载整个文档、重建地图、重拉底图。现在改成**原地切站**，顺序不能乱，
+// 所以收成一个函数，两处入口都只调用它：
+//
+//   ① `switchPack(key)` —— 换包键、`version++`、通知订阅者（几何相关的 setup 快照据此重建）；
+//   ② `resetNetwork()` —— 路网几何按新包重建（地图只换 GeoJSON data，不重建 Map、不 setStyle）；
+//   ③ 站内状态**一律重置**（业主 2026-10-21 裁定：selectedId / hover / 路线 session /
+//      热力选中 / 深链选中 / 滚动到顶部，**不做**跨站恢复）+ 中止在途请求；
+//   ④ **缓存优先**：同步吃内存缓存渲染首屏（热缓存 ≤0.3 s 可见），无缓存才让页面走骨架屏；
+//   ⑤ 后台立刻补拉一次（不等 SSE 的下一个 2 s tick）；
+//   ⑥ 同步 URL `?pack=`（深链可分享、刷新后仍停在该站）。
+//
+// ⚠️ 这里**不重建地图实例、不 setStyle**：底图瓦片是跨站可复用的公共资源，重建一次就是
+//    几 MB 重新下载 + 一次白屏 —— 那正是本单要消灭的。
+//
+// ⚠️ 非大屏页面（决策层 / 感知层）没有注册 hook：它们的快照在 setup 期取，走"同路由重挂载"
+//    兜底（`stationRemountKey`，见 `App.vue`）—— 组件重新 setup、数据按新包重取，
+//    但**不重新请求文档**，也不算整页刷新。
+import { ref } from 'vue';
+import { PACKS, activePackKey, switchPack } from '../station-packs/index';
+import { resetNetwork } from './demoNetwork';
+import { readStationCache, schedulePrewarm } from './stationCache';
+/** URL 上的站键参数名（深链 `#/dashboard?pack=GZ`） */
+export const PACK_QUERY_KEY = 'pack';
+/**
+ * IKPFVN 新增的等价参数：`?station=Z|GZ`。
+ *
+ * 为什么两个都留：`pack=` 是 IKPFR4 已有的深链 / 自动化在用的形式，`station=` 是业主口径
+ * “指定当前站”的自然说法。两者**语义完全相同**（都是“当前站是哪个”），读的时候两个都认，
+ * 写的时候两个都写同一个值 —— 这样既不会出现“一个说 Z、一个说 GZ”的打架，也不必让旧的
+ * 深链失效。
+ */
+export const STATION_QUERY_KEY = 'station';
+/** 从一组查询参数里取站键（`station=` 优先，回退 `pack=`；不合法就 null） */
+function packKeyFromParams(params) {
+    for (const name of [STATION_QUERY_KEY, PACK_QUERY_KEY]) {
+        const value = params.get(name);
+        if (value && PACKS[value])
+            return value;
+    }
+    return null;
+}
+let hooks = null;
+/**
+ * 注册 / 注销页面钩子。返回注销函数，组件 `onUnmounted` 必须调用 ——
+ * 否则切页后旧组件的钩子还挂着，切站会往一个已经卸载的页面里写数据。
+ */
+export function bindStationSwitch(next) {
+    hooks = next;
+    return () => {
+        if (hooks === next)
+            hooks = null;
+    };
+}
+/**
+ * 没有注册钩子的页面（决策层 / 感知层）的兜底：让 `App.vue` 的 `<router-view>` 换 key，
+ * 组件重新 setup（数据按新包重取），但**不重新请求文档**、不重下底图。
+ */
+export const stationRemountKey = ref(0);
+/** 从当前 URL 读 `?pack=`（hash 路由下参数在 hash 里；也兼容真实的 search 段） */
+export function readPackKeyFromUrl() {
+    if (typeof window === 'undefined')
+        return null;
+    const fromSearch = packKeyFromParams(new URLSearchParams(window.location.search));
+    if (fromSearch)
+        return fromSearch;
+    const hash = window.location.hash || '';
+    const q = hash.indexOf('?');
+    if (q < 0)
+        return null;
+    return packKeyFromParams(new URLSearchParams(hash.slice(q + 1)));
+}
+/**
+ * 把当前站键写回 URL（hash 路由：`#/dashboard?segment=…&pack=GZ`）。
+ * 用 `history.replaceState` 而不是 `router.push`：URL 要跟着变，但**不该触发一次路由跳转**
+ * （那会把页面组件重建一遍，等于把刚省下来的刷新又加回去）。
+ */
+export function syncPackUrl(key) {
+    if (typeof window === 'undefined')
+        return;
+    try {
+        const url = new URL(window.location.href);
+        const rawHash = url.hash || '#/dashboard';
+        const hashBody = rawHash.replace(/^#/, '');
+        const q = hashBody.indexOf('?');
+        const path = q < 0 ? hashBody : hashBody.slice(0, q);
+        const params = new URLSearchParams(q < 0 ? '' : hashBody.slice(q + 1));
+        if (params.get(PACK_QUERY_KEY) === key && params.get(STATION_QUERY_KEY) === key)
+            return;
+        // 两个参数写成同一个值（见 STATION_QUERY_KEY 的注释：同一语义，两个名字都留着）
+        params.set(PACK_QUERY_KEY, key);
+        params.set(STATION_QUERY_KEY, key);
+        url.hash = `#${path}?${params.toString()}`;
+        window.history.replaceState(window.history.state, '', url.toString());
+    }
+    catch {
+        /* 地址栏不可写（内嵌 WebView 等）：不影响切站本身，只是深链不更新 */
+    }
+}
+/**
+ * 换站（唯一入口）。
+ *
+ * 返回值：`true` = 真的换了；`false` = 键不合法或与当前站相同（重复点同一个站不重跑一遍流程）。
+ */
+export function switchStation(key) {
+    if (!PACKS[key])
+        return false;
+    const prev = activePackKey();
+    if (key === prev)
+        return false;
+    // ① 换包并广播：订阅者（地图 / 面板）只更新自己的响应式 ref，真正的重绘在下一个微任务
+    switchPack(key);
+    // ② 路网几何按新包重建。放在广播之后：`switchPack` 的通知只改 ref，Vue 的 watch 在微任务里才跑，
+    //    等它跑到时几何已经是新包的了（`demoNetwork.ensureInit` 还会按包键自校验，双保险）
+    resetNetwork();
+    if (hooks) {
+        // ③ 站内状态一律重置（含中止在途请求）→ ④ 缓存优先渲染 → ⑤ 后台补拉
+        hooks.resetStationState();
+        const snapshot = readStationCache(key);
+        hooks.applyCachedSnapshot(snapshot);
+        hooks.refresh();
+    }
+    else {
+        // 非大屏页面：同路由重挂载兜底（组件重新 setup，按新包重取数据；不重新请求文档）
+        stationRemountKey.value += 1;
+    }
+    // ⑥ URL 深链同步
+    syncPackUrl(key);
+    // ⑦ 站在新站上，顺手把其余站的缓存补齐（空闲时；失败静默）
+    schedulePrewarm();
+    return true;
+}

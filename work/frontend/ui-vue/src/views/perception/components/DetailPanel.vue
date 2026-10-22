@@ -322,4 +322,38 @@ const gateState = computed(() => {
   font-size: 12px;
   color: var(--td-text-color-primary);
 }
+
+/* ---------- 响应式（Issue IKP3EV） ---------- */
+/* ≤1180：右栏改为整宽后详情卡自然高度（不再靠栏内滚动）；
+   卡头 / 分隔行（长标签 + 右侧标）允许折行，避免顶出横向滚动。 */
+@media (max-width: 1180px) {
+  .td-card-head,
+  .d-head,
+  .sep {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .td-card-head .td-head-tag,
+  .sep .td-head-tag {
+    margin-left: 0;
+  }
+}
+/* ≤768：键值行与说明文案可折行；数值列不换行以免错行 */
+@media (max-width: 768px) {
+  .kv {
+    flex-wrap: wrap;
+    row-gap: 1px;
+  }
+  .kv .v {
+    overflow-wrap: anywhere;
+  }
+  .td-table .num {
+    white-space: nowrap;
+  }
+  .note,
+  .gate-line,
+  .d-sub {
+    overflow-wrap: anywhere;
+  }
+}
 </style>

@@ -45,7 +45,14 @@ export default defineConfig(({ mode }) => {
   const proxy = { ...perceptionProxy, ...twinProxy, ...trafficProxy }
 
   // dev:z 起在独立端口:6895(与默认 5173 并存,同一个包 Z 可开两份对照着看)
-  const server = { proxy, port: Number(env.VITE_DEV_PORT) || 5173 }
+  // 端口策略（Issue IKP58M）：前端固定 5173（或 VITE_DEV_PORT 显式指定），strictPort 打开后
+  // 端口被占**直接启动失败并提示**，不会静默顺延到 5174 —— README 全篇写的是 5173，
+  // 顺延会让「照文档打开」变成打开另一个空端口，反而像项目坏了。
+  const server = {
+    proxy,
+    port: Number(env.VITE_DEV_PORT) || 5173,
+    strictPort: true,
+  }
 
   return {
     plugins: [

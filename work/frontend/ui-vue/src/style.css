@@ -446,3 +446,348 @@ body {
 .td-video-dim {
   color: #9e9e9e;
 }
+
+/* ============================================================================
+   响应式断点(Issue IKP3EV,2026-10-20)
+   目标:**1080×1920 及以下的屏幕可用**(含 1080 宽竖屏、1024×768、768×1024、
+   390×844 手机),同时 **1920×1080 桌面视觉一条不改**。
+
+   断点(一律 max-width,由宽到窄逐级覆盖):
+     ≤1366  小笔记本:压缩横向留白 / 卡片内边距,三栏结构不变
+     ≤1180  三栏页转**单列 + 整页纵向滚动**(壳体把高度放开,页面各自转单列)
+     ≤1080  本单主目标:顶栏换行(页签独占一行可横滑),完整单列可用
+     ≤900   平板竖屏 / 手机横屏:隐藏品牌副题、压缩页头
+     ≤768   手机横屏 / 小平板:快照时间让位、表格内部横向滚动、触摸目标加大
+     ≤560   手机竖屏:进一步压缩字号与留白
+   另有 max-height 低高度压缩(≤800 / ≤700,仅 ≥1181 桌面,投影 / 小笔记本用)。
+
+   纪律:① 桌面规则一条不动,窄屏规则全部集中在本区块;
+         ② 页面内部栏目的固定宽 / 固定高由各页 scoped style 的同断点规则接管;
+         ③ 不隐藏任何数据,只调整排布(快照时间在页头 / 页脚仍有)。
+   ============================================================================ */
+
+/* ---- ≤1366:小笔记本,压缩留白(结构不变) ---- */
+@media (max-width: 1366px) {
+  .td-top {
+    gap: 10px;
+    padding: 0 12px;
+  }
+  .td-brand-sub {
+    padding-left: 8px;
+    font-size: 11px;
+    display: none;
+  }
+  /* 1181~1366 顶栏仍是单行:不隐藏副题也不换行时,页签/控件会被压得「竖排字」。
+     这里隐藏副题(非数据) + 锁住不换行,给右侧控件腾宽度;≤1180 再整体换行。 */
+  .td-tab {
+    white-space: nowrap;
+  }
+  .td-top-right {
+    flex-wrap: nowrap;
+  }
+  .td-head {
+    gap: 12px;
+    padding: 10px 12px 8px;
+  }
+  .td-body {
+    padding: 0 12px 10px;
+  }
+  .td-foot {
+    gap: 12px;
+    padding: 0 12px 8px;
+  }
+  .td-card-head {
+    padding: 8px 10px;
+  }
+  .td-card-body {
+    padding: 8px 10px;
+  }
+}
+
+/* ---- ≤1180:三栏页统一转单列,整页纵向滚动 ----
+   为什么同时放开 html/body/#app:.td-page 原本是 height:100% + 内部滚动,
+   窄屏单列后内容高度远超一屏,必须交给文档滚动,否则栏内会出现「嵌套滚动」。
+   页面自己的固定栏宽(.col-left 等)由各页 scoped 同断点规则再覆盖宽 100%。 */
+@media (max-width: 1180px) {
+  html,
+  body {
+    height: auto;
+    min-height: 100%;
+  }
+  #app {
+    height: auto;
+    min-height: 100vh;
+  }
+  .td-page {
+    height: auto;
+    min-height: 100vh;
+  }
+  .td-body {
+    flex: 0 0 auto;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    overflow: visible;
+  }
+  /* 所有页面的栏目统一降为「整宽、自然高、不裁剪」;页面内的固定宽靠本规则!
+     important 压过各页 `.col-*{flex:0 0 236px}` 之类的 scoped 规则。 */
+  .td-body .td-col {
+    flex: 0 0 auto !important;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    overflow: visible;
+  }
+  .td-head {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .td-head-right {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  .td-foot {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+  .td-foot .right {
+    margin-left: 0;
+  }
+  /* 顶栏在 ≤1180 就换行(不是等到 ≤1080):1181~1366 靠隐藏副题 + nowrap 保持单行,
+     一旦到 1180 以下单行一定放不下,提前换行避免被挤成竖排字。 */
+  .td-top {
+    flex-wrap: wrap;
+    height: auto;
+    flex: 0 0 auto;
+    min-height: 48px;
+    gap: 6px 12px;
+    padding: 6px 12px;
+  }
+  .td-tabs {
+    order: 3;
+    flex: 0 0 100%;
+    height: 34px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    border-top: 1px solid var(--td-component-stroke);
+    scrollbar-width: none;
+  }
+  .td-tabs::-webkit-scrollbar {
+    display: none;
+  }
+  .td-tab {
+    padding: 0 10px;
+    white-space: nowrap;
+  }
+  .td-top-right {
+    flex: 1 1 320px;
+    margin-left: auto;
+    flex-wrap: wrap;
+    row-gap: 6px;
+    justify-content: flex-end;
+  }
+  .td-brand {
+    flex: 0 1 auto;
+    min-width: 0;
+  }
+}
+
+/* ---- ≤1080:本单主目标(1080 宽竖屏) ----
+   顶栏换行已在 ≤1180 生效;这里只收页面留白。 */
+@media (max-width: 1080px) {
+  .td-head-title {
+    font-size: 15px;
+  }
+  .td-body {
+    gap: 8px;
+  }
+}
+
+/* ---- ≤900:平板竖屏 / 手机横屏 ---- */
+@media (max-width: 900px) {
+  .td-top {
+    padding: 6px 10px;
+  }
+  .td-brand-sub {
+    display: none;
+  }
+  .td-top-right {
+    gap: 6px;
+  }
+  .td-head {
+    padding: 9px 10px 7px;
+  }
+  .td-foot {
+    gap: 4px 10px;
+    padding: 0 10px 8px;
+  }
+}
+
+/* ---- ≤768:手机横屏 / 小平板 ----
+   · 页面级防横向滚动兜底(真正的溢出源仍要各自修);
+   · 表格不再撑破页面:卡片正文自己横向滚动,表头 nowrap 时列宽由内容决定;
+   · 触摸目标:按钮 / 列表行 / 分段项加高到 28~32px。 */
+@media (max-width: 768px) {
+  html {
+    overflow-x: hidden;
+  }
+  .td-body {
+    padding: 0 10px 10px;
+  }
+  /* 顶栏快照时间让位:页头与页脚同样有快照时间,不算丢信息 */
+  .td-top-right > .td-mono {
+    display: none;
+  }
+  .td-head {
+    gap: 8px;
+    padding: 9px 10px 7px;
+  }
+  .td-head-right {
+    gap: 8px;
+  }
+  .td-card-head {
+    padding: 8px 10px;
+  }
+  .td-card-body {
+    padding: 8px 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .td-table {
+    font-size: 11.5px;
+  }
+  .td-btn {
+    height: 32px;
+    padding: 0 13px;
+  }
+  .td-btn.sm {
+    height: 28px;
+    padding: 0 10px;
+  }
+  .td-row {
+    padding: 9px 12px;
+  }
+  .td-seg-item {
+    padding: 5px 10px;
+  }
+  .td-foot {
+    gap: 3px 10px;
+    padding: 0 10px 8px;
+    font-size: 10.5px;
+  }
+}
+
+/* ---- ≤560:手机竖屏 ---- */
+@media (max-width: 560px) {
+  #app {
+    font-size: 12.5px;
+  }
+  .td-brand {
+    font-size: 14px;
+  }
+  .td-logo {
+    width: 18px;
+    height: 18px;
+  }
+  .td-tabs {
+    flex: 0 0 100%;
+    height: 32px;
+  }
+  .td-tab {
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  .td-top-right {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+  .td-head {
+    padding: 8px 8px 6px;
+  }
+  .td-head-right {
+    margin-left: 0;
+    width: 100%;
+  }
+  .td-body {
+    gap: 8px;
+    padding: 0 8px 8px;
+  }
+  .td-card-head {
+    padding: 7px 8px;
+    font-size: 12px;
+  }
+  .td-card-body {
+    padding: 7px 8px;
+  }
+  .td-row {
+    padding: 9px 8px;
+  }
+  .td-foot {
+    padding: 0 8px 8px;
+    font-size: 10px;
+  }
+  .td-badge-demo,
+  .td-badge-warn {
+    padding: 2px 6px;
+    font-size: 10px;
+  }
+}
+
+/* ---- 低高度桌面(投影 / 1366×768 小笔记本):压缩纵向留白,不藏数据 ---- */
+@media (max-height: 800px) and (min-width: 1181px) {
+  .td-top {
+    height: 44px;
+    flex-basis: 44px;
+  }
+  .td-head {
+    padding: 8px 16px 6px;
+  }
+  .td-foot {
+    padding-bottom: 6px;
+  }
+  .td-card-head {
+    padding: 7px 12px;
+  }
+  .td-card-body {
+    padding: 8px 12px;
+  }
+}
+@media (max-height: 700px) and (min-width: 1181px) {
+  .td-head-sub {
+    display: none;
+  }
+}
+
+/* ---- 低高度桌面(≤1000px 高)的感知页:整页滚动 ----
+   感知页在 td-body 之外还有 EnvContextBar(上)与 DataSupplyPanel(下);
+   三栏 100% 高 + 页面锁一屏时,中间栏会被压扁、监控墙被裁且无滚动条。
+   低高度下改成整页文档滚动(栏目高度自然,由 PerceptionView 的 scoped 规则接管);
+   1920×1080(1080 > 1000)不受影响。 */
+@media (max-height: 1000px) and (min-width: 1181px) {
+  .td-page.p-perception {
+    height: auto;
+    min-height: 100vh;
+  }
+  .td-page.p-perception > .td-main {
+    flex: 0 0 auto;
+  }
+}
+
+/* ---- 触屏(手机 / 平板):加大可点区域;桌面鼠标不受影响 ---- */
+@media (hover: none) and (pointer: coarse) {
+  .td-btn {
+    min-height: 34px;
+  }
+  .td-btn.sm {
+    min-height: 32px;
+  }
+  .td-row {
+    padding: 10px 12px;
+  }
+  .td-seg-item {
+    padding: 7px 12px;
+  }
+  .td-chip {
+    padding: 4px 8px;
+  }
+}
