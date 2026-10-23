@@ -1474,13 +1474,19 @@ cd ../../.. && python scripts/doc_gate.py         # 8/8
 - **看哪个站** = 站点包键（`activePackKey()`），切站只有一个入口 `shared/stationSwitch.ts` 的 `switchStation()`（§二十四）。
 - **看多远** = `mapScope: 'national' | 'station'`，由 `DashboardView` 持有、传给 `MapLibreViewer` 的 `mapMode` prop（⚠️ 与「四级 / 指数」那个 `mode` prop 不是一回事）。
 
-镜头运动全在 `src/shared/mapMotion.ts`：`MOTION`（缩远 700 / 平移 550 / 放大 950 ms）、`CHINA_BBOX`、`overviewCamera()` / `stationCamera(key)` / `stationPadding()` / `flyToStation()` / `flyToOverview()` / `cancelMotion()`。
+镜头运动全在 `src/shared/mapMotion.ts`：`MOTION`（**缩远+平移 620 / 放大+平移 850 ms**，放大段按跨档数再加时）、`CHINA_BBOX`、`overviewCamera()` / `stationCamera(key)` / `stationPadding()` / `transitCamera()` / `flyToStation()` / `flyToOverview()` / `cancelMotion()`。
+
+> **2026-10-23 口径改版（业主）**：「缩放不用这么夸张，不用上升到全国的，缩放到能看见两个站点就可以了，缩放和移动是同步进行的，一边缩放一边移动」。据此把原来的「缩远 → **停在 5.5 平移** → 放大」三段并成两段，且每段都是 `center` 与 `zoom` 一起插值（见 §25.3）。
 
 ### 25.3 镜头状态机与「只有一个动画在跑」
 
 ```text
-national --(选站)--> leaving --(缩远到 ≤5.5)--> panning --(平移)--> entering --(放大 + 路网淡入)--> station
+national --(选站)--> entering --(放大 + 平移同帧进行 + 路网淡入)--> station
+station  --(点另一站)--> leaving --(缩远到「两站同框」+ 平移同帧进行)--> entering --(落进目标站)--> station
 ```
+
+两段都是**缩放与平移同时进行**：`easeTo({center, zoom})` 与 `fitBounds()` 本身就同时插值 center/zoom，没有任何一段是「固定缩放下只平移」。
+**缩远多少不再写死**：`transitCamera()` 用「当前相机中心 + 目标站站区框」的合并包围盒现算（`cameraForBounds` + 对称留白），得到的就是「两站刚好同框」那一档 —— 实测 Z↔GZ 约 **9.9 档**（旧版固定 5.5，等于先飞一趟省域/半个中国再飞回来）；从全国进站则**根本不缩**（起点 3.3 已更远），直接一趟放大。
 
 `flyToStation()` 用 `easeTo` + `fitBounds` 链，**不用 `setInterval` 逐帧改 center**（Vue 不参与逐帧渲染）。模块级 `runSeq` 保证单通道：每次发起 `++runSeq; map.stop()`，每一步 `await waitMoveEnd()` 后校验代次，代次变了立刻返回 `cancelled` 且后续步骤一步都不跑 —— 于是 T1/T2/T3 任意时刻点另一站，都是从**当前相机**重开，最终状态必然等于**最后点的那个站**（连点不叠加、不排队）。
 
@@ -1503,7 +1509,7 @@ national --(选站)--> leaving --(缩远到 ≤5.5)--> panning --(平移)--> ent
 ### 25.5 切站时序（信息不串站）
 
 1. **选站**（pin / 全国浮层卡片 / 工具条按钮 / 顶栏切换器，全部走 `pickStation()` → `switchStation()`）：站内状态一律重置、在途请求中止、`arriving = true`（数据先挂住不上屏）。
-2. **镜头**：`national → leaving → panning → entering → station`；左右栏在全国模式收起（250 ms 宽度过渡），到站前 `map.resize()` 再 `fitBounds`（否则宽高还是旧的，取景会偏）。
+2. **镜头**：`national → entering → station`（进站）/ `station → leaving → entering → station`（切站）；左右栏在全国模式收起（250 ms 宽度过渡）。取景前 `resizeMap()` 会**等容器宽高连续两帧不变**（上限 500 ms）再 `resize()` + `fitBounds` —— 只等一帧不够：切口令后 `fitBounds` 会落在宽度过渡中途（实测读到 1194 px、最终 1886 px），落点会偏（`← 全国` 实测偏东约 24°，中国被挤到画面左侧）。
 3. **到站**（地图 `emit('arrived')`）；`refresh()` 拿到的响应 `await whenArrived()` 之后才提交面板；缓存快照同样先挂在 `pending`，到站后一次铺上。**4 s 兜底**：动画异常时不至于让数据永远不落地。
 4. **路线**：`route/recommend` 返回后淡入。失败 → 镜头仍到站区，面板如实「本次未取到 + 重试」，**不回退成上一站数据**。
 
@@ -1535,7 +1541,7 @@ python work/frontend/tools/gen_china_outline.py --check      # 兜底轮廓产�
 python scripts/doc_gate.py                                   # 8/8
 ```
 
-浏览器侧看四件事：① 首屏 `data-map-mode="national"` 且 `map.getZoom()` 在 3–6；② 点站后连续几帧能看到「缩远到 ≤5.5 → 平移 → 放大到 ≥14」；③ 到站后 `querySourceFeatures` 里的路线段号全属于该站（Z 全 `SZ-` / GZ 全 `GZ-`）；④ 断网屏蔽 `tiles.openfreemap.org` 后仍有中国轮廓 + 两站 pin + 提示。
+浏览器侧看四件事：① 首屏 `data-map-mode="national"` 且 `map.getZoom()` 在 3–6；② 点站后连续几帧能看到「缩远与平移同时进行 → 放大到 ≥14」，且切站时的**最远一档不超过「两站同框」那一档**（Z↔GZ 实测 ≈9.9，旧版是 5.5）；③ 到站后 `querySourceFeatures` 里的路线段号全属于该站（Z 全 `SZ-` / GZ 全 `GZ-`）；④ 断网屏蔽 `tiles.openfreemap.org` 后仍有中国轮廓 + 两站 pin + 提示。
 
 ---
 

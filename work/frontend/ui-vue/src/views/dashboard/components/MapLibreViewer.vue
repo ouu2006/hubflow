@@ -1145,7 +1145,8 @@ function lineLayerSpecs(): LineLayerSpecification[] {
 /**
  * 镜头状态（由 `shared/mapMotion.ts` 的状态机驱动）。本组件**只读它**来决定图层显隐：
  *   `national`                 → 站点 pin 层可见，路网 / 路线层隐藏
- *   `leaving` / `panning` / `entering`（过渡中）→ 与全国同（pin 可见、路网隐藏）
+ *   `leaving` / `entering`（过渡中）→ 与全国同（pin 可见、路网隐藏）
+ *   （2026-10-23 起没有 `panning`：缩远与平移合成一段，见 mapMotion.ts 文件头）
  *   `station`                  → 反过来
  */
 const motionPhase = ref<MotionPhase>(props.mapMode === 'station' ? 'station' : 'national')
@@ -1393,7 +1394,7 @@ function setLayerVisible(map: MapLibreMap, id: string, visible: boolean): void {
 /**
  * **三态图层开关的唯一一处**（全国 / 过渡中 / 站区）：
  *
- * | 图层族                    | national | leaving·panning·entering | station |
+ * | 图层族                    | national | leaving·entering（过渡中）| station |
  * |---------------------------|----------|--------------------------|---------|
  * | 路网 / 热力 / 选中 / 路线 |  隐藏    |          隐藏            |  可见   |
  * | 方向标记                  |  隐藏    |          隐藏            | 按开关  |
@@ -1468,12 +1469,35 @@ function stationPaddingNow(map: MapLibreMap): CameraPadding {
   })
 }
 
-/** 先量准容器尺寸再取景：左右栏刚滑入时宽高还是旧的，直接 fitBounds 会偏（IKPFVN E1） */
+/**
+ * 先量准容器尺寸再取景：左右栏刚滑入时宽高还是旧的，直接 fitBounds 会偏（IKPFVN E1）。
+ *
+ * ⚠️ 2026-10-23 补：光等一帧不够，必须等**宽度真的稳定**。全国 ⇄ 站区切换时左右栏是 250 ms 的
+ * 宽度过渡，容器宽度在这段时间里一直在变。以前"缩远那一段"恰好占掉 700 ms，等 `fitBounds` 时
+ * 布局早就稳了，所以没人发现这个漏口；现在把缩远并进一段之后，`fitBounds` 会落在过渡中途
+ * （实测读到 1194 px，最终 1886 px），结果是 `← 全国` 落地后中心偏东约 24°（中国被挤到画面左侧）。
+ * 这里等到"连续两帧宽高都不变"（上限 500 ms）再 resize 一次，取景就按最终尺寸算。
+ */
 async function resizeMap(map: MapLibreMap): Promise<void> {
   map.resize()
-  await new Promise<void>((resolve) => {
-    window.requestAnimationFrame(() => resolve())
-  })
+  const el = map.getContainer()
+  const started = performance.now()
+  let stableRounds = 0
+  let lastW = el.clientWidth
+  let lastH = el.clientHeight
+  while (stableRounds < 2 && performance.now() - started < 500) {
+    await new Promise<void>((resolve) => {
+      window.requestAnimationFrame(() => resolve())
+    })
+    const w = el.clientWidth
+    const h = el.clientHeight
+    if (w === lastW && h === lastH) stableRounds++
+    else {
+      stableRounds = 0
+      lastW = w
+      lastH = h
+    }
+  }
   map.resize()
 }
 
@@ -1501,12 +1525,33 @@ function fitOverviewInstant(map: MapLibreMap): void {
 }
 
 /**
+ * 快门标志：`flyToStation()` / `flyToOverview()` 正在跑。
+ *
+ * 为什么需要（2026-10-23 实测）：容器尺寸变化 / 底图换样式会触发**无动画**的"补算取景"
+ * （`syncCamera(false)` → `fitStationInstant`）。补算不经过 `runSeq`，所以它不会被 `map.stop()`
+ * 打断 —— 一旦在动画途中发生，就是**把相机一帧顶到终点**，动画直接看不见了
+ * （实测：全国 → 点站的 1.35 s 转场被压成 0 ms 的硬切）。所以动画在跑时拒收无动画补算；
+ * 补算本来只是"尺寸变了重算一次取景"，动画落点会自己把尺寸算准，跳过它不会留错。
+ */
+let cameraAnimating = false
+
+/**
  * 镜头同步（唯一入口）：按 `mapMode` 决定落到全国还是落进某个站。
- * `animated=false` 只用于“不能有动画”的场合（起手建图、换完底图样式后）。
+ * `animated=false` 只用于"不能有动画"的场合（起手建图、换完底图样式后、容器尺寸变化后的补算）。
  */
 async function syncCamera(animated: boolean): Promise<void> {
   const map = mapRef.value
   if (!map || !ready.value || disposed) return
+  if (!animated && cameraAnimating) return
+  if (animated) cameraAnimating = true
+  try {
+    await runCameraSync(map, animated)
+  } finally {
+    if (animated) cameraAnimating = false
+  }
+}
+
+async function runCameraSync(map: MapLibreMap, animated: boolean): Promise<void> {
   if (props.mapMode === 'station') {
     const key = activePackKey()
     if (!animated || !stationCamera(key)) {
@@ -1609,7 +1654,7 @@ function watchContainerSize(map: MapLibreMap): void {
   if (!el || typeof ResizeObserver === 'undefined') return
   resizeObserver?.disconnect()
   resizeObserver = new ResizeObserver(() => {
-    // ① 飞行途中（leaving / panning / entering）不插手
+    // ① 飞行途中（leaving / entering）不插手
     if (motionPhase.value !== 'national' && motionPhase.value !== 'station') return
     window.clearTimeout(resizeTimer)
     resizeTimer = window.setTimeout(() => {
@@ -1950,7 +1995,7 @@ function dropBasemap(map: MapLibreMap): void {
  * 换完底图样式后补一次取景（IKPFVN）。
  *
  * ⚠️ 只在**停住**的时候补（`national` / `station`）。`setStyle` 本身会保留相机，所以
- * 飞行途中（leaving / panning / entering）**根本不需要**补：那里补一次 `syncCamera(false)`
+ * 飞行途中（leaving / entering）**根本不需要**补：那里补一次 `syncCamera(false)`
  * 等于把正在跑的镜头按下去、把 `motionPhase` 强置成 `station` 并提前 `emit('arrived')`
  * —— 表现就是"路网在半空显形、页面数据提前放行"（PR !77 独立审查发现的漏口）。
  */

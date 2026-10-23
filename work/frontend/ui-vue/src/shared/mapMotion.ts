@@ -1,11 +1,21 @@
 // 全国视角 ↔ 站区视角的**镜头运动**（Issue IKPFVN）。
 //
 // 业主 2026-10-21 原话口径：「切换高铁站要有动作展示：地图缩小 → 移动到对应高铁站 →
-// 放大 → 路线显示、信息切换」。所以这里的正事是三件：
-//   ① 把"缩远 / 平移 / 放大"三段时长、中国范围、站区取景**收在这一处**，别散在组件里；
+// 放大 → 路线显示、信息切换」。
+//
+// ⚠️ 2026-10-23 业主改口径：「缩放不用这么夸张，不用上升到全国的，缩放到能看见两个站点就可以了，
+// 缩放和移动是同步进行的，一边缩放一边移动」。据此把"三段"并成"两段"，且**每一段都是缩放+平移同时做**：
+//   · 缩远的上限不再写死 `panZoom = 5.5`（那是省域尺度，两站相隔 67 km 时两个 pin 只差约 30 px，
+//     等于先飞一趟全国再飞回来），改为按「我现在在哪 + 目标站站区」的合并包围盒现算（`transitCamera()`）；
+//   · "停在低缩放下平移"那一段取消 —— 平移不再独占一段时间，`easeTo`/`fitBounds` 的 center+zoom
+//     本来就一起插值；
+//   · 站 → 全国的中间段同样取消：目标就是全国，没必要先在 5.5 停一下。
+//
+// 这里剩下的正事是三件：
+//   ① 把时长、中国范围、站区取景、中间视野**收在这一处**，别散在组件里；
 //   ② 提供**唯一一条**动画通道：任何时刻只允许一个进行中的运动，新选择先 `map.stop()` 再从当前
 //      相机重新开始 —— 不排队、不叠加（连点两个站时，最终必须停在**最后点的那一站**）；
-//   ③ 尊重 `prefers-reduced-motion`：那种设置下不要"缩远再放大"这种花活，≤250 ms 直接到站区，
+//   ③ 尊重 `prefers-reduced-motion`：那种设置下不做"缩远再放大"这种花活，≤250 ms 直接到站区，
 //      但**信息仍然正确**（到站、换站名、换路网这件事一样不少）。
 //
 // 为什么不用 `setInterval` 逐帧改 center：那会自己造一条"假动画"通道，与 MapLibre 内部的
@@ -18,28 +28,32 @@ import type { Map as MapLibreMap } from 'maplibre-gl'
 import { PACKS, STATIONS } from '../station-packs/index'
 
 /**
- * 三段动作的时长（ms）——**集中在这里调**，不要在调用方再写魔法数字。
+ * 两段动作的时长（ms）——**集中在这里调**，不要在调用方再写魔法数字。
  *
- * 取值理由：缩远 700 是"先让人看清自己离开了哪"；平移 550 略快，因为在低缩放下移动距离
- * 短、画面变化小；放大 950 收尾最慢，让最后落点看得清。三段合计约 2.2 s，比一次硬切
- * 有仪式感，又不至于让人等。
+ * 业主 2026-10-23 口径改版：「缩放不用这么夸张，不用上升到全国的，缩放到能看见两个站点
+ * 就可以了，缩放和移动是同步进行的，一边缩放一边移动」。所以：
+ *   · 原来那套「缩远 700 → 停在 5.5 平移 550 → 放大 950」（共 2.2 s）拆掉了 ——
+ *     中间那一档 5.5 是"省域/半个中国"的尺度，两站相距 67 km 时两个 pin 只隔约 30 px，
+ *     等于为了换站先飞一趟全国，然后又飞回来，观感很夸张；
+ *   · 现在只有两段，**每一段都是 center 与 zoom 一起变**（`easeTo` / `fitBounds` 本来就同时插值）：
+ *     ① 离开当前站：缩远到「当前所在位置 + 目标站」刚好同框（缩到多少由 `transitCamera()` 现算，
+ *        不是写死的常数），同时平移到两站之间；
+ *     ② 落进目标站：`fitBounds` 一边放大一边移到站区。
+ *
+ * 时长不再给"远距离跳变"买单：`zoomInMs` 会按"要跨几档"再补一点（见 `enterMs()`），
+ * 全国 → 点站那种一脚跨 10 档的路径不会被 0.85 s 硬拽过去。
  */
 export const MOTION = {
-  /** ① 缩远：从当前视野退到中间缩放 */
-  zoomOutMs: 700,
-  /** ② 平移：在中间缩放下移到目标站 */
-  panMs: 550,
-  /** ③ 放大：落进站区取景 */
-  zoomInMs: 950,
-  /** 退回全国视角（「← 全国」按钮）的总时长 */
-  overviewMs: 900,
+  /** ① 缩远 + 平移（同时进行）：退到"两站同框" */
+  transitMs: 620,
+  /** ② 放大 + 平移（同时进行）：落进站区取景；跨的档数多时 `enterMs()` 会再加时 */
+  zoomInMs: 850,
+  /** 放大段的额外时长上限（每跨 1 档加 45 ms，最多加这么多） */
+  zoomInExtraMaxMs: 500,
+  /** 退回全国视角（「← 全国」按钮）：同样是一次 center+zoom 同时变 */
+  overviewMs: 1100,
   /** `prefers-reduced-motion: reduce` 下的总时长（必须 ≤250 ms，见文件头第 ③ 条） */
   reducedMs: 200,
-  /**
-   * 平移时的中间缩放。取 5.5（约"省域"尺度）：Z（肇庆东）与 GZ（广州南）相距约 100 km，
-   * 在这个尺度下两站都在一屏里，"从哪来、到哪去"看得出来；再大就只剩两个点。
-   */
-  panZoom: 5.5,
   /** 站区取景的最大缩放：太小看不清段，太大底图瓦片会糊 */
   fitMaxZoom: 17.5,
 } as const
@@ -90,8 +104,14 @@ export function clampOverviewZoom(map: MapLibreMap): void {
   }
 }
 
-/** 镜头状态机的五个状态（`national` 与 `station` 是"停住"的两端） */
-export type MotionPhase = 'national' | 'leaving' | 'panning' | 'entering' | 'station'
+/**
+ * 镜头状态机的四个状态（`national` 与 `station` 是"停住"的两端）。
+ *
+ * ⚠️ 2026-10-23 起没有 `panning` 了：原来"缩远 → **停在固定档位平移** → 放大"是三个动作，
+ * 现在只有两段，且每段都同时改 center 与 zoom（业主口径「缩放和移动是同步进行的」）。
+ * 过渡期统一算 `leaving`（离开当前站，缩远+平移）与 `entering`（落进目标站，放大+平移）。
+ */
+export type MotionPhase = 'national' | 'leaving' | 'entering' | 'station'
 
 export interface MotionResult {
   /** 落点站键；`null` = 落到全国视角 */
@@ -225,6 +245,64 @@ export function overviewPadding(v: MotionViewport): CameraPadding {
   return { top: edge, right: edge, bottom: edge + 8, left: edge }
 }
 
+/**
+ * 切站中间视野的留白：对称、小。
+ *
+ * 为什么不用 `stationPadding()`（那一份要扣图例宽，左边界最多扣掉 36%）：中间视野只存在半秒，
+ * 目的是"让人看见从哪来、到哪去"，也不需要给图例让位 —— 扣图例反而会把两站挤在右半边。
+ */
+export function transitPadding(): CameraPadding {
+  const edge = MOTION_MARGIN_PX + 24
+  return { top: edge, right: edge, bottom: edge + 16, left: edge }
+}
+
+/**
+ * 切站时**缩远只缩到这里**：让「我现在所在的位置」和「目标站的站区」刚好同框。
+ *
+ * 业主 2026-10-23 口径：「缩放不用这么夸张，不用上升到全国的，缩放到能看见两个站点就可以了」。
+ * 所以中间档不再写死（旧值 `panZoom = 5.5` 是省域尺度 —— Z 与 GZ 相距 67 km 时两个 pin
+ * 只隔约 30 px，等于先飞一趟全国再飞回来），改成按**当前相机中心 + 目标站站区框**的合并包围盒
+ * 现算：`cameraForBounds()` 给出的就是"这两样东西刚好装进容器（扣掉留白）"的那一档。
+ *
+ * 举例（1920×1080、中栏 1240×530）：全国 → GZ 时当前中心在华中，算出来约 5.6 档；
+ * 而 GZ → Z 这种"站到站"算出来约 10.3 档（旧版是 5.5，缩得远远超出"看见两站"的需要）。
+ *
+ * 返回 `null` = 不需要中间视野：目标站几何取不到，或当前中心已经落在目标站框里（就地起跳）。
+ */
+export function transitCamera(
+  map: MapLibreMap,
+  key: string,
+  padding: CameraPadding = transitPadding(),
+): { center: [number, number]; zoom: number } | null {
+  const target = stationCamera(key)
+  if (!target) return null
+  const here = map.getCenter()
+  const sw: [number, number] = [
+    Math.min(here.lng, target.bounds.sw[0]),
+    Math.min(here.lat, target.bounds.sw[1]),
+  ]
+  const ne: [number, number] = [
+    Math.max(here.lng, target.bounds.ne[0]),
+    Math.max(here.lat, target.bounds.ne[1]),
+  ]
+  // 已经和目标站几乎重合（重复点同一站）：没有再缩远的必要，直接走"落进站区"
+  if (Math.max(ne[0] - sw[0], ne[1] - sw[1]) < 1e-6) return null
+  const cam = map.cameraForBounds([sw, ne], { padding, maxZoom: MOTION.fitMaxZoom })
+  // MapLibre 的返回类型里 `zoom` 是可选的（理论上可能只给 center）：拿不到就不做中间视野
+  if (!cam || typeof cam.zoom !== 'number') return null
+  return { center: cam.center as [number, number], zoom: cam.zoom }
+}
+
+/**
+ * 「落进站区」那一段的时长：跨的档数越多给得越长，避免一脚跨 10 档被 0.85 s 硬拽过去。
+ * 只对**放大**加时（缩小的观感本身不刺眼），且封顶 `zoomInExtraMaxMs`。
+ */
+export function enterMs(fromZoom: number, toZoom: number): number {
+  const levels = Math.max(0, toZoom - fromZoom)
+  const extra = Math.min(MOTION.zoomInExtraMaxMs, Math.round(levels * 45))
+  return MOTION.zoomInMs + extra
+}
+
 // ---------------------------------------------------------------- 动画通道（只允许一条）
 
 /**
@@ -275,7 +353,13 @@ const cancelled = (key: string | null, phase: MotionPhase): MotionResult => ({
 })
 
 /**
- * 飞到某个站（缩远 → 平移 → 放大）。
+ * 飞到某个站：**两段，每段都是"缩放 + 平移"同时进行**。
+ *
+ * 业主 2026-10-23 口径：「缩放不用这么夸张，不用上升到全国的，缩放到能看见两个站点就可以了，
+ * 缩放和移动是同步进行的，一边缩放一边移动」。对应两处改动：
+ *   ① 缩远的上限不再写死 5.5，而是"当前所在位置 + 目标站"刚好同框（`transitCamera()` 现算）；
+ *   ② 原来"停在低缩放下平移"那一段取消 —— 平移与缩放合到同一段里，靠 `easeTo`（center+zoom
+ *      一起插值）和 `fitBounds`（本身就是 center+zoom）实现，不再有"定着不动只平移"的画面。
  *
  * 打断语义：任何时刻点另一站，从**当前相机**重新开始（`map.stop()` 保留当下的 center/zoom），
  * 最终状态一定等于最后点击的那一站。
@@ -308,39 +392,48 @@ export async function flyToStation(
     return run === runSeq ? { key, phase: 'station', cancelled: false } : cancelled(key, 'station')
   }
 
-  // ① 缩远。已经在中间缩放下（刚点「← 全国」又点回来）就跳过这一跳，
-  //    否则会先"放大"到 5.5 再平移 —— 与业主口径的"缩小 → 移动 → 放大"相反。
-  const from = map.getZoom()
-  if (from > MOTION.panZoom + 0.15) {
+  // ① 离开当前站：缩远 **与** 平移一起做，且只缩到"两站同框"。
+  //    `transitCamera()` 返回 null = 没必要缩（已经在目标站框里 / 取不到站区几何）——
+  //    此时也不做"平移"，直接进 ②：`fitBounds` 同样是一边缩放一边移动。
+  const transit = transitCamera(map, key)
+  if (transit && map.getZoom() > transit.zoom + 0.2) {
     opts.onPhase?.('leaving')
-    map.easeTo({ zoom: MOTION.panZoom, duration: MOTION.zoomOutMs, essential: true })
-    if (!(await waitMoveEnd(map, MOTION.zoomOutMs, run))) return cancelled(key, 'leaving')
+    map.easeTo({
+      center: transit.center,
+      zoom: transit.zoom,
+      duration: MOTION.transitMs,
+      essential: true,
+    })
+    if (!(await waitMoveEnd(map, MOTION.transitMs, run))) return cancelled(key, 'leaving')
   }
 
-  // ② 在低缩放下平移到目标站（中心取站区锚点，而不是取景框中心：落点更符合"到站"的直觉）
-  opts.onPhase?.('panning')
-  map.easeTo({ center: cam.center, zoom: MOTION.panZoom, duration: MOTION.panMs, essential: true })
-  if (!(await waitMoveEnd(map, MOTION.panMs, run))) return cancelled(key, 'panning')
-
-  // ③ 放大落进站区。`beforeFit` 里组件会先 `map.resize()` —— 左右栏刚滑入，
-  //    resize 之前量到的宽高是旧的，直接 fitBounds 会取偏。
+  // ② 落进站区：`beforeFit` 里组件先 `map.resize()` —— 左右栏刚滑入，resize 之前量到的宽高是旧的，
+  //    直接 fitBounds 会取偏。`fitBounds` 本身就是 center+zoom 同时变，不需要再拆成两步。
+  const padding = resolvePadding(opts.padding)
+  const target = map.cameraForBounds([cam.bounds.sw, cam.bounds.ne], {
+    padding,
+    maxZoom: cam.maxZoom,
+  })
+  const duration = enterMs(map.getZoom(), target?.zoom ?? map.getZoom())
   opts.onPhase?.('entering')
   await opts.beforeFit?.()
   if (run !== runSeq) return cancelled(key, 'entering')
   map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
-    padding: resolvePadding(opts.padding),
+    padding,
     maxZoom: cam.maxZoom,
-    duration: MOTION.zoomInMs,
+    duration,
     essential: true,
   })
-  if (!(await waitMoveEnd(map, MOTION.zoomInMs, run))) return cancelled(key, 'entering')
+  if (!(await waitMoveEnd(map, duration, run))) return cancelled(key, 'entering')
   return { key, phase: 'station', cancelled: false }
 }
 
 /**
  * 退回全国视角（「← 全国」按钮 / 首次进站后返回）。
  *
- * 只有两步：先缩远（把站区展开成省域，避免"一下子飞没"），再 `fitBounds` 到中国范围。
+ * 一次运动：`fitBounds` 到中国范围，center 与 zoom 同时插值。
+ * 2026-10-23 起去掉了"先缩远到 5.5 停一下"的中间段 —— 那一段既不多看到什么，
+ * 又让整趟从 1.6 s 变成 2 段；业主口径是「缩放和移动同步进行」，这里直接一趟走完。
  * 与 `flyToStation` 共用同一个代次，所以"飞到一半点全国"同样是"打断 + 从当前相机重开"。
  */
 export async function flyToOverview(map: MapLibreMap, opts: MotionOptions): Promise<MotionResult> {
@@ -363,11 +456,6 @@ export async function flyToOverview(map: MapLibreMap, opts: MotionOptions): Prom
     return { key: null, phase: 'national', cancelled: false }
   }
 
-  if (map.getZoom() > MOTION.panZoom + 0.15) {
-    opts.onPhase?.('leaving')
-    map.easeTo({ zoom: MOTION.panZoom, duration: MOTION.zoomOutMs, essential: true })
-    if (!(await waitMoveEnd(map, MOTION.zoomOutMs, run))) return cancelled(null, 'leaving')
-  }
   opts.onPhase?.('entering')
   await opts.beforeFit?.()
   if (run !== runSeq) return cancelled(null, 'entering')
