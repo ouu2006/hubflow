@@ -11,7 +11,7 @@
 // **IKMS1T(2026-10-18)去固定 6 路**:通道条数 N 随登记表动态(0 ≤ N ≤ 路段数,默认每段最多 1 路;
 // 0 路合法),本文件不再假设"永远 6 路",页面按 `activePack().channels` 的长度渲染。
 import type { Detection, PerceptionDetections, PerceptionStreamMeta } from '../../../api/perception'
-import { activePack } from '../../../station-packs/index.ts'
+import { activePack } from '../../../station-packs/index'
 import { CLASS_COLORS, type VehicleClassKey } from '../../../shared/theme'
 
 /** 通道目录(与设计稿 04 一致;`source` 与感知服务 stream_id 对齐) */

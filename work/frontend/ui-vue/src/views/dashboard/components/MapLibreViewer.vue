@@ -78,7 +78,9 @@ import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   basemapEnabled,
   directionsVisible,
+  legendVisible,
   routeEmphasisEnabled,
+  setLegendVisible,
 } from '../../../shared/settings'
 import {
   activePack,
@@ -381,6 +383,16 @@ let inflightCtrl: AbortController | null = null
  */
 const net = shallowRef<DemoSegment[]>(DEMO_NETWORK.segments)
 
+/** 按**当前站点包**现取一份几何（不依赖 `DEMO_NETWORK` 的惰性缓存，见 `applyPackChange`） */
+function segmentsFromPack(): DemoSegment[] {
+  return activePack().segments.map((s) => ({
+    segment_id: s.segment_id,
+    name: s.name,
+    kind: s.kind,
+    coords: s.coords.map((c) => [c[0], c[1]] as [number, number]),
+  }))
+}
+
 /**
  * 包键代号：切站时 +1。所有"读 activePack() 的 computed / 一次性快照"都靠它刷新。
  * 注意 `packVersion()` 是模块级**数字**，不是 Vue 的 ref —— 所以这里自己建一个 ref 订阅。
@@ -457,8 +469,21 @@ function colorOf(seg: DemoSegment): string {
   return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
 }
 
-/** 热力晕染强度（仅拥堵版指数视图且 ci 可用；流量版不用 CI 热力，按色阶直读） */
+/** 热力晕染强度（**仅拥堵版指数视图**且 ci 可用；流量版、四级视图一律 0 = 不画）。
+ *
+ * ⚠️ 四级视图必须返 0（业主 2026-10-20 口径：「每个道路都要颜色，然后周围还有往外衍生的一圈
+ * 淡淡的颜色，把那个去掉」）。四级色本身已经把等级说清楚了，26 px 的半透明同色宽带只是往两边
+ * 漫出去的雾。
+ *
+ * ⚠️ 影响面如实记（独立审查 P2 实测）：heat 只在**摄像头覆盖段**上非零，量级是
+ * GZ 708 段里 6 段（6 路摄像头）、Z 61 段里 6 段 —— 不是「每段都给 0.1–0.6」，
+ * 25 条也不是「几百条晕染互叠」。所以这一项修的是**局部路口那圈橙绿雾**，
+ * 不是「满图一坨」的主因（满图那坨主要是方向箭头，业主 2026-10-22 明确推迟）。
+ * `LAYER_HEAT` 的注释从第一版起就写着「四级视图 heat 恒 0」，此前 `heatOf()` 少了这一条判断，
+ * 属于代码与注释不一致，这里补齐。
+ */
 function heatOf(seg: DemoSegment): number {
+  if (!isIndex.value) return 0
   if (isFlow.value) return 0
   if (!isCameraCovered(seg.segment_id)) return 0
   const rec = segById.value.get(seg.segment_id)
@@ -701,6 +726,119 @@ const widthExpr = (main: number, ramp: number): ExpressionSpecification => [
   ['case', ['==', ['get', 'covered'], false], 0.55, 1],
 ]
 
+/**
+ * 路网三层的**基准线宽**（主 / 支两档，单位屏幕像素，取值对应 `fitZoom` 档）。
+ * 缩远时由 `applyLineScale()` 按档位整体折算 —— 这里只放基准值，别再散落魔法数字。
+ */
+const LINE_W_CASING: readonly [number, number] = [11, 9]
+const LINE_W_HEAT: readonly [number, number] = [26, 22]
+const LINE_W_LINE: readonly [number, number] = [5.5, 4.5]
+
+/**
+ * 默认视野（取景后）的 zoom。`fitZoom` 之后才知道，所以先给 14 兜底，
+ * 由 `fitStationInstant()` / `fitOverviewInstant()` 在 `fitBounds()` 之后写回。
+ *
+ * 为什么不能写死：Z 站演示范围 500 m、GZ 站 1000 m，两站默认档本来就不同。
+ */
+let fitZoom = 14
+
+/**
+ * 线宽随缩放的系数（业主 2026-10-20 定版口径）：
+ *   - **`fitZoom` 及更近（放大）→ 恒为 1**，默认视野观感一点不动；
+ *   - **比默认视野更远 → 每降 1 档减半**（`2^-d`）。
+ *
+ * 为什么必须是 `2^-d`（等比）而不是随手拍一条缓曲线：
+ * `line-width` / `line-opacity` 的单位是**屏幕像素**，缩放时不变，而路网在屏幕上的
+ * **跨度**按 `2^-d` 缩、**面积**按 `4^-d` 缩。线宽若不跟着缩，同样的线在更小的地盘上
+ * 重叠 → 覆盖率按 `2^d` 爆，缩 2 档就是 ×4、3 档 ×8，于是「糊成一片、外面像包了层色」。
+ * 线宽严格按 `2^-d` 收，覆盖率才保持不变，缩多小都是同一张图的等比缩小版。
+ *
+ * 下限 0.15：再小下去主线不足 1 px、会被抗锯齿吃成虚影，反而不如留一根细线。
+ */
+function lineScaleOf(zoom: number): number {
+  const d = fitZoom - zoom // 比默认视野缩远了多少档（负数 = 放大）
+  if (d <= 0) return 1
+  return Math.max(0.15, Math.pow(2, -d))
+}
+
+/**
+ * 热力晕染的**额外淡出**系数：线宽已经按 `2^-d` 收过一遍，但热力是同色半透明宽带，
+ * 相邻段叠在一起仍会加深（0.1–0.6 的 opacity 叠两三层就到 0.8+）。
+ * 所以热力在「又缩」之外再按 `2^(-0.8d)` 单独压一道 —— 缩 2 档约 0.33、3 档触底 0.25。
+ *
+ * ⚠️ 下限 0.25，**不能归零**：业主明确「这个颜色不能完全去掉」，热力是拥挤指数视图的
+ * 主要读图线索，远景也要能看出哪里红。
+ */
+function heatFadeOf(zoom: number): number {
+  const d = fitZoom - zoom
+  if (d <= 0) return 1
+  return Math.max(0.25, Math.pow(2, -d * 0.8))
+}
+
+/** 上一次贴上去的线宽系数（避免每帧重建表达式；`force` 用于换样式后强制重贴） */
+let lastLineScale = -1
+
+/**
+ * 把当前缩放档折算成线宽 / 热力透明度贴回图层（`move` 事件里逐帧调）。
+ *
+ * 三层的线宽表达式与 `lineLayerSpecs()` 里的**结构保持一致**（含「凸显路线」压灰那两支），
+ * 否则一旦开启路线凸显，压灰段会突然变回粗线。
+ *
+ * `force = true` 的两个时机：① `fitZoom` 刚被取景函数改写；
+ * ② `setStyle()` 之后 —— 样式一换，paint 属性全部回到 `lineLayerSpecs()` 的基准值，
+ * 不强制重贴就会「底图加载完成那一刻线宽突然变粗」。
+ */
+function applyLineScale(map: MapLibreMap, force = false): void {
+  if (!map.getLayer(LAYER_CASING)) return
+  const zoom = map.getZoom()
+  const s = lineScaleOf(zoom)
+  if (!force && Math.abs(s - lastLineScale) < 0.004) return
+  lastLineScale = s
+  map.setPaintProperty(
+    LAYER_CASING,
+    'line-width',
+    ['case', ['==', ['get', 'emphasis_gray'], true], 3.5 * s,
+      widthExpr(LINE_W_CASING[0] * s, LINE_W_CASING[1] * s)],
+  )
+  // 逐层判存在：本函数会在 `load` / 取景 / 换样式多个时机被调，此时三层未必都挂好了；
+  // 少判一层就会 `setPaintProperty` 抛错，把调用方（可能是镜头状态机）整段打断，
+  // 表现是「路网一直不显示、图钉却在」（图钉是 DOM Marker，不依赖图层）。
+  if (map.getLayer(LAYER_HEAT)) {
+    map.setPaintProperty(LAYER_HEAT, 'line-width', widthExpr(LINE_W_HEAT[0] * s, LINE_W_HEAT[1] * s))
+    map.setPaintProperty(LAYER_HEAT, 'line-opacity', ['*', ['get', 'heat'], heatFadeOf(zoom)])
+  }
+  if (map.getLayer(LAYER_LINE)) {
+    map.setPaintProperty(
+      LAYER_LINE,
+      'line-width',
+      ['case', ['==', ['get', 'emphasis_gray'], true], 2 * s,
+        widthExpr(LINE_W_LINE[0] * s, LINE_W_LINE[1] * s)],
+    )
+  }
+}
+
+/**
+ * 记下「当前视角的默认档」，并立刻按它重算一遍线宽 / 热力 / 图钉系数。
+ *
+ * ⚠️ 三个调用面，少一个就会让整单失效（独立审查 P0）：
+ *   ① `fitStationInstant()` / `fitOverviewInstant()` —— 无动画取景；
+ *   ② `syncCamera()` 里 `await flyToStation()` / `await flyToOverview()` 之后 ——
+ *      **这条才是「全国 → 点站」的主路径**（快链 `?station=` 也走它）。`flyToStation()`
+ *      内部 `fitBounds` 走的是动画版，**不经过 ①② 的 instant 版**，所以这里不补写，
+ *      `fitZoom` 会一直停在首屏全国那一档（≈3）：站内 `d = fitZoom - zoom` 恒为负，
+ *      `lineScaleOf / heatFadeOf / camPinScaleOf` 全部恒等 1，业主反馈的「缩远糊成一片」
+ *      在最常用的一条路上**一点没改**。
+ *   ③ `applyViewState()`（换底图样式后）—— 只重贴 paint，不动 `fitZoom`。
+ *
+ * 取的是取景**之后**的实测 zoom，不能写死：Z 站演示范围 500 m、GZ 站 1000 m，
+ * 两站 `fitBounds` 落到的档位本来就不同。
+ */
+function commitFitZoom(map: MapLibreMap): void {
+  fitZoom = map.getZoom()
+  applyLineScale(map, true)
+  applyCameraPinScale(map, true)
+}
+
 function selectedFilter(): FilterSpecification {
   return ['==', ['get', 'segment_id'], props.selectedId ?? '']
 }
@@ -777,7 +915,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
           'case',
           ['==', ['get', 'emphasis_gray'], true],
           3.5,
-          widthExpr(11, 9),
+          widthExpr(LINE_W_CASING[0], LINE_W_CASING[1]),
         ],
       },
     },
@@ -789,7 +927,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': ['get', 'color'],
-        'line-width': widthExpr(26, 22),
+        'line-width': widthExpr(LINE_W_HEAT[0], LINE_W_HEAT[1]),
         'line-opacity': ['get', 'heat'],
       },
     },
@@ -810,7 +948,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
           'case',
           ['==', ['get', 'emphasis_gray'], true],
           2,
-          widthExpr(5.5, 4.5),
+          widthExpr(LINE_W_LINE[0], LINE_W_LINE[1]),
         ],
         'line-opacity': [
           'case',
@@ -1270,6 +1408,8 @@ function fitStationInstant(map: MapLibreMap, key: string): void {
     maxZoom: cam.maxZoom,
     duration: 0,
   })
+  // 记下这一站的默认档：线宽 / 热力 / 图钉的缩放基准都相对它算（两站范围不同，不能写死）
+  commitFitZoom(map)
 }
 
 function fitOverviewInstant(map: MapLibreMap): void {
@@ -1280,6 +1420,7 @@ function fitOverviewInstant(map: MapLibreMap): void {
   })
   // 容器偏矮时 `fitBounds` 会把中国算到 2 档（大陆变成中间一小块）——按判定的下界抬到 3 档
   clampOverviewZoom(map)
+  commitFitZoom(map)
 }
 
 /**
@@ -1313,6 +1454,8 @@ async function syncCamera(animated: boolean): Promise<void> {
     if (result.cancelled) return
     motionPhase.value = 'station'
     applyModeLayers(map)
+    // 动画落站后补写 `fitZoom`：这是「全国 → 点站」的主路径，缺这一句整单的缩放逻辑全部落空
+    commitFitZoom(map)
     emit('arrived')
     return
   }
@@ -1336,6 +1479,8 @@ async function syncCamera(animated: boolean): Promise<void> {
   if (result.cancelled) return
   motionPhase.value = 'national'
   applyModeLayers(map)
+  // 同上：动画退回全国后 `fitZoom` 要跟着变成全国档，否则站区档位残留
+  commitFitZoom(map)
 }
 
 /**
@@ -1413,21 +1558,44 @@ let camMarkers: Marker[] = []
 /** 被悬停的摄像头（浮牌钉在图钉上方，与路段浮牌区分） */
 const pin = ref<CameraPin | null>(null)
 
-/**
- * 图例是否展开（Issue IKP3EV）。≤1180 单列后地图整行变宽，整幅图例会盖住路网主体，
- * 所以窄屏把图例收进可折叠浮层；手机/平板默认收起（地图优先），>1180 该状态不参与样式。
- */
-const legendOpen = ref(!(typeof window !== 'undefined' && window.matchMedia('(max-width: 1180px)').matches))
+/** 窄屏专用：跨断点复位（Issue IKP3EV），与桌面全局开关互不干扰。必须在 legendOpen 之前声明。 */
+const narrowLegendOpen = ref(
+  !(typeof window !== 'undefined' && window.matchMedia('(max-width: 1180px)').matches),
+)
 
 /**
- * 跨断点复位图例开合（Issue IKP3EV 独立审查整改）：上面只在 setup 求值一次，
+ * 图例是否展开。两套口径合并（Issue IKP3EV + 业主 2026-10-19 追加）：
+ *   · **窄屏（≤1180）**：单列后地图整行变宽，整幅图例会盖住路网主体 → 默认收起（地图优先），
+ *     跨断点自动复位（见下方 `legendMq`）；
+ *   · **桌面（>1180）**：原本常开、没法收；业主反馈图例压住路网后，改为读全局
+ *     `legendVisible`（顶栏「设置」与地图工具条的「图例」键共用同一个状态，落 localStorage）。
+ *
+ * 统一到本组件的一个 computed，是为了让 `legendWidth`（取景留白要用它）只认一个来源。
+ */
+const legendOpen = computed<boolean>(() => {
+  if (props.mapMode !== 'station') return legendVisible.value
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1180px)').matches) {
+    return narrowLegendOpen.value
+  }
+  return legendVisible.value
+})
+
+function toggleLegend(): void {
+  if (typeof window !== 'undefined' && window.matchMedia('(max-width: 1180px)').matches) {
+    narrowLegendOpen.value = !narrowLegendOpen.value
+    return
+  }
+  setLegendVisible(!legendVisible.value)
+}
+
+/**
+ * 跨断点复位图例开合（Issue IKP3EV 独立审查整改）：窄屏 ref 只在 setup 求值一次，
  * 桌面加载后再把窗口缩到 ≤1180，图例仍保持展开、会盖住地图（需刷新才复位）。
- * 监听 1180 断点：跨入窄屏默认收起（地图优先），跨回桌面默认展开。
- * 用户手动点开/收起的状态在同一个断点区间内不受影响。
+ * 监听 1180 断点：跨入窄屏默认收起（地图优先），跨回桌面交还全局开关。
  */
 const legendMq = typeof window !== 'undefined' ? window.matchMedia('(max-width: 1180px)') : null
 function onLegendMqChange(e: MediaQueryListEvent): void {
-  legendOpen.value = !e.matches
+  narrowLegendOpen.value = !e.matches
 }
 onMounted(() => legendMq?.addEventListener('change', onLegendMqChange))
 onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
@@ -1441,8 +1609,67 @@ onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
  * 实心 = 源台账有**样本视频源**（演示，非本站现场）、空心 = 源台账无独立视频源（画面为演示复用）——
  * "有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
  */
+/**
+ * 摄像头图钉随缩放收缩（业主 2026-10-20 口径「缩小地图后还是挤在一起」）。
+ *
+ * 为什么必须单独处理：`addCameraPins()` 用 `new Marker({ element })` 造的是 **DOM 元素**，
+ * 屏幕像素恒定、**天然不随 zoom 缩**；缩远后路网只剩几十像素，20 px 的图钉却还是 20 px。
+ * 方向箭头是 symbol 图层（`icon-size` 可调），图钉不是。
+ *
+ * ⚠️ 影响面如实记一笔（独立审查 P2）：图钉只画**带坐标的通道**，Z 站 6 路、
+ * GZ 站 0 路（`stationGZ.ts` 的 `channels: []`）。所以这一项在 Z 站生效、
+ * 在 GZ 站**没有可见效果**；业主抱怨糊成一团的 GZ 708 段，真凶是热力晕染（见 `heatOf()`）
+ * 和方向箭头，不是图钉。不留这句，后人会以为图钉是主因。
+ *
+ * 两层 DOM 的原因：MapLibre 会往它自己创建的那个元素上写 `transform: translate(...)`，
+ * 如果把缩放写在同一个元素上就会**覆盖掉定位**、图钉跑位。所以外层 `.cam-pin-wrap` 交给
+ * Marker 定位，内层 `.cam-pin` 只承接缩放/透明度。
+ */
+function camPinScaleOf(zoom: number): number {
+  const d = fitZoom - zoom
+  if (d <= 0) return 1
+  return Math.min(1, Math.max(0.28, Math.pow(2, -d * 0.36)))
+}
+
+/** 比默认视野缩远 1 档开始淡、1.6 档彻底淡出（完全透明时放开指针事件，不挡地图操作） */
+function camPinOpacityOf(zoom: number): number {
+  const d = fitZoom - zoom
+  if (d <= 0) return 1
+  if (d >= 1.6) return 0
+  return Math.max(0, 1 - (d - 1) / 0.6)
+}
+
+/** 上一次贴上去的图钉缩放（去抖，别每帧写 61 个元素的 style） */
+let lastCamPinScale = -1
+
+/**
+ * 把图钉缩放 / 透明度贴到**内层**元素上（`move` 事件里逐帧调，`force` 用于换样式 / 重建图钉后）。
+ * 注意找的是 `.cam-pin-wrap` 的子元素：外层是 MapLibre 的定位壳，不能碰。
+ */
+function applyCameraPinScale(map: MapLibreMap | null, force = false): void {
+  if (!map) return
+  const zoom = map.getZoom()
+  const s = camPinScaleOf(zoom)
+  if (!force && Math.abs(s - lastCamPinScale) < 0.004) return
+  lastCamPinScale = s
+  const op = camPinOpacityOf(zoom)
+  for (const m of camMarkers) {
+    // Marker 被移除后 `getElement()` 可能是空壳：一次异常就把 `move` 监听整段打断，
+    // 地图后续的缩放/平移全部失效 —— 所以这里逐项兜住。
+    const wrap = m.getElement()
+    const inner = wrap?.firstElementChild as HTMLElement | null
+    if (!inner) continue
+    inner.style.transform = `scale(${s})`
+    inner.style.opacity = String(op)
+    inner.style.pointerEvents = op <= 0.01 ? 'none' : 'auto'
+  }
+}
+
 function addCameraPins(map: MapLibreMap): void {
   for (const p of pins.value) {
+    // 外层交给 Marker 定位，内层承接缩放（见 camPinScaleOf 上方说明）
+    const wrap = document.createElement('div')
+    wrap.className = 'cam-pin-wrap'
     const el = document.createElement('div')
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
     el.textContent = p.cid.replace('C-', '')
@@ -1458,8 +1685,12 @@ function addCameraPins(map: MapLibreMap): void {
     el.addEventListener('click', () => {
       window.location.href = perceptionHref(p.source)
     })
-    camMarkers.push(new Marker({ element: el }).setLngLat([p.lon, p.lat]).addTo(map))
+    wrap.appendChild(el)
+    camMarkers.push(new Marker({ element: wrap }).setLngLat([p.lon, p.lat]).addTo(map))
   }
+  // 建完立刻按当前档贴一次，否则缩远状态下重建图钉会先以 20 px 闪一下
+  lastCamPinScale = -1
+  applyCameraPinScale(map, true)
 }
 
 // ---- 落客点 / 场区（Issue IKP5BZ） ----
@@ -1791,6 +2022,10 @@ function applyViewState(map: MapLibreMap): void {
   if (map.getLayer(LAYER_ROUTE_ALT2_HALO)) map.setFilter(LAYER_ROUTE_ALT2_HALO, altFilter(2))
   // 三态图层显隐也重贴一次：换样式会把 `visibility` 回到默认的 visible
   applyModeLayers(map)
+  // 换样式后 paint 全部回到 `lineLayerSpecs()` 的基准值 —— 必须强制重贴，
+  // 否则「底图加载完那一刻线宽突然变粗」（业主会看到路网突然胖一圈）
+  applyLineScale(map, true)
+  applyCameraPinScale(map, true)
 }
 
 // ---- 交互：点击选中 / 悬停即切换选中 + 浮牌跟随 ----
@@ -1970,6 +2205,9 @@ function initMap(): void {
     syncVehicles(map)
     map.on('move', () => {
       camTick.value++
+      // 线宽 / 热力透明度按当前档位逐帧贴回（业主 2026-10-20：缩远不能糊成一片）
+      applyLineScale(map)
+      applyCameraPinScale(map)
     })
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
@@ -2013,7 +2251,11 @@ watch(
 //    重建一次就是几 MB 重下 + 一次白屏，正是本单要消灭的。路网是自家 GeoJSON，换 data 即可。
 function applyPackChange(): void {
   const map = mapRef.value
-  net.value = DEMO_NETWORK.segments
+  // 直接从**当前站点包**取几何，不经 `DEMO_NETWORK` 的惰性缓存：
+  // 那份缓存用 `initedKey` 自校验，但它与本组件的 `packTick` 是两套时序，切站瞬间可能
+  // 仍持有上一站的几何（症状：标题已是广州南站、地图上一条线都没有）。
+  // 包本身就是唯一真值源（`index.ts`「答案只能有一个来源」），这里按包现取。
+  net.value = segmentsFromPack()
   // 悬停浮牌指向的是上一站的图钉/点位，切站即清空（业主裁定：站内状态一律重置）
   pin.value = null
   landmarkPin.value = null
@@ -2243,19 +2485,32 @@ onUnmounted(() => {
 
     <!-- 图例（自绘视图搬来；flow=流量四档 / index=CI 色阶 / level=四级）。
          Issue IKP3EV：≤1180 单列后地图变成整行宽，整幅图例（600px+ 宽）会盖住路网主体，
-         所以窄屏把图例收进可折叠浮层（默认收起，点「图例」展开）；
-         桌面 (>1180) 不包一层布局：.legend-dock 用 display:contents，.legend 仍相对 .mlmap 定位，
-         视觉与改造前完全一致。 -->
+         所以窄屏把图例收进可折叠浮层（默认收起，点「图例」展开）。
+         业主 2026-10-19 追加（本分支）：**桌面端也能收起** —— 图例压住地图左下角，想看那片车流
+         就得先收面板；收起状态落 localStorage（`legendVisible`），刷新后保持。
+         抬头的开合状态由 `legendOpen` 一处给出（窄屏看断点 ref、桌面看全局开关）。 -->
     <div v-if="legend && mapMode === 'station'" class="legend-dock" :class="{ open: legendOpen }">
       <button
         type="button"
         class="legend-toggle"
         :aria-expanded="legendOpen"
-        @click="legendOpen = !legendOpen"
+        title="图例压住路网时可收起，点一下再展开（状态会记住）"
+        @click="toggleLegend()"
       >
-        {{ legendOpen ? '图例 ▾' : '图例 ▸' }}
+        图例 ▸
       </button>
       <div class="legend">
+      <!-- 收起键（在面板内部右上角）：展开状态下，工具条上的「图例 ▸」是隐藏的，
+           真人只能点这个叉键收起 —— 只有吃进面板里才点得到，别挪回工具条。 -->
+      <button
+        type="button"
+        class="lg-close"
+        title="收起图例（会记住，刷新后保持收起）"
+        aria-label="收起图例"
+        @click="toggleLegend()"
+      >
+        ×
+      </button>
       <!-- IKOQEJ · 方向标记图例（IKP5BD：三行与开关状态一致；包无方向字段时明确说明） -->
       <template v-if="!directionsAvailable">
         <div class="lg-title">方向标记</div>
@@ -2479,12 +2734,80 @@ onUnmounted(() => {
   z-index: 4;
 }
 
+/* 图例收起键（面板内右上角，业主 2026-10-19 追加）：
+   点击热区要 ≥ 24 px，否则压在路网上很难点准。
+
+   ⚠️ 必须是 `sticky` 而不是 `absolute`（独立审查 P1）：`.legend` 是
+   `max-height: min(72%, 400px) + overflow-y: auto` 的滚动容器，绝对定位子元素会
+   跟着内容一起滚走 —— 本组件图例（方向 / 四级 / 路线 / 起终 / 摄像头）实测常超 400 px，
+   一滚叉键就出视野；而展开状态下工具条的 `.legend-toggle` 是 `display:none`，
+   桌面端就没有第二个收起入口了。`sticky + top:0` 让它钉在可视区上沿。
+   `margin-bottom: -20px` 抵消自身高度，避免把第一行往下推（视觉与改造前一致）。 */
+.lg-close {
+  position: sticky;
+  top: 0;
+  align-self: flex-end;
+  margin-bottom: -20px;
+  z-index: 3;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 15px;
+  line-height: 1;
+  color: #757575;
+  background: rgba(255, 255, 255, 0.92);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+.lg-close:hover {
+  color: #1a1a1a;
+  background: #efefef;
+}
+.lg-close:focus-visible {
+  outline: 2px solid v-bind('BRAND');
+  outline-offset: 1px;
+}
+
 /* 图例浮层容器（Issue IKP3EV）：桌面 display:contents，DOM 包裹层对布局零影响
-   （.legend 仍相对 .mlmap 绝对定位）；只有窄屏媒体查询里才变成真正的折叠浮层。 */
+   （.legend 仍相对 .mlmap 绝对定位）；窄屏媒体查询里才变成真正的折叠浮层。
+
+   业主 2026-10-19 追加（本分支）：**桌面端也要能收起**。图例压在地图左下角、盖住路网，
+   想看那一片车流就得先把面板收起来；原先只有 ≤1180 窄屏有收起键，桌面端 `display:none`
+   等于没法收。这里把收起键在桌面端也放出来（定位到地图工具条左下方），
+   收起状态落 `localStorage`（`legendVisible`），刷新后保持。 */
 .legend-dock {
   display: contents;
 }
 .legend-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 3;
+  height: 24px;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 11px;
+  color: #1a1a1a;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+/* 展开时收起键不占位：图例本体还压在左下角（与改造前的观感一致） */
+.legend-dock.open .legend-toggle {
+  display: none;
+}
+/* 桌面端收起：图例本体隐掉，收起键留在原位 */
+.legend-dock:not(.open) .legend {
   display: none;
 }
 
@@ -2672,8 +2995,23 @@ onUnmounted(() => {
 /* 摄像头图钉（Issue IKLX5Y）：与自绘视图同款语义 ——
    实心深灰 = 有视频源；空心白底 = 未接入视频源（本期留空）。
    品牌蓝只作描边（「可操作」语义），不当填充色用。
-   Marker 的 DOM 由 document.createElement 造，不在 scoped 作用域内，故用 :deep()。 */
+   Marker 的 DOM 由 document.createElement 造，不在 scoped 作用域内，故用 :deep()。
+
+   两层结构（业主 2026-10-20 缩远糊成一团的整改）：外层 `.cam-pin-wrap` 是 Marker 定位壳，
+   **不带尺寸、不设 transform**（MapLibre 要往它身上写 translate）；内层 `.cam-pin` 才是
+   可见圆点，缩放与透明度由 `applyCameraPinScale()` 逐帧写到它身上。 */
+/* 外层 `.cam-pin-wrap` 尺寸必须与内层一致（20×20）：Marker 按外层元素实际尺寸算居中偏移
+   （`translate(-w/2, -h/2)`），留 0 尺寸会让图钉整体偏出半个身位。
+   但它**不带任何可见样式、不设 transform** —— MapLibre 要往它身上写 translate。 */
+:deep(.cam-pin-wrap) {
+  width: 20px;
+  height: 20px;
+}
 :deep(.cam-pin) {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: center center;
   width: 20px;
   height: 20px;
   border-radius: 50%;

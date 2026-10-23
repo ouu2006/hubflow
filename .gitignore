@@ -94,3 +94,10 @@ local.properties
 !stations/**/*.json
 !stations/**/*.yaml
 !docs/**/*.md
+
+# ── 前端源码目录只放 .ts / .vue，不收编译产物 ─────────────────────
+# tsc / vue-tsc 一旦就地 emit（`noEmit` 被临时改掉、或用别人的 tsconfig 跑），
+# 会在 src 下生成同名 .js / *.vue.js。Vite 的 resolve.extensions 里 .js 早于 .ts，
+# 这些产物会被优先命中、把 .ts 源码整体旁路，而类型检查仍只看 .ts —— 全绿但跑的是旧代码。
+# 详见 work/frontend/README.md §26.4.1。
+work/frontend/ui-vue/src/**/*.js
