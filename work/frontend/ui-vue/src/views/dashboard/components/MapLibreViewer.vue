@@ -193,13 +193,16 @@ const DIR_COLORS: Record<DirectionKind, string> = {
   unknown: '#8B8B8B',
 }
 /**
- * 方向箭头的**基准宽度**（屏幕 px，业主 2026-10-23 定版口径：「比 11 略小一点」→ 取 7.5）。
+ * 方向箭头的**基准宽度**（屏幕 px，业主 2026-10-23 第三次定版：**34px**）。
  *
- * 参照物：道路主线 5.5 px、白描边 11 px（`LINE_W_LINE` / `LINE_W_CASING`）。
- * 箭头比主线略粗、比描边细 —— 方向感够认，又不至于把路盖住。
- * 图标原图是 64px canvas，`icon-size = 7.5 / 64` 才是 MapLibre 的尺寸系数。
+ * 演进留痕（完整口径链，别只看最后一行）：
+ *   ① 7.5px —— 初版「比 11 略小」，业主真机反馈「不放大看不到」作废；
+ *   ② 24px —— 四档对比（12/16/20/24）选定，真机看后业主仍觉得不够；
+ *   ③ 34px —— 业主本轮拍板「再大一点，到 34」，箭头字高约 23px，最醒目。
+ * 参照物：道路主线 5.5 px —— 34px 约为其 6.2 倍，属于「压路换醒目」的强展示口径。
+ * 图标原图是 64px canvas，`icon-size = 34 / 64` 才是 MapLibre 的尺寸系数。
  */
-const DIR_ICON_PX = 7.5
+const DIR_ICON_PX = 34
 /** 方向图标 canvas 的边长（`directionIconImage()` 里的 size 常量，两处必须同源） */
 const DIR_ICON_CANVAS = 64
 /** 箭头「与道路同宽」的档（zoom）：150 m 档。业主口径「150 及以内箭头和道路一样大」 */
@@ -519,13 +522,27 @@ const directionsAvailable = computed<boolean>(() => {
 const directionDrawable = computed<boolean>(() => directionsAvailable.value && directionsVisible.value)
 
 /**
- * 双向段的箭头横向偏移（米）。取 14 m 而不是几米：默认视野（fitBounds 后约 16~17 档，
- * 1.4~1.6 m/px）下约 9 px，两支反向箭头分列折线两侧还能看出"一来一回"；
- * 再小就会被箭头图标自身盖住。
+ * 双向段两支箭头分列折线两侧的**像素间距**（业主 2026-10-23 修复「没路的地方有箭头」）。
+ *
+ * 原实现是固定 14 m 法向偏移（`DIR_BIDIR_OFFSET_M`）：那是按 7.5px 小图标、默认视野
+ * （1.4~1.6 m/px → 约 9px）定的；箭头改 24px 后，100 m 档下 14 m ≈ 17 px，箭头明显
+ * 甩出路边，视觉上像「悬在没路的地方」（实测 GZ-194/448 偏离 27~28 m）。
+ *
+ * 修法：偏移不再用米、改用**屏幕像素**——随 zoom 反算每档多少米，任何档位下
+ * 两支箭头都稳定分列路两侧 ≈ 每侧 12 px（34 px 图标的约 1/3，不压路、也分得开；
+ * 图标 24→34 后偏移同步从 8px 调到 12px，两支仍不互叠）。
+ * 像素口径与 `dirIconSizeOf()` 同源：放大不再变大 → 偏移也不变；
+ * 缩远等比缩 → 偏移跟半（保证远档两支仍能分辨而不叠成一团）。
  */
-const DIR_BIDIR_OFFSET_M = 14
+const DIR_BIDIR_OFFSET_PX = 12
 /** 双向段两支箭头的沿线位置（中点前后）：不用 0.45/0.55——短段（本包中位约 53 m）会叠在一起 */
 const DIR_BIDIR_FRACTIONS: readonly [number, number] = [0.35, 0.65]
+
+/** 当前 zoom 下 1 px ≈ 多少米（纬度 22.99° 近似；只用于双向箭头的像素级偏移换算） */
+function metersPerPixel(zoom: number): number {
+  // Web Mercator：赤道 156543.03 m/px @ zoom 0（256px 瓦片），按纬度缩、按 zoom 半
+  return (156543.03 / Math.pow(2, zoom)) * Math.cos((22.99 * Math.PI) / 180)
+}
 
 /** 沿走向法向偏移一个点（米 → 度；近似平面，只用于展示落点） */
 function offsetByNormal(
@@ -545,7 +562,7 @@ function offsetByNormal(
 /**
  * 方向标记 GeoJSON（IKOQEJ；Issue IKP5BD 改双向画法）。
  *   · forward/backward → 单箭头（沿走向旋转；backward 加 180°）；
- *   · bidirectional → **中点前后各一支**：两支反向箭头分别偏到折线两侧（法向 ±14 m），
+ *   · bidirectional → **中点前后各一支**：两支反向箭头分别偏到折线两侧（法向 ±12 px、按档换算米），
  *     一支顺走向、一支逆走向，形成"有来有回"；不再用单个 `↕` 字形；
  *   · 未标定 → 灰色「?」（只针对**包里有方向字段、该段缺值**的情况）。
  * 包整体缺方向字段 / 开关关掉 → 返回空集合（一支都不画）。
@@ -558,10 +575,15 @@ function directionGeoJson(): FeatureCollection {
     const kind = directionKindOf(directionOf(seg.segment_id))
     const bearing = bearingDeg(seg.coords)
     if (kind === 'bidirectional') {
+      // 像素口径偏移（业主 2026-10-23 修复「没路的地方有箭头」）：
+      // ±12 px 换算成当前档的米数——任何档位下两支都稳定分列路两侧，
+      // 不再出现「100 m 档下 14 m 固定偏移 ≈ 17 px、箭头甩出路边」的悬空感。
+      // fitZoom 未定（建图首帧）时用兜底值，`applyDirectionScale` 每帧重建数据会再修正。
+      const offsetM = DIR_BIDIR_OFFSET_PX * metersPerPixel(fitZoom)
       DIR_BIDIR_FRACTIONS.forEach((fraction, i) => {
         const base = pointAtFraction(seg.coords, fraction)
         // 第一支偏左、顺走向；第二支偏右、逆走向
-        const offset = i === 0 ? DIR_BIDIR_OFFSET_M : -DIR_BIDIR_OFFSET_M
+        const offset = i === 0 ? offsetM : -offsetM
         const [lon, lat] = offsetByNormal(base, bearing, offset)
         const rotate = i === 0 ? bearing : (bearing + 180) % 360
         features.push({
@@ -629,8 +651,8 @@ function addDirectionImages(map: MapLibreMap): void {
 }
 
 /**
- * 箭头尺寸系数（icon-size，业主 2026-10-23 定版口径）：
- *   · **150 m 档（zoom 15.5）及更近 → 基准 7.5 px**，放大**不再变大**（与线宽/图钉同一纪律）；
+ * 箭头尺寸系数（icon-size，业主 2026-10-23 第三次定版：34px）：
+ *   · **150 m 档（zoom 15.5）及更近 → 基准 34 px**，放大**不再变大**（与线宽/图钉同一纪律）；
  *   · **比 150 m 更远 → 每远一档减半**（`2^-d`），与路网等比缩，覆盖率不爆。
  *
  * 为什么尺寸也走运行时刻贴回而不是写死在 layout 表达式里：口径锚的是「150 m 档」这个
@@ -2588,7 +2610,7 @@ onUnmounted(() => {
       </template>
       <template v-else-if="!directionsVisible">
         <div class="lg-title">方向标记（只读 enriched）</div>
-        <div class="lg-row">已隐藏方向标记（顶栏「设置 → 方向标记」可开）</div>
+        <div class="lg-row">已隐藏方向箭头（地图工具条「箭头」键或顶栏「设置 → 方向标记」可开）</div>
       </template>
       <template v-else>
         <div class="lg-title">方向标记（只读 enriched）</div>
@@ -2597,7 +2619,7 @@ onUnmounted(() => {
           <span class="dir-mark both" :style="{ color: '#6D28D9' }"><span>↑</span><span class="flip">↑</span></span>双向（中点前后各一支）·
           <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
         </div>
-        <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。150 m 及以内箭头与道路同宽，更远等比缩小；150→200 m 渐隐，200 m 以远不画。</div>
+        <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。150 m 及以内箭头为醒目尺寸，更远等比缩小；150→200 m 渐隐，200 m 以远不画。</div>
       </template>
       <div class="lg-sep" />
       <template v-if="isFlow">
