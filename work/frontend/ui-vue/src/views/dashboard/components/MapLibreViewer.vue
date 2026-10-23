@@ -487,7 +487,12 @@ function colorOf(seg: DemoSegment): string {
  *
  * ⚠️ 四级视图必须返 0（业主 2026-10-20 口径：「每个道路都要颜色，然后周围还有往外衍生的一圈
  * 淡淡的颜色，把那个去掉」）。四级色本身已经把等级说清楚了，26 px 的半透明同色宽带只是往两边
- * 漫出去的雾；广州南站 708 段那种密度下，几百条晕染互相叠会糊成一整坨，反而看不出哪条路是什么色。
+ * 漫出去的雾。
+ *
+ * ⚠️ 影响面如实记（独立审查 P2 实测）：heat 只在**摄像头覆盖段**上非零，量级是
+ * GZ 708 段里 6 段（6 路摄像头）、Z 61 段里 6 段 —— 不是「每段都给 0.1–0.6」，
+ * 25 条也不是「几百条晕染互叠」。所以这一项修的是**局部路口那圈橙绿雾**，
+ * 不是「满图一坨」的主因（满图那坨主要是方向箭头，业主 2026-10-22 明确推迟）。
  * `LAYER_HEAT` 的注释从第一版起就写着「四级视图 heat 恒 0」，此前 `heatOf()` 少了这一条判断，
  * 属于代码与注释不一致，这里补齐。
  */
@@ -865,6 +870,28 @@ function applyLineScale(map: MapLibreMap, force = false): void {
         widthExpr(LINE_W_LINE[0] * s, LINE_W_LINE[1] * s)],
     )
   }
+}
+
+/**
+ * 记下「当前视角的默认档」，并立刻按它重算一遍线宽 / 热力 / 图钉系数。
+ *
+ * ⚠️ 三个调用面，少一个就会让整单失效（独立审查 P0）：
+ *   ① `fitStationInstant()` / `fitOverviewInstant()` —— 无动画取景；
+ *   ② `syncCamera()` 里 `await flyToStation()` / `await flyToOverview()` 之后 ——
+ *      **这条才是「全国 → 点站」的主路径**（快链 `?station=` 也走它）。`flyToStation()`
+ *      内部 `fitBounds` 走的是动画版，**不经过 ①② 的 instant 版**，所以这里不补写，
+ *      `fitZoom` 会一直停在首屏全国那一档（≈3）：站内 `d = fitZoom - zoom` 恒为负，
+ *      `lineScaleOf / heatFadeOf / camPinScaleOf` 全部恒等 1，业主反馈的「缩远糊成一片」
+ *      在最常用的一条路上**一点没改**。
+ *   ③ `applyViewState()`（换底图样式后）—— 只重贴 paint，不动 `fitZoom`。
+ *
+ * 取的是取景**之后**的实测 zoom，不能写死：Z 站演示范围 500 m、GZ 站 1000 m，
+ * 两站 `fitBounds` 落到的档位本来就不同。
+ */
+function commitFitZoom(map: MapLibreMap): void {
+  fitZoom = map.getZoom()
+  applyLineScale(map, true)
+  applyCameraPinScale(map, true)
 }
 
 function selectedFilter(): FilterSpecification {
@@ -1437,8 +1464,7 @@ function fitStationInstant(map: MapLibreMap, key: string): void {
     duration: 0,
   })
   // 记下这一站的默认档：线宽 / 热力 / 图钉的缩放基准都相对它算（两站范围不同，不能写死）
-  fitZoom = map.getZoom()
-  applyLineScale(map, true)
+  commitFitZoom(map)
 }
 
 function fitOverviewInstant(map: MapLibreMap): void {
@@ -1449,8 +1475,7 @@ function fitOverviewInstant(map: MapLibreMap): void {
   })
   // 容器偏矮时 `fitBounds` 会把中国算到 2 档（大陆变成中间一小块）——按判定的下界抬到 3 档
   clampOverviewZoom(map)
-  fitZoom = map.getZoom()
-  applyLineScale(map, true)
+  commitFitZoom(map)
 }
 
 /**
@@ -1484,6 +1509,8 @@ async function syncCamera(animated: boolean): Promise<void> {
     if (result.cancelled) return
     motionPhase.value = 'station'
     applyModeLayers(map)
+    // 动画落站后补写 `fitZoom`：这是「全国 → 点站」的主路径，缺这一句整单的缩放逻辑全部落空
+    commitFitZoom(map)
     emit('arrived')
     return
   }
@@ -1507,6 +1534,8 @@ async function syncCamera(animated: boolean): Promise<void> {
   if (result.cancelled) return
   motionPhase.value = 'national'
   applyModeLayers(map)
+  // 同上：动画退回全国后 `fitZoom` 要跟着变成全国档，否则站区档位残留
+  commitFitZoom(map)
 }
 
 /**
@@ -1636,11 +1665,16 @@ onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
  * "有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
  */
 /**
- * 摄像头图钉随缩放收缩（业主 2026-10-20 口径「缩小地图后还是挤在一起」的真凶）。
+ * 摄像头图钉随缩放收缩（业主 2026-10-20 口径「缩小地图后还是挤在一起」）。
  *
  * 为什么必须单独处理：`addCameraPins()` 用 `new Marker({ element })` 造的是 **DOM 元素**，
- * 屏幕像素恒定、**天然不随 zoom 缩**——61 段几乎每段挂一个 20 px 圆，缩远后路网只剩几十像素，
- * 图钉却还是 20 px，当然糊成一团。方向箭头是 symbol 图层（`icon-size` 可调），图钉不是。
+ * 屏幕像素恒定、**天然不随 zoom 缩**；缩远后路网只剩几十像素，20 px 的图钉却还是 20 px。
+ * 方向箭头是 symbol 图层（`icon-size` 可调），图钉不是。
+ *
+ * ⚠️ 影响面如实记一笔（独立审查 P2）：图钉只画**带坐标的通道**，Z 站 6 路、
+ * GZ 站 0 路（`stationGZ.ts` 的 `channels: []`）。所以这一项在 Z 站生效、
+ * 在 GZ 站**没有可见效果**；业主抱怨糊成一团的 GZ 708 段，真凶是热力晕染（见 `heatOf()`）
+ * 和方向箭头，不是图钉。不留这句，后人会以为图钉是主因。
  *
  * 两层 DOM 的原因：MapLibre 会往它自己创建的那个元素上写 `transform: translate(...)`，
  * 如果把缩放写在同一个元素上就会**覆盖掉定位**、图钉跑位。所以外层 `.cam-pin-wrap` 交给
@@ -2770,13 +2804,20 @@ onUnmounted(() => {
 }
 
 /* 图例收起键（面板内右上角，业主 2026-10-19 追加）：
-   面板 absolute 定位 + 内部滚动，所以叉键也 absolute 钉在右上；点击热区要 ≥ 24 px，
-   否则压在路网上很难点准。 */
+   点击热区要 ≥ 24 px，否则压在路网上很难点准。
+
+   ⚠️ 必须是 `sticky` 而不是 `absolute`（独立审查 P1）：`.legend` 是
+   `max-height: min(72%, 400px) + overflow-y: auto` 的滚动容器，绝对定位子元素会
+   跟着内容一起滚走 —— 本组件图例（方向 / 四级 / 路线 / 起终 / 摄像头）实测常超 400 px，
+   一滚叉键就出视野；而展开状态下工具条的 `.legend-toggle` 是 `display:none`，
+   桌面端就没有第二个收起入口了。`sticky + top:0` 让它钉在可视区上沿。
+   `margin-bottom: -20px` 抵消自身高度，避免把第一行往下推（视觉与改造前一致）。 */
 .lg-close {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 2;
+  position: sticky;
+  top: 0;
+  align-self: flex-end;
+  margin-bottom: -20px;
+  z-index: 3;
   width: 22px;
   height: 22px;
   display: flex;
@@ -2786,7 +2827,7 @@ onUnmounted(() => {
   font-size: 15px;
   line-height: 1;
   color: #757575;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.92);
   border: none;
   border-radius: 4px;
   cursor: pointer;
@@ -2794,7 +2835,7 @@ onUnmounted(() => {
 }
 .lg-close:hover {
   color: #1a1a1a;
-  background: rgba(0, 0, 0, 0.06);
+  background: #efefef;
 }
 .lg-close:focus-visible {
   outline: 2px solid v-bind('BRAND');
