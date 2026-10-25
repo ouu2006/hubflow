@@ -743,12 +743,43 @@ export interface ThresholdSnapshot {
 }
 
 // ---------- 效果对比报表(/api/traffic/report/compare) ----------
-// 接口层没有「同输入多跑对照」的报表产物时 rows 为空 + note（如实空壳，不编对比数字）。
+// TC-09：接口层端引擎 --compare 三组对照产物（只读、不代算）；产物缺失时 rows 为空 + note（如实空壳，不编对比数字）。
+export interface ReportCompareRow {
+  /** 组键：no_guidance / fastest / cooperative */
+  group: string
+  /** 组名（引擎 group_labels 原文） */
+  label: string
+  attempted: number | null
+  inserted: number | null
+  completed: number | null
+  in_transit: number | null
+  not_entered: number | null
+  orange_red_segment_count: number
+  orange_red_segments: string[]
+  total_travel_time_s: number | null
+  network_total_time_s: number | null
+  max_eta_increase_s: number | null
+}
+
 export interface ReportCompare {
   ts: string
   is_simulated: true
-  /** 报表行（接口层接入报表产物后才有内容；当前为空数组） */
-  rows: Record<string, unknown>[]
+  /** 报表行（TC-09：引擎 --compare 三组对照；产物缺失时为空 + note） */
+  rows: ReportCompareRow[]
+  /** 时间窗与来源标注（TC-09 判定要求） */
+  window?: {
+    base_ts: string | null
+    window_sec: number | null
+    vehicle_count: number | null
+    od_count: number | null
+    seed: number | null
+    site_id: string | null
+  }
+  /** 数据源层（engine.compare.real / engine.compare.sample / none） */
+  source?: string
+  source_note?: string
+  /** TC-17 三项判定随报表一并透出（只读展示，前端不重算） */
+  tc17?: { passed: boolean | null; criteria: Record<string, unknown> }
   note?: string
 }
 
