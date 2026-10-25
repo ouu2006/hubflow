@@ -1222,6 +1222,7 @@ const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
         lon: point.lon,
         lat: point.lat,
         note: `点位 ${dropId}（演示点）`,
+        point_id: dropId,
       }
     }
   }
@@ -1237,6 +1238,7 @@ const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
       lon: near.lon,
       lat: near.lat,
       note: `停车场落客点 ${near.id}（演示点）· 距末段 ${Math.round(near.distance_m)} m`,
+      point_id: near.id,
     }
   }
   if (!seg || seg.coords.length === 0) return null
