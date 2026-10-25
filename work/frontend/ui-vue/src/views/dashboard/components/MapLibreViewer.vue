@@ -77,6 +77,7 @@ import {
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   basemapEnabled,
+  camerasVisible,
   directionsVisible,
   legendVisible,
   routeEmphasisEnabled,
@@ -2463,6 +2464,13 @@ watch(routeEmphasisEnabled, () => {
   if (!map || !ready.value) return
   applyViewState(map)
 })
+/**
+ * 摄像头图钉显隐开关（业主 2026-10-25）：关 = 整层不画（`.mlmap.cams-off` 的 CSS
+ * `display:none`，与全国模式同一套机制），悬停浮牌一并清掉；数据、台账、右栏路段卡不动。
+ */
+watch(camerasVisible, (on) => {
+  if (!on) pin.value = null
+})
 
 /** 顶栏「设置」里的底图开关：开 → 拉底图；关 → 撤掉底图层（路网一行不动） */
 watch(basemapEnabled, () => {
@@ -2540,7 +2548,7 @@ onUnmounted(() => {
        不要拿文案去判断当前视角。 -->
   <div
     class="mlmap"
-    :class="{ 'mode-national': mapMode === 'national' }"
+    :class="{ 'mode-national': mapMode === 'national', 'cams-off': !camerasVisible }"
     :data-map-mode="mapMode"
     :data-station="currentStationKey"
     :data-motion-phase="motionPhase"
@@ -2715,7 +2723,7 @@ onUnmounted(() => {
           <div class="lg-sep" />
           <div class="lg-row"><span class="dot cam-dot" />摄像头 {{ pins.length }} 路 · 有样本视频源（演示，非本站现场）</div>
           <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 演示复用画面（road2 / track1，非本站现场）</div>
-          <div class="lg-note">图钉 = 全量 N 段 N 路（源台账 + 演示层，一段最多 1 路）；流量版有 q 即上色</div>
+          <div class="lg-note">图钉 = 全量 N 段 N 路（源台账 + 演示层，一段最多 1 路）；流量版有 q 即上色；工具条「摄像头」键可整体隐藏（数据不受影响）</div>
         </template>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
@@ -2771,7 +2779,8 @@ onUnmounted(() => {
           <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 演示复用画面（road2 / track1，非本站现场）</div>
           <div class="lg-note">
             图钉 = 全量 N 段 N 路（业主 2026-10-25：源台账 + 演示层，一段最多 1 路）；
-            「演示复用」画面取公开样本视频确定性复用，不是该摄像头自己的视频（真实接入归 IKMHMX）。
+            「演示复用」画面取公开样本视频确定性复用，不是该摄像头自己的视频（真实接入归 IKMHMX）；
+            工具条「摄像头」键可整体隐藏（只关图钉层，数据不受影响）。
           </div>
         </template>
       </template>
@@ -3472,6 +3481,13 @@ onUnmounted(() => {
 .mlmap.mode-national :deep(.lm-pin),
 .mlmap.mode-national :deep(.rt-pin),
 .mlmap.mode-national :deep(.veh-dot) {
+  display: none;
+}
+
+/* 摄像头图钉显示开关（业主 2026-10-25）：关 = 整层不画（连外壳一起 display:none，
+   悬停/点击也随之失效）；与全国模式同一套 CSS 机制，不删建 Marker。
+   只关"图钉层"——台账、右栏路段卡、监控墙的数据与画面不受影响。 */
+.mlmap.cams-off :deep(.cam-pin-wrap) {
   display: none;
 }
 </style>
