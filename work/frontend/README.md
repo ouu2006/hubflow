@@ -1724,3 +1724,41 @@ Vite 的 `resolve.extensions` 里 **`.js` 排在 `.ts` 之前**，所以 `import
 
 **自检**：vue-tsc exit 0、vite build exit 0、doc_gate 8/8；离线 708 段核对脚本与
 真机四步开关验证均过（见任务记录行）。
+
+---
+
+## 二十八、TC-09 效果对比报表：从空壳到端引擎真产物（2026-10-25）
+
+> 判定原文（TC-09）：打开效果对比报表，四项对比存在、**标注来源与时间窗**、
+> 全部数字带 `is_simulated`。改造前 `/report/compare` 是空壳（rows 0 + note），
+> 前端「效果对比」只有演示脚本（[docs/验收台账-20261018.md](../../docs/验收台账-20261018.md) TC-09 行）。
+
+### 28.1 改了什么
+
+| 侧 | 文件 | 内容 |
+|---|---|---|
+| 接口层 | `work/assembly/traffic.py` `build_report_compare()` | 从空壳改为**只读端引擎 `--compare` 三组对照产物**：真网 `out/real/compare/` 优先、样例 `out/compare/` 回退；`rows` = 每组的准入四计数（attempted/inserted/completed/in_transit/not_entered）+ 橙红段数与清单 + 车辆/网络两种口径总行程时间 + 最大 ETA 增量；`window` = 基准时间/窗口/车辆数/OD 数/种子/站点（TC-09 的「时间窗标注」）；`source`/`source_note` 标来源层；`tc17` 三项判定只读透传。产物缺失时**仍空壳 + note + 复跑命令**，不编数 |
+| 前端类型 | `src/shared/traffic.ts` | `ReportCompare` 扩为结构化（`ReportCompareRow` + `window` + `source` + `tc17`） |
+| 前端展示 | `src/views/decision/components/EffectCompare.vue` | 有真数据时渲染**结构化四项对比表**（三组列 × 9 行指标、协同组高亮），显示来源层/时间窗/TC-17 判定；**演示脚本区（A/B/C + 处置前后）只在 rows 为空时兜底显示**——有真数据不再双份混屏 |
+
+### 28.2 口径纪律
+
+- **只读不代算**：接口层不重算任何对比数字，全部端 `run.py --network real --compare` 产物；
+  数字含义（如「网络口径含背景车流拖慢」）随引擎 note 原样透传。
+- **不冒充实测**：`is_simulated` 恒 true；来源层、时间窗、种子全部标注（判定原文逐项对上）。
+- **兜底不删除**：mock 模式（无该端点）与产物缺失时，前端演示脚本仍是兜底展示并明确标注，C-2 不删。
+
+### 28.3 自检（本单真跑，2026-10-25）
+
+- `vue-tsc -b` exit 0、`vite build` exit 0、`doc_gate` 8/8、`traffic.py --check` 通过
+- 接口实测（remote，:8000）：`GET /report/compare` 200，rows=3（① 3906/174602.58/11 段 ·
+  ② 3906/174602.58/11 · ③ 2728/93491.36/9），`source=engine.compare.real`，
+  `window.base_ts=2026-10-18T08:00:00+08:00`，`tc17.passed=true`
+- 前端实测（CDP 决策页「效果对比」视图）：来源/时间窗/TC-17 行、三组列、9 行指标、
+  真数字（3906 / 174602.58 / 93491.36）全部上屏；演示脚本区在有真数据时隐藏
+
+### 28.4 遗留 / 说明
+
+- 报表数字是**演示数据**（引擎 2026-10-18 真网 compare 产物，段号匹配的上游指标快照缺失、
+  q_vph=0 的演示降级口径，见产物 scenario.note）；真指标接入后复跑 `--compare` 即更新，接口层零改动。
+- 台账 TC-09 状态由「未过」改「通过」需**池·Q 独立复跑确认**；本单只交证据。
