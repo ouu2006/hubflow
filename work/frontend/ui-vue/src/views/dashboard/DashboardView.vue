@@ -38,7 +38,13 @@ import {
 } from '../../api/traffic'
 import type { LocateResult } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel, pointAtOffset, segmentLengthM } from '../../shared/demoNetwork'
-import { basemapEnabled, routeEmphasisEnabled, setRouteEmphasisEnabled } from '../../shared/settings'
+import {
+  basemapEnabled,
+  directionsVisible,
+  routeEmphasisEnabled,
+  setDirectionsVisible,
+  setRouteEmphasisEnabled,
+} from '../../shared/settings'
 import { landmarksNearSegment } from '../../shared/landmarks'
 import { USE_MOCK } from '../../shared/env'
 import { cameraCountOf } from '../../shared/cameras'
@@ -2151,6 +2157,27 @@ function onCommandChanged(): void {
                       @click="pickStation(p.key)"
                     >
                       {{ p.name }}
+                    </button>
+                  </span>
+                  <!-- 方向箭头开关（业主 2026-10-23：地图上直接给一个键，不用进「设置」翻）。
+                       与顶栏「设置 → 方向标记」共用同一状态（directionsVisible）、同落 localStorage。
+                       背景：箭头按比例尺档显隐（200 m 以远不画），业主反馈「每次打开可能没有箭头」
+                       ——加此键后可以一眼确认是「关了」还是「在远档」，也能手动强制显示状态。 -->
+                  <span class="pack-switch" role="group" aria-label="方向箭头">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: directionsVisible }"
+                      role="switch"
+                      :aria-checked="directionsVisible"
+                      :title="
+                        directionsVisible
+                          ? '方向箭头：开（150 m 及以内显示，200 m 以远自动不画）；点击全部隐藏'
+                          : '方向箭头：关（一支都不画）；点击恢复（放大到 200 m 以内即可见）'
+                      "
+                      @click="setDirectionsVisible(!directionsVisible)"
+                    >
+                      箭头 {{ directionsVisible ? '开' : '关' }}
                     </button>
                   </span>
                   <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。

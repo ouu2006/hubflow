@@ -192,6 +192,23 @@ const DIR_COLORS: Record<DirectionKind, string> = {
   bidirectional: '#6D28D9',
   unknown: '#8B8B8B',
 }
+/**
+ * 方向箭头的**基准宽度**（屏幕 px，业主 2026-10-23 第三次定版：**34px**）。
+ *
+ * 演进留痕（完整口径链，别只看最后一行）：
+ *   ① 7.5px —— 初版「比 11 略小」，业主真机反馈「不放大看不到」作废；
+ *   ② 24px —— 四档对比（12/16/20/24）选定，真机看后业主仍觉得不够；
+ *   ③ 34px —— 业主本轮拍板「再大一点，到 34」，箭头字高约 23px，最醒目。
+ * 参照物：道路主线 5.5 px —— 34px 约为其 6.2 倍，属于「压路换醒目」的强展示口径。
+ * 图标原图是 64px canvas，`icon-size = 34 / 64` 才是 MapLibre 的尺寸系数。
+ */
+const DIR_ICON_PX = 34
+/** 方向图标 canvas 的边长（`directionIconImage()` 里的 size 常量，两处必须同源） */
+const DIR_ICON_CANVAS = 64
+/** 箭头「与道路同宽」的档（zoom）：150 m 档。业主口径「150 及以内箭头和道路一样大」 */
+const DIR_ZOOM_FULL = 15.5
+/** 箭头开始淡出的档（zoom）：200 m 档。更远一支不画（opacity 0） */
+const DIR_ZOOM_FADE = 15.0
 const LAYER_HEAT = `${SRC}-heat`
 const LAYER_CASING = `${SRC}-casing`
 const LAYER_LINE = `${SRC}-line`
@@ -505,13 +522,27 @@ const directionsAvailable = computed<boolean>(() => {
 const directionDrawable = computed<boolean>(() => directionsAvailable.value && directionsVisible.value)
 
 /**
- * 双向段的箭头横向偏移（米）。取 14 m 而不是几米：默认视野（fitBounds 后约 16~17 档，
- * 1.4~1.6 m/px）下约 9 px，两支反向箭头分列折线两侧还能看出"一来一回"；
- * 再小就会被箭头图标自身盖住。
+ * 双向段两支箭头分列折线两侧的**像素间距**（业主 2026-10-23 修复「没路的地方有箭头」）。
+ *
+ * 原实现是固定 14 m 法向偏移（`DIR_BIDIR_OFFSET_M`）：那是按 7.5px 小图标、默认视野
+ * （1.4~1.6 m/px → 约 9px）定的；箭头改 24px 后，100 m 档下 14 m ≈ 17 px，箭头明显
+ * 甩出路边，视觉上像「悬在没路的地方」（实测 GZ-194/448 偏离 27~28 m）。
+ *
+ * 修法：偏移不再用米、改用**屏幕像素**——随 zoom 反算每档多少米，任何档位下
+ * 两支箭头都稳定分列路两侧 ≈ 每侧 12 px（34 px 图标的约 1/3，不压路、也分得开；
+ * 图标 24→34 后偏移同步从 8px 调到 12px，两支仍不互叠）。
+ * 像素口径与 `dirIconSizeOf()` 同源：放大不再变大 → 偏移也不变；
+ * 缩远等比缩 → 偏移跟半（保证远档两支仍能分辨而不叠成一团）。
  */
-const DIR_BIDIR_OFFSET_M = 14
+const DIR_BIDIR_OFFSET_PX = 12
 /** 双向段两支箭头的沿线位置（中点前后）：不用 0.45/0.55——短段（本包中位约 53 m）会叠在一起 */
 const DIR_BIDIR_FRACTIONS: readonly [number, number] = [0.35, 0.65]
+
+/** 当前 zoom 下 1 px ≈ 多少米（纬度 22.99° 近似；只用于双向箭头的像素级偏移换算） */
+function metersPerPixel(zoom: number): number {
+  // Web Mercator：赤道 156543.03 m/px @ zoom 0（256px 瓦片），按纬度缩、按 zoom 半
+  return (156543.03 / Math.pow(2, zoom)) * Math.cos((22.99 * Math.PI) / 180)
+}
 
 /** 沿走向法向偏移一个点（米 → 度；近似平面，只用于展示落点） */
 function offsetByNormal(
@@ -531,7 +562,7 @@ function offsetByNormal(
 /**
  * 方向标记 GeoJSON（IKOQEJ；Issue IKP5BD 改双向画法）。
  *   · forward/backward → 单箭头（沿走向旋转；backward 加 180°）；
- *   · bidirectional → **中点前后各一支**：两支反向箭头分别偏到折线两侧（法向 ±14 m），
+ *   · bidirectional → **中点前后各一支**：两支反向箭头分别偏到折线两侧（法向 ±12 px、按档换算米），
  *     一支顺走向、一支逆走向，形成"有来有回"；不再用单个 `↕` 字形；
  *   · 未标定 → 灰色「?」（只针对**包里有方向字段、该段缺值**的情况）。
  * 包整体缺方向字段 / 开关关掉 → 返回空集合（一支都不画）。
@@ -544,10 +575,15 @@ function directionGeoJson(): FeatureCollection {
     const kind = directionKindOf(directionOf(seg.segment_id))
     const bearing = bearingDeg(seg.coords)
     if (kind === 'bidirectional') {
+      // 像素口径偏移（业主 2026-10-23 修复「没路的地方有箭头」）：
+      // ±12 px 换算成当前档的米数——任何档位下两支都稳定分列路两侧，
+      // 不再出现「100 m 档下 14 m 固定偏移 ≈ 17 px、箭头甩出路边」的悬空感。
+      // fitZoom 未定（建图首帧）时用兜底值，`applyDirectionScale` 每帧重建数据会再修正。
+      const offsetM = DIR_BIDIR_OFFSET_PX * metersPerPixel(fitZoom)
       DIR_BIDIR_FRACTIONS.forEach((fraction, i) => {
         const base = pointAtFraction(seg.coords, fraction)
         // 第一支偏左、顺走向；第二支偏右、逆走向
-        const offset = i === 0 ? DIR_BIDIR_OFFSET_M : -DIR_BIDIR_OFFSET_M
+        const offset = i === 0 ? offsetM : -offsetM
         const [lon, lat] = offsetByNormal(base, bearing, offset)
         const rotate = i === 0 ? bearing : (bearing + 180) % 360
         features.push({
@@ -614,6 +650,53 @@ function addDirectionImages(map: MapLibreMap): void {
   }
 }
 
+/**
+ * 箭头尺寸系数（icon-size，业主 2026-10-23 第三次定版：34px）：
+ *   · **150 m 档（zoom 15.5）及更近 → 基准 34 px**，放大**不再变大**（与线宽/图钉同一纪律）；
+ *   · **比 150 m 更远 → 每远一档减半**（`2^-d`），与路网等比缩，覆盖率不爆。
+ *
+ * 为什么尺寸也走运行时刻贴回而不是写死在 layout 表达式里：口径锚的是「150 m 档」这个
+ * 语义档位，而每站的 fitZoom 不同（Z 500 m / GZ 1000 m），比例尺↔zoom 的换算跟着
+ * 纬度变；`dirIconSizeOf()` 逐帧算，才能保证任何站、任何屏都停在「与道路同宽」的基准上。
+ * ⚠️ MapLibre 硬性限制：`zoom` 只能出现在顶层 interpolate 输入位，所以 layout 里只放
+ * 基准值（不起作用），真实尺寸由 `applyDirectionScale()` 用 `setLayoutProperty` 贴回。
+ */
+const DIR_ICON_BASE = DIR_ICON_PX / DIR_ICON_CANVAS
+
+function dirIconSizeOf(zoom: number): number {
+  const d = DIR_ZOOM_FULL - zoom // 比 150 m 档缩远了多少档（负数 = 更近）
+  if (d <= 0) return DIR_ICON_BASE
+  return Math.max(0.03, DIR_ICON_BASE * Math.pow(2, -d))
+}
+
+/**
+ * 箭头淡出（业主 2026-10-23 口径「150 到 200 不断变淡，200 之后完全消失」）：
+ *   · zoom ≥ 15.5（150 m 及更近）→ 恒 1；
+ *   · 15.0 ~ 15.5（150→200 m）→ 线性 1 → 0；
+ *   · zoom ≤ 15.0（200 m 及更远）→ 0（一支不画）。
+ */
+function dirIconOpacityOf(zoom: number): number {
+  if (zoom >= DIR_ZOOM_FULL) return 1
+  if (zoom <= DIR_ZOOM_FADE) return 0
+  return (zoom - DIR_ZOOM_FADE) / (DIR_ZOOM_FULL - DIR_ZOOM_FADE)
+}
+
+/** 上一次贴上去的（尺寸, 透明度）（去抖；换样式后 force 强制重贴） */
+let lastDirScale: { size: number; op: number } | null = null
+
+/** 把箭头尺寸 / 透明度贴回图层（`move` 事件逐帧调；`applyViewState` 里 force 一次） */
+function applyDirectionScale(map: MapLibreMap, force = false): void {
+  if (!map.getLayer(LAYER_DIRECTION)) return
+  const zoom = map.getZoom()
+  const size = dirIconSizeOf(zoom)
+  const op = dirIconOpacityOf(zoom)
+  if (!force && lastDirScale && Math.abs(size - lastDirScale.size) < 0.002
+      && Math.abs(op - lastDirScale.op) < 0.004) return
+  lastDirScale = { size, op }
+  map.setLayoutProperty(LAYER_DIRECTION, 'icon-size', ['*', size, ['get', 'icon_scale']])
+  map.setPaintProperty(LAYER_DIRECTION, 'icon-opacity', op)
+}
+
 /** 方向标记图层（symbol + icon，无 text/glyphs 依赖；随地图旋转对齐） */
 function directionLayerSpec(): SymbolLayerSpecification {
   return {
@@ -622,29 +705,20 @@ function directionLayerSpec(): SymbolLayerSpecification {
     source: DIR_SRC,
     layout: {
       'icon-image': ['get', 'icon'],
-      // 双向段用 `icon_scale` 收小（0.8×）；单/双向共用同一套随缩放尺寸。
-      // ⚠️ `zoom` **只能**出现在顶层 `interpolate` / `step` 的输入位（MapLibre 硬性限制）：
-      //    原来写成 `['*', ['interpolate', …zoom…], ['get','icon_scale']]` 会让整个
-      //    `setStyle(mergedStyle(…))` 直接抛
-      //    「layers.hubflow-direction-marker.layout.icon-size: "zoom" expression may only be used
-      //      as input to a top-level "step" or "interpolate" expression」——
-      //    底图就永远停在「底图加载中…」（改前 main 上就有，与 IKPFR4 无关）。
-      //    正确写法：`zoom` 当顶层 interpolate 输入，`icon_scale` 放进**各 stop 的输出值**。
-      'icon-size': [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        12,
-        ['*', 0.5, ['get', 'icon_scale']],
-        15,
-        ['*', 0.85, ['get', 'icon_scale']],
-      ],
+      // 只放基准值（真实尺寸由 applyDirectionScale() 运行时刻贴回，见 dirIconSizeOf 上方说明）。
+      // ⚠️ `zoom` **只能**出现在顶层 interpolate 输入位（MapLibre 硬性限制），写错整个
+      // setStyle 会抛错、底图永远停在「底图加载中…」（main 早期踩过，见 git 历史）。
+      'icon-size': ['*', DIR_ICON_BASE, ['get', 'icon_scale']],
       'icon-rotate': ['get', 'rotate'],
       'icon-rotation-alignment': 'map',
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
       // 关掉 / 包无方向字段时不画：换样式重建图层也要带上，否则一开底图就又把箭头画回来
       visibility: directionDrawable.value ? 'visible' : 'none',
+    },
+    // 200 m 档起完全淡出（150→200 m 线性过渡；真实值由 applyDirectionScale() 贴回）
+    paint: {
+      'icon-opacity': ['step', ['zoom'], 0, DIR_ZOOM_FADE + 0.001, 1],
     },
   }
 }
@@ -657,6 +731,9 @@ function applyDirectionVisibility(map: MapLibreMap): void {
     'visibility',
     directionDrawable.value ? 'visible' : 'none',
   )
+  // 显隐切换顺手把尺寸/透明度也贴回：开关重新打开时箭头应立刻按当前档取尺寸，
+  // 而不是闪回 layout 里的基准值
+  applyDirectionScale(map, true)
 }
 
 /**
@@ -2076,6 +2153,18 @@ function applyViewState(map: MapLibreMap): void {
   // 否则「底图加载完那一刻线宽突然变粗」（业主会看到路网突然胖一圈）
   applyLineScale(map, true)
   applyCameraPinScale(map, true)
+  // 箭头同理：换样式把 icon-size / icon-opacity 重置回 spec 基准，不重贴会闪一帧错误尺寸
+  applyDirectionScale(map, true)
+  // motionPhase 兜底（修「深链 ?station= / 镜头中断后路网与箭头一支不画」）：
+  // `applyModeLayers()` 只认 `motionPhase === 'station'` 才开路网/箭头。正常切站由
+  // `syncCamera()` 落态；但深链直进、飞行被取消等场合 motionPhase 停在 'national' /
+  // 'leaving'，图层开关就永远关着（缩放也不会回来）。这里按**声明的视角**兜底：
+  // 页面说自己在站区（mapMode='station'）且镜头不在飞（停态）→ 视为已到站。
+  if (props.mapMode === 'station'
+      && (motionPhase.value === 'national' || motionPhase.value === 'leaving')) {
+    motionPhase.value = 'station'
+    applyModeLayers(map)
+  }
 }
 
 // ---- 交互：点击选中 / 悬停即切换选中 + 浮牌跟随 ----
@@ -2255,9 +2344,11 @@ function initMap(): void {
     syncVehicles(map)
     map.on('move', () => {
       camTick.value++
-      // 线宽 / 热力透明度按当前档位逐帧贴回（业主 2026-10-20：缩远不能糊成一片）
+      // 线宽 / 热力透明度 / 箭头 / 图钉按当前档位逐帧贴回
+      // （业主 2026-10-20：缩远不能糊成一片；2026-10-23：箭头 150 m 与路同宽、远档等比缩小）
       applyLineScale(map)
       applyCameraPinScale(map)
+      applyDirectionScale(map)
     })
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
@@ -2575,7 +2666,7 @@ onUnmounted(() => {
       </template>
       <template v-else-if="!directionsVisible">
         <div class="lg-title">方向标记（只读 enriched）</div>
-        <div class="lg-row">已隐藏方向标记（顶栏「设置 → 方向标记」可开）</div>
+        <div class="lg-row">已隐藏方向箭头（地图工具条「箭头」键或顶栏「设置 → 方向标记」可开）</div>
       </template>
       <template v-else>
         <div class="lg-title">方向标记（只读 enriched）</div>
@@ -2584,7 +2675,7 @@ onUnmounted(() => {
           <span class="dir-mark both" :style="{ color: '#6D28D9' }"><span>↑</span><span class="flip">↑</span></span>双向（中点前后各一支）·
           <span class="dir-mark" :style="{ color: '#8B8B8B' }">?</span>未标定
         </div>
-        <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。</div>
+        <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。150 m 及以内箭头为醒目尺寸，更远等比缩小；150→200 m 渐隐，200 m 以远不画。</div>
       </template>
       <div class="lg-sep" />
       <template v-if="isFlow">

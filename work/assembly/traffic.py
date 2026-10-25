@@ -2225,13 +2225,102 @@ def build_context() -> dict[str, Any]:
 
 
 def build_report_compare() -> dict[str, Any]:
+    """TC-09 效果对比报表：端引擎 `--compare` 三组对照产物（只读、不代算）。
+
+    数据源（优先级与 route/recommend 同一套真网优先规则）：
+      ① `work/engine/out/real/compare/routes.json + run_log.json`（真网三组对照，TC-17 口径）
+      ② `work/engine/out/compare/`（样例网对照，①缺失时回退）
+    判定原文（TC-09）：四项对比存在、标注来源与时间窗、全部数字带 is_simulated。
+    四项 = 每组的 ①完成/在途/未准入计数 ②橙红路段数 ③车辆口径总行程时间
+    ④网络口径总行程时间；来源与时间窗取 run_log 的 ts / window_sec / seed / site。
+    产物缺失：如实返回空 rows + note（与改造前同语义，不编数）。
+    """
+    compare_dirs = (ROOT / "work" / "engine" / "out" / "real" / "compare",
+                     ROOT / "work" / "engine" / "out" / "compare")
+    chosen = None
+    layer = None
+    for cand, key in zip(compare_dirs, ("real", "sample")):
+        routes_p = cand / "routes.json"
+        runlog_p = cand / "run_log.json"
+        if routes_p.exists() and runlog_p.exists():
+            try:
+                routes_doc = read_json(routes_p)
+                runlog_doc = read_json(runlog_p)
+            except Exception:
+                continue
+            if isinstance(routes_doc, dict) and isinstance(routes_doc.get("comparison"), dict) \
+                    and isinstance(routes_doc["comparison"].get("groups"), dict) \
+                    and routes_doc["comparison"]["groups"] \
+                    and isinstance(runlog_doc, dict):
+                chosen = (routes_doc, runlog_doc)
+                layer = key
+                break
+    if chosen is None:
+        return {
+            "ts": _latest_data_ts(),
+            "is_simulated": True,
+            "rows": [],
+            "note": (
+                "效果对比报表无产物：work/engine/out/real/compare/（真网）与 work/engine/out/compare/"
+                "（样例）均缺失或不完整。复跑：python work/engine/run.py --network real --compare"
+                "（写 out/real/compare/）。接口层不编造对比数字。"
+            ),
+        }
+
+    routes_doc, runlog_doc = chosen
+    comp = routes_doc["comparison"]
+    groups: dict[str, Any] = comp["groups"]
+    labels: dict[str, Any] = comp.get("scenario", {}).get("group_labels", {})
+
+    rows = []
+    for gkey in ("no_guidance", "fastest", "cooperative"):
+        g = groups.get(gkey)
+        if not isinstance(g, dict):
+            continue
+        rows.append({
+            "group": gkey,
+            "label": labels.get(gkey, gkey),
+            "attempted": g.get("attempted"),
+            "inserted": g.get("inserted"),
+            "completed": g.get("completed"),
+            "in_transit": g.get("in_transit"),
+            "not_entered": g.get("not_entered"),
+            "orange_red_segment_count": len(g.get("orange_red_segments") or []),
+            "orange_red_segments": g.get("orange_red_segments") or [],
+            "total_travel_time_s": g.get("total_travel_time_s"),
+            "network_total_time_s": g.get("network_total_time_s"),
+            "max_eta_increase_s": g.get("max_eta_increase_s"),
+        })
+
+    criteria = comp.get("tc17", {}).get("criteria", {})
     return {
         "ts": _latest_data_ts(),
         "is_simulated": True,
-        "rows": [],
+        "rows": rows,
+        "window": {
+            "base_ts": comp.get("scenario", {}).get("base_ts")
+            or runlog_doc.get("ts"),
+            "window_sec": runlog_doc.get("window_sec"),
+            "vehicle_count": runlog_doc.get("vehicle_count"),
+            "od_count": runlog_doc.get("od_count"),
+            "seed": runlog_doc.get("seed"),
+            "site_id": runlog_doc.get("site_id"),
+        },
+        "source": f"engine.compare.{layer}",
+        "source_note": (
+            "真网三组对照产物（work/engine/out/real/compare/，`run.py --network real --compare`）"
+            if layer == "real"
+            else "样例网三组对照产物（work/engine/out/compare/，`run.py --sample --compare`）"
+        ),
+        "tc17": {
+            "passed": comp.get("tc17", {}).get("passed"),
+            "criteria": criteria,
+        },
         "note": (
-            "效果对比报表未接入：接口层没有「同输入多跑对照」的报表产物，"
-            "不编造总行程时间 / 排队峰值等对比数字；报表数据请以决策链路产物为准。"
+            "效果对比报表数据端自引擎三组对照产物（只读、不代算）：① 不推荐 / ② 此刻最快 / "
+            "③ 协同推荐在同一拓扑、同一输入、同一车辆群上跑，差异只来自推荐机制。"
+            "全部数字为演示数据（is_simulated）；时间窗与参数见 window 字段，"
+            "复跑命令 python work/engine/run.py --network real --compare。"
         ),
     }
 
