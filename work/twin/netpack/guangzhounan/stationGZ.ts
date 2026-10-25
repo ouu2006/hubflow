@@ -1220,7 +1220,7 @@ const RECOMMEND: PackRecommend = {
 export const STATION_GZ: StationPack = {
   key: 'GZ',
   label: '广州南站 · 708 段',
-  note: '广州南站 OSM 真路网 708 段（演示范围 1000 m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 未接摄像头登记' ,
+  note: '广州南站 OSM 真路网 708 段（演示范围 1000 m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 摄像头 = 演示层 708 路（N 段 = N 摄像头 = N 视频，2026-10-25）' ,
   station: {
     station_id: 'guangzhounan',
     name: '广州南站',

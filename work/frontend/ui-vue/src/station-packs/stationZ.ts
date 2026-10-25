@@ -198,7 +198,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
 export const STATION_Z: StationPack = {
   key: 'Z',
   label: 'Z · 61 段',
-  note: '站点 OSM 真路网 61 段（站区 500 m）· 几何为真值（OSM）· 源台账 6 路摄像头 / 一期演示 61 路（mock 复用样本视频）',
+  note: '站点 OSM 真路网 61 段（站区 500 m）· 几何为真值（OSM）· 摄像头 61 路 = 61 段（源台账 6 + 演示层 55，N 段 = N 摄像头 = N 视频，2026-10-25）',
   station: {
     station_id: 'ZQNZ',
     name: '肇庆东站',

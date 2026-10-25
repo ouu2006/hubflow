@@ -337,7 +337,7 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append(f"  key: {_ts_str(PACK_KEY)},")
     lines.append(f"  label: {_ts_str(f'{site_name} · {seg_count} 段')},")
     lines.append(
-        f"  note: {_ts_str(f'{site_name} OSM 真路网 {seg_count} 段（演示范围 {range_m} m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 未接摄像头登记')} ,"
+        f"  note: {_ts_str(f'{site_name} OSM 真路网 {seg_count} 段（演示范围 {range_m} m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 摄像头 = 演示层 {seg_count} 路（N 段 = N 摄像头 = N 视频，2026-10-25）')} ,"
     )
     lines.append("  station: {")
     lines.append(f"    station_id: {_ts_str(str(site['site_id']))},")

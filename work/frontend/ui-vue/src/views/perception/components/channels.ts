@@ -45,19 +45,32 @@ export interface ChannelDef {
  * 当前站点包的通道映射。
  * 取值函数而不是常量:本模块在 `import` 阶段就被求值,而包键是入口在挂载前注入的。
  * 2026-10-25 起 `channels` = 源台账生成物 + 演示层生成物合并（一段最多 1 路，源台账优先）。
+ * 演示复用覆盖**全部无自有源摄像头**：演示层带 `reuseOf`；源台账未接源的 4 路（老口径
+ * 「本期留空」）按同式 hash 现算 `reuseOf` —— 业主 2026-10-25「路段有多少摄像头，
+ * 监控墙就要有多少画面」，与大屏路段卡（IKNAUI）对无源段的既有行为一致。
  */
 export function channels(): ChannelDef[] {
-  return activePack().channels.map((c) => ({
-    cid: c.cid,
-    source: c.source,
-    camId: c.cam_id,
-    name: c.name,
-    segmentId: c.segment_id,
-    // 不写 `hasVideo` 的老包 = true(既有行为:有样本视频,能不能读看服务端)
-    hasVideo: c.hasVideo !== false,
-    demo: c.demo === true,
-    reuseOf: c.reuseOf,
-  }))
+  return activePack().channels.map((c) => {
+    const hasVideo = c.hasVideo !== false
+    return {
+      cid: c.cid,
+      source: c.source,
+      camId: c.cam_id,
+      name: c.name,
+      segmentId: c.segment_id,
+      hasVideo,
+      demo: c.demo === true,
+      reuseOf: c.reuseOf ?? (hasVideo ? undefined : reuseSourceOf(c.segment_id)),
+    }
+  })
+}
+
+/** 与大屏 SegmentCameraCard.reuseSourceOf 同式的确定性复用挑选（uint32 hash 二选一） */
+const REUSE_SOURCES = ['road2', 'track1'] as const
+function reuseSourceOf(segmentId: string): string {
+  let hash = 0
+  for (const ch of segmentId) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0
+  return REUSE_SOURCES[hash % REUSE_SOURCES.length]!
 }
 
 /**
