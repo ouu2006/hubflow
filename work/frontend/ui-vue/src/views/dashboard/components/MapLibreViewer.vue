@@ -444,9 +444,9 @@ function pickStation(key: string): void {
 /**
  * 上色策略由站点包 `colorPolicy` 决定（IKP5DM 起 Z/GZ 均为 `'all'`：全段按等级上色，
  * 灰只表示数据不可用/陈旧，不再表示「这段没摄像头」）。
- * 图钉与上色策略**解耦**：图钉只画源台账 6 路，图例按 `pins.length` 显隐（见模板）。
+ * 图钉与上色策略**解耦**：图钉画全量 N 段 N 路（2026-10-25），图例按 `pins.length` 显隐（见模板）。
  */
-/** 摄像头图钉（随包变化：Z 站 6 路源台账 / GZ 站 0 路） */
+/** 摄像头图钉（随包变化：Z 61 路 = 源台账 6 + 演示层 55；GZ 708 路 = 演示层） */
 const pins = computed(() => {
   void packTick.value
   return cameraPins()
@@ -1723,13 +1723,13 @@ onMounted(() => legendMq?.addEventListener('change', onLegendMqChange))
 onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
 
 /**
- * 摄像头布点（Issue IKLX5Y）：位置取站点包 `channels[].lon/lat`（落在该段折线上的示意点，
- * **不是路测点位**），点击跳到感知层对应通道。
- * ⚠️ 2026-10-18 口径（IKNBT2）：图钉只是**源台账布点**（初始映射），不代表一期摄像头总数——
- * 一期 **N 段 = N 摄像头 = N 视频（演示，mock 复用）**；源台账无布点的段也有演示摄像头与复用视频
- * （见大屏右栏「关联摄像头」卡），不要把"没图钉"读成"没摄像头/没视频"。
- * 实心 = 源台账有**样本视频源**（演示，非本站现场）、空心 = 源台账无独立视频源（画面为演示复用）——
- * "有样本视频"**不得**被读成"数据可用/真实接入"（IKMDKY 口径）。
+ * 摄像头布点（Issue IKLX5Y；业主 2026-10-25 起画**全量 N 段 N 路**）：
+ * 位置取站点包 `channels[].lon/lat`（源台账 = 登记表演示布点；演示层 = camera-plan 每段
+ * offset_m 落折线，**不是路测点位**），点击跳到感知层对应通道（演示层通道也有画面，演示复用）。
+ * 口径：N 段 = N 摄像头 = N 视频（演示）落图——路段有多少摄像头，图上就有多少图钉；
+ * 源台账 6 路 + 演示层（Z 55 / GZ 708）= 每段一路、一段最多 1 路。
+ * 实心 = 有自有样本视频源（演示，非本站现场）、空心 = 演示复用画面（取 road2/track1，
+ * 标注「演示复用」，不得读成"该摄像头自己的视频"或"数据可用/真实接入"）。
  */
 /**
  * 摄像头图钉随缩放收缩（业主 2026-10-20 口径「缩小地图后还是挤在一起」）。
@@ -1738,10 +1738,9 @@ onUnmounted(() => legendMq?.removeEventListener('change', onLegendMqChange))
  * 屏幕像素恒定、**天然不随 zoom 缩**；缩远后路网只剩几十像素，20 px 的图钉却还是 20 px。
  * 方向箭头是 symbol 图层（`icon-size` 可调），图钉不是。
  *
- * ⚠️ 影响面如实记一笔（独立审查 P2）：图钉只画**带坐标的通道**，Z 站 6 路、
- * GZ 站 0 路（`stationGZ.ts` 的 `channels: []`）。所以这一项在 Z 站生效、
- * 在 GZ 站**没有可见效果**；业主抱怨糊成一团的 GZ 708 段，真凶是热力晕染（见 `heatOf()`）
- * 和方向箭头，不是图钉。不留这句，后人会以为图钉是主因。
+ * ⚠️ 影响面（2026-10-25 更新）：图钉现为全量 N 段 N 路（Z 61 / GZ 708），缩放淡出对两站都生效；
+ * 全国视角另有 `.mlmap.mode-national` 的 `display:none`（DOM Marker 属于某一个站，全国不画）。
+ * 演示层点位是 camera-plan 每段 offset_m 落折线的演示布点，不是踏勘点位。
  *
  * 两层 DOM 的原因：MapLibre 会往它自己创建的那个元素上写 `transform: translate(...)`，
  * 如果把缩放写在同一个元素上就会**覆盖掉定位**、图钉跑位。所以外层 `.cam-pin-wrap` 交给
@@ -1794,10 +1793,16 @@ function addCameraPins(map: MapLibreMap): void {
     wrap.className = 'cam-pin-wrap'
     const el = document.createElement('div')
     el.className = p.hasVideo ? 'cam-pin' : 'cam-pin empty'
-    el.textContent = p.cid.replace('C-', '')
-    el.title = `${p.cid} ${p.name} · ${p.segment_id} · 源台账图钉：${
-      p.hasVideo ? '有样本视频源（演示，非本站现场）' : '无独立视频源（演示复用见右栏路段卡）'
-    } · 点击进感知层`
+    // 圈内数字 = 摄像头编号尾号（源台账 cam-01 → 01；演示层 CAM-Z-001 → 001 / CAM-GZ-708 → 708）
+    el.textContent = (p.camId ?? p.source).split('-').pop() ?? p.cid
+    const feedNote = p.hasVideo
+      ? '有样本视频源（演示，非本站现场）'
+      : p.reuseOf
+        ? `演示复用画面 ← ${p.reuseOf}（公开样本视频，不是本路视频）`
+        : '无视频源（画面留空）'
+    el.title = `${p.cid} ${p.camId ?? p.source} · ${p.name} · ${p.segment_id} · ${
+      p.demo ? '演示布点（camera-plan 演示层）· ' : '源台账布点 · '
+    }${feedNote} · 点击进感知层`
     el.addEventListener('mouseenter', () => {
       pin.value = p
     })
@@ -2600,9 +2605,15 @@ onUnmounted(() => {
 
     <!-- 摄像头浮牌（悬停图钉时；与路段浮牌是两套，不混） -->
     <div v-if="pin" class="cam-chip" :style="camChipStyle">
-      <b>{{ pin.cid }}</b> {{ pin.name }}
+      <b>{{ pin.cid }} {{ pin.camId ?? pin.source }}</b> {{ pin.name }}
       <span class="cam-chip-sub">
-        {{ pin.segment_id }} · 源台账：{{ pin.hasVideo ? '有样本视频源（演示，非本站现场）' : '无独立视频源（演示复用见右栏路段卡）' }} · 点击进感知层
+        {{ pin.segment_id }} · {{ pin.demo ? '演示布点（camera-plan 演示层）' : '源台账布点' }}：{{
+          pin.hasVideo
+            ? '有样本视频源（演示，非本站现场）'
+            : pin.reuseOf
+              ? `演示复用画面 ← ${pin.reuseOf}（非本路视频）`
+              : '无视频源（画面留空）'
+        }} · 点击进感知层
       </span>
     </div>
 
@@ -2699,12 +2710,12 @@ onUnmounted(() => {
           </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
-        <!-- 图钉语义与上色策略解耦（IKP5DM）：图钉只画源台账，流量版有 q 即上色 -->
+        <!-- 图钉语义与上色策略解耦（IKP5DM）；2026-10-25 起图钉画全量 N 段 N 路 -->
         <template v-if="pins.length > 0">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
-          <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
-          <div class="lg-note">图钉只画源台账登记段；流量版有 q 即上色，演示摄像头按 N 段 N 路（mock 复用）</div>
+          <div class="lg-row"><span class="dot cam-dot" />摄像头 {{ pins.length }} 路 · 有样本视频源（演示，非本站现场）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 演示复用画面（road2 / track1，非本站现场）</div>
+          <div class="lg-note">图钉 = 全量 N 段 N 路（源台账 + 演示层，一段最多 1 路）；流量版有 q 即上色</div>
         </template>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
@@ -2753,14 +2764,14 @@ onUnmounted(() => {
           </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
-        <!-- 图钉只画源台账（IKP5DM 选 A：全段按等级上色，图钉语义与上色策略分开说） -->
+        <!-- 图钉 = 全量 N 段 N 路（业主 2026-10-25）；上色策略仍是全段按等级上色，两者分开说 -->
         <template v-if="pins.length > 0">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="dot cam-dot" />源台账摄像头 · 有样本视频源（演示，非本站现场）</div>
-          <div class="lg-row"><span class="dot cam-dot empty" />源台账摄像头 · 无独立视频源（演示复用）</div>
+          <div class="lg-row"><span class="dot cam-dot" />摄像头 {{ pins.length }} 路 · 有样本视频源（演示，非本站现场）</div>
+          <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 演示复用画面（road2 / track1，非本站现场）</div>
           <div class="lg-note">
-            图钉只画源台账登记段（初始映射，不代表一期总数）；演示摄像头按 N 段 N 路（mock 复用，画面见右栏路段卡）；
-            路网全段按等级上色，灰 = 数据不可用，不是「没摄像头」。
+            图钉 = 全量 N 段 N 路（业主 2026-10-25：源台账 + 演示层，一段最多 1 路）；
+            「演示复用」画面取公开样本视频确定性复用，不是该摄像头自己的视频（真实接入归 IKMHMX）。
           </div>
         </template>
       </template>

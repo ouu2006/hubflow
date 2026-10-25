@@ -14,12 +14,19 @@
 // 唯一真值来源 = 站点包 `channels`（由 work/perception/mapping/camera-segments.json 生成），
 // 与感知页 / 地图摄像头图钉同一个 `source` / `hasVideo` 键，不另造第二份。
 //
-// 2026-10-18 口径（IKNBT2）：**N 段 = N 摄像头 = N 视频（演示）**——
-// 源台账 0 路不再写「无独立摄像头」，而是「演示摄像头 · 复用样本视频」；有登记摄像头段保持
-// 源台账身份，但同样说明"一期每路都有视频（mock 复用）"。不伪造真实摄像头/登记表。
+// 2026-10-25 口径（业主：N 段 = N 摄像头 = N 视频落页面）：`camerasOfSegment` 现在每段
+// 恰好 1 路（源台账 6 路优先、其余为演示层 `demo: true`）；演示层画面走 `reuseOf`
+// （公开样本视频确定性复用，与感知页同式），标注「演示复用 · 非本站现场」。
+// 不伪造真实摄像头/登记表；真实接入归 IKMHMX。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { getPerceptionStreams, perceptionFrameUrl, type PerceptionStreamMeta } from '../../../api/perception'
 import { camerasOfSegment, demoCameraCount, perceptionHref } from '../../../shared/cameras'
+import { activePack } from '../../../station-packs/index'
+
+/** 本站源台账摄像头条数（demo !== true 的 channels） */
+function activeLedgerCount(): number {
+  return activePack().channels.filter((c) => c.demo !== true).length
+}
 
 const props = defineProps<{ segmentId: string }>()
 
@@ -35,8 +42,19 @@ const FRAME_STEP = 5
 const CLOCK_MS = 500
 
 const cameras = computed(() => camerasOfSegment(props.segmentId))
-/** 一期演示口径的摄像头总数：N 段 = N 摄像头（Z=61 / GZ=433；与源台账分开说） */
+/** 一期演示口径的摄像头总数：N 段 = N 摄像头（Z=61 / GZ=708；与源台账分开说） */
 const demoCameraTotal = computed(() => demoCameraCount())
+/** 本站摄像头构成：源台账 / 演示层条数（口径注脚用） */
+const ledgerTotal = computed(() => activeLedgerCount())
+const demoTotal = computed(() => demoCameraCount() - ledgerTotal.value)
+/** 本段唯一的摄像头（一段最多 1 路；0 路只出现在未布点站） */
+const onlyCam = computed(() => cameras.value[0] ?? null)
+/** 本段摄像头是否为演示层布点 */
+const isDemoCam = computed(() => onlyCam.value?.demo === true)
+/** 本段摄像头的展示编号（演示层 CAM-Z-xxx / 源台账 cam-xx） */
+const camLabel = computed(() =>
+  onlyCam.value ? `${onlyCam.value.cid} · ${onlyCam.value.cam_id ?? onlyCam.value.source}` : '演示摄像头',
+)
 const views = computed(() =>
   cameras.value.map((camera) => ({
     cid: camera.cid,
@@ -50,16 +68,13 @@ const hasPlayable = computed(() => views.value.some((v) => v.hasVideo && v.meta 
 const videoCount = computed(() => views.value.filter((v) => v.hasVideo).length)
 /** 该段是否有任何“有视频源”的登记摄像头；false 时（含 0 路）走演示复用视频 */
 const hasAnyVideo = computed(() => cameras.value.some((c) => c.hasVideo !== false))
-/** 登记了但无视频源的摄像头 cid 列表（用于说明“登记摄像头均无视频源”） */
-const noVideoCids = computed(() =>
-  cameras.value.filter((c) => c.hasVideo === false).map((c) => c.cid).join(' / '),
-)
 
-// ---------- 全路段视频复用（Issue IKNAUI 业主口径：全部 61 段都要有视频显示）----------
+// ---------- 全路段视频复用（Issue IKNAUI → 2026-10-25 演示层落页面）----------
 //
-// **对没有登记摄像头、或登记摄像头均无视频源的段启用**：从现有 2 路样本视频 road2 / track1 中
-// 按 segment_id **确定性**挑一路（同一段永远同一路，不用随机），复用它真实的抽帧画面。
-// 不新增 / 不伪造摄像头登记——感知页台账仍是登记表里的 6 路；这里只是「演示复用视频」。
+// **对没有自有视频源的段启用**（演示层摄像头 + 源台账未接源）：优先取该路摄像头自己的
+// `reuseOf`（生成器按 segment_id 确定性挑的 road2 / track1），老包没有 reuseOf 时按
+// 同式现算（同一段永远同一路，不用随机），复用它真实的抽帧画面。
+// 「演示复用」不是该摄像头自己的视频——感知页 / 本卡都明示。
 const REUSE_SOURCES = ['road2', 'track1'] as const
 function reuseSourceOf(segmentId: string): string {
   let hash = 0
@@ -67,7 +82,7 @@ function reuseSourceOf(segmentId: string): string {
   return REUSE_SOURCES[hash % REUSE_SOURCES.length]!
 }
 const reuseStream = computed<string>(() =>
-  !hasAnyVideo.value ? reuseSourceOf(props.segmentId) : '',
+  !hasAnyVideo.value ? (onlyCam.value?.reuseOf ?? reuseSourceOf(props.segmentId)) : '',
 )
 const reuseMeta = computed<PerceptionStreamMeta | null>(() => {
   if (!reuseStream.value) return null
@@ -166,8 +181,10 @@ watch(
       <span class="sub-tag">
         {{
           cameras.length > 0
-            ? `源台账 ${cameras.length} 路`
-            : `演示摄像头 · 复用样本视频（按路段数 ${demoCameraTotal} 路）`
+            ? isDemoCam
+              ? `演示层 ${cameras.length} 路（本段 1 路 = 1 段）`
+              : `源台账 ${cameras.length} 路（本段 1 路 = 1 段）`
+            : `本站 0 路（未布点站；一期口径按路段数 ${demoCameraTotal} 路）`
         }}
       </span>
       <span v-if="!hasAnyVideo && reuseMeta" class="td-chip warn">演示复用 · 非本站现场 · 非实时</span>
@@ -183,13 +200,13 @@ watch(
       </a>
     </div>
 
-    <!-- 无真实登记源 / 登记摄像头均无视频源：按一期口径显示「演示摄像头 · 复用样本视频」（确定性复用 2 路样本视频之一） -->
+    <!-- 无自有视频源：按一期口径显示「演示复用样本视频」（确定性复用 2 路样本视频之一） -->
     <template v-if="!hasAnyVideo">
       <div class="cam-row">
         <div class="cam-head">
-          <span class="cam-id td-mono">{{ cameras.length === 0 ? '演示摄像头' : `登记源台账 ${noVideoCids}` }}</span>
+          <span class="cam-id td-mono">{{ camLabel }}</span>
           <span class="cam-name">
-            {{ cameras.length === 0 ? '演示复用样本视频（本段演示画面 · mock 复用）' : '源台账无独立视频源 · 演示复用样本视频' }}
+            {{ onlyCam ? onlyCam.name : '演示复用样本视频（本段演示画面 · mock 复用）' }}
           </span>
           <span class="td-chip" :class="{ ok: reuseMeta, err: Boolean(error) || reuseFrameFailed }">
             {{
@@ -255,15 +272,13 @@ watch(
       </div>
       <p class="cam-note">
         一期口径：<b>N 段 = N 摄像头 = N 视频（演示）</b>——本站 {{ demoCameraTotal }} 段即
-        {{ demoCameraTotal }} 路演示摄像头，每路都有画面；视频为 <b>mock 复用</b>（同一份 road2 / track1
-        可被多路复用），<b>演示复用 · 非本站现场 · 非实时</b>。
-        <template v-if="cameras.length === 0">
-          本段无真实登记源 → 显示「演示摄像头」，不代表没有摄像头/视频；
+        {{ demoCameraTotal }} 路摄像头（源台账 {{ ledgerTotal }} + 演示层 {{ demoTotal }}），每路都有画面；
+        本段画面为 <b>演示复用</b>（取 {{ reuseStream }} 公开样本视频，不是该摄像头自己的视频），
+        <b>演示复用 · 非本站现场 · 非实时</b>。
+        <template v-if="onlyCam">
+          {{ isDemoCam ? '本段摄像头为演示层布点（camera-plan 演示层，点位是路段折线上的演示点）。' : '本段摄像头为源台账登记（初始映射）。' }}
         </template>
-        <template v-else>
-          本段源台账摄像头（{{ noVideoCids }}）无独立视频源 → 画面为演示复用；
-        </template>
-        不伪造真实摄像头 / 登记表（源台账 {{ cameras.length }} 路仅作初始映射，不代表一期摄像头总数；真实接入归 IKMHMX）。
+        真实接入归 IKMHMX。
       </p>
     </template>
 

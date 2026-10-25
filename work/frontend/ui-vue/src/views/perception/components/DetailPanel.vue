@@ -20,19 +20,22 @@ const props = defineProps<{
 
 const meta = computed(() => props.ch.meta)
 
-/** 未接入视频源的通道(Issue IKLX5Y):与"未导出"分开说 */
-const noSource = computed(() => !props.ch.def.hasVideo)
-
-const stateChip = computed(() =>
-  noSource.value
-    ? { text: '未接入视频源', cls: 'out' }
-    : meta.value
-      ? { text: '已导出', cls: 'ok' }
-      : { text: '未导出', cls: 'out' },
-)
+/** 状态五分（channels.ts FEED_TEXT 同口径）：自有源看服务端，演示复用有画面、单独一档 */
+const stateChip = computed(() => {
+  if (!props.ch.def.hasVideo && props.ch.def.reuseOf) {
+    return meta.value ? { text: '演示复用', cls: 'warn' } : { text: '演示复用 · 服务未连接', cls: 'err' }
+  }
+  if (!props.ch.def.hasVideo) return { text: '未接入视频源', cls: 'out' }
+  return meta.value ? { text: '已导出', cls: 'ok' } : { text: '未导出', cls: 'out' }
+})
 
 const resLine = computed(() => {
-  if (noSource.value) return '未接入视频源 · 本期留空(路网上已布点,点击来自大屏)'
+  if (!props.ch.def.hasVideo && props.ch.def.reuseOf) {
+    const m = meta.value
+    if (!m) return '演示复用画面未连接（感知服务未起?）· 不是"无画面"'
+    return `${m.width}×${m.height} · ${m.fps} fps · 时长 ${fmtDur(m.duration_s)} · ${m.total_frames} 帧 · 画面 ← ${props.ch.def.reuseOf}（演示复用·非本站现场）`
+  }
+  if (!props.ch.def.hasVideo) return '未接入视频源 · 本期留空(路网上已布点,点击来自大屏)'
   const m = meta.value
   if (!m) return '样本视频未导出 · 无检测数据'
   return `${m.width}×${m.height} · ${m.fps} fps · 时长 ${fmtDur(m.duration_s)} · ${m.total_frames} 帧`
@@ -186,7 +189,11 @@ const gateState = computed(() => {
       <p v-else-if="ch.detFailed" class="note err">
         该通道检测数据读取失败(detections 接口请求失败)· 无 first_seen 可统计。这是接口故障,不是"该路无检出"。
       </p>
-      <p v-else-if="noSource" class="note">
+      <p v-else-if="!props.ch.def.hasVideo && props.ch.def.reuseOf" class="note">
+        该通道为演示复用画面（← {{ props.ch.def.reuseOf }}，公开样本视频，非该摄像头自己的视频）·
+        检测数据暂不可用（感知服务未连接或未返回）。
+      </p>
+      <p v-else-if="!props.ch.def.hasVideo" class="note">
         该通道未接入视频源（路网上已布点，本期视频留空）· 无画面与检测数据。
       </p>
       <p v-else class="note">该通道检测数据不可用 · 样本视频未导出(无 first_seen 可统计)。</p>

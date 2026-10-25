@@ -64,3 +64,22 @@
 > 本登记表 6 条 source ledger 每条都有 `plan_ref` / `plan_version` 指向规划行；规划行用 `source_ledger_cam_id` 回指本表，双向可查。
 > 规划表区分两层：`planned=true` 是规划层布点（未来 `points.json` 的 detector，归 IKMHMX），`demo_camera_id` 是演示层 N 段 N 路编号；
 > 本表**不扩**到 61/708 条，`video_streams` 仍只有 `road2` / `track1` 两路。
+
+## 六、演示层落页面（2026-10-25 业主口径：路段有多少摄像头，图上/台账/监控墙就有多少）
+
+> 业主 2026-10-25 口径把 §五 的「演示层只编号不上页面」推进为**落页面**：
+> **N 段 = N 摄像头 = N 视频**——图钉、感知台账、监控墙都按「源台账 + 演示层」全量渲染。
+>
+> - **本表（camera-segments.json）仍只有 6 条**：它是**源台账**，不再扩；
+> - **演示层**来自 [camera-plan.json](camera-plan.json) 每段一行的 `demo_camera_id`，
+>   由 `gen_station_channels.py` 生成 `work/frontend/ui-vue/src/station-packs/demoCameraChannels.generated.ts`
+>   （Z 55 条 + GZ 708 条；源台账已登记的段不重复生成，一段最多 1 路）；
+> - **点位** = 该段折线上 `offset_m` 处（与 `gen_camera_plan.py` 同一套投影算法，演示布点非踏勘点位）；
+> - **画面** = 演示复用：`reuseOf` 按 segment_id 确定性二选一（road2 / track1，规则与前端
+>   `SegmentCameraCard.reuseSourceOf` 同式）——是公开样本视频复用，**不是该摄像头自己的视频**；
+> - 页面状态五分：`已导出`（自有源）/ `演示复用`（有画面，复用样本）/ `未导出` / `读取失败` /
+>   `未接入视频源`（老包无复用）；
+> - 真实摄像头 / 真实视频接入仍归 IKMHMX，本表与演示层都不冒充实测。
+>
+> 自检：`gen_station_channels.py --check`（两份生成物逐字节比对）+ `check_station_data.py`
+> （第 ⑨ 项核对「源台账 + 演示层 = 路段数」与段号零悬空）。
