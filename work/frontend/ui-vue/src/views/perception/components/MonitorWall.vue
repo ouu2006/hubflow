@@ -7,7 +7,6 @@
 // 深色 token 只在本卡片内的画面格生效(CSS 变量下发,避免深色外溢到壳层)。
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { TD_VIDEO } from '../../../shared/theme'
-import { demoCameraCount } from '../../../shared/cameras'
 import MonitorCell from './MonitorCell.vue'
 import type { ChannelState } from './channels'
 
@@ -16,10 +15,10 @@ const emit = defineEmits<{ (e: 'select', source: string): void }>()
 
 const GAP = 6
 const TICK_MS = 2000
-/** 每页格数:3 列 × 4 行;61 路 → 6 页,不会一格挤爆 */
+/** 每页格数:3 列 × 4 行;Z 61 路 → 6 页、GZ 708 路 → 59 页,分页翻看 */
 const PAGE_SIZE = 12
 
-type FilterKey = 'all' | 'video' | 'novideo'
+type FilterKey = 'all' | 'own' | 'reuse'
 
 const idxMap = ref<Record<string, number>>({})
 const playing = ref(true)
@@ -45,33 +44,35 @@ const videoVars = {
   '--v-brand': TD_VIDEO.brand,
 }
 
-/** 通道总数 N(源台账条数;0 路合法;≠ 一期演示摄像头总数,见 demoCameraTotal) */
+/** 通道总数 N(= 路段数:源台账 + 演示层,2026-10-25 起;0 路合法) */
 const total = computed(() => props.channels.length)
-/** 一期演示摄像头总数 = 路段数（N 段 = N 摄像头 = N 视频，mock 复用；IKNBT2） */
-const demoCameraTotal = computed(() => demoCameraCount())
-/** 有视频源的通道数(登记表 has_video_source=true;不等于样本视频已导出) */
-const videoCount = computed(() => props.channels.filter((c) => c.def.hasVideo).length)
-/** 未接入视频源的通道数(Issue IKLX5Y) */
-const noVideoCount = computed(() => total.value - videoCount.value)
-/** 有视频源且服务端真返回了 meta 的通道数(未接入视频源的不算"已导出") */
-const exportedCount = computed(() => props.channels.filter((c) => c.def.hasVideo && c.meta !== null).length)
+/** 自有视频源的通道数(登记表 has_video_source=true;Z 包 2 路 road2/track1) */
+const ownCount = computed(() => props.channels.filter((c) => c.def.hasVideo).length)
+/** 演示复用通道数(无自有源、画面 reuseOf;2026-10-25 演示层 + 源台账未接源) */
+const reuseCount = computed(() => props.channels.filter((c) => !c.def.hasVideo && c.def.reuseOf).length)
+/** 真正没画面的通道数(无自有源也无复用;正常包应为 0) */
+const blankCount = computed(() => props.channels.filter((c) => !c.def.hasVideo && !c.def.reuseOf).length)
+/** 有画面且服务端真返回了 meta 的通道数(自有源 + 演示复用都算) */
+const exportedCount = computed(
+  () => props.channels.filter((c) => (c.def.hasVideo || c.def.reuseOf) && c.meta !== null).length,
+)
 
 const filters = computed<{ key: FilterKey; text: string; count: number }[]>(() => [
   { key: 'all', text: '全部', count: total.value },
-  { key: 'video', text: '有视频源', count: videoCount.value },
-  { key: 'novideo', text: '无视频源', count: noVideoCount.value },
+  { key: 'own', text: '自有视频源', count: ownCount.value },
+  { key: 'reuse', text: '演示复用', count: reuseCount.value },
 ])
 
-/** 当前筛选下的通道(IKMS1T:61 路按"有 / 无视频源"过滤,不靠肉眼在墙上找) */
+/** 当前筛选下的通道(2026-10-25:61/708 路按"自有源 / 演示复用"过滤) */
 const filtered = computed<ChannelState[]>(() => {
-  if (filter.value === 'video') return props.channels.filter((c) => c.def.hasVideo)
-  if (filter.value === 'novideo') return props.channels.filter((c) => !c.def.hasVideo)
+  if (filter.value === 'own') return props.channels.filter((c) => c.def.hasVideo)
+  if (filter.value === 'reuse') return props.channels.filter((c) => !c.def.hasVideo && c.def.reuseOf)
   return props.channels
 })
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / PAGE_SIZE)))
 /** 实际生效页码:筛选变化后条数变少时自动收口,不出现"空页" */
 const safePage = computed(() => Math.min(Math.max(1, page.value), pageCount.value))
-// 分页切片:每页 12 格;61 路 → 6 页(3 × 4 × 6)
+// 分页切片:每页 12 格
 const paged = computed(() => filtered.value.slice((safePage.value - 1) * PAGE_SIZE, safePage.value * PAGE_SIZE))
 const rangeText = computed(() => {
   const n = filtered.value.length
@@ -82,12 +83,12 @@ const rangeText = computed(() => {
 })
 
 const emptyHint = computed(() => {
-  if (total.value === 0) {
-    return `源台账 0 路（仅初始映射）· 一期演示摄像头 ${demoCameraTotal.value} 路（N 段 = N 摄像头 = N 视频，mock 复用）`
-  }
-  if (filter.value === 'video' && videoCount.value === 0) return `当前 ${total.value} 路都没有视频源`
-  if (filter.value === 'novideo' && noVideoCount.value === 0) return `全部 ${total.value} 路都已接入视频源`
-  return `切回「全部」可看 ${total.value} 路（其中 ${noVideoCount.value} 路未接入视频源）`
+  if (total.value === 0) return '本站 0 路摄像头（未布点站合法）'
+  if (filter.value === 'own' && ownCount.value === 0) return '本包没有自有视频源通道（画面全部为演示复用）'
+  if (filter.value === 'reuse' && reuseCount.value === 0) return `全部 ${total.value} 路都有自己的视频源`
+  return `切回「全部」可看 ${total.value} 路（自有源 ${ownCount.value} · 演示复用 ${reuseCount.value}${
+    blankCount.value > 0 ? ` · 无画面 ${blankCount.value}` : ''
+  }）`
 })
 
 function setFilter(key: FilterKey): void {
@@ -166,19 +167,16 @@ onUnmounted(() => {
 <template>
   <section class="td-card" :style="videoVars">
     <div class="td-card-head">
-      监控墙 · {{ total }} 路
+      监控墙 · {{ total }} 路（= 本站路段数）
       <span class="td-head-tag">
         每页 {{ PAGE_SIZE }} 格 · 抽帧 1 帧 / 2 s · 框 = 检测输出(抽帧) · 虚线 = 越线计数线
       </span>
     </div>
 
-    <!-- 0 路源台账合法(IKMS1T):如实说"仅初始映射"，并注明一期演示摄像头口径（IKNBT2） -->
+    <!-- 0 路合法(未布点站):如实空态,不编画面 -->
     <div v-if="total === 0" class="wall-empty">
-      <span class="we-l1">源台账 0 路（仅源侧初始映射）</span>
-      <span class="we-l2">
-        一期口径：N 段 = N 摄像头 = N 视频（演示）——本站 {{ demoCameraTotal }} 段 =
-        {{ demoCameraTotal }} 路演示摄像头，视频为 mock 复用；本墙只展示源台账通道。
-      </span>
+      <span class="we-l1">本站 0 路摄像头</span>
+      <span class="we-l2">未布点站合法（IKMS1T：0 路合法）；布点后本墙按路段数出画面。</span>
     </div>
 
     <template v-else>
@@ -199,7 +197,7 @@ onUnmounted(() => {
             {{ s }}×
           </span>
         </span>
-        <span class="td-seg" role="group" aria-label="按视频源筛选">
+        <span class="td-seg" role="group" aria-label="按画面来源筛选">
           <span
             v-for="f in filters"
             :key="f.key"
@@ -212,7 +210,7 @@ onUnmounted(() => {
             {{ f.text }} {{ f.count }}
           </span>
         </span>
-        <!-- 顶部也放一条分页:61 路时墙体高于一屏,滚到底才能点底部分页 -->
+        <!-- 顶部也放一条分页:708 路时墙体高于一屏,滚到底才能点底部分页 -->
         <span v-if="pageCount > 1" class="wall-pager top">
           <button class="td-btn sm" type="button" :disabled="safePage <= 1" @click="goto(safePage - 1)">上一页</button>
           <span class="page-info td-mono">第 {{ safePage }} / {{ pageCount }} 页</span>
@@ -221,8 +219,8 @@ onUnmounted(() => {
           </button>
         </span>
         <span class="wall-hint">
-          已导出 {{ exportedCount }} / {{ total }} 路<template v-if="noVideoCount > 0">
-            · 未接入视频源 {{ noVideoCount }} 路(本期留空)</template>
+          有画面 {{ exportedCount }} / {{ total }} 路（自有源 {{ ownCount }} · 演示复用 {{ reuseCount }}<template v-if="blankCount > 0">
+            · 无画面 {{ blankCount }}</template>）
         </span>
       </div>
 

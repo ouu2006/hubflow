@@ -14,15 +14,19 @@ const props = defineProps<{
   summaryUnavailable: boolean
 }>()
 
-/** 有视频源且服务端真返回了 meta 的通道数(未接入视频源的不算"已导出") */
+/** 有画面(自有源或演示复用)且服务端真返回了 meta 的通道数 */
 const exportsCount = computed(
-  () => props.channels.filter((c) => c.def.hasVideo && c.meta !== null).length,
+  () => props.channels.filter((c) => (c.def.hasVideo || c.def.reuseOf) && c.meta !== null).length,
 )
-/** 通道总数(不再写死 6 —— 换站后通道数跟着包走) */
+/** 通道总数(不再写死 —— 换站后通道数跟着包走) */
 const chanTotal = computed(() => props.channels.length)
-/** 未接入视频源的通道数(Issue IKLX5Y) */
-const noSourceCount = computed(() => props.channels.filter((c) => !c.def.hasVideo).length)
-/** 全包都没有视频源(站点包 Z):这时"源视频"这一环整环是空的,不能自称"离线样本" */
+/** 真正没有画面的通道数(无自有源也无演示复用;2026-10-25 起正常包为 0) */
+const noSourceCount = computed(() => props.channels.filter((c) => !c.def.hasVideo && !c.def.reuseOf).length)
+/** 自有视频源条数 */
+const ownCount = computed(() => props.channels.filter((c) => c.def.hasVideo).length)
+/** 演示复用条数(画面来自公开样本视频确定性复用) */
+const reuseCount = computed(() => props.channels.filter((c) => !c.def.hasVideo && c.def.reuseOf).length)
+/** 全包都没有画面(无自有源也无复用):这时"源视频"这一环整环是空的,不能自称"离线样本" */
 const allNoSource = computed(
   () => props.channels.length > 0 && noSourceCount.value === props.channels.length,
 )
@@ -31,10 +35,10 @@ const stages = computed(() => {
   const m = props.meta
   const backend = m?.backend ?? ''
   const srcLine = allNoSource.value
-    ? `${chanTotal.value} 路通道 · 全部未接入视频源(本期留空)`
+    ? `${chanTotal.value} 路通道 · 全部无画面(本期留空)`
     : noSourceCount.value > 0
-      ? `${chanTotal.value} 路通道(已导出 ${exportsCount.value} · 未接入视频源 ${noSourceCount.value})`
-      : `${chanTotal.value} 路 · 离线样本(已导出 ${exportsCount.value} 路)`
+      ? `${chanTotal.value} 路通道(有画面 ${exportsCount.value} · 无画面 ${noSourceCount.value})`
+      : `${chanTotal.value} 路(自有源 ${ownCount.value} · 演示复用 ${reuseCount.value})`
   return [
     { name: '源视频', value: srcLine, on: false },
     { name: '目标检测', value: m ? `${m.model} · ${m.conf_threshold} conf` : '—', on: false },
@@ -91,8 +95,8 @@ const summaryRows = computed(() => {
         </template>
       </div>
       <p class="flow-note">
-        <template v-if="allNoSource">本包 {{ chanTotal }} 路通道全部未接入视频源(本期留空)—— 整条流水线无输入,下方汇总无数据</template>
-        <template v-else>单 CPU · 离线批处理 · {{ chanTotal }} 路通道({{ exportsCount }} 路已导出)</template>
+        <template v-if="allNoSource">本包 {{ chanTotal }} 路通道全部无画面(本期留空)—— 整条流水线无输入,下方汇总无数据</template>
+        <template v-else>单 CPU · 离线批处理 · {{ chanTotal }} 路通道(有画面 {{ exportsCount }} 路;演示复用画面取公开样本视频)</template>
       </p>
 
       <div class="sep">

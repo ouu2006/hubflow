@@ -189,6 +189,20 @@ export interface PackChannel {
    * 不写 = 老行为(按感知服务实际返回判定)。
    */
   hasVideo?: boolean
+  /**
+   * 演示层摄像头标记（业主 2026-10-25 口径：N 段 = N 摄像头落到页面）。
+   * `true` = 本条是**演示布点**（由 `work/perception/mapping/camera-plan.json` 每段一行的
+   * `demo_camera_id` 生成，见 `demoCameraChannels.generated.ts`），不是源台账登记；
+   * 画面走 `reuseOf` 演示复用。
+   */
+  demo?: boolean
+  /**
+   * 演示复用的样本视频 stream_id（road2 / track1；与感知服务实际通道对齐）。
+   * 只在 `hasVideo: false` 且该摄像头有演示画面时出现——画面与检测框都从这一路取，
+   * 页面必须标「演示复用」，不得读成"该摄像头自己的视频"。
+   * 挑选规则与大屏路段卡 `reuseSourceOf` 同式（按 segment_id 确定性二选一）。
+   */
+  reuseOf?: string
 }
 
 /**

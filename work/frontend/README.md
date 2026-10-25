@@ -1643,3 +1643,48 @@ Vite 的 `resolve.extensions` 里 **`.js` 排在 `.ts` 之前**，所以 `import
   与桌面全局开关不是同一套记忆；两套口径共存是刻意的，但文档别写成"窄屏也记住"
 - 落客点浮牌（`lm-pin` 18 px）、起终标注（`rt-pin`）、车辆点（`veh-dot`）仍是固定像素，未随缩放收；
   缩远时它们与 0.8 px 的路网尺度不齐（业主未提，本轮不做，登记在此）
+
+## 二十七、摄像头全量落页面：N 段 = N 摄像头 = N 视频（业主 2026-10-25 口径）
+
+> 本单把「一期演示层 N 段 N 路」（IKNBT2 / IKP5DM 只是编号与大屏路段卡复用画面）推进为
+> **全量落页面**：图钉、感知台账、监控墙、右栏路段卡全部按「源台账 + 演示层」渲染。
+> 判级、契约字段、`stations/*.json`、感知登记表条数一律没动。
+
+### 27.1 数据与生成
+
+- **源台账**（6 条，`work/perception/mapping/camera-segments.json`）不变，仍由
+  `cameraChannels.generated.ts` 承载；
+- **演示层**新增生成物 `demoCameraChannels.generated.ts`：来源 = `camera-plan.json` 每段一行
+  的 `demo_camera_id`，点位 = 该段折线上 `offset_m` 处（与 `gen_camera_plan.py` 同一套投影），
+  `demo: true` + `reuseOf`（road2 / track1 按 segment_id 确定性二选一，与
+  `SegmentCameraCard.reuseSourceOf` 同式）；
+- 站点包 `channels` = 两份生成物合并：**Z 6 + 55 = 61 路 = 61 段；GZ 708 路 = 708 段**
+  （一段最多 1 路，源台账优先；`stationGZ.ts` 由 `gen_station_pack_gz.py` 重新生成接入）；
+- 生成器 `work/perception/tools/gen_station_channels.py`（`--check` 两份产物逐字节比对）；
+  `check_station_data.py` 第 ⑨ 项扩为核对「源台账 + 演示层 = 路段数」与两站段号零悬空。
+
+### 27.2 页面表现
+
+- **大屏图钉**：`cameraPins()` 返回全量 channels（带坐标的全部上图），Z 61 / GZ 708 个；
+  实心 = 有自有样本视频源（演示）、空心 = 演示复用画面；圈内数字改摄像头编号尾号
+  （`cam-01` → 01、`CAM-Z-001` → 001、`CAM-GZ-708` → 708）；浮牌 / title 区分
+  「演示布点（camera-plan 演示层）」与「源台账布点」；缩放淡出（`camPinScaleOf/OpacityOf`）
+  现在对两站都生效，全国视角仍有 `display:none`。
+- **感知页台账**：行数 = 本站摄像头总数（61/708），头栏写「N 路 = 源台账 X + 演示层 Y」；
+  演示复用行标「演示复用 ← road2/track1 · meta 统计」。
+- **监控墙**：筛选改「全部 / 自有视频源 / 演示复用」；每格画面按 `feedSourceOf` 取数——
+  自有源取自己的 stream、演示复用取 `reuseOf` 流（画面 + 检测框同源），格内标注
+  「演示复用 ← road2/track1 · 非本站现场」。**路段有多少摄像头，墙上就有多少格画面**。
+- **通道状态五分**（`channels.ts`）：`已导出`（自有源）/ `演示复用`（有画面，复用样本）/
+  `未导出` / `读取失败` / `未接入视频源`（老包无复用）——台账 / 监控墙 / 详情 / 供给对照共用。
+- **大屏右栏路段卡**：每段现在恰好 1 路摄像头；演示层段显示该路 `camId` + 路段名 +
+  「演示复用」角标，复用流优先取 `reuseOf`、老包按原 hash 现算兜底。
+- **感知服务断流**：布了摄像头的包（哪怕全是演示层）如实报「感知演示服务未连接」并自动重试
+  ——不再以「本包没有自有视频源」为由静默成无画面。
+
+### 27.3 口径纪律（不变）
+
+- 演示层点位是 `camera-plan` 路段折线上的**演示布点**，不是路测点、不是踏勘点位；
+- 「演示复用」画面取公开样本视频（road2 / track1），**不是该摄像头自己的视频**，
+  不得读成"真实接入 / 实时 / 现场实测"；
+- 真实摄像头与真实视频接入归 IKMHMX；`is_simulated` 口径不变。

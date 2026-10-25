@@ -1,7 +1,7 @@
 {
   "is_simulated": true,
   "registry_version": "2026-10-21",
-  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY 建表 / IKMS1T 去固定化）。唯一真值来源：页面画的与后端发的都取本文件。摄像头条数 N = cameras 条数，动态：0 ≤ N ≤ 本站路段数（肇庆东 61），默认一段最多 1 路；本表当前登记的 6 路是**合法源台账**，不是固定值。样本视频不是本站画面，映射仅用于演示/联调。 IKP5DM 起：本表 6 条与 camera-plan.json 双向可查（本表 plan_ref 指向规划行，规划行 source_ledger_cam_id 回指本表）；一期演示层 N 段 N 路不扩本表。",
+  "note": "摄像头 ↔ 通道 ↔ 路段 三段映射登记表（Issue IKMDKY 建表 / IKMS1T 去固定化）。唯一真值来源：页面画的与后端发的都取本文件。摄像头条数 N = cameras 条数，动态：0 ≤ N ≤ 本站路段数（肇庆东 61），默认一段最多 1 路；本表当前登记的 6 路是**源台账**（初始映射）。 2026-10-25 起（业主口径：路段有多少摄像头，图上/台账/监控墙就有多少）：**N 段 = N 摄像头 = N 视频落到页面**——演示层（每段一行，camera-plan.json 的 demo_camera_id）由 gen_station_channels.py 生成 demoCameraChannels.generated.ts 与本表合并渲染；本表条数**不再扩**（源台账 6 条维持），演示层条数 = 路段数 − 源台账已登记段数（Z 55 / GZ 708）。样本视频不是本站画面，映射仅用于演示/联调。 IKP5DM 起：本表 6 条与 camera-plan.json 双向可查（本表 plan_ref 指向规划行，规划行 source_ledger_cam_id 回指本表）。",
   "segment_id_namespaces": {
     "SZ-###": "站点 Z 真 OSM 路网（61 段，见 work/twin/netpack/network_junction.json / stationZ.network.ts）—— 本站唯一现役段号",
     "SEG-###": "7 节点样例网（stations/network.json 占位件 + work/engine/samples/ + 鸿蒙 App fixture）—— 样例数据专用，不是本站真网；保留不改名，避免把样例冒充本站",

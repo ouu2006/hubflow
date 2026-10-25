@@ -16,10 +16,12 @@ import { CLASS_COLORS, type VehicleClassKey } from '../../../shared/theme'
 
 /** 通道目录(与设计稿 04 一致;`source` 与感知服务 stream_id 对齐) */
 export interface ChannelDef {
-  /** 展示编号 C-01 … C-06 */
+  /** 展示编号 C-01 …（Z 包演示层接在源台账后续编至 C-61；GZ 包 C-01…C-708） */
   cid: string
   /** 源文件名(不含扩展名)= 感知服务 stream_id = 前端帧/检测端点入参 */
   source: string
+  /** 摄像头编号：源台账 cam-xx / 演示层 CAM-Z-xxx·CAM-GZ-xxx；台账与监控墙标题行优先显示它 */
+  camId?: string
   /** 中文路段名(设计稿展示口径) */
   name: string
   /** 映射路段(设计稿 04;回灌门控按它查 network.sections 与同化记录) */
@@ -33,46 +35,72 @@ export interface ChannelDef {
    * 页面上必须分开说,否则"还没接"会被读成"处理失败"。
    */
   hasVideo: boolean
+  /** 演示层摄像头（业主 2026-10-25：N 段 = N 摄像头 = N 视频落页面；`demo: true` 非源台账登记） */
+  demo?: boolean
+  /** 演示复用的样本视频 stream_id（road2/track1）；画面与检测框从它取，必须标「演示复用」 */
+  reuseOf?: string
 }
 
 /**
  * 当前站点包的通道映射。
  * 取值函数而不是常量:本模块在 `import` 阶段就被求值,而包键是入口在挂载前注入的。
+ * 2026-10-25 起 `channels` = 源台账生成物 + 演示层生成物合并（一段最多 1 路，源台账优先）。
  */
 export function channels(): ChannelDef[] {
   return activePack().channels.map((c) => ({
     cid: c.cid,
     source: c.source,
+    camId: c.cam_id,
     name: c.name,
     segmentId: c.segment_id,
     // 不写 `hasVideo` 的老包 = true(既有行为:有样本视频,能不能读看服务端)
     hasVideo: c.hasVideo !== false,
+    demo: c.demo === true,
+    reuseOf: c.reuseOf,
   }))
+}
+
+/**
+ * 画面/检测取数用的 stream_id：自有视频源用 `source`；
+ * 无自有源但有 `reuseOf`（演示层 / 源台账未接源）用复用流——画面与检测框都从它取。
+ */
+export function feedSourceOf(def: ChannelDef): string {
+  return def.hasVideo ? def.source : (def.reuseOf ?? def.source)
+}
+
+/** 与复用挑选同式的确定性 hash（uint32；演示层相位偏移用，不是数据口径） */
+export function hashOf(text: string): number {
+  let h = 0
+  for (const ch of text) h = (h * 31 + (ch.codePointAt(0) ?? 0)) >>> 0
+  return h
 }
 
 /** 越线计数线位置(归一化画面高度;手册/设计稿口径 line_position = 0.62) */
 export const COUNT_LINE_POS = 0.62
 
 /**
- * 通道"画面从哪来"的四分口径(Issue IKLX5Y 把原三分加了一档)。
+ * 通道"画面从哪来"的五分口径(IKLX5Y 三分 → IKLX5Y 加一档四分 → 2026-10-25 演示层再加一档)。
  *
- * ⚠️ 这一档必须与"未导出"分开 —— 业主 2026-10-15 说视频样本先不弄,
- * 摄像头布了点但**视频还没接**;若沿用"样本视频未导出",看的人会以为
- * "有这段视频、只是没处理",那是两回事。
+ * ⚠️ `reuse` 必须与"未导出"分开 —— 演示复用是**有画面**（取公开样本视频确定性复用，
+ * 明确标「演示复用·非本站现场」）；「未导出」是自有源样本视频服务端还没处理，没有画面。
  */
-export type ChannelFeed = 'no-source' | 'unexported' | 'failed' | 'ok'
+export type ChannelFeed = 'ok' | 'reuse' | 'no-source' | 'unexported' | 'failed'
 
-/** 四分的文字 + 样式类(全页同口径:台账 / 监控墙 / 详情 / 供给对照共用) */
+/** 五分的文字 + 样式类(全页同口径:台账 / 监控墙 / 详情 / 供给对照共用) */
 export const FEED_TEXT: Record<ChannelFeed, { text: string; cls: string }> = {
+  ok: { text: '已导出', cls: 'ok' },
+  reuse: { text: '演示复用', cls: 'warn' },
   'no-source': { text: '未接入视频源', cls: 'out' },
   unexported: { text: '未导出', cls: 'out' },
   failed: { text: '检测读取失败', cls: 'err' },
-  ok: { text: '已导出', cls: 'ok' },
 }
 
-/** 判定顺序:包说没视频源 → 那一档;否则看服务端返回(未导出 / 读取失败 / 已导出) */
+/**
+ * 判定顺序:自有源看服务端实际返回(未导出 / 读取失败 / 已导出);
+ * 无自有源但有 `reuseOf` → 演示复用(有画面);无自有源也无复用(老包) → 未接入视频源。
+ */
 export function feedOf(c: ChannelState): ChannelFeed {
-  if (!c.def.hasVideo) return 'no-source'
+  if (!c.def.hasVideo) return c.def.reuseOf ? 'reuse' : 'no-source'
   if (c.meta === null) return 'unexported'
   if (c.detFailed) return 'failed'
   return 'ok'
