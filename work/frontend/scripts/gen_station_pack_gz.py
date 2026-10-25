@@ -199,6 +199,9 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append("// 本文件由 work/frontend/scripts/gen_station_pack_gz.py 生成，**勿手改**；")
     lines.append("// 全段确定性演示基线（每段 level>=1，不灰档）；摄像头 = 演示层 708 路（N 段 = N 摄像头 =")
     lines.append("// N 视频，业主 2026-10-25 口径；GZ 源台账无登记，channels 取 demoCameraChannels.generated.ts）。")
+    lines.append("// ⚠️ 本目录里的这份是**文本镜像**（check_site_ranges.py 按文本解析，不做 TS 编译）：")
+    lines.append("//   ./types.ts / *directions*.ts / *demoCameraChannels*.ts 等相对 import 只在前端")
+    lines.append("//   站点包目录（work/frontend/ui-vue/src/station-packs/）解析，本目录历来缺这些文件。")
     lines.append("")
     lines.append("import { STATION_GZ_SEGMENTS } from './stationGZ.network.ts'")
     # IKOQEJ：方向/车道/对向/贯通字段（只读 enriched 生成物；不改判级/契约）

@@ -104,7 +104,7 @@ export function cameraCountOf(segmentId: string): number {
 
 /**
  * 一期演示口径的摄像头总数：**N 段 = N 摄像头 = N 视频（mock 复用）**。
- * 返回当前站点包的路段数（Z=61 / GZ=433）；大屏/感知页用它标注"演示摄像头 N 路"，
+ * 返回当前站点包的路段数（Z=61 / GZ=708）；大屏/感知页用它标注"演示摄像头 N 路"，
  * 与源台账（`channels` 条数，仅初始映射）分开说，不拿源台账当一期总数。
  */
 export function demoCameraCount(): number {

@@ -199,9 +199,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     want = render(mapping)
     n = len(cams)
-    # 演示层产物：fixture 模式（--mapping 指到别处）不生成——它依赖仓库内 camera-plan / netpack
+    # 演示层产物：fixture 模式（--mapping 指到别处）不生成——它依赖仓库内 camera-plan / netpack。
+    # ⚠️ 路径必须先 resolve 再比：--mapping 用相对路径传同一份登记表时，原始 Path 不相等。
     want_demo: str | None = None
-    if mapping_path == MAPPING_PATH and PLAN_PATH.is_file():
+    if mapping_path.resolve() == MAPPING_PATH.resolve() and PLAN_PATH.is_file():
         want_demo = render_demo(mapping)
 
     if a.check:

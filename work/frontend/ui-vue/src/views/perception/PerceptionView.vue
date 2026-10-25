@@ -180,11 +180,12 @@ async function loadStreams(): Promise<void> {
     detFailedSet.value = failed
     pStatus.value = 'ready'
     clearRetryTimer()
-    // 当前通道:深链点名过就**不动**;否则若这一路的取数流不在服务端返回里,落第一路(既有行为)
+    // 当前通道:深链点名过就**不动**;否则若这一路不在服务端返回里,落第一路(既有行为)。
+    // 判的是**取数流在不在服务端**:演示复用通道的取数流是 reuseOf(road2/track1),
+    // 深链进来的 CAM-* 编号不在服务端列表里属正常,由 linkedSource 守住不重置。
     if (!linkedSource) {
       const first = list[0]
-      const picked = packChannels().find((c) => feedSourceOf(c) === currentSource.value)
-      if (first && !picked) {
+      if (first && !list.some((m) => m.stream_id === currentSource.value)) {
         currentSource.value = first.stream_id
       }
     }
