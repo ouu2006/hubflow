@@ -77,6 +77,7 @@ import {
 import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   basemapEnabled,
+  camerasVisible,
   directionsVisible,
   legendVisible,
   routeEmphasisEnabled,
@@ -248,6 +249,20 @@ const STATION_DOT_COLOR = '#475569'
 const OUTLINE_SRC = 'hubflow-china-outline'
 const LAYER_OUTLINE_FILL = `${OUTLINE_SRC}-fill`
 const LAYER_OUTLINE_LINE = `${OUTLINE_SRC}-line`
+
+// ---- 落客区（终点区域）可视化（业主 2026-10-25：进入区域 → 停车场落客的可视化终点划分）----
+// 每个落客点画一个半透明圆（fill + outline），选中路线的终点落客点另有一层高亮。
+// 口径：圆是**演示范围圈**（以落客点为圆心的示意划分，非实地划线、非真实围栏）。
+const DZ_SRC = 'hubflow-dropzone'
+const LAYER_DZ_FILL = `${DZ_SRC}-fill`
+const LAYER_DZ_HL = `${DZ_SRC}-hl`
+const LAYER_DZ_LINE = `${DZ_SRC}-line`
+/** 演示范围圈半径（米） */
+const DROPZONE_RADIUS_M = 35
+/** 落客区颜色与「落」图钉同族（teal） */
+const DZ_COLOR = '#0f766e'
+/** 高亮圈的填充透明度（底圈 0.10、描边 0.5） */
+const DZ_HL_OPACITY = 0.26
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 /**
@@ -451,6 +466,10 @@ const pins = computed(() => {
   void packTick.value
   return cameraPins()
 })
+
+// 落客区图例样式（与 LAYER_DZ_* 的 paint 同源；脚本 setup 里的模板绑定用小写别名）
+const dzColor = DZ_COLOR
+const dzSwatchBg = 'rgba(15, 118, 110, 0.18)'
 
 // ---- 路段染色（四级 / 指数两种视图） ----
 
@@ -1374,11 +1393,76 @@ type OwnLayer =
   | CircleLayerSpecification
   | FillLayerSpecification
 
+/**
+ * 以 (lon, lat) 为圆心、radiusM 为半径的近似圆环（36 段多边形）。
+ * 米→度换算用球面近似（lat 度 ≈ 110.54 km，lon 度 ≈ 111.32·cos(lat) km），
+ * 站区尺度（≤1 km、半径 35 m）下误差可忽略；这是**演示范围圈**，不是测地圆。
+ */
+function circleRing(lon: number, lat: number, radiusM: number, segs = 36): [number, number][] {
+  const ring: [number, number][] = []
+  const cosLat = Math.cos((lat * Math.PI) / 180)
+  for (let i = 0; i <= segs; i++) {
+    const a = (i / segs) * 2 * Math.PI
+    ring.push([
+      lon + (radiusM * Math.cos(a)) / (111_320 * cosLat),
+      lat + (radiusM * Math.sin(a)) / 110_540,
+    ])
+  }
+  return ring
+}
+
+/**
+ * 落客区（终点区域）GeoJSON：当前站点包每个落客点一个圆。
+ * 数据源 = 站点包 `dropoffs`（与右栏「本段附近的落客点」同一份，`lm-pin`「落」同族）；
+ * 切站由 `applyViewState()` 重setData，不在包里另存一份。
+ */
+function dropZoneGeoJson(): FeatureCollection {
+  const features = activePack().dropoffs.map((d) => ({
+    type: 'Feature' as const,
+    properties: { id: d.id, name: d.name },
+    geometry: { type: 'Polygon' as const, coordinates: [circleRing(d.lon, d.lat, DROPZONE_RADIUS_M)] },
+  }))
+  return { type: 'FeatureCollection', features }
+}
+
+/** 高亮层 filter：选中路线的终点落客点（`routeEnd.point_id`）；没选中时永假（全不亮） */
+function dropZoneHighlightFilter(): FilterSpecification {
+  const id = props.routeEnd?.point_id ?? '__none__'
+  return ['==', ['get', 'id'], id] as unknown as FilterSpecification
+}
+
+function dropZoneLayerSpecs(): OwnLayer[] {
+  const common = { source: DZ_SRC, filter: ['all'] as unknown as FilterSpecification }
+  return [
+    {
+      id: LAYER_DZ_FILL,
+      type: 'fill',
+      ...common,
+      paint: { 'fill-color': DZ_COLOR, 'fill-opacity': 0.1 },
+    },
+    {
+      id: LAYER_DZ_HL,
+      type: 'fill',
+      ...common,
+      // 选中路线的终点落客点高亮；默认 filter 永假（id 不可能为空串）
+      filter: ['==', ['get', 'id'], '__none__'] as unknown as FilterSpecification,
+      paint: { 'fill-color': DZ_COLOR, 'fill-opacity': DZ_HL_OPACITY },
+    },
+    {
+      id: LAYER_DZ_LINE,
+      type: 'line',
+      ...common,
+      paint: { 'line-color': DZ_COLOR, 'line-width': 1.4, 'line-opacity': 0.55 },
+    },
+  ]
+}
+
 function ownLayerSpecs(): OwnLayer[] {
   const own: OwnLayer[] = [...outlineLayerSpecs(), ...lineLayerSpecs()]
-  // 方向标记插在路线图层之前（路网 → 方向标 → 路线 → 选中）
+  // 方向标记插在路线图层之前（路网 → 方向标 → 落客区 → 路线 → 选中）
   const at = own.findIndex((layer) => layer.id === LAYER_ROUTE_ALT1_HALO)
-  own.splice(at < 0 ? own.length : at, 0, directionLayerSpec())
+  const insertAt = at < 0 ? own.length : at
+  own.splice(insertAt, 0, directionLayerSpec(), ...dropZoneLayerSpecs())
   // 站点 pin 永远在最上层（切站入口不能被路网盖住）
   own.push(...stationLayerSpecs())
   return own
@@ -1408,6 +1492,10 @@ function applyModeLayers(map: MapLibreMap): void {
   const atStation = motionPhase.value === 'station'
   for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
   setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
+  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画
+  setLayerVisible(map, LAYER_DZ_FILL, atStation)
+  setLayerVisible(map, LAYER_DZ_HL, atStation)
+  setLayerVisible(map, LAYER_DZ_LINE, atStation)
   setLayerVisible(map, LAYER_STATION_HIT, !atStation)
   setLayerVisible(map, LAYER_STATION_DOT, !atStation)
   setLayerVisible(map, LAYER_STATION_LABEL, !atStation)
@@ -1426,6 +1514,7 @@ function applyModeLayers(map: MapLibreMap): void {
 function addOwnLayers(map: MapLibreMap): void {
   if (!map.getSource(OUTLINE_SRC)) map.addSource(OUTLINE_SRC, outlineSource())
   if (!map.getSource(SRC)) map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
+  if (!map.getSource(DZ_SRC)) map.addSource(DZ_SRC, { type: 'geojson', data: dropZoneGeoJson() })
   ensureDirectionSource(map)
   ensureStationSource(map)
   for (const spec of ownLayerSpecs()) {
@@ -2140,6 +2229,12 @@ function applyViewState(map: MapLibreMap): void {
   if (stSrc) void stSrc.setData(stationGeoJson())
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
+  // 落客区（终点区域）：切站 / 换样式后按当前包重贴；高亮层按选中路线的终点落客点收口
+  const dzSrc = map.getSource(DZ_SRC) as GeoJSONSource | undefined
+  if (dzSrc) void dzSrc.setData(dropZoneGeoJson())
+  if (map.getLayer(LAYER_DZ_HL)) {
+    map.setFilter(LAYER_DZ_HL, dropZoneHighlightFilter())
+  }
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
   if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilter())
   if (map.getLayer(LAYER_ROUTE_HALO)) map.setFilter(LAYER_ROUTE_HALO, routeFilter())
@@ -2463,6 +2558,23 @@ watch(routeEmphasisEnabled, () => {
   if (!map || !ready.value) return
   applyViewState(map)
 })
+/**
+ * 摄像头图钉显隐开关（业主 2026-10-25）：关 = 整层不画（`.mlmap.cams-off` 的 CSS
+ * `display:none`，与全国模式同一套机制），悬停浮牌一并清掉；数据、台账、右栏路段卡不动。
+ */
+watch(camerasVisible, (on) => {
+  if (!on) pin.value = null
+})
+
+/** 选中路线变化 → 终点落客点的「终点区域」高亮跟着走（换 OD / 换站都经这里） */
+watch(
+  () => props.routeEnd?.point_id,
+  () => {
+    const map = mapRef.value
+    if (!map || !ready.value || !map.getLayer(LAYER_DZ_HL)) return
+    map.setFilter(LAYER_DZ_HL, dropZoneHighlightFilter())
+  },
+)
 
 /** 顶栏「设置」里的底图开关：开 → 拉底图；关 → 撤掉底图层（路网一行不动） */
 watch(basemapEnabled, () => {
@@ -2540,7 +2652,7 @@ onUnmounted(() => {
        不要拿文案去判断当前视角。 -->
   <div
     class="mlmap"
-    :class="{ 'mode-national': mapMode === 'national' }"
+    :class="{ 'mode-national': mapMode === 'national', 'cams-off': !camerasVisible }"
     :data-map-mode="mapMode"
     :data-station="currentStationKey"
     :data-motion-phase="motionPhase"
@@ -2715,7 +2827,13 @@ onUnmounted(() => {
           <div class="lg-sep" />
           <div class="lg-row"><span class="dot cam-dot" />摄像头 {{ pins.length }} 路 · 有样本视频源（演示，非本站现场）</div>
           <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 演示复用画面（road2 / track1，非本站现场）</div>
-          <div class="lg-note">图钉 = 全量 N 段 N 路（源台账 + 演示层，一段最多 1 路）；流量版有 q 即上色</div>
+          <div class="lg-note">图钉 = 全量 N 段 N 路（源台账 + 演示层，一段最多 1 路）；流量版有 q 即上色；工具条「摄像头」键可整体隐藏（数据不受影响）</div>
+        </template>
+        <!-- 落客区（终点区域）：station 级面状元素，站区视角常画（选中路线的终点圈高亮） -->
+        <template v-if="mapMode === 'station'">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="dot" :style="{ background: dzSwatchBg, border: `1.4px solid ${dzColor}` }" />落客区（终点区域 · 演示范围圈）<template v-if="routeEnd?.point_id"> · 亮 = 本条路线终点</template></div>
+          <div class="lg-note">以落客点为圆心 35 m 示意划分，非实地划线、非真实围栏；起点 = 外围入口段「起」标注，终点 = 落客点「终」标注</div>
         </template>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
@@ -2771,8 +2889,15 @@ onUnmounted(() => {
           <div class="lg-row"><span class="dot cam-dot empty" />摄像头 · 演示复用画面（road2 / track1，非本站现场）</div>
           <div class="lg-note">
             图钉 = 全量 N 段 N 路（业主 2026-10-25：源台账 + 演示层，一段最多 1 路）；
-            「演示复用」画面取公开样本视频确定性复用，不是该摄像头自己的视频（真实接入归 IKMHMX）。
+            「演示复用」画面取公开样本视频确定性复用，不是该摄像头自己的视频（真实接入归 IKMHMX）；
+            工具条「摄像头」键可整体隐藏（只关图钉层，数据不受影响）。
           </div>
+        </template>
+        <!-- 落客区（终点区域）：station 级面状元素，站区视角常画（选中路线的终点圈高亮） -->
+        <template v-if="mapMode === 'station'">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="dot" :style="{ background: dzSwatchBg, border: `1.4px solid ${dzColor}` }" />落客区（终点区域 · 演示范围圈）<template v-if="routeEnd?.point_id"> · 亮 = 本条路线终点</template></div>
+          <div class="lg-note">以落客点为圆心 35 m 示意划分，非实地划线、非真实围栏；起点 = 外围入口段「起」标注，终点 = 落客点「终」标注</div>
         </template>
       </template>
     </div>
@@ -3472,6 +3597,13 @@ onUnmounted(() => {
 .mlmap.mode-national :deep(.lm-pin),
 .mlmap.mode-national :deep(.rt-pin),
 .mlmap.mode-national :deep(.veh-dot) {
+  display: none;
+}
+
+/* 摄像头图钉显示开关（业主 2026-10-25）：关 = 整层不画（连外壳一起 display:none，
+   悬停/点击也随之失效）；与全国模式同一套 CSS 机制，不删建 Marker。
+   只关"图钉层"——台账、右栏路段卡、监控墙的数据与画面不受影响。 */
+.mlmap.cams-off :deep(.cam-pin-wrap) {
   display: none;
 }
 </style>

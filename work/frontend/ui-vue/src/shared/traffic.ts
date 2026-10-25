@@ -202,6 +202,8 @@ export interface RouteEndpointMarker {
   lat: number
   /** 补充说明：外围边界断面 / 场内落客点 / 演示点等 */
   note?: string
+  /** 终点落客点的点位 id（DROP-xx / GZ-DROP-xx）；大屏据此高亮该落客点的「终点区域」圈 */
+  point_id?: string
 }
 
 // ---------- 整条路线规划选项（Issue IKNAUI；非契约辅助端点 /route/options） ----------

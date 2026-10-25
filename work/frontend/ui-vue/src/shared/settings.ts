@@ -34,6 +34,8 @@ const KEY_DIRECTIONS = 'hubflow.settings.directions'
 const KEY_ROUTE_EMPHASIS = 'hubflow.settings.routeEmphasis'
 /** 地图图例展开/收起开关（业主 2026-10-19） */
 const KEY_LEGEND = 'hubflow.settings.legend'
+/** 摄像头图钉显示开关（业主 2026-10-25：图钉全量 61/708 后给一键整体隐藏） */
+const KEY_CAMERAS = 'hubflow.settings.cams'
 
 /** 矢量底图开关（默认**开**）；`false` = 只画路网，不拉任何底图资源 */
 export const basemapEnabled: Ref<boolean> = ref(true)
@@ -46,6 +48,12 @@ export const routeEmphasisEnabled: Ref<boolean> = ref(true)
  * 收起 / 展开两个方向都落 `localStorage`（`setLegendVisible()`），刷新后仍是上次的样子。
  */
 export const legendVisible: Ref<boolean> = ref(true)
+/**
+ * 摄像头图钉显示开关（默认**开**，业主 2026-10-25 口径）。
+ * `false` = 地图上不画任何摄像头图钉（数据、台账、右栏路段卡**不受影响**——
+ * 关的只是"图钉"这一层显示，不是"没有摄像头"）；收起 / 展开都落 `localStorage`。
+ */
+export const camerasVisible: Ref<boolean> = ref(true)
 
 /**
  * 读一个布尔开关：只认 `1/0/true/false`，其他值（旧版本写的 / 手改坏了）走默认值。
@@ -76,6 +84,7 @@ export function restoreSettings(): void {
   directionsVisible.value = readStoredBool(KEY_DIRECTIONS, true)
   routeEmphasisEnabled.value = readStoredBool(KEY_ROUTE_EMPHASIS, true)
   legendVisible.value = readStoredBool(KEY_LEGEND, true)
+  camerasVisible.value = readStoredBool(KEY_CAMERAS, true)
 }
 
 /** 切换底图并落盘（写不进去不影响本次会话内的切换） */
@@ -100,4 +109,10 @@ export function setRouteEmphasisEnabled(on: boolean): void {
 export function setLegendVisible(on: boolean): void {
   legendVisible.value = on
   writeStoredBool(KEY_LEGEND, on)
+}
+
+/** 切换摄像头图钉显示并落盘（业主 2026-10-25；只关图钉层，不动数据与台账） */
+export function setCamerasVisible(on: boolean): void {
+  camerasVisible.value = on
+  writeStoredBool(KEY_CAMERAS, on)
 }

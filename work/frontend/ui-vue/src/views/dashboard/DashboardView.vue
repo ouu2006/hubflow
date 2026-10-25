@@ -40,8 +40,10 @@ import type { LocateResult } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel, pointAtOffset, segmentLengthM } from '../../shared/demoNetwork'
 import {
   basemapEnabled,
+  camerasVisible,
   directionsVisible,
   routeEmphasisEnabled,
+  setCamerasVisible,
   setDirectionsVisible,
   setRouteEmphasisEnabled,
 } from '../../shared/settings'
@@ -1220,6 +1222,7 @@ const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
         lon: point.lon,
         lat: point.lat,
         note: `点位 ${dropId}（演示点）`,
+        point_id: dropId,
       }
     }
   }
@@ -1235,6 +1238,7 @@ const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
       lon: near.lon,
       lat: near.lat,
       note: `停车场落客点 ${near.id}（演示点）· 距末段 ${Math.round(near.distance_m)} m`,
+      point_id: near.id,
     }
   }
   if (!seg || seg.coords.length === 0) return null
@@ -2178,6 +2182,25 @@ function onCommandChanged(): void {
                       @click="setDirectionsVisible(!directionsVisible)"
                     >
                       箭头 {{ directionsVisible ? '开' : '关' }}
+                    </button>
+                  </span>
+                  <!-- 摄像头图钉开关（业主 2026-10-25：图钉全量 61/708 后，与「箭头」键同款给一键整体隐藏）。
+                       只关"图钉层"——台账、右栏路段卡、监控墙的数据与画面不受影响；同落 localStorage。 -->
+                  <span class="pack-switch" role="group" aria-label="摄像头图钉">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: camerasVisible }"
+                      role="switch"
+                      :aria-checked="camerasVisible"
+                      :title="
+                        camerasVisible
+                          ? '摄像头图钉：开（全量 N 段 N 路上图）；点击整体隐藏'
+                          : '摄像头图钉：关（图上一支不画）；点击恢复（台账与路段卡不受影响）'
+                      "
+                      @click="setCamerasVisible(!camerasVisible)"
+                    >
+                      摄像头 {{ camerasVisible ? '开' : '关' }}
                     </button>
                   </span>
                   <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
