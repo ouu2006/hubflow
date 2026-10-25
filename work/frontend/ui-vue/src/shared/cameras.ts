@@ -46,6 +46,19 @@ function hasCoords(c: PackChannel): c is PackChannel & { lon: number; lat: numbe
   return typeof c.lon === 'number' && typeof c.lat === 'number'
 }
 
+/** 与 SegmentCameraCard.reuseSourceOf / 感知 channels.ts 同式的确定性复用挑选 */
+const REUSE_SOURCES = ['road2', 'track1'] as const
+function reuseSourceOf(segmentId: string): string {
+  let hash = 0
+  for (const ch of segmentId) hash = (hash * 31 + (ch.codePointAt(0) ?? 0)) >>> 0
+  return REUSE_SOURCES[hash % REUSE_SOURCES.length]!
+}
+
+/** 无自有视频源的摄像头按 segment_id 确定性复用 road2/track1（与感知页 / 路段卡同式） */
+function reuseOfChannel(c: PackChannel): string | undefined {
+  return c.reuseOf ?? (c.hasVideo === false ? reuseSourceOf(c.segment_id) : undefined)
+}
+
 /** 当前包的摄像头布点（按 `channels` 顺序；没坐标的不上图；2026-10-25 起为全量 N 段 N 路） */
 export function cameraPins(): CameraPin[] {
   return activePack()
@@ -60,7 +73,7 @@ export function cameraPins(): CameraPin[] {
       lat: c.lat,
       hasVideo: c.hasVideo !== false,
       demo: c.demo === true,
-      reuseOf: c.reuseOf,
+      reuseOf: reuseOfChannel(c),
     }))
 }
 
