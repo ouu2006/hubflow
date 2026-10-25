@@ -1431,7 +1431,8 @@ function dropZoneHighlightFilter(): FilterSpecification {
   return ['==', ['get', 'id'], id] as unknown as FilterSpecification
 }
 
-function dropZoneLayerSpecs(): OwnLayer[] {  const common = { source: DZ_SRC, filter: ['all'] as unknown as FilterSpecification }
+function dropZoneLayerSpecs(): OwnLayer[] {
+  const common = { source: DZ_SRC, filter: ['all'] as unknown as FilterSpecification }
   return [
     {
       id: LAYER_DZ_FILL,
@@ -2832,7 +2833,7 @@ onUnmounted(() => {
         <template v-if="mapMode === 'station'">
           <div class="lg-sep" />
           <div class="lg-row"><span class="dot" :style="{ background: dzSwatchBg, border: `1.4px solid ${dzColor}` }" />落客区（终点区域 · 演示范围圈）<template v-if="routeEnd?.point_id"> · 亮 = 本条路线终点</template></div>
-          <div class="lg-note">以落客点为圆心 {{ '35 m' }} 示意划分，非实地划线、非真实围栏；起点 = 外围入口段「起」标注，终点 = 落客点「终」标注</div>
+          <div class="lg-note">以落客点为圆心 35 m 示意划分，非实地划线、非真实围栏；起点 = 外围入口段「起」标注，终点 = 落客点「终」标注</div>
         </template>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
