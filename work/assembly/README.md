@@ -130,9 +130,15 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
   **不把路线 ETA 与路段快照指标混算**；地图只画站点包几何里存在的段。
 - 两层产物都缺失 → 如实 404 `ROUTE_UNAVAILABLE` + note（不代算 ETA）。
 - **非契约辅助端点（Issue IKNAUI）**：`GET /api/traffic/route/options` 端出最高优先级产物 `requests` 的
-  OD / session / 进场路线 / 备选 / 离站路线**摘要**（`count` + `options[]`），供大屏「整条路线规划」
+  OD / session / 进场路线 / 备选 / **上客路线（D3）** / 离站路线**摘要**（`count` + `options[]`），供大屏「整条路线规划」
   选择器；同样真网优先、缺产物如实 404 + note。契约 §七 未定义该端点，接入方按辅助端点消费，
   **不得**把它当契约字段写回契约。响应示例（节选）：
+- **`pickup_route` 是 TC-12 的 D3（往返）专属字段**（2026-10-26 补）：只有引擎产物里真带 `pickup_route` 的请求
+  （出租车往返，`driver_type = D3`）才有值，其余请求如实 `null`；**不按 `arrival_route` 反推、不补造上客点**。
+  上客点字段名是 **`pickup_point`**（不是 `dropoff_point`），故 `_route_path_summary(..., pickup=True)` 才追加该键，
+  `arrival_route` / `departure_route` / `alternatives` 的摘要形状**保持不变**（不凭空多出 `pickup_point: null`）。
+  真网当前 `work/engine/run.py` 的 `_load_real_dataset` 显式 `"points": []`（点位归 IKMHMX / 池·S 踏勘）→
+  真网 D3 如实跳空 `d3_skipped: no_pickup_point`；样例网跑 `--d3` 可看完整形状。
 
 ```json
 {
@@ -146,11 +152,15 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
       "location": { "segment_id": "SZ-003", "offset_m": 0, "source": "twin" },
       "arrival_route": { "path_id": "OD-R-001-P1", "segments": ["SZ-003", "..."], "segment_count": 5, "eta_min": 0.82 },
       "alternatives": [{ "path_id": "OD-R-001-P2", "eta_min": 1.25, "reason": "比推荐多 0.43 分钟" }],
+      "pickup_route": null,
       "departure_route": { "path_id": "OD-R-001-D1", "segment_count": 3, "eta_min": 0.36 }
     }
   ]
 }
 ```
+
+> 上面是 D1（送客）请求，`pickup_route` 如实 `null`。D3（往返）才带值，形状为
+> `{ "path_id": "OD-02-PK", "segments": ["SEG-004"], "segment_count": 1, "eta_min": 0.38, "length_m": null, "dropoff_point": null, "walk_min": 2.0, "pickup_point": "P-02" }`。
 
 **自检（真跑命令）**：
 

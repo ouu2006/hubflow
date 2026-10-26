@@ -2510,12 +2510,17 @@ def _route_request_segment_ids(request: dict[str, Any]) -> set[str]:
     return out
 
 
-def _route_path_summary(route: Any) -> dict[str, Any] | None:
-    """路线摘要：只取契约字段（path_id / segments / eta_min / length_m / dropoff_point / walk_min）。"""
+def _route_path_summary(route: Any, *, pickup: bool = False) -> dict[str, Any] | None:
+    """路线摘要：只取契约字段（path_id / segments / eta_min / length_m / dropoff_point / walk_min）。
+
+    `pickup=True` 时额外带 `pickup_point` —— 只有 **pickup_route**（TC-12 的 D3 往返）才有这个
+    字段；arrival / departure / alternatives 的摘要形状保持原样，不凭空多出 `pickup_point: null`
+    （契约里那是不同字段名，混进别的路线会让读端误以为所有路线都有上下客点）。
+    """
     if not isinstance(route, dict):
         return None
     segments = [str(item) for item in (route.get("segments") or []) if isinstance(item, str) and item]
-    return {
+    summary: dict[str, Any] = {
         "path_id": route.get("path_id") if isinstance(route.get("path_id"), str) else None,
         "segments": segments,
         "segment_count": len(segments),
@@ -2524,12 +2529,17 @@ def _route_path_summary(route: Any) -> dict[str, Any] | None:
         "dropoff_point": route.get("dropoff_point") if isinstance(route.get("dropoff_point"), str) else None,
         "walk_min": _num(route.get("walk_min")),
     }
+    if pickup:
+        summary["pickup_point"] = route.get("pickup_point") if isinstance(route.get("pickup_point"), str) else None
+    return summary
 
 
 def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
-    """`route/options` 的单条摘要：OD / session / 定位 / 进场路线 / 备选 / 离站路线。
+    """`route/options` 的单条摘要：OD / session / 定位 / 进场路线 / 备选 / 上客 / 离站路线。
 
     只做**摘要**（原样透传引擎字段），不重排路线、不代算 ETA；缺的字段如实 null。
+    `pickup_route` 是 TC-12 的 D3（往返）专属字段：引擎只在 D3 且登记了 pickup 点位时才给，
+    其余请求如实 null（不按 arrival_route 反推、不补造上客点）。
     """
     location = request.get("location") if isinstance(request.get("location"), dict) else {}
     alternatives: list[dict[str, Any]] = []
@@ -2544,6 +2554,7 @@ def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
         alternatives.append(summary)
     arrival_summary = _route_path_summary(request.get("arrival_route"))
     departure_summary = _route_path_summary(request.get("departure_route"))
+    pickup_summary = _route_path_summary(request.get("pickup_route"), pickup=True)
     return {
         "od_id": request.get("od_id") if isinstance(request.get("od_id"), str) else None,
         "session_id": request.get("session_id") if isinstance(request.get("session_id"), str) else None,
@@ -2557,6 +2568,7 @@ def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
         },
         "arrival_route": arrival_summary,
         "alternatives": alternatives,
+        "pickup_route": pickup_summary,
         "departure_route": departure_summary,
         "why": request.get("why") if isinstance(request.get("why"), str) else None,
         "is_simulated": True,

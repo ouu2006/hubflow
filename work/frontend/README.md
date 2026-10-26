@@ -1889,3 +1889,48 @@ KPI、地图、路段信息、车辆、来源行、处置队列**全部照常显
 - `POST /api/traffic/factors/reset` → 刷新后红条消失、「推荐路线」与 `.route-plan` 恢复；
 - 离线构造上游硬触发（`triggered_by:["hard_factor"]` + `level:4`）→ `active:true / level:4 / level_source:"upstream"`；
 - 改站点包 `hard_trigger_level` → 输出跟随变，**代码里不写死档位**。
+
+## 三十一、路线规划补「上客路线」第⑤段：D3 往返三段齐全（TC-12，2026-10-26）
+
+**背景**：台账 TC-12「离站路线存在 / 出租车往返再返回 `pickup_route`」一直记「未过」，原因是
+`pickup_route` 恒为 null。核过之后发现两件事：① **引擎侧早就实现了**（`work/engine/run.py` 的
+`pickup_point_for_d3` / `d3_ratio` / `d3_pickup_edges` / `append_d3_requests`，样例跑 `--d3`
+就能出 `REQ-SAMPLE-D3-0002` 的完整 `pickup_route`），台账引用的 `run.py#L408` 那几处写 null 的是
+`--compare` 对照路径（`--compare` 与 `--d3` 互斥），**不是缺失**；② 真正的缺口在**接口层摘要和页面没端出来**。
+
+**这一单做了什么**（3 个文件）：
+
+1. `work/assembly/traffic.py`
+   - `_route_path_summary(route, *, pickup=False)`：只有 `pickup=True` 才追加 `"pickup_point"`。
+     上客点的契约字段名是 `pickup_point`（不是 `dropoff_point`），**混进别的路线会让读端误以为所有
+     路线都有上下客点**，所以 `arrival_route` / `departure_route` / `alternatives` 的摘要形状一字不改。
+   - `_route_option_summary()`：在 `alternatives` 之后、`departure_route` 之前插入 `"pickup_route"`。
+2. `src/shared/traffic.ts`：`RoutePath` / `RoutePathSummary` 加 `pickup_point`，
+   `RouteOption` 加 `pickup_route: RoutePathSummary | null`。
+3. `src/views/decision/components/RoutePlanView.vue`：完整链路从 4 段变 5 段，第⑤段只在引擎真给了
+   `pickup_route` 时出现（**非 D3 整段不出现，不补造上客点、不把落客点 pickup 化**）。
+
+**顺手修掉一个真 bug**：`.chain` 原来写死 4 列 `minmax(0,1fr) 16px ×3`，加到第 5 段时卡片被挤到
+第二行并压成竖排文字（第一轮截图实见细条）。改成 `grid-template-columns: var(--chain-tracks, minmax(0, 1fr))`，
+新增 `chainTracks(nodes)` 按段数生成 `2n-1` 条轨道（每段一条 `minmax(0,1fr)`、相邻之间插 `16px`），
+5 处 `.chain` 全部绑定 `:style="{ '--chain-tracks': chainTracks(...) }"` —— **段数变了不用再动 CSS**。
+
+**实测**（CDP，`--mode remote` + 系统 python 起接口层）：
+- D3 会话 `S-sample-0002-d3` → 主链 5 段，第⑤段文本「上客路线（D3 往返） / OD-02-PK /
+  1 段 · ETA 0.38 min · 步行 2.00 min / pickup_route / 上客点 P-02 · 首段 SEG-004 → 末段 SEG-004」；
+- 非 D3 会话（A/B 对比列各一）→ 仍 4 段，上客段整段不出现；
+- 标题多一个 chip「D3 往返另有上客路线」；页面来源行如实标「样例产物 engine.routes.sample（非本站真网）」。
+
+**真网的口径**：`_load_real_dataset` 现在显式 `"points": []`（点位归 IKMHMX / 池·S 踏勘），
+所以真网 D3 仍如实跳空 `d3_skipped: no_pickup_point` —— **不猜点位、不拿样例点位套真网节点**。
+等点位表进场后真网 D3 自然产出，不需要改这单的代码。
+
+**复跑**：
+```bash
+python work/engine/run.py --sample --d3 --out out/_v12      # 看 routes.json 的 pickup_route
+python work/assembly/traffic.py --port 8000                 # 系统 python（带 fastapi/uvicorn）
+curl -s http://127.0.0.1:8000/api/traffic/route/options | grep pickup_route
+# 页面：决策页 → 路线规划 → 选 S-sample-0002-d3 → 看第⑤段
+```
+> 注意：`work/engine/out/real/routes.json` 存在时真网优先，样例 D3 会被盖住；
+> 验证样例需临时把它移开，**测完必须移回**。

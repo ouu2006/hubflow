@@ -142,6 +142,8 @@ export interface RoutePath {
   segments: string[]
   eta_min: number
   dropoff_point?: string
+  /** 仅 pickup_route（D3 往返）带：上客点编号（契约字段名是 pickup_point，不是 dropoff_point） */
+  pickup_point?: string
   walk_min?: number
 }
 
@@ -249,6 +251,8 @@ export interface RoutePathSummary {
   eta_min: number | null
   length_m?: number | null
   dropoff_point?: string | null
+  /** 仅 pickup_route（D3 往返）带：上客点编号（契约字段名是 pickup_point，不是 dropoff_point） */
+  pickup_point?: string | null
   walk_min?: number | null
   /** 仅备选路径带：引擎给的 reason（原样） */
   reason?: string | null
@@ -269,6 +273,8 @@ export interface RouteOption {
   location: RouteOptionLocation
   arrival_route: RoutePathSummary | null
   alternatives: RoutePathSummary[]
+  /** 仅 D3（往返）带：上客路线（契约 §七：arrival_route 的镜像，点位字段为 pickup_point）；其余请求如实 null */
+  pickup_route: RoutePathSummary | null
   departure_route: RoutePathSummary | null
   why: string | null
   is_simulated: true
