@@ -61,6 +61,36 @@ export interface SegmentRecord {
   level_source?: string
 }
 
+/**
+ * 应急态(TC-10):应急时**停下路线引导**,替换为固定措辞「请服从现场指挥」(优先级高于一切推荐)。
+ *
+ * 口径(别改错):
+ *   · 接口层**只派生不重算** —— 本结构与 `level`/`ci` 无关,绝不因为应急而改动路网判级;
+ *   · `level_source === 'upstream'`:`triggered_by` 含 `hard_factor`,是感知层判的硬触发熔断,
+ *     `level` 原样透传上游值;
+ *   · `level_source === 'pending_perception_recompute'`:管理端已登记事故/管制(F07/F08),
+ *     但**判级待感知层重算**,此时 `level` 必须为 `null`(页面不得自己填红档档位);
+ *   · `active === false` 即常态,页面照常给推荐,不得兜底成应急。
+ */
+export interface EmergencyState {
+  active: boolean
+  /** 仅 `level_source === 'upstream'` 时有值（上游判级值）；`pending_perception_recompute` 时为 null */
+  level: number | null
+  level_source: 'upstream' | 'pending_perception_recompute' | null
+  /** 处于应急的路段（事故/管制影响段） */
+  segment_ids: string[]
+  factors: FactorApplied[]
+  triggered_by: 'upstream_hard_factor' | 'manual_hard_factor' | null
+  /** 固定措辞,逐字照抄手册 §11.1(3):「请服从现场指挥」 */
+  message: string
+  /** 'stopped' = 路线引导已停下;'running' = 常态 */
+  guidance: 'stopped' | 'running'
+  /** 红档档位(读站点包 grading.hard_trigger_level) */
+  hard_trigger_level: number | null
+  source: string | null
+  note: string
+}
+
 export interface SegmentsSnapshot {
   ts: string
   window_sec: number
@@ -76,6 +106,8 @@ export interface SegmentsSnapshot {
       injected: boolean
     }
   }
+  /** 应急态(TC-10):只派生不重算判级 */
+  emergency?: EmergencyState
   note?: string
 }
 
@@ -917,6 +949,8 @@ export interface TrafficContext {
     injected: boolean
   }
   station_active_factors?: number
+  /** 应急态(TC-10):只派生不重算判级 */
+  emergency?: EmergencyState
   note?: string
 }
 

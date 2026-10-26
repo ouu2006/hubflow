@@ -1827,3 +1827,65 @@ Vite 的 `resolve.extensions` 里 **`.js` 排在 `.ts` 之前**，所以 `import
   `watch routeEnd.point_id → setFilter`，换 OD / 换站跟随；无选中路线时全不亮；
 - 图层序：路网 → 方向标 → 落客区 → 路线 → 选中；全国视角不画；
 - 口径：圆是**演示范围圈**（示意划分，非实地划线、非真实围栏），图例有注。
+
+## 三十、应急态：停下引导，换「请服从现场指挥」（TC-10，2026-10-26）
+
+**口径来源**：手册 §11.1(3)「应急态：**停下路线引导**，替换为『请服从现场指挥』（**优先级高于一切推荐**）」；
+§4.6 降级链「红档（四级）→ 10 s 内自动关闭个性化推荐，切统一疏散引导」；§6.3 步骤 1「硬触发（熔断，跳过所有加权）」。
+验收用例 TC-10：注入事故封道后推荐被替换、红档熔断生效；解除后按防抖（连续 2 周期）撤档并可回放。
+
+### 30.1 只停「引导」，正文一字不减——这是业主明确纠正过的点
+
+`scripts/frontend_gate.py` 的 `gate_emergency_keep` 记着业主原话：
+
+> **「应急态的时候离站这个页面下面的字怎么全没了？给我恢复啊，下面依旧有字啊，
+> 我只是让你应急态的时候上面多一个弹框，并没有让你删任何的东西」**
+
+所以本单的实现纪律是：应急态 = **顶部加一条红条 + 把「推荐/引导」这一块换成固定措辞**，
+KPI、地图、路段信息、车辆、来源行、处置队列**全部照常显示**。任何把正文包进
+`v-if="!emergencyActive"` 的写法都是错的。
+
+### 30.2 数据从哪来（前端不判级）
+
+- `GET /api/traffic/emergency` → `EmergencyState`（类型在 `src/shared/traffic.ts`，
+  `getTrafficEmergency()` 在 `src/api/traffic.ts`）；快照里也带 `emergency?`（`SegmentsSnapshot` / `TrafficContext`）。
+- 字段：`active` / `level` / `level_source` / `segment_ids` / `factors` / `triggered_by` /
+  `message` / `guidance` / `hard_trigger_level` / `source` / `note`。
+- **前端不自己判等级**：`active` 是接口派生的结论，`level` 是上游判级原值。
+  `level_source === 'pending_perception_recompute'` 表示「事故已登记、判级还没重算」，
+  此时 **`level` 必须显示为「待重算」，不许填任何档位**。
+- **读不到就不停**：接口不可达时 `emergencyActive` 保持 `false`（宁可不误停，也不擅自撤引导），
+  与「不编造演示路线」同一条纪律。
+
+### 30.3 落点一：监控大屏（`DashboardView.vue`）
+
+| 位置 | 表现 |
+|---|---|
+| 页头下方 | `.emergency-bar`（左边 4px 红条 + 红底浅框，`role="alert"`）：`应急态` 标签 + **请服从现场指挥** + 一句「已停下路线引导（优先级高于一切推荐）；影响路段 SZ-003；判级待重算，此处不展示等级」 |
+| 推荐卡 `section.td-card.route-card` | 卡头文案由「推荐路线」改「路线引导」+ tag「应急态 · 已停下」；卡体整块换成 `.emergency-card`：固定措辞 + 停止引导说明 + 影响路段 + 等级（有则「N 级（由感知层判定，本页不重算）」，`pending` 则「待重算…不填任何档位」）+ 已登记因素 + 来源注 |
+| 地图 | `routeHighlights` / `routeStartMarker` / `routeEndMarker` 三个 computed 开头直接返回空——**路线图层不画**，但路网配色、摄像头图钉、落客区一律不变 |
+
+- 切站时 `resetStationState()` 清空 `emergency`，**不沿用上一站的应急结论**；
+- 应急解除（复位/重算完成）后，`refresh()` 拿到 `active:false`，推荐卡与路线图层**自动恢复**。
+
+### 30.4 落点二：决策层 · 路线规划（`RoutePlanView.vue`）
+
+`onMounted` 里 `loadEmergency()` 与 `loadOptions()` 并行；`active` 时在主推荐区
+（`main` 分支之前）插 `.emergency-panel`：固定措辞 + 「停止路线引导…引导恢复前不再给出推荐路线与 ETA」+
+影响路段 + 等级（同上口径）+ 来源注。**OD 选择器与「变化效果 · 两个 session 并排」照常显示**
+（那是历史产物对比，不是引导）。
+
+### 30.5 口径红线
+
+- 用户可见文案**不得出现**「实测 / 实时 / 现场」——唯一豁免是固定措辞**「请服从现场指挥」**本身；
+- 红 = **停下引导**，不等于「整页变红」、更不等于「数据不可用」（灰档是 TC-11，两件事）；
+- 页面上要能看出**为什么停**（影响哪段、什么因素、等级待不待重算），不能只甩一句标语。
+
+### 30.6 自检
+
+- `vue-tsc --noEmit` exit 0、`vite build` exit 0、`scripts/doc_gate.py` 8/8；
+- 注入 F07（`POST /api/traffic/factors`，`segment_id=SZ-003/target=lanes/multiplier=0.5`）→
+  大屏与决策页两处替换文案上屏、`GET /emergency` 返回 `active:true`；
+- `POST /api/traffic/factors/reset` → 刷新后红条消失、「推荐路线」与 `.route-plan` 恢复；
+- 离线构造上游硬触发（`triggered_by:["hard_factor"]` + `level:4`）→ `active:true / level:4 / level_source:"upstream"`；
+- 改站点包 `hard_trigger_level` → 输出跟随变，**代码里不写死档位**。

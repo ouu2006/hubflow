@@ -15,11 +15,12 @@
 // 数据源口径：接口层真网产物优先、样例产物回退（engine.routes.real / engine.routes.sample）；
 // mock 侧回退站点包演示骨架。路线一律标「演示数据（模拟）」，沿用现有对外口径纪律。
 import { computed, onMounted, ref } from 'vue'
-import { getTrafficRouteOptions, postRouteRecommend } from '../../../api/traffic'
+import { getTrafficEmergency, getTrafficRouteOptions, postRouteRecommend } from '../../../api/traffic'
 import { demoSegment } from '../../../shared/demoNetwork'
 import { USE_MOCK } from '../../../shared/env'
 import { activePack } from '../../../station-packs/index'
 import type {
+  EmergencyState,
   RecommendResult,
   RouteOption,
   RouteOptionsSnapshot,
@@ -43,6 +44,22 @@ const optionsMeta = ref<RouteOptionsSnapshot | null>(null)
 const optionsLoading = ref(false)
 /** 空 = 正常；非空 = 辅助端点缺失 / 产物缺失，页面已回退演示会话（如实展示） */
 const optionsError = ref('')
+
+/**
+ * 应急态（TC-10，手册 §11.1(3)）：应急时**停下路线引导**，替换为「请服从现场指挥」。
+ *
+ * 口径：只消费接口层派生的 `emergency`（`GET /api/traffic/emergency`），**不自己判级**；
+ *      读不到 = 常态（不误停引导）；应急时只撤「路线规划」这一块的引导，
+ *      页面其余部分（来源行、选择器说明等）不动。
+ */
+const emergency = ref<EmergencyState | null>(null)
+const emergencyActive = computed(() => emergency.value?.active === true)
+const emergencySegmentText = computed(() => {
+  const ids = emergency.value?.segment_ids ?? []
+  if (ids.length === 0) return ''
+  const head = ids.slice(0, 3).join('、')
+  return ids.length > 3 ? `${head} 等 ${ids.length} 段` : head
+})
 
 // ---------- 当前 session 的完整路线（POST /route/recommend） ----------
 const mainSession = ref('')
@@ -464,8 +481,27 @@ async function loadOptions(): Promise<void> {
   }
 }
 
+/**
+ * 读应急态（只读派生结果，不参与算路）。
+ *
+ * 失败时保持 `null` = 按常态渲染：应急是**停下引导**的强动作，读不到就不能擅自停，
+ * 也不能自己从路段等级里猜一个「大概是应急吧」。
+ */
+async function loadEmergency() {
+  if (USE_MOCK) {
+    emergency.value = null
+    return
+  }
+  try {
+    emergency.value = await getTrafficEmergency()
+  } catch {
+    emergency.value = null
+  }
+}
+
 onMounted(() => {
   void loadOptions()
+  void loadEmergency()
 })
 </script>
 
@@ -522,6 +558,24 @@ onMounted(() => {
         </div>
 
         <p v-if="mainLoading" class="src">正在读取推荐快照…</p>
+        <!-- 应急态（TC-10，手册 §11.1(3)）：停下路线引导，替换为固定措辞。
+             注意：只替「路线规划」这一块，页面其它内容（来源行、选择器、说明）一字不减。 -->
+        <div v-else-if="emergencyActive" class="emergency-panel" role="alert">
+          <div class="em-title">{{ emergency?.message ?? '请服从现场指挥' }}</div>
+          <p class="em-line">
+            应急状态下<b>停止路线引导</b>（优先级高于一切推荐），请以现场指挥为准；引导恢复前不再给出推荐路线与 ETA。
+          </p>
+          <p v-if="emergencySegmentText" class="em-line">
+            影响路段：<b class="td-mono">{{ emergencySegmentText }}</b>
+          </p>
+          <p v-if="emergency?.level !== null && emergency?.level !== undefined" class="em-line">
+            等级：<b>{{ emergency.level }} 级</b>（由感知层判定，本页不重算）
+          </p>
+          <p v-else-if="emergency?.level_source === 'pending_perception_recompute'" class="em-line">
+            等级：<b>待重算</b> —— 事故/管制已登记，等感知层重算后才出等级；此处<b>不填任何档位</b>。
+          </p>
+          <p class="em-src">{{ emergency?.note ?? '' }}</p>
+        </div>
         <p v-else-if="mainError" class="src err">{{ mainError }}</p>
         <template v-else-if="main">
           <div class="chain" aria-label="完整路线链路">
@@ -820,6 +874,36 @@ onMounted(() => {
   flex-direction: column;
   gap: 10px;
   min-width: 0;
+}
+/* ---------- 应急态（TC-10）：停下引导，替换为「请服从现场指挥」 ----------
+   位置纪律：只替「路线规划」这一块；页面其它内容一字不减（见 scripts/frontend_gate.py 的
+   gate_emergency_keep 记录的历史教训）。颜色走 TD 变量，本文件不写死色值。 */
+.emergency-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--td-error-color);
+  background: var(--td-error-color-1);
+  border-radius: var(--td-radius-sm);
+}
+.em-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-error-color);
+}
+.em-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+}
+.em-src {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
 }
 .src {
   margin: 0 0 8px;

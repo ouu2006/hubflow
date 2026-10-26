@@ -49,7 +49,8 @@
 | `/api/traffic/context` | GET | **环境上下文**：天气 / 时间 + 折算出的因素（F01 / F02 / F03 / F10） | **已实现**（IKMS17；含场景注入内存态） |
 | `/api/traffic/scenario` | POST | **场景注入**（天气 / 时段 / 需求倍率）→ 折算因素 | **已实现**（IKMS17；内存态、**effects 如实为空**、不重算判级） |
 | `/api/traffic/scenario/reset` | POST | 清场景注入（与 `factors/reset` 同口径） | **已实现**（IKMS17；内存态复位） |
-| `/api/traffic/report/compare` | GET | 效果对比报表 | 空壳 + note（接口层无报表产物；前端已接，rows 空时如实提示） |
+| `/api/traffic/report/compare` | GET | 效果对比报表 | **已实现**（2026-10-25；只读端引擎 `--compare` 产物，真网优先、样例回退、缺失仍空壳 + note） |
+| `/api/traffic/emergency` | GET | **应急态**（TC-10）：这一刻是否该停掉路线引导 | **已实现**（2026-10-26；**只派生不重算判级**，口径见本节末） |
 | `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **未实现**（属感知面，见 [`../perception/README.md`](../perception/README.md)；前端显示「—」并注明） |
 
 **2026-10-13 页面收敛（Issue #77）后的接口面变化**：管理端 Web 由四页收敛为**三层 3 页**（感知层 / 决策层 / 监控大屏，
@@ -96,7 +97,17 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 | `POST /api/traffic/factors/reset` | — | 清空人工置位（幂等） | `{reset:true, cleared:N, note}` |
 | `POST /api/traffic/scenario` | `{weather?, session?, demand_mult?, segment_id?}`；**缺省 = 不改，显式 null = 清除** | 只更新环境状态 → 折算 F01/F02/F03/F10 | `applied:true` + `factors` + `effects:[]` + `recomputed:false` + `note`（接口层不伪造注入前后判级对照） |
 | `POST /api/traffic/scenario/reset` | — | 清空场景注入（幂等） | `{reset:true, was_injected:bool, note}` |
+| `GET /api/traffic/emergency` | — | 派生「这一刻该不该停掉路线引导」（TC-10） | `{active, level, level_source, segment_ids, factors, triggered_by, message, guidance, hard_trigger_level, source, note}`；恒带 `message:"请服从现场指挥"` |
 
+- **应急态（TC-10）同样不重算判级**：`_derive_emergency()` 只有两条信号——
+  **信号 A（上游已判级）**：`segments[].triggered_by` 含 `hard_factor`（即 `work/perception/level.py`
+  的硬触发命中）→ `active:true` + 直接用上游 `level`，`level_source:"upstream"`，
+  `triggered_by:"upstream_hard_factor"`；
+  **信号 B（管理端人工置位）**：内存态里有 F07 / F08（`hard_trigger_factor_ids`）→ `active:true`，
+  但 `level` **必须为 `null`** 且 `level_source:"pending_perception_recompute"`，
+  **不填任何档位**（接口层不 import `level.py`，等感知层统一重算），`triggered_by:"manual_hard_factor"`。
+  两条都不命中 → `active:false` + `guidance:"running"`。`hard_trigger_level` 原样透出站点包
+  `stations/thresholds.json` 的 `grading.hard_trigger_level`，**不写死**；改阈值输出跟随变。
 - **两个口子不混用**：人工置位只有 F07/F08/F11；F01/F02/F03/F10 属环境侧，只走 `/scenario`。
 - **接口层不重算 level / ci**（判级唯一实现是感知层 `level.py`）：写端点只更新 `context` /
   `derived_factors` / 因素状态；`GET /factors`、`GET /segments` 里登记的因素带

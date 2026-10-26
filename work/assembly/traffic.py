@@ -2152,7 +2152,126 @@ def _attach_runtime_state(snapshot: dict[str, Any]) -> dict[str, Any]:
         note = snapshot["payload"].get("note")
         extra = "写端点内存态：人工置位 / 场景注入只改因素状态与环境上下文，接口层不重算 level / ci。"
         snapshot["payload"]["note"] = (note + "；" if isinstance(note, str) and note else "") + extra
+    # 应急态（TC-10）：只派生不改数值 —— 信号 A 透传上游硬触发，信号 B 标记待重算。
+    snapshot["payload"]["emergency"] = _derive_emergency(snapshot["payload"]["segments"])
     return snapshot
+
+
+#: 应急态固定措辞（手册 §11.1(3) / TC-10）：**逐字照抄，不得改写、不得加语气词**。
+EMERGENCY_MESSAGE = "请服从现场指挥"
+
+
+def _hard_trigger_factor_ids(grading: dict[str, Any] | None = None) -> tuple[str, ...]:
+    """硬触发因素编号（读站点包 `grading.hard_trigger_factor_ids`，代码里不写死 F07/F08）。"""
+    source = grading if isinstance(grading, dict) else _grading()
+    ids = source.get("hard_trigger_factor_ids")
+    if not isinstance(ids, list):
+        return ()
+    return tuple(str(item) for item in ids if isinstance(item, str) and item)
+
+
+def _hard_trigger_level(grading: dict[str, Any] | None = None) -> int | None:
+    """红档档位（读站点包 `grading.hard_trigger_level`，不写死 4）。"""
+    source = grading if isinstance(grading, dict) else _grading()
+    level = _num(source.get("hard_trigger_level"))
+    return int(level) if level is not None else None
+
+
+def _derive_emergency(
+    records: list[dict[str, Any]], grading: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """派生「应急态」（TC-10）。**只派生，不重算** —— 绝不改 level / ci。
+
+    两个信号都来自已经存在的状态，接口层不自己算判级：
+
+      · 信号 A（上游判级）：上游段的 `triggered_by` 含 `hard_factor`
+        → 感知层已按手册 §6.3 步骤 1 判了硬触发熔断，这里**只透传**它给的 level。
+      · 信号 B（管理端人工置位）：接口层内存态里有 F07/F08 登记，且该段在本次快照内
+        → 「事故已登记、等感知层重算」。此时 **level 必须是 None**，绝不自己填红档档位
+        （那是重算判级，违反 `work/assembly/README.md` 的「接口层不重算 level / ci」）。
+
+    两条都不命中 → `active: False`，不兜底成应急。
+    """
+    grading = grading if isinstance(grading, dict) else _grading()
+    hard_ids = _hard_trigger_factor_ids(grading)
+    hard_level = _hard_trigger_level(grading)
+
+    # —— 信号 A：上游已判硬触发（感知层给的结论，原样透传）——
+    upstream_hits = [
+        record
+        for record in records
+        if "hard_factor" in (record.get("triggered_by") or [])
+    ]
+    if upstream_hits:
+        levels = sorted(
+            int(record["level"]) for record in upstream_hits
+            if isinstance(record.get("level"), int) and record["level"] > 0
+        )
+        segment_ids = sorted(str(record.get("segment_id")) for record in upstream_hits)
+        factor_rows: list[dict[str, Any]] = []
+        for record in upstream_hits:
+            for factor in record.get("factors_applied") or []:
+                if not isinstance(factor, dict):
+                    continue
+                row = dict(factor)
+                row["segment_id"] = str(record.get("segment_id"))
+                factor_rows.append(row)
+        return {
+            "active": True,
+            "level": levels[-1] if levels else None,
+            "level_source": "upstream",
+            "segment_ids": segment_ids,
+            "factors": factor_rows,
+            "triggered_by": "upstream_hard_factor",
+            "message": EMERGENCY_MESSAGE,
+            "guidance": "stopped",
+            "hard_trigger_level": hard_level,
+            "source": "segments.triggered_by",
+            "note": (
+                "上游段 triggered_by 含 hard_factor：感知层已按硬触发熔断判级，"
+                "接口层原样透传 level，不重算。"
+            ),
+        }
+
+    # —— 信号 B：管理端已登记事故 / 管制，等感知层重算 ——
+    present = {str(record.get("segment_id")) for record in records if record.get("segment_id")}
+    manual_hits = [
+        dict(factor)
+        for factor in _MANUAL_FACTORS
+        if str(factor.get("factor_id") or "") in hard_ids
+        and str(factor.get("segment_id") or "") in present
+    ]
+    if manual_hits:
+        return {
+            "active": True,
+            "level": None,
+            "level_source": "pending_perception_recompute",
+            "segment_ids": sorted({str(factor.get("segment_id")) for factor in manual_hits}),
+            "factors": manual_hits,
+            "triggered_by": "manual_hard_factor",
+            "message": EMERGENCY_MESSAGE,
+            "guidance": "stopped",
+            "hard_trigger_level": hard_level,
+            "source": "manual_factors",
+            "note": (
+                "人工置位已登记（接口层内存态）：应急态已生效、路线引导已停下，"
+                "但**接口层不重算判级**，level 待感知层统一重算。"
+            ),
+        }
+
+    return {
+        "active": False,
+        "level": None,
+        "level_source": None,
+        "segment_ids": [],
+        "factors": [],
+        "triggered_by": None,
+        "message": EMERGENCY_MESSAGE,
+        "guidance": "running",
+        "hard_trigger_level": hard_level,
+        "source": None,
+        "note": "无硬触发因素、无人工置位登记：非常态，不进入应急。",
+    }
 
 
 def build_context() -> dict[str, Any]:
@@ -2208,6 +2327,7 @@ def build_context() -> dict[str, Any]:
         "derived_factors": derived,
         "injected": injected,
         "scenario": scenario,
+        "emergency": _derive_emergency(snapshot["payload"]["segments"], _grading()),
         "station_active_factors": len(active_factors),
         "summary": summary,
         "source": source,
@@ -2912,6 +3032,17 @@ def api_factors(segment_id: str | None = Query(default=None)) -> JSONResponse:
     return _json(build_factors(segment_id), source=snapshot["source"])
 
 
+@app.get("/api/traffic/emergency")
+def api_emergency() -> JSONResponse:
+    """应急态（TC-10）：停下路线引导、替换为「请服从现场指挥」。
+
+    只派生不改数值：信号 A 原样透传上游硬触发的 level；信号 B（人工置位已登记）
+    返回 active=true 但 level=null，等感知层重算。两条都不命中 → active=false。
+    """
+    snapshot = request_snapshot()
+    return _json(_derive_emergency(snapshot["payload"]["segments"]), source="segments.triggered_by+manual_factors")
+
+
 @app.get("/api/traffic/assimilation")
 def api_assimilation() -> JSONResponse:
     payload = build_assimilation()
@@ -3389,6 +3520,9 @@ async def api_factors_post(request: Request) -> JSONResponse:
         ],
         "injected_factors": _manual_factor_rows(segment_id),
         "is_simulated": True,
+        "emergency": _derive_emergency(
+            build_segments_snapshot()["payload"]["segments"], _grading()
+        ),
         "note": (
             "人工置位已登记（接口层内存态，重启复位）：**只更新因素状态、不重算判级** —— "
             "判级由感知层统一重算、接口层不重算；level / level_name 为当前快照原值（注入前），"

@@ -24,6 +24,7 @@ import type {
   SegmentSourcePair,
   SegmentsSnapshot,
   ThresholdSnapshot,
+  EmergencyState,
   TrafficContext,
   TrafficMeta,
   TrafficNetwork,
@@ -252,6 +253,12 @@ export function getTrafficContext(): Promise<TrafficContext> {
 // GET /api/traffic/report/compare → 效果对比报表(接口层无报表产物时 rows 为空 + note,页面如实降级)
 export function getTrafficReportCompare(): Promise<ReportCompare> {
   return request<ReportCompare>('GET', '/api/traffic/report/compare')
+}
+
+// GET /api/traffic/emergency → 应急态(TC-10):停下路线引导,替换为「请服从现场指挥」
+// 口径:接口层只派生不重算 —— active 时页面**必须**收起推荐,guidance === 'stopped'
+export function getTrafficEmergency(): Promise<EmergencyState> {
+  return request<EmergencyState>('GET', '/api/traffic/emergency')
 }
 
 // POST /api/traffic/scenario → 场景注入(天气 / 时段 / 需求倍率 → 因素),返回判级前后对照
