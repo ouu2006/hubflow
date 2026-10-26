@@ -37,9 +37,8 @@ import EnvContextBar from './components/EnvContextBar.vue'
 import MonitorWall from './components/MonitorWall.vue'
 import PipelinePanel from './components/PipelinePanel.vue'
 import SemanticsPanel from './components/SemanticsPanel.vue'
-import { channels as packChannels, type ChannelDef, type ChannelState } from './components/channels'
+import { channels as packChannels, feedSourceOf, type ChannelDef, type ChannelState } from './components/channels'
 import { activePack } from '../../station-packs/index'
-import { demoCameraCount } from '../../shared/cameras'
 
 const streams = ref<PerceptionStreamMeta[]>([])
 const detMap = ref<Record<string, PerceptionDetections>>({})
@@ -79,12 +78,14 @@ watch(() => route.query.source, () => {
   if (next) currentSource.value = next
 })
 
-/** 本包通道数 N(= 当前站点包 channels 条数 = 登记表 cameras 条数;0 路合法,不再固定 6) */
+/** 本包通道数 N = 源台账 + 演示层 = 路段数（2026-10-25 起）；0 路合法（未布点站） */
 const channelTotal = computed(() => packChannels().length)
-/** 一期演示口径摄像头总数：N 段 = N 摄像头 = N 视频（mock 复用；与源台账分开说，IKNBT2） */
-const demoCameraTotal = computed(() => demoCameraCount())
-/** 本包是否至少声明了一路有视频源的通道 —— 没有就不该报"服务未连接" */
-const packHasVideo = computed(() => packChannels().some((c) => c.hasVideo))
+/** 源台账条数（camera-segments.json 登记；仅初始映射） */
+const ledgerCount = computed(() => packChannels().filter((c) => c.demo !== true).length)
+/** 演示层条数（camera-plan 每段一行生成，demo: true） */
+const demoCount = computed(() => packChannels().filter((c) => c.demo === true).length)
+/** 本站路段数（口径核对用：channelTotal 应等于它） */
+const segmentTotal = computed(() => activePack().segments.length)
 /** 是否布了摄像头:N=0(新站/未布点站)合法,页面如实显示空态、不渲染"当前通道"详情 */
 const hasChannels = computed(() => channelTotal.value > 0)
 /** 0 路时的占位定义:只为让 current 计算有非空返回;N=0 时详情面板整体不渲染,不会冒充真实通道 */
@@ -98,37 +99,18 @@ const EMPTY_CHANNEL: ChannelDef = {
 
 /**
  * 页头口径(随包走,不写死):
- *   有视频源 → "样本视频"口径;
- *   本包全部没有视频源 → 如实说"未接入视频源";
- *   0 路源台账 → 如实说"源台账 0 路（仅初始映射）"，并注明一期 N 段 = N 摄像头 = N 视频（mock 复用），
- *   不得把源台账 0 路写成"本站没有摄像头/没有视频"（IKNBT2 口径）。
+ *   2026-10-25 演示层落页面:channels = 源台账 + 演示层 = 路段数,每路都有画面(自有源或演示复用);
+ *   源台账条数单独说,不再说"本页只展示源台账通道"。
  */
 const subLine = computed(() => {
-  if (!hasChannels.value) {
-    return `源台账 0 路（仅初始映射）· 一期演示摄像头 ${demoCameraTotal.value} 路（按路段数，mock 复用样本视频）· 本页只展示源台账通道`
-  }
-  const ledger = `源台账 ${channelTotal.value} 路（仅初始映射，不代表一期总数；一期 N 段 = N 摄像头 = N 视频，mock 复用）`
-  return packHasVideo.value
-    ? `样本视频 · 检测 → 跟踪 → 透视标定 → 四项指标 · ${ledger}`
-    : `${channelTotal.value} 路源台账通道 · 全部未接入视频源(本期留空) · ${ledger} · 检测 → 跟踪 → 透视标定 → 四项指标暂无输入`
+  const ledger = `源台账 ${ledgerCount.value} 路（仅初始映射）· 演示层 ${demoCount.value} 路 · 合计 ${channelTotal.value} 路 = ${segmentTotal.value} 段`
+  return `样本视频 / 演示复用 · 检测 → 跟踪 → 透视标定 → 四项指标 · ${ledger}`
 })
-const sourceBadge = computed(() => {
-  if (!hasChannels.value) {
-    return `源台账 0 路 · 一期演示摄像头 ${demoCameraTotal.value} 路（mock 复用）`
-  }
-  return packHasVideo.value
-    ? '离线样本视频 · 非实时流 · 非本站现场'
-    : '本批源台账摄像头未接入视频源 · 页面不显示任何画面'
-})
-/** 页脚出处(同一条纪律:没有视频源就不说"样本视频";0 路源台账照实说"仅初始映射") */
+const sourceBadge = computed(() => '离线样本视频 + 演示复用 · 非实时流 · 非本站现场')
+/** 页脚出处(同一条纪律:演示复用画面不是该摄像头自己的视频) */
 const footSourceLine = computed(() => {
-  if (!hasChannels.value) {
-    return `源台账 0 路（仅初始映射）· 一期演示摄像头 ${demoCameraTotal.value} 路（按路段数，mock 复用）· 非${stationName.value}现场 · 非实时流`
-  }
-  const ledger = `一期口径：N 段 = N 摄像头 = N 视频（演示，mock 复用；源台账 ${channelTotal.value} 路仅初始映射，不代表一期总数）`
-  return packHasVideo.value
-    ? `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流 · ${ledger}`
-    : `本轮无视频画面 · 非${stationName.value}现场 · 非实时流 · ${ledger}`
+  const ledger = `一期口径：N 段 = N 摄像头 = N 视频（演示）——本站 ${segmentTotal.value} 段即 ${channelTotal.value} 路摄像头（源台账 ${ledgerCount.value} + 演示层 ${demoCount.value}），画面为公开样本视频自有源或演示复用`
+  return `视频为公开样本视频 · 非${stationName.value}现场 · 非实时流 · ${ledger}`
 })
 
 const summary = ref<PerceptionSummary | null>(null)
@@ -143,16 +125,19 @@ const snapshotTs = ref('')
 const stationName = ref(activePack().station.name)
 
 // 可用性一律由服务端实际返回判定:返回里有的才「就绪 / 检测中」,没有的「未导出」;取不到检测的标「读取失败」
+// 2026-10-25(演示层 N 段 N 路):meta/det 按 feedSourceOf 取——自有源通道取自己的 stream,
+// 演示复用通道(演示层 + 源台账未接源)取复用流(road2/track1),画面与检测框同源。
 const channels = computed<ChannelState[]>(() =>
   packChannels().map((def) => {
-    const meta = streams.value.find((m) => m.stream_id === def.source) ?? null
-    const det = detMap.value[def.source] ?? null
+    const fs = feedSourceOf(def)
+    const meta = streams.value.find((m) => m.stream_id === fs) ?? null
+    const det = detMap.value[fs] ?? null
     return {
       def,
       meta,
       det,
       detTotal: det ? det.frames.reduce((s, f) => s + f.det.length, 0) : null,
-      detFailed: meta !== null && det === null && detFailedSet.value[def.source] === true,
+      detFailed: meta !== null && det === null && detFailedSet.value[fs] === true,
     }
   }),
 )
@@ -195,7 +180,9 @@ async function loadStreams(): Promise<void> {
     detFailedSet.value = failed
     pStatus.value = 'ready'
     clearRetryTimer()
-    // 当前通道:深链点名过就**不动**;否则若这一路不在服务端返回里,落第一路(既有行为)
+    // 当前通道:深链点名过就**不动**;否则若这一路不在服务端返回里,落第一路(既有行为)。
+    // 判的是**取数流在不在服务端**:演示复用通道的取数流是 reuseOf(road2/track1),
+    // 深链进来的 CAM-* 编号不在服务端列表里属正常,由 linkedSource 守住不重置。
     if (!linkedSource) {
       const first = list[0]
       if (first && !list.some((m) => m.stream_id === currentSource.value)) {
@@ -203,9 +190,10 @@ async function loadStreams(): Promise<void> {
       }
     }
   } catch {
-    // 感知服务没起:本批摄像头本来就没视频源(业主:视频样本先不弄),
-    // 所以只在"包里确实声明了有视频源的通道"时才报服务未连接 —— 否则那是误报。
-    if (packHasVideo.value) {
+    // 感知服务没起:2026-10-25 起每路摄像头都该有画面(自有源或演示复用),
+    // 布了摄像头(哪怕全是演示层)而服务连不上就是"画面取不到",必须如实报错 —— 不再以
+    // "本包没有自有视频源"为由静默成无画面(那是把服务断流说成"视频样本先不弄")。
+    if (hasChannels.value) {
       pStatus.value = 'error'
       pError.value = '感知演示服务未连接(先启动 work/perception/server.py,默认 127.0.0.1:8101)'
       // 断流恢复后自动重连(TC-06):错误态下每 5 s 重试一次,成功后清掉;也可点「重试」立即重拉
@@ -236,6 +224,8 @@ function scheduleRetry(): void {
 }
 
 // 当前通道详情:汇总(感知服务,当前未实现 → 降级)+ 该映射路段的 video 槽位
+// 2026-10-25:汇总请求按 feedSourceOf 取(演示复用通道取复用流的汇总),深链进来的
+// 演示摄像头(如 CAM-Z-001)也能看到复用流的分车型统计,不再是整块「—」。
 async function loadDetail(src: string): Promise<void> {
   summary.value = null
   summaryUnavailable.value = true
@@ -243,7 +233,7 @@ async function loadDetail(src: string): Promise<void> {
   const def = packChannels().find((c) => c.source === src)
   if (!def) return
   const [sum, pair] = await Promise.allSettled([
-    getPerceptionSummary(src),
+    getPerceptionSummary(feedSourceOf(def)),
     getTrafficSegmentSources(def.segmentId),
   ])
   if (sum.status === 'fulfilled' && sum.value && Array.isArray(sum.value.class_stats)) {

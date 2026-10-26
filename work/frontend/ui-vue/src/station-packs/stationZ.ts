@@ -18,25 +18,29 @@ import { STATION_Z_SEGMENTS } from './stationZ.network.ts'
 // IKOQEJ：方向/车道/对向/贯通字段（由 tools/gen_station_directions.py 只读 enriched 生成）
 import { STATION_Z_DIRECTIONS } from './stationZ.directions.generated.ts'
 import { CAMERA_CHANNELS } from './cameraChannels.generated.ts'
+import { DEMO_CAMERA_CHANNELS } from './demoCameraChannels.generated.ts'
 import type { PackSegmentBase, StationPack } from './types.ts'
 
-// ---- 摄像头源台账（6 路）＋演示层 N 段 N 路 ----
+// ---- 摄像头：源台账（6 路）＋ 演示层 N 段 N 路（业主 2026-10-25 口径落页面）----
 //
-// **唯一真值来源 = `work/perception/mapping/camera-segments.json`**（IKMDKY 三段映射登记表）；
-// 本文件**不再手写通道表**，只 import 生成物 `cameraChannels.generated.ts`
-// （生成器：`work/perception/tools/gen_station_channels.py`；改映射先改登记表再生成）。
-//   · cam_id ↔ channel_id（= `source`，感知服务 stream_id）↔ segment_id
-//   · 6 路里 **C-02 / C-05 能对上样本视频**（road2 / track1，样本视频非本站现场、映射仅演示）
-//   · 其余 4 路如实标「未接入视频源」——`hasVideo: false` **不等于**没有摄像头、更不等于数据可用
-// ⚠️ **IKMDKY 切新段后的段号映射**：6 个摄像头按**几何最近**落到新 61 段上（段号 2 位 → 3 位）；
+// **源台账唯一真值来源 = `work/perception/mapping/camera-segments.json`**（IKMDKY 三段映射登记表）；
+// 本文件**不再手写通道表**，只 import 两份生成物（生成器：`work/perception/tools/gen_station_channels.py`；
+// 改映射先改登记表 / camera-plan 再生成）：
+//   · `cameraChannels.generated.ts` = 源台账 6 路：cam_id ↔ channel_id（= `source`，感知服务
+//     stream_id）↔ segment_id；C-02 / C-05 能对上样本视频（road2 / track1，非本站现场、映射仅演示），
+//     其余 4 路 `hasVideo: false`——**不等于**没有摄像头、更不等于数据可用；
+//   · `demoCameraChannels.generated.ts` = 演示层 55 路（61 段 − 源台账 6 段，`demo: true`、
+//     画面走 `reuseOf` 演示复用）——点位取 camera-plan 每段 `offset_m` 落折线（演示布点）。
+// ⚠️ **IKMDKY 切新段后的段号映射**：6 个源台账摄像头按**几何最近**落到新 61 段上（段号 2 位 → 3 位）；
 //    C-06 原坐标在站区 500 m 之外，沿鼎湖大道就近落到站区边界段 SZ-015（演示布点，非实测坐标）。
+// 合并后本包 61 路 = 61 段（一段最多 1 路，源台账优先、演示层补齐），图钉 / 感知台账 / 监控墙
+// 都按这份合并结果渲染（业主 2026-10-25：路段有多少摄像头，监控墙就要有多少摄像头画面）。
 
 // ---- 路段基线（演示值）----
 //
 // **只给摄像头源台账覆盖的 6 条段基线**——这 6 条是源台账初始映射所在段。
 // 上色策略自 IKP5DM 起改为 `all`（与 GZ 一致）：61 段都按等级上色，不再把其余 55 段
-// 画成"没监控"；图钉仍只画源台账 6 路，演示摄像头按 N 段 N 路（mock 复用），见
-// `work/perception/mapping/camera-plan.md`。
+// 画成"没监控"；图钉自 2026-10-25 起画全部 61 路摄像头（源台账 6 + 演示层 55，见上方通道合并）。
 // 数值是**编造的演示值**（一眼能看出是整数 / 整档），不是任何模型的输出。
 //
 // ⚠️ **`source` 一律取 `'twin'`（孪生链路 / 虚拟检测器）**，不是 `'video'`：
@@ -194,7 +198,7 @@ const SEGMENT_BASES: PackSegmentBase[] = [
 export const STATION_Z: StationPack = {
   key: 'Z',
   label: 'Z · 61 段',
-  note: '站点 OSM 真路网 61 段（站区 500 m）· 几何为真值（OSM）· 源台账 6 路摄像头 / 一期演示 61 路（mock 复用样本视频）',
+  note: '站点 OSM 真路网 61 段（站区 500 m）· 几何为真值（OSM）· 摄像头 61 路 = 61 段（源台账 6 + 演示层 55，N 段 = N 摄像头 = N 视频，2026-10-25）',
   station: {
     station_id: 'ZQNZ',
     name: '肇庆东站',
@@ -336,8 +340,9 @@ export const STATION_Z: StationPack = {
     why: '本路段暂无分流建议（演示包未预置；不是"不需要分流"的结论）',
   },
 
-  // 感知通道 = 6 路摄像头（生成物，来源见 work/perception/mapping/camera-segments.json）
-  channels: CAMERA_CHANNELS,
+  // 感知通道 = 源台账 6 路（生成物）+ 演示层 55 路（生成物）= 61 路 = 61 段
+  //（业主 2026-10-25：路段有多少摄像头，监控墙就要有多少摄像头画面；来源见文件头注释）
+  channels: [...CAMERA_CHANNELS, ...DEMO_CAMERA_CHANNELS.Z],
   /**
    * **视频链路覆盖 = 空**：本包没有任何**本站段**的视频链路指标（站点包 Z 不给 `source: "video"` 的段基线）。
    * ⚠️ 注意别和"有没有视频源"混：6 路摄像头里 C-02/C-05 有**样本视频**（感知演示用，非本站现场），
@@ -352,8 +357,8 @@ export const STATION_Z: StationPack = {
    * 上色策略：**全段按等级上色**（IKP5DM 选 A，与 GZ 一致）——一期口径是
    * **N 段 = N 演示摄像头 = N 视频（mock 复用）**，若仍按源台账 6 路决定上色，
    * 其余 55 段会被画成灰、读成"没监控"，与口径矛盾。
-   * 图钉仍只画源台账登记的 6 路（`channels` 只来自生成物）；演示摄像头按 N 段 N 路，
-   * 见 `work/perception/mapping/camera-plan.md`。无数据 / 陈旧段仍走灰档，与"没摄像头"不是一回事。
+   * 图钉自 2026-10-25 起画全部 61 路（源台账 6 + 演示层 55，`channels` 合并生成物）。
+   * 无数据 / 陈旧段仍走灰档，与"没摄像头"不是一回事。
    */
   colorPolicy: 'all',
 

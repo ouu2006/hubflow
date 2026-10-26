@@ -16,7 +16,9 @@
   真实踏勘点位归 IKMHMX，本包不冒充实测；
 - 全段确定性演示基线：每段 level ∈ 1~4（**不出现灰档**），数值由段序号/段长确定性派生，
   同一输入重跑逐字节一致；标 `derive` 说明来源；
-- GZ 暂无摄像头登记 → `channels: []`、`colorPolicy: 'all'`（全段按等级上色，不是只有摄像头段）；
+- GZ 源台账无摄像头登记 → `channels` 取**演示层生成物** `DEMO_CAMERA_CHANNELS.GZ`（业主
+  2026-10-25 口径：N 段 = N 摄像头 = N 视频，落到图钉 / 台账 / 监控墙；`demo: true`、
+  画面 `reuseOf` 演示复用）；`colorPolicy: 'all'`（全段按等级上色，不是只有摄像头段）；
 - 站点元信息（range_m / segment_count / range_source / subtitle）与 `site-ranges.json` 对齐，
   供 `work/twin/netpack/check_site_ranges.py` 三方对账。
 
@@ -195,11 +197,17 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append(f"//   （① 获取路线 → ② 路口切分 → ③ 打标签）生成 {seg_count} 段 GZ-### 真网几何。")
     lines.append("// **几何取自 OSM（真值）**；路况指标 / 摄像头 / 推荐一律为**演示数据（模拟）**，不是实测。")
     lines.append("// 本文件由 work/frontend/scripts/gen_station_pack_gz.py 生成，**勿手改**；")
-    lines.append("// 全段确定性演示基线（每段 level>=1，不灰档）；GZ 未接摄像头登记表，channels 为空、全段按等级上色。")
+    lines.append("// 全段确定性演示基线（每段 level>=1，不灰档）；摄像头 = 演示层 708 路（N 段 = N 摄像头 =")
+    lines.append("// N 视频，业主 2026-10-25 口径；GZ 源台账无登记，channels 取 demoCameraChannels.generated.ts）。")
+    lines.append("// ⚠️ 本目录里的这份是**文本镜像**（check_site_ranges.py 按文本解析，不做 TS 编译）：")
+    lines.append("//   ./types.ts / *directions*.ts / *demoCameraChannels*.ts 等相对 import 只在前端")
+    lines.append("//   站点包目录（work/frontend/ui-vue/src/station-packs/）解析，本目录历来缺这些文件。")
     lines.append("")
     lines.append("import { STATION_GZ_SEGMENTS } from './stationGZ.network.ts'")
     # IKOQEJ：方向/车道/对向/贯通字段（只读 enriched 生成物；不改判级/契约）
     lines.append("import { STATION_GZ_DIRECTIONS } from './stationGZ.directions.generated.ts'")
+    # 演示层摄像头（业主 2026-10-25）：由 gen_station_channels.py 从 camera-plan.json 生成
+    lines.append("import { DEMO_CAMERA_CHANNELS } from './demoCameraChannels.generated.ts'")
     lines.append(
         "import type { PackAlertBase, PackDiversion, PackRecommend, PackSection, "
         "PackSegmentBase, StationPack } from './types.ts'"
@@ -332,7 +340,7 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append(f"  key: {_ts_str(PACK_KEY)},")
     lines.append(f"  label: {_ts_str(f'{site_name} · {seg_count} 段')},")
     lines.append(
-        f"  note: {_ts_str(f'{site_name} OSM 真路网 {seg_count} 段（演示范围 {range_m} m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 未接摄像头登记')} ,"
+        f"  note: {_ts_str(f'{site_name} OSM 真路网 {seg_count} 段（演示范围 {range_m} m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 摄像头 = 演示层 {seg_count} 路（N 段 = N 摄像头 = N 视频，2026-10-25）')} ,"
     )
     lines.append("  station: {")
     lines.append(f"    station_id: {_ts_str(str(site['site_id']))},")
@@ -408,7 +416,7 @@ def build_ts(site: dict, network: dict) -> str:
     lines.append("  seedDispatch: {},")
     lines.append("  diversion: {},")
     lines.append("  diversionFallback: DIVERSION_FALLBACK,")
-    lines.append("  channels: [],")
+    lines.append("  channels: DEMO_CAMERA_CHANNELS.GZ,")
     lines.append("  videoCovered: [],")
     lines.append("  colorPolicy: 'all',")
     lines.append("  assimilation: [],")

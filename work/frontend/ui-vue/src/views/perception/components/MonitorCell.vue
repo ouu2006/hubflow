@@ -2,10 +2,13 @@
 // 监控墙单格:一帧抽帧画面 + SVG 检测框覆盖层 + 越线计数线 + 底部口径行。
 // 深色例外仅限本格(画面区);框色走 CLASS_COLORS(与等级四级色解耦),线色走 TD_VIDEO.brand。
 // 越线计数是感知服务当前**未提供**的字段 → 格内如实标「越线计数:未提供」,不画推算值。
+// 2026-10-25(演示层 N 段 N 路):画面与检测框按 feedSourceOf 取——自有源取自己的 stream,
+// 演示复用(演示层 / 源台账未接源)取 reuseOf 流,格内标「演示复用 ← road2/track1」,
+// 不得读成"该摄像头自己的视频"。
 import { computed } from 'vue'
 import { perceptionFrameUrl } from '../../../api/perception'
 import { TD_VIDEO } from '../../../shared/theme'
-import { COUNT_LINE_POS, classColorOf, classCountsOf, frameAt, trackCountOf, vehicleKeyOf } from './channels'
+import { COUNT_LINE_POS, classColorOf, classCountsOf, feedSourceOf, frameAt, trackCountOf, vehicleKeyOf } from './channels'
 import type { ChannelState } from './channels'
 
 const props = defineProps<{
@@ -23,22 +26,29 @@ const meta = computed(() => props.ch.meta)
 const classNames = computed(() => meta.value?.class_names ?? {})
 const dets = computed(() => frameAt(props.ch.det, props.index))
 
+/** 画面/检测实际取数的 stream(自有源 = source;演示复用 = reuseOf) */
+const feedStream = computed(() => feedSourceOf(props.ch.def))
+/** 演示复用通道(有画面,但画面来自公开样本视频复用,必须标注) */
+const isReuse = computed(() => !props.ch.def.hasVideo && Boolean(props.ch.def.reuseOf))
+
 /**
  * 格内状态。⚠️「未接入视频源」必须与「未导出」分开(Issue IKLX5Y):
  * 前者是"这条路还没接视频",后者是"有样本视频、服务端没处理"。合成一句会误导。
+ * 「演示复用」= 有画面(复用公开样本视频),也不是上面两档(2026-10-25 演示层)。
  */
 const status = computed(() => {
+  if (isReuse.value) return props.ch.detFailed ? '演示复用 · 检测读取失败' : props.selected ? '演示复用 · 检测中' : '演示复用'
   if (!props.ch.def.hasVideo) return '未接入视频源'
   if (!meta.value) return '未导出'
   if (props.ch.detFailed) return '检测读取失败'
   return props.selected ? '检测中' : '就绪'
 })
 
-/** 没有视频源的通道:格内显示留空窗占位(不报错、不白屏) */
-const noSource = computed(() => !props.ch.def.hasVideo)
+/** 没有视频源且无演示复用的通道:格内显示留空窗占位(不报错、不白屏) */
+const noSource = computed(() => !props.ch.def.hasVideo && !props.ch.def.reuseOf)
 
 const url = computed(() =>
-  meta.value && !noSource.value ? perceptionFrameUrl(props.ch.def.source, props.index + 1) : null,
+  meta.value && !noSource.value ? perceptionFrameUrl(feedStream.value, props.index + 1) : null,
 )
 
 // 画面区尺寸取源分辨率(缺 meta 时给占位尺寸);模板只引用这两个 computed,避免在模板里对 meta 做空值收窄
@@ -87,16 +97,16 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
 <template>
   <div class="cell" :class="{ on: selected }" @click="emit('select')">
     <div class="cell-top">
-      <span class="ct-name">{{ ch.def.cid }} · {{ ch.def.source }}</span>
+      <span class="ct-name">{{ ch.def.cid }} · {{ ch.def.camId ?? ch.def.source }}</span>
       <span
         class="ct-state"
-        :class="{ live: selected && !noSource && meta !== null && !ch.detFailed, err: ch.detFailed, off: meta === null || noSource }"
+        :class="{ live: selected && !noSource && meta !== null && !ch.detFailed, warn: isReuse && !ch.detFailed, err: ch.detFailed, off: meta === null || noSource }"
       >
         {{ status }}
       </span>
     </div>
 
-    <!-- 空窗占位(业主 2026-10-15:视频样本先不弄) -->
+    <!-- 空窗占位(无自有源且无演示复用的老包;2026-10-25 起正常包不会再出现) -->
     <template v-if="noSource">
       <div class="cell-media cell-nosource" :style="mediaStyle">
         <span class="ns-l1">未接入视频源</span>
@@ -152,8 +162,9 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
       <div class="cell-sub">
         <template v-if="ch.detFailed">检测接口读取失败 · 无框可画(不是"本帧无检出")</template>
         <template v-else>
-          {{ ch.def.cid }} · {{ ch.def.source }} · 缩放 {{ scaleText }} · 帧 {{ index + 1 }} · 轨迹
-          {{ trackCount }}
+          {{ ch.def.camId ?? ch.def.source }} · {{ ch.def.segmentId }}
+          <template v-if="isReuse"> · 画面 ← {{ ch.def.reuseOf }}（演示复用·非本站现场）</template>
+          · 缩放 {{ scaleText }} · 帧 {{ index + 1 }} · 轨迹 {{ trackCount }}
         </template>
       </div>
     </template>
@@ -207,6 +218,9 @@ const scaleText = computed(() => (props.scale === null ? '—' : `${props.scale.
 }
 .ct-state.live {
   color: var(--v-brand);
+}
+.ct-state.warn {
+  color: #e37318;
 }
 .ct-state.err {
   color: #e37318;

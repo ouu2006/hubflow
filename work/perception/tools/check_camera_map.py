@@ -523,10 +523,15 @@ def check_repo(mapping: dict, net_ids: set[str], errors: list[str]) -> None:
         errors.append(f"找不到前端站点包几何 {PACK_NET_TS}")
 
     # stationZ.ts：只 import 生成物，不再手写第二份通道表
+    # 2026-10-25 起 channels = 源台账生成物 + 演示层生成物合并（N 段 N 摄像头落页面）
     if PACK_TS.exists():
         pack_text = PACK_TS.read_text(encoding="utf-8")
-        if "from './cameraChannels.generated.ts'" not in pack_text or "channels: CAMERA_CHANNELS" not in pack_text:
+        if "from './cameraChannels.generated.ts'" not in pack_text:
             errors.append("stationZ.ts 没有引用生成物 CAMERA_CHANNELS（页面与登记表可能双写）")
+        if "from './demoCameraChannels.generated.ts'" not in pack_text or "DEMO_CAMERA_CHANNELS.Z" not in pack_text:
+            errors.append("stationZ.ts 没有引用演示层生成物 DEMO_CAMERA_CHANNELS（N 段 N 摄像头口径未落页面）")
+        if "channels: CAMERA_CHANNELS" in pack_text or "channels: [...CAMERA_CHANNELS" not in pack_text:
+            errors.append("stationZ.ts 的 channels 不是「源台账 + 演示层」合并式（应为 channels: [...CAMERA_CHANNELS, ...DEMO_CAMERA_CHANNELS.Z]）")
         if re.search(r"const CHANNELS", pack_text):
             errors.append("stationZ.ts 里仍有手写 CHANNELS 数组（应只 import 生成物）")
     else:

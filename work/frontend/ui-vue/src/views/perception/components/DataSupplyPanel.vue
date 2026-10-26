@@ -32,10 +32,11 @@ const videoSlot = computed(
   () => props.sourcePair?.slots.find((s) => s.source === 'video')?.record ?? null,
 )
 
-/** 状态四分的文字(未接入视频源 / 未导出 / 读取失败 / 已导出),与通道台账同口径 */
+/** 状态五分的文字(未接入视频源 / 演示复用 / 未导出 / 读取失败 / 已导出),与通道台账同口径 */
 const exportState = computed(() => {
   const c = ch.value
   if (!c) return { text: '—', cls: 'out' }
+  if (!c.def.hasVideo && c.def.reuseOf) return { text: '演示复用', cls: 'warn' }
   if (!c.def.hasVideo) return { text: '未接入视频源', cls: 'out' }
   if (c.meta === null) return { text: '未导出', cls: 'out' }
   if (c.detFailed) return { text: '读取失败', cls: 'err' }
@@ -55,12 +56,21 @@ const supplyRows = computed<SupplyRow[]>(() => {
   const c = ch.value
   const m = c?.meta ?? null
   const det = c?.det ?? null
-  if (c && !c.def.hasVideo) {
+  if (c && !c.def.hasVideo && !c.def.reuseOf) {
     // 未接入视频源(Issue IKLX5Y):不是"未导出"——本路压根还没接视频,四行全空且缺口写清
     return [
       { name: '样本视频帧', value: '—', ok: false, gap: '该通道未接入视频源（路网上已布点，本期留空）' },
       { name: '逐帧检测框 / 轨迹', value: '—', ok: false, gap: '无源可处理' },
       { name: '透视标定(RANGE / RMSE)', value: '—', ok: false, gap: '无源可标定' },
+      { name: '四项指标 q / v / k / L_q', value: '—', ok: false, gap: '依赖上三项，当前不可用' },
+    ]
+  }
+  if (c && !c.def.hasVideo && c.def.reuseOf && !m) {
+    // 演示复用通道但感知服务未连接:如实说服务断流,不与"未接入视频源"混同
+    return [
+      { name: '样本视频帧', value: '—', ok: false, gap: `演示复用画面（← ${c.def.reuseOf}）未连接 · 感知服务未起或断流` },
+      { name: '逐帧检测框 / 轨迹', value: '—', ok: false, gap: '依赖复用流的检测数据,当前不可用' },
+      { name: '透视标定(RANGE / RMSE)', value: '—', ok: false, gap: '由感知服务 /summary 提供,当前未实现' },
       { name: '四项指标 q / v / k / L_q', value: '—', ok: false, gap: '依赖上三项，当前不可用' },
     ]
   }
@@ -158,7 +168,9 @@ const demandRows = computed<DemandRow[]>(() => {
 const gaps = computed<string[]>(() => {
   const out: string[] = []
   const c = ch.value
-  if (c && !c.def.hasVideo) {
+  if (c && !c.def.hasVideo && c.def.reuseOf) {
+    out.push(`该通道画面为演示复用（← ${c.def.reuseOf}，公开样本视频，非该摄像头自己的视频）;检测框 / 轨迹取自复用流`)
+  } else if (c && !c.def.hasVideo) {
     out.push('该通道未接入视频源(路网上已布点、本期视频留空):检测框 / 轨迹 / 标定 / 四项指标全部不可用')
   } else if (!c?.meta) {
     out.push('该通道样本视频未导出:检测框 / 轨迹 / 标定 / 四项指标全部不可用')

@@ -4,10 +4,15 @@
 //   （① 获取路线 → ② 路口切分 → ③ 打标签）生成 708 段 GZ-### 真网几何。
 // **几何取自 OSM（真值）**；路况指标 / 摄像头 / 推荐一律为**演示数据（模拟）**，不是实测。
 // 本文件由 work/frontend/scripts/gen_station_pack_gz.py 生成，**勿手改**；
-// 全段确定性演示基线（每段 level>=1，不灰档）；GZ 未接摄像头登记表，channels 为空、全段按等级上色。
+// 全段确定性演示基线（每段 level>=1，不灰档）；摄像头 = 演示层 708 路（N 段 = N 摄像头 =
+// N 视频，业主 2026-10-25 口径；GZ 源台账无登记，channels 取 demoCameraChannels.generated.ts）。
+// ⚠️ 本目录里的这份是**文本镜像**（check_site_ranges.py 按文本解析，不做 TS 编译）：
+//   ./types.ts / *directions*.ts / *demoCameraChannels*.ts 等相对 import 只在前端
+//   站点包目录（work/frontend/ui-vue/src/station-packs/）解析，本目录历来缺这些文件。
 
 import { STATION_GZ_SEGMENTS } from './stationGZ.network.ts'
 import { STATION_GZ_DIRECTIONS } from './stationGZ.directions.generated.ts'
+import { DEMO_CAMERA_CHANNELS } from './demoCameraChannels.generated.ts'
 import type { PackAlertBase, PackDiversion, PackRecommend, PackSection, PackSegmentBase, StationPack } from './types.ts'
 
 const LEVEL_CYCLE = [1, 2, 1, 3, 2, 1, 2, 4, 1, 2, 3, 1] as const
@@ -1218,7 +1223,7 @@ const RECOMMEND: PackRecommend = {
 export const STATION_GZ: StationPack = {
   key: 'GZ',
   label: '广州南站 · 708 段',
-  note: '广州南站 OSM 真路网 708 段（演示范围 1000 m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 未接摄像头登记' ,
+  note: '广州南站 OSM 真路网 708 段（演示范围 1000 m）· 几何为真值（OSM）· 全段确定性演示基线（不是实测）· 摄像头 = 演示层 708 路（N 段 = N 摄像头 = N 视频，2026-10-25）' ,
   station: {
     station_id: 'guangzhounan',
     name: '广州南站',
@@ -1330,7 +1335,7 @@ export const STATION_GZ: StationPack = {
   seedDispatch: {},
   diversion: {},
   diversionFallback: DIVERSION_FALLBACK,
-  channels: [],
+  channels: DEMO_CAMERA_CHANNELS.GZ,
   videoCovered: [],
   colorPolicy: 'all',
   assimilation: [],

@@ -164,11 +164,38 @@ def main() -> int:
         if not any(m in blk for m in MOCK_MARKERS):
             errors.append(f"{field} 的值里找不到「演示/候选/待冻结/模拟/DEMO」标记，疑似冒充真实数据")
 
-    # ⑨ 摄像头生成物段号零悬空（IKMDKY 联动）
+    # ⑨ 摄像头生成物段号零悬空（IKMDKY 联动；2026-10-25 起含演示层生成物 Z+GZ 两站）
     gen_ids = set(re.findall(r"segment_id:\s*'(SZ-\d+)'", GEN_TS.read_text(encoding="utf-8")))
     bad = sorted(gen_ids - net_ids)
     if bad:
         errors.append(f"cameraChannels.generated.ts 段号悬空：{bad}")
+
+    DEMO_TS = ROOT / "work/frontend/ui-vue/src/station-packs/demoCameraChannels.generated.ts"
+    gz_net_ids = set(re.findall(r"segment_id:\s*'(GZ-\d+)'", GZ_NET_TS.read_text(encoding="utf-8")))
+    if not DEMO_TS.exists():
+        errors.append("demoCameraChannels.generated.ts 缺失（先跑 gen_station_channels.py）")
+    else:
+        demo_text = DEMO_TS.read_text(encoding="utf-8")
+        demo_sz = set(re.findall(r"segment_id:\s*'(SZ-\d+)'", demo_text))
+        demo_gz = set(re.findall(r"segment_id:\s*'(GZ-\d+)'", demo_text))
+        bad_sz = sorted(demo_sz - net_ids)
+        bad_gz = sorted(demo_gz - gz_net_ids)
+        if bad_sz:
+            errors.append(f"demoCameraChannels.generated.ts Z 段号悬空：{bad_sz}")
+        if bad_gz:
+            errors.append(f"demoCameraChannels.generated.ts GZ 段号悬空：{bad_gz}")
+        # 口径核对：演示层 + 源台账 = 站点包 channels 总数 = 路段数（每段 1 路）
+        ledger_sz = len(re.findall(r"segment_id:\s*'(SZ-\d+)'", GEN_TS.read_text(encoding="utf-8")))
+        z_total = ledger_sz + len(demo_sz)
+        print(f"[摄像头] Z: 源台账 {ledger_sz} + 演示层 {len(demo_sz)} = {z_total} 路（netpack {len(net_ids)} 段）")
+        if z_total != len(net_ids):
+            errors.append(f"Z 摄像头 {z_total} 路 ≠ netpack {len(net_ids)} 段（N 段 = N 摄像头口径破了）")
+        if len(demo_gz) != len(gz_net_ids):
+            errors.append(
+                f"GZ 摄像头 {len(demo_gz)} 路 ≠ netpack {len(gz_net_ids)} 段（N 段 = N 摄像头口径破了）"
+            )
+        else:
+            print(f"[摄像头] GZ: 演示层 {len(demo_gz)} 路（netpack {len(gz_net_ids)} 段）")
 
     # ⑩ 广州南站（GZ）点位自检：id 唯一 · 名称带演示标记 · 坐标落在这个包自己的路网范围内 · 无重合
     #    为什么不复用 ①~⑧：GZ 包还没有 Z 站那套 alerts / diversion / assimilation 演示骨架，
