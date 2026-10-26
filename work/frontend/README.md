@@ -1934,3 +1934,79 @@ curl -s http://127.0.0.1:8000/api/traffic/route/options | grep pickup_route
 ```
 > 注意：`work/engine/out/real/routes.json` 存在时真网优先，样例 D3 会被盖住；
 > 验证样例需临时把它移开，**测完必须移回**。
+
+---
+
+## 三十二、效果对比补「处置前后三项」：演示值换成引擎同一窗口现算（TC-09，2026-10-26）
+
+第二十八章把「效果对比」从空壳接上了引擎三组真产物，但手册第 17 章要的报表是
+**三组对照 + 处置前后三项**（排队长度峰值 / 拥堵持续时间 / 饱和度和差）。三项当时没有引擎产物，
+页面用的是 `shared/demoDecision.ts` 的 `ACK_COMPARISON` **写死的演示值**（340→180 m / 26→11 min /
+3.42→2.05），属于「拿演示值冒充报表」。本章把它换成引擎现算的真值。
+
+### 32.1 口径（引擎侧 `work/engine/run.py` 的 `_compare_treatment()`）
+
+- **等长时间窗**：处置前 = 组①（不推荐）、处置后 = 组③（协同推荐），两组跑**同一个**评估窗口
+  （同一 `base_ts` / 同一 `window_sec` / 同一车辆群 / 同一站点包参数），差异只来自推荐机制。
+  **不虚构两个时间段**——本项目没有「处置前 30 min」的真实历史窗口，编一个就是造假。
+- **对比范围 = 两侧橙红段并集**（`scope`）：处置前橙红段 ∪ 处置后橙红段。若只算「处置后自己的橙红段」，
+  协同推荐把流量挪走的段会凭空消失，分母变小造成假优势；并集保证两侧同一段号集合、分母可比。
+- **三项口径**（原文写进 `metrics.*.formula`，下游照抄不改写）：
+  - 排队长度峰值：逐时段 `q_veh = max(0, x-1) × capacity_per_slot`；
+    `L_q = min(L_seg_m, q_veh / 车道数 × queue_headway_m)`，取 scope 内最大。
+  - 拥堵持续时间：逐时段判 **`x >= 1.0`**（过饱和的物理定义，**不是等级档位**）——按等级橙档 `x>=0.8`
+    去判，三组整窗都算「拥堵 15 min」，一点区分度都没有；按过饱和判才有可比差异。取最长**连续**
+    过饱和时段数 × `slot_minutes`。
+  - 饱和度和：scope 内各段窗口内**最大**饱和度之和。
+  - `queue_headway_m` 读 `stations/thresholds.json` 的 `grading`（与孪生侧 `METRIC_FORMULAS` 同一出处），
+    非正数直接 `SystemExit`，**代码里不写死**。
+
+### 32.2 没有对比对象时如实标不可用
+
+`treatment.available = false` + `unavailable_reason`，三项的 `before/after/delta` **一律 `null`**。
+最常见的情形：用只有 1 个时段的上游快照跑（`--segments work/twin/out/latest/segments_twin.json`
+的 `window_sec=60` → 1 个 slot），窗口内没有任何段进橙红档，scope 为空。
+此时**绝不能输出 0 → 0**——那读起来像「改善到完美」。接口层 `_report_treatment()` 还兜了一层，
+老产物就算带了 0 → 0 也会被改判成 null。
+
+### 32.3 前端（`views/decision/components/EffectCompare.vue`）
+
+- 在 TC-17 判定行之后新增整段：标题「处置前后三项 · 同窗口两组对照（引擎现算）」+ 时间窗出处行
+  （起止时刻 / 窗口秒数 / 时段数 / 时段长度 / 处置前=组①·处置后=组③·同一窗口两组对照）+
+  「对比路段 N 段：SZ-004 · 口径：两侧橙红段并集」+ 三列表（指标 / 处置前 / **处置后** / 变化）。
+- 变化列：`delta < 0` 且 `better === 'down'` 时上 `.good`（绿）；变差保持中性，**不用红色催人**
+  ——红色在本项目是告警语义，不能拿来表示「指标变差了」。
+- 表格下方两行：各项 `formula` 拼成的「口径：…」，以及引擎 `treatment.note`
+  （「两项均由本引擎在同一评估窗口上现算（不是演示值）…若协同推荐把流量挪到别的段，和值可能不降——
+  如实输出，不挑口径」）。
+- **演示兜底只在真没有数据时出现**：`showDemo = reportRows.length === 0 && !treatment`，
+  即既无三组报表、也无真三项时才显示 `ACK_COMPARISON`，文案也改成「接口报表既无三组报表也无
+  处置前后三项时的兜底展示」。
+
+### 32.4 实测（2026-10-26）
+
+真网（`run.py --network real --compare`，写 `work/engine/out/real/compare/`）：
+`scope = ['SZ-004']`，排队峰值 **23.33 → 0.0 m（−23.33）**、拥堵持续时间 **15 → 0 min（−15）**、
+饱和度和 **1.125 → 0.825（−0.3）**。
+
+样例（`--sample --compare`）：`scope = ['SEG-001','SEG-003','SEG-011']`、
+**23.33 → 0.0 m** / **15 → 0 min** / **2.8958 → 2.3958**。
+
+页面 CDP 实测（决策页 → 效果对比）：三组 9 行指标全部对上（600/600/600 attempted、
+inserted 600/600/480、completed 571/571/459、in_transit 29/29/21、not_entered 0/0/120、
+橙红 1/1/1、28254.81/28254.81/24043.86、28712.96/28712.96/23888.78、2.91/2.91/0.86），
+三项表上屏 `23.33 / 0 / -23.33`、`15 / 0 / -15`、`1.125 / 0.825 / -0.3`，演示脚本区已隐藏。
+
+### 32.5 复跑
+
+```bash
+python work/engine/run.py --compare --out out/_cmpT          # 样例三组 + 三项
+python work/engine/run.py --network real --compare           # 真网（写 out/real/compare/）
+python work/assembly/traffic.py --port 8000                  # 系统 python（带 fastapi/uvicorn）
+curl -s http://127.0.0.1:8000/api/traffic/report/compare | python -c "import sys,json;print(json.load(sys.stdin)['treatment'])"
+# 页面：决策页 → 效果对比 → 看「处置前后三项」表
+```
+> 注意：`--network real --compare` 默认没有 `--segments` 上游快照时全部路段 `q_vph=0`，
+> 三组差异只由时段预约占用产生（产物里 `comparison.scenario.note` 会明写）。
+> 要更真实的指标，加 `--segments <带 SZ-### 的快照>`；若该快照只有 1 个时段，三项会如实标
+> `available:false`（这是正确行为，不是 bug）。

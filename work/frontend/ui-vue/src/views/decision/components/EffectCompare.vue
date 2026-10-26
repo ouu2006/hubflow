@@ -21,6 +21,46 @@ const report = ref<ReportCompare | null>(null)
 const reportError = ref('')
 const reportRows = computed<ReportCompareRow[]>(() => report.value?.rows ?? [])
 
+// ---------- TC-09 处置前后三项（引擎现算，接口层只读透传；不是演示值） ----------
+// 三项口径一律照引擎产物（metrics.*.formula），页面不改写、不换算法；
+// available=false 表示本窗口没有橙红段、没有对比对象 —— 如实说明，不显示 0 → 0 冒充改善。
+const treatment = computed(() => report.value?.treatment ?? null)
+const treatmentRows = computed(() => {
+  const t = treatment.value
+  if (!t) return []
+  return (['queue', 'duration', 'saturation'] as const).map((key) => {
+    const m = t.metrics[key]
+    const deltaText =
+      m?.delta == null ? '—' : m.delta > 0 ? `+${m.delta}` : String(m.delta)
+    const improved = m?.delta != null && m.better === 'down' ? m.delta < 0 : false
+    return {
+      key,
+      name: m?.name ?? key,
+      unit: m?.unit ?? '',
+      before: m?.before ?? null,
+      after: m?.after ?? null,
+      deltaText,
+      improved,
+      formula: m?.formula ?? '',
+    }
+  })
+})
+/** 等长时间窗说明：处置前/处置后跑的是同一个窗口，不是两个时间段 */
+const treatmentWindowText = computed(() => {
+  const w = treatment.value?.window
+  if (!w) return ''
+  return (
+    `${w.start_ts ?? '—'} → ${w.end_ts ?? '—'}` +
+    `（窗口 ${w.window_sec ?? '—'} s · ${w.slots ?? '—'} 个 ${w.slot_minutes ?? '—'} min 时段）` +
+    ` · 处置前 = 组①不推荐 · 处置后 = 组③协同推荐 · 同一窗口两组对照`
+  )
+})
+const treatmentFormulaText = computed(() =>
+  treatmentRows.value.filter((m) => m.formula).map((m) => `${m.name}：${m.formula}`).join('；'),
+)
+/** 演示脚本只在接口既没有三组报表、也没有真三项时才兜底 */
+const showDemo = computed(() => reportRows.value.length === 0 && !treatment.value)
+
 onMounted(async () => {
   // mock 模式没有 /report/compare(实测 404):不请求、不常驻告警,A/B/C 仍按"前端演示脚本"展示
   if (USE_MOCK) return
@@ -123,14 +163,55 @@ onMounted(async () => {
           {{ report.tc17.passed === true ? '通过' : report.tc17.passed === false ? '未通过' : '—' }}
           · 判据数值见接口响应 criteria 字段
         </p>
+
+        <!-- TC-09 处置前后三项：引擎在同一评估窗口上现算，接口层只读透传（不是演示值） -->
+        <template v-if="treatment">
+          <div class="sub">处置前后三项 · 同窗口两组对照（引擎现算）</div>
+          <p class="src">{{ treatmentWindowText }}</p>
+          <p v-if="treatment.scope" class="src">
+            对比路段 {{ treatment.scope.segment_ids.length }} 段
+            <template v-if="treatment.scope.segment_ids.length">
+              ：{{ treatment.scope.segment_ids.join('、') }}
+            </template>
+            · 口径：{{ treatment.scope.rule }}
+          </p>
+          <p v-if="treatment.available === false" class="src warn">
+            本次没有对比对象：{{ treatment.unavailable_reason }}
+          </p>
+          <div v-else class="tbl-wrap">
+            <table class="td-table">
+              <thead>
+                <tr>
+                  <th>指标（同一评估窗口 · 处置前 组① vs 处置后 组③）</th>
+                  <th class="num">处置前</th>
+                  <th class="num hl">处置后</th>
+                  <th class="num">变化</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="m in treatmentRows" :key="m.key">
+                  <td>
+                    {{ m.name }}<span v-if="m.unit" class="unit">({{ m.unit }})</span>
+                  </td>
+                  <td class="num">{{ m.before ?? '—' }}</td>
+                  <td class="num hl">{{ m.after ?? '—' }}</td>
+                  <td class="num" :class="{ good: m.improved }">{{ m.deltaText }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p v-if="treatmentFormulaText" class="src">口径：{{ treatmentFormulaText }}</p>
+          <p v-if="treatment.note" class="src">{{ treatment.note }}</p>
+        </template>
+
         <p v-if="report.note" class="src warn">{{ report.note }}</p>
       </template>
       <p v-else class="src">正在读取接口报表…</p>
 
-      <p v-if="reportRows.length === 0" class="src">
-        以下 A/B/C 三组与处置前后对比为<b>前端演示脚本</b>(仿真对照,非接口数据;接口报表无产物时的兜底展示)
+      <p v-if="showDemo" class="src">
+        以下 A/B/C 三组与处置前后对比为<b>前端演示脚本</b>(仿真对照,非接口数据;接口报表既无三组报表也无处置前后三项时的兜底展示)
       </p>
-      <template v-if="reportRows.length === 0">
+      <template v-if="showDemo">
       <p class="src">时间窗:{{ scenario.window }} · 来源:仿真对照 · is_simulated = true</p>
       <div class="tbl-wrap">
         <table class="td-table">
@@ -205,6 +286,10 @@ onMounted(async () => {
 /* 高亮「本方案」列:品牌浅底 = 「当前/已选」语义(硬性口径 4) */
 .td-table .hl {
   background: var(--td-brand-color-1);
+}
+/* 处置前后三项的「变化」列:改善了才上色,变差保持中性(不用红色催人,那是告警语义) */
+.td-table .good {
+  color: var(--td-success-color);
 }
 .sub {
   margin: 12px 0 8px;

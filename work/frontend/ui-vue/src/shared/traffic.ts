@@ -801,6 +801,54 @@ export interface ReportCompareRow {
   max_eta_increase_s: number | null
 }
 
+/**
+ * TC-09「处置前后三项」单指标（引擎现算，接口层只读透传）。
+ *
+ * 口径：处置前 = 组①不推荐、处置后 = 组③协同推荐，两组跑**同一评估窗口**
+ * （同一 base_ts / window_sec / 车辆群 / 站点包参数），差异只来自推荐机制。
+ * `before` / `after` 为 null = 窗口内没有对比对象（不是 0，更不是「治好了」）。
+ */
+export interface ReportTreatmentMetric {
+  name: string | null
+  unit: string | null
+  before: number | null
+  after: number | null
+  delta: number | null
+  /** 改善方向：down = 越小越好 */
+  better: string | null
+  /** 口径说明（引擎原文，页面照抄，不改写） */
+  formula: string | null
+  before_segment: string | null
+  after_segment: string | null
+}
+
+/** TC-09 处置前后三项（手册第 17 章效果对比报表） */
+export interface ReportTreatment {
+  /** false = 本窗口没有橙红段，三项无对比对象（前端要如实说明，不能显示 0） */
+  available: boolean
+  unavailable_reason: string | null
+  /** 等长时间窗（处置前 / 处置后跑的是同一个窗口，不是两个时间段） */
+  window?: {
+    start_ts: string | null
+    end_ts: string | null
+    window_sec: number | null
+    slot_minutes: number | null
+    slots: number | null
+    before_group: string | null
+    after_group: string | null
+    mode: string | null
+    note: string | null
+  }
+  /** 两侧统一取「处置前橙红段 ∪ 处置后橙红段」，分母可比 */
+  scope?: { segment_ids: string[]; rule: string | null }
+  metrics: {
+    queue: ReportTreatmentMetric
+    duration: ReportTreatmentMetric
+    saturation: ReportTreatmentMetric
+  }
+  note: string | null
+}
+
 export interface ReportCompare {
   ts: string
   is_simulated: true
@@ -820,6 +868,8 @@ export interface ReportCompare {
   source_note?: string
   /** TC-17 三项判定随报表一并透出（只读展示，前端不重算） */
   tc17?: { passed: boolean | null; criteria: Record<string, unknown> }
+  /** TC-09 处置前后三项；null = 引擎产物没有这一段（老产物），前端如实空窗 */
+  treatment?: ReportTreatment | null
   note?: string
 }
 

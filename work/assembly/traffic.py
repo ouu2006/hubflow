@@ -2344,6 +2344,70 @@ def build_context() -> dict[str, Any]:
     return payload
 
 
+def _report_treatment(treatment: Any) -> dict[str, Any] | None:
+    """TC-09 处置前后三项：把引擎 `comparison.treatment` 规整成只读透传结构。
+
+    **只整形不改数**：值、单位、口径说明一律照引擎产物；缺键如实 None。
+    引擎明确标了 `available=False`（窗口内没有橙红段、没有对比对象）时，
+    三项的 before/after 应为 None —— 这里再兜一层，避免老产物写 0 → 0 被读成"完美改善"。
+    """
+    if not isinstance(treatment, dict):
+        return None
+    available = bool(treatment.get("available", True))
+    metrics_in = treatment.get("metrics")
+    metrics_in = metrics_in if isinstance(metrics_in, dict) else {}
+
+    def _pick(key: str) -> dict[str, Any]:
+        item = metrics_in.get(key)
+        item = item if isinstance(item, dict) else {}
+
+        def _num(field: str) -> Any:
+            if not available:
+                return None
+            value = item.get(field)
+            return value if isinstance(value, (int, float)) else None
+
+        return {
+            "name": item.get("name"),
+            "unit": item.get("unit"),
+            "before": _num("before"),
+            "after": _num("after"),
+            "delta": _num("delta"),
+            "better": item.get("better"),
+            "formula": item.get("formula"),
+            "before_segment": item.get("before_segment"),
+            "after_segment": item.get("after_segment"),
+        }
+
+    window_in = treatment.get("window") if isinstance(treatment.get("window"), dict) else {}
+    scope_in = treatment.get("scope") if isinstance(treatment.get("scope"), dict) else {}
+    return {
+        "available": available,
+        "unavailable_reason": treatment.get("unavailable_reason"),
+        "window": {
+            "start_ts": window_in.get("start_ts"),
+            "end_ts": window_in.get("end_ts"),
+            "window_sec": window_in.get("window_sec"),
+            "slot_minutes": window_in.get("slot_minutes"),
+            "slots": window_in.get("slots"),
+            "before_group": window_in.get("before_group"),
+            "after_group": window_in.get("after_group"),
+            "mode": window_in.get("mode"),
+            "note": window_in.get("note"),
+        },
+        "scope": {
+            "segment_ids": scope_in.get("segment_ids") or [],
+            "rule": scope_in.get("rule"),
+        },
+        "metrics": {
+            "queue": _pick("queue"),
+            "duration": _pick("duration"),
+            "saturation": _pick("saturation"),
+        },
+        "note": treatment.get("note"),
+    }
+
+
 def build_report_compare() -> dict[str, Any]:
     """TC-09 效果对比报表：端引擎 `--compare` 三组对照产物（只读、不代算）。
 
@@ -2385,6 +2449,7 @@ def build_report_compare() -> dict[str, Any]:
                 "（样例）均缺失或不完整。复跑：python work/engine/run.py --network real --compare"
                 "（写 out/real/compare/）。接口层不编造对比数字。"
             ),
+            "treatment": None,
         }
 
     routes_doc, runlog_doc = chosen
@@ -2413,6 +2478,7 @@ def build_report_compare() -> dict[str, Any]:
         })
 
     criteria = comp.get("tc17", {}).get("criteria", {})
+    treatment = comp.get("treatment") if isinstance(comp.get("treatment"), dict) else None
     return {
         "ts": _latest_data_ts(),
         "is_simulated": True,
@@ -2436,6 +2502,10 @@ def build_report_compare() -> dict[str, Any]:
             "passed": comp.get("tc17", {}).get("passed"),
             "criteria": criteria,
         },
+        # TC-09「处置前后三项」：引擎在同一评估窗口上现算的排队长度峰值 / 拥堵持续时间 /
+        # 饱和度和，只读透传（接口层不重算、不改口径）。老产物没有该键 → 如实 None，
+        # 前端据此回退到「无产物」提示，绝不拿演示值顶上。
+        "treatment": _report_treatment(treatment),
         "note": (
             "效果对比报表数据端自引擎三组对照产物（只读、不代算）：① 不推荐 / ② 此刻最快 / "
             "③ 协同推荐在同一拓扑、同一输入、同一车辆群上跑，差异只来自推荐机制。"

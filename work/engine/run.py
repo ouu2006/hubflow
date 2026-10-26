@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 from pathlib import Path
 from typing import Any
 
@@ -1325,6 +1326,261 @@ def _compare_group_metrics(
     }
 
 
+#: 「拥堵持续时间」的过饱和判据:x >= 1.0 表示需求已达到或超过通行能力。
+#: 这是"过饱和"的物理定义,**不是等级档位**——等级档位仍一律读 thresholds.json 的
+#: grading.level_bounds(代码里不写死),两者不能互相顶替:
+#:   - 按 x>=0.8(橙档)算,三组几乎整窗都"拥堵",没有区分度(2026-10-26 实测);
+#:   - 按 x>=1.0(过饱和)算,处置前后才有可比的差异。
+CONGESTION_MIN_SATURATION = 1.0
+
+
+def _segment_geometry(
+    graph: network.Graph,
+    segments_state: dict[str, dict[str, Any]],
+) -> dict[str, dict[str, float]]:
+    """每段的静态几何(车道数 / 路段长度),给排队长度换算用。
+
+    车道数取统一图里的边(引擎侧只从边上读,`run.py` 不直接读 lanes 字段);
+    路段长度优先用上游 segments 快照的 `L_seg_m`,缺失回退边上的 `length_m`。
+    """
+    geometry: dict[str, dict[str, float]] = {}
+    for edge_id in sorted(graph._edges):  # noqa: SLF001 —— 只读遍历,与 realnet 同口径
+        edge = graph.edge(edge_id)
+        section = str(edge.get("section") or "")
+        if not section or section in geometry:
+            continue
+        geometry[section] = {
+            "lanes": float(edge.get("lanes") or 1.0),
+            "length_m": float(edge.get("length_m") or 0.0),
+        }
+    for segment_id, geometry_row in geometry.items():
+        snapshot_length = (segments_state.get(segment_id) or {}).get("L_seg_m")
+        if snapshot_length is not None:
+            geometry_row["length_m"] = float(snapshot_length)
+    return geometry
+
+
+def _treatment_side_metrics(
+    table: reserve.SlotTable,
+    scope: list[str],
+    geometry: dict[str, dict[str, float]],
+    *,
+    start_slot: int,
+    end_slot: int,
+    slot_minutes: int,
+    queue_headway_m: float,
+    bounds: list[float],
+) -> dict[str, Any]:
+    """处置前/后单侧的三个指标:排队长度峰值、拥堵持续时间、饱和度和。
+
+    口径(与孪生侧 `work/twin/loop.py` 的 `METRIC_FORMULAS` 同源,不另立一套):
+      - 逐时段饱和度 `x_slot = table.saturation(segment_id, slot)`;
+      - **排队长度** 每时段 `q_veh = max(0, x-1) × capacity_per_slot`(只有过饱和才会积压),
+        `L_q = min(L_seg_m, q_veh / 车道数 × queue_headway_m)`,对 scope 内所有段所有时段取最大;
+      - **拥堵持续时间** 逐时段判 `x >= 1.0`,取最长**连续**过饱和时段数 × slot_minutes;
+      - **饱和度和** scope 内各段窗口内最大饱和度之和(两侧用同一个 scope,分母才可比)。
+    """
+    peak_queue_m = 0.0
+    peak_queue_segment: str | None = None
+    congested_minutes = 0
+    congested_segment: str | None = None
+    saturation_sum = 0.0
+    per_segment: dict[str, dict[str, Any]] = {}
+
+    for segment_id in scope:
+        lanes = max(1.0, float(geometry.get(segment_id, {}).get("lanes") or 1.0))
+        length_m = float(geometry.get(segment_id, {}).get("length_m") or 0.0)
+        capacity_per_slot = table.capacity_per_slot(segment_id)
+        slot_values = [table.saturation(segment_id, slot) for slot in range(start_slot, end_slot)]
+        finite = [value for value in slot_values if math.isfinite(value)]
+        max_x = max(finite) if finite else 0.0
+        saturation_sum += max_x
+
+        segment_peak = 0.0
+        for value in slot_values:
+            if not math.isfinite(value) or value <= CONGESTION_MIN_SATURATION:
+                continue
+            queued_vehicles = max(0.0, value - CONGESTION_MIN_SATURATION) * capacity_per_slot
+            segment_peak = max(
+                segment_peak,
+                min(length_m, queued_vehicles / lanes * queue_headway_m),
+            )
+        run_slots = 0
+        best_run = 0
+        for value in slot_values:
+            if math.isfinite(value) and value >= CONGESTION_MIN_SATURATION:
+                run_slots += 1
+                best_run = max(best_run, run_slots)
+            else:
+                run_slots = 0
+        segment_minutes = best_run * slot_minutes
+
+        per_segment[segment_id] = {
+            "max_x": round(max_x, 4),
+            "level": _level_of_x(max_x, bounds),
+            "peak_queue_m": round(segment_peak, 2),
+            "congested_minutes": segment_minutes,
+        }
+        if segment_peak > peak_queue_m:
+            peak_queue_m, peak_queue_segment = segment_peak, segment_id
+        if segment_minutes > congested_minutes:
+            congested_minutes, congested_segment = segment_minutes, segment_id
+
+    return {
+        "peak_queue_m": round(peak_queue_m, 2),
+        "peak_queue_segment": peak_queue_segment,
+        "congested_minutes": congested_minutes,
+        "congested_segment": congested_segment,
+        "saturation_sum": round(saturation_sum, 4),
+        "per_segment": per_segment,
+    }
+
+
+def _compare_treatment(
+    group_results: dict[str, dict[str, Any]],
+    group_metrics: dict[str, dict[str, Any]],
+    graph: network.Graph,
+    segments_state: dict[str, dict[str, Any]],
+    grading: dict[str, Any],
+    params: dict[str, Any],
+    start_epoch_s: float,
+    end_epoch_s: float,
+    tz: Any,
+) -> dict[str, Any]:
+    """处置前后三项(手册第 17 章效果对比报表):排队长度峰值 / 拥堵持续时间 / 饱和度和差。
+
+    **等长时间窗**:处置前 = 组①「不推荐」、处置后 = 组③「协同推荐」,两组跑**同一个评估窗口**
+    (同一 base_ts、同一 window_sec、同一车辆群、同一份站点包参数),差异只来自推荐机制。
+    不虚构两个时间段、不拿演示值顶替。
+    """
+    queue_headway_m = float(grading.get("queue_headway_m") or 0.0)
+    if queue_headway_m <= 0.0:
+        raise SystemExit("站点包 thresholds.grading 的 queue_headway_m 必须为正(排队长度换算要用)")
+    slot_minutes = int(params["slot_minutes"])
+    bounds = _x_level_bounds(grading)
+    geometry = _segment_geometry(graph, segments_state)
+    start_slot = reserve.slot_index_of(start_epoch_s, slot_minutes)
+    end_slot = reserve.slot_index_of(end_epoch_s, slot_minutes)
+
+    before_table: reserve.SlotTable = group_results["no_guidance"]["table"]
+    after_table: reserve.SlotTable = group_results["cooperative"]["table"]
+    before_orange = list(group_metrics["no_guidance"]["orange_red_segments"])
+    after_orange = list(group_metrics["cooperative"]["orange_red_segments"])
+    #: 两侧统一 scope:橙红路段取并集。各用各的橙红段会让分母不同,产生"假优势"。
+    scope = sorted(set(before_orange) | set(after_orange))
+
+    side_kwargs = {
+        "scope": scope,
+        "geometry": geometry,
+        "start_slot": start_slot,
+        "end_slot": end_slot,
+        "slot_minutes": slot_minutes,
+        "queue_headway_m": queue_headway_m,
+        "bounds": bounds,
+    }
+    before = _treatment_side_metrics(before_table, **side_kwargs)
+    after = _treatment_side_metrics(after_table, **side_kwargs)
+    #: scope 为空(本窗口没有任何段进橙红档)→ 三项没有可比的段,如实标不可用。
+    #: **不能输出 0 → 0 冒充"完美改善"**:那是把"没测到"说成"治好了"。
+    available = bool(scope)
+    unavailable_reason = (
+        None
+        if available
+        else "本评估窗口内三组都没有橙红档路段(scope 为空),三项无对比对象;"
+        "不输出 0 → 0 冒充改善,请换一个有拥堵的时间窗(更长的 window_sec 或带指标的 segments 快照)再跑。"
+    )
+
+    return {
+        "window": {
+            "base_ts": reserve.epoch_s_to_iso(start_epoch_s, tz),
+            "start_ts": reserve.epoch_s_to_iso(start_epoch_s, tz),
+            "end_ts": reserve.epoch_s_to_iso(end_epoch_s, tz),
+            "window_sec": round(float(end_epoch_s) - float(start_epoch_s), 3),
+            "slot_minutes": slot_minutes,
+            "slots": max(0, end_slot - start_slot),
+            "before_group": "no_guidance",
+            "after_group": "cooperative",
+            "mode": "same_window_group_compare",
+            "note": (
+                "等长时间窗:处置前=组①(不推荐)、处置后=组③(协同推荐),两组跑同一评估窗口"
+                "(同一 base_ts / 同一 window_sec / 同一车辆群 / 同一站点包参数),"
+                "差异只来自推荐机制;不虚构两个时间段。"
+            ),
+        },
+        "scope": {
+            "segment_ids": scope,
+            "rule": "处置前橙红段 ∪ 处置后橙红段(两侧同一段号集合,分母可比,避免假优势)",
+            "before_orange_red_segments": before_orange,
+            "after_orange_red_segments": after_orange,
+        },
+        "available": available,
+        "unavailable_reason": unavailable_reason,
+        "metrics": {
+            "queue": {
+                "name": "排队长度峰值",
+                "unit": "m",
+                "before": before["peak_queue_m"] if available else None,
+                "after": after["peak_queue_m"] if available else None,
+                "delta": (
+                    round(after["peak_queue_m"] - before["peak_queue_m"], 2)
+                    if available
+                    else None
+                ),
+                "better": "down",
+                "before_segment": before["peak_queue_segment"] if available else None,
+                "after_segment": after["peak_queue_segment"] if available else None,
+                "formula": (
+                    "逐时段 q_veh = max(0, x-1) × capacity_per_slot;"
+                    "L_q = min(L_seg_m, q_veh / 车道数 × queue_headway_m);取 scope 内最大"
+                ),
+            },
+            "duration": {
+                "name": "拥堵持续时间",
+                "unit": "min",
+                "before": before["congested_minutes"] if available else None,
+                "after": after["congested_minutes"] if available else None,
+                "delta": (
+                    after["congested_minutes"] - before["congested_minutes"]
+                    if available
+                    else None
+                ),
+                "better": "down",
+                "before_segment": before["congested_segment"] if available else None,
+                "after_segment": after["congested_segment"] if available else None,
+                "formula": (
+                    f"逐时段判 x >= {CONGESTION_MIN_SATURATION}(过饱和,非等级档位);"
+                    "取最长连续过饱和时段数 × slot_minutes"
+                ),
+            },
+            "saturation": {
+                "name": "饱和度和",
+                "unit": "Δx 合计",
+                "before": before["saturation_sum"] if available else None,
+                "after": after["saturation_sum"] if available else None,
+                "delta": (
+                    round(after["saturation_sum"] - before["saturation_sum"], 4)
+                    if available
+                    else None
+                ),
+                "better": "down",
+                "formula": "scope 内各段窗口内最大饱和度之和(两侧同一 scope)",
+            },
+        },
+        "per_segment": {"before": before["per_segment"], "after": after["per_segment"]},
+        "constants": {
+            "queue_headway_m": queue_headway_m,
+            "saturation_flow_vph_per_lane": grading.get("saturation_flow_vph_per_lane"),
+            "congestion_min_saturation": CONGESTION_MIN_SATURATION,
+            "source": "stations/thresholds.json 的 grading(queue_headway_m 等);过饱和判据见 formula",
+        },
+        "note": (
+            "三项均由本引擎在同一评估窗口上现算(不是演示值);"
+            "各项口径写在 metrics.*.formula 里;"
+            "饱和度和用并集 scope,若协同推荐把流量挪到别的段,和值可能不降——如实输出,不挑口径。"
+        ),
+    }
+
+
 def _baseline_orange_red(
     segments_state: dict[str, dict[str, Any]],
     grading: dict[str, Any],
@@ -2109,6 +2365,17 @@ def run_compare(cfg: dict[str, Any]) -> int:
         )
 
     baseline_orange_red = _baseline_orange_red(segments_state, grading)
+    treatment = _compare_treatment(
+        group_results,
+        group_metrics,
+        graph,
+        segments_state,
+        grading,
+        params,
+        base_epoch_s,
+        evaluation_end_epoch_s,
+        tz,
+    )
     tc17 = _tc17_summary(
         group_metrics,
         baseline_orange_red,
@@ -2226,6 +2493,7 @@ def run_compare(cfg: dict[str, Any]) -> int:
                 "reroute_demo": reroute_demo,
             },
             "tc17": tc17,
+            "treatment": treatment,
             "groups": {
                 group: {
                     "group_label": group_metrics[group]["group_label"],
@@ -2273,6 +2541,14 @@ def run_compare(cfg: dict[str, Any]) -> int:
             "criteria_passed": {
                 key: bool(value["passed"]) for key, value in tc17["criteria"].items()
             },
+        },
+        "treatment_metrics": {
+            key: {
+                "before": treatment["metrics"][key]["before"],
+                "after": treatment["metrics"][key]["after"],
+                "delta": treatment["metrics"][key]["delta"],
+            }
+            for key in ("queue", "duration", "saturation")
         },
         "groups": {
             group: {

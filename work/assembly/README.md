@@ -49,7 +49,7 @@
 | `/api/traffic/context` | GET | **环境上下文**：天气 / 时间 + 折算出的因素（F01 / F02 / F03 / F10） | **已实现**（IKMS17；含场景注入内存态） |
 | `/api/traffic/scenario` | POST | **场景注入**（天气 / 时段 / 需求倍率）→ 折算因素 | **已实现**（IKMS17；内存态、**effects 如实为空**、不重算判级） |
 | `/api/traffic/scenario/reset` | POST | 清场景注入（与 `factors/reset` 同口径） | **已实现**（IKMS17；内存态复位） |
-| `/api/traffic/report/compare` | GET | 效果对比报表 | **已实现**（2026-10-25；只读端引擎 `--compare` 产物，真网优先、样例回退、缺失仍空壳 + note） |
+| `/api/traffic/report/compare` | GET | 效果对比报表 | **已实现**（2026-10-25；只读端引擎 `--compare` 产物，真网优先、样例回退、缺失仍空壳 + note。2026-10-26 起含 `treatment` 处置前后三项 TC-09，见下） |
 | `/api/traffic/emergency` | GET | **应急态**（TC-10）：这一刻是否该停掉路线引导 | **已实现**（2026-10-26；**只派生不重算判级**，口径见本节末） |
 | `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **未实现**（属感知面，见 [`../perception/README.md`](../perception/README.md)；前端显示「—」并注明） |
 
@@ -109,6 +109,13 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
   两条都不命中 → `active:false` + `guidance:"running"`。`hard_trigger_level` 原样透出站点包
   `stations/thresholds.json` 的 `grading.hard_trigger_level`，**不写死**；改阈值输出跟随变。
 - **两个口子不混用**：人工置位只有 F07/F08/F11；F01/F02/F03/F10 属环境侧，只走 `/scenario`。
+- **效果对比报表的「处置前后三项」（TC-09）也只读透传**：`GET /api/traffic/report/compare` 的
+  `treatment` 段来自引擎 `comparison.treatment`，接口层只整形不改数（`_report_treatment()`）。
+  三项由引擎在同一评估窗口上现算（处置前 = 组①不推荐 / 处置后 = 组③协同推荐，同一 `base_ts`、
+  同一车辆群，**不虚构两个时间段**；对比范围 = 两侧橙红段并集，分母可比）。
+  **`available:false` 时 `before/after/delta` 一律 `null`**，接口层再兜一层，防老产物把 0 → 0
+  读成「完美改善」；引擎老产物没有该键 → `treatment: null`，前端如实空窗，
+  **不拿 `shared/demoDecision.ts` 的演示值顶上**。
 - **接口层不重算 level / ci**（判级唯一实现是感知层 `level.py`）：写端点只更新 `context` /
   `derived_factors` / 因素状态；`GET /factors`、`GET /segments` 里登记的因素带
   `injected:true, pending_recompute:true`，**不伪造等级变化**。复位方式：factors / scenario 走三个
