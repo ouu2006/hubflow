@@ -125,11 +125,35 @@ def every_60s():
 
 ## 三、定位与地图匹配（`locate.py`）
 
-**实现状态（T4，2026-10-19）**：`locate.py` 已从 W0 空壳变为可运行实现（真值直读 + σ 噪声
-HMM-lite 匹配），但 **TC-18 验收证据阻塞**——缺 `work/twin/out/latest/vehicles.json`
-（W1 真孪生快照）、SUMO/TraCI 不可用、统一图无 WGS-84 几何（`map_ingest.py` Issue #37
-未做）。样例口径 3/3 只证明链路通，**不得当 TC-18 通过**；dev-debug 口径 σ=20 m = 0.7901
-（自造夹具，同样不得当验收）。解除条件见 T4 验收记录（交接目录，未随 PR 入库） §5。
+**实现状态（2026-10-26 更新）**：TC-18 的两个前置（W1 快照在场、真网 WGS-84 几何带显式锚点）
+已全部解开，两项判定**真跑**：
+
+- **① 真值直读一致率 1.0（38/38）PASS**；
+- **② σ=20 m 噪声匹配正确率 0.8997（260/289）**，未达 90%【demo 目标值】，
+  **如实登记 FAIL**——差值全部来自 SZ-018/019 这对**间距 10~13 m 的平行停车场通道**
+  （150–210 m 段 17 个错配点；该区单点错配的数学期望约 32%，σ=20 m 噪声下属于
+  在线贪心（任务卡原文「HMM-lite、无 Viterbi 回溯」）的**固有局限**，非代码缺陷）。
+  相比 dev-debug 时期的 0.7901 已提升 11 个点；继续追需要换全局解码（Viterbi），
+  超出任务卡算法范围，按口径纪律不硬凑。
+
+**本轮改动（均不碰打分常量）**：
+
+1. **判分字段对齐真网结构**：`build_geometry` 的 `section` 取不到时回退 `segment_id`
+   （真网 `network_junction.json` 的边只有 `segment_id`，两者语义相同——修复后判分
+   才真正生效；改前 `matched_section` 恒 None、②项恒 0 分是**判分 bug**）；
+2. **起点前看窗口（`LOOKAHEAD_POINTS = 3`）**：起点没有 previous 上下文，平行路单点
+   易错（历史上 0-120 m 段 8 个起点错配）；用前 3 个点联合打分选第一条边
+   （Viterbi 起点惯例的延迟决策，打分函数与常量原封未动）→ 起点段错配**清零**；
+3. **锚点几何产物**：`work/engine/out/real/network_junction_with_anchor.json`
+   （真网几何 + `anchor_lonlat` = 本图第一节点真值坐标，非外猜原点；锚点仅作
+   局部平面投影原点、纯平移，匹配结果与锚点选取无关）。
+
+**复跑**：
+`python work/engine/locate_check.py --vehicles work/twin/out/latest/vehicles.json --network real --geometry work/engine/out/real/network_junction_with_anchor.json --sigmas 10,20,30 --seed 42`
+（产物 `out/real/tc18_final.json`；`run.py --sample` 逐字节基线不受影响，已复核）。
+
+**历史留痕（2026-10-19 T4 状态，供追溯）**：样例口径 3/3 只证明链路通、dev-debug 口径
+σ=20 m = 0.7901（自造夹具），当时均不得当验收；解除条件见 T4 验收记录 §5。
 校验入口：`python work/engine/locate_check.py --vehicles <快照> --network sample --sigmas 10,20,30 --seed 42`。
 
 **两期用同一个函数形状，一期只换输入。**

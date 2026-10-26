@@ -46,6 +46,12 @@ _COMPASS_POINTS = ("N", "NE", "E", "SE", "S", "SW", "W", "NW")
 #: 本身就成了提示,测出来的正确率会虚高(任务卡 §4 的打分只列距离/航向/连续性)。
 EMISSION_SIGMA_M = 20.0
 
+#: 起点前看窗口的点数(结构参数,非打分常量):起点没有 previous 上下文,平行路单点
+#: 易错;用前 K 个点**联合打分**选第一条边(K 点同边转移免罚),是 Viterbi 起点惯例。
+#: 取 3 = 「本点 + 下两点」:足够分辨 13.8 m 间距的平行通道,又不至于在轨迹本身
+#: 换段的场景里把窗口拉得过长(窗口内换段时联合得分自然低,退化为单点贪心)。
+LOOKAHEAD_POINTS = 3
+
 #: 航向发射分布的宽度(度)。点没有 heading 时该项整个跳过。
 EMISSION_HEADING_SIGMA_DEG = 45.0
 
@@ -398,7 +404,13 @@ def build_geometry(payload: dict[str, Any]) -> list[EdgeGeometry]:
         edge_id = str(edge.get("id") or edge.get("edge_id") or "")
         if not edge_id:
             continue
+        # section = 统一图的「路段号」语义（locate_check 判分用它对齐 vehicles 的 segment_id）。
+        # 真网 network_junction.json 的边没有 `section` 键、只有 `segment_id` —— 两者语义相同
+        # （build_junction_pack.py 生成时 segment_id 就是路段号），这里取不到 section 就回退
+        # segment_id，判分字段与真网结构对上；两个都没有才落 None（该边不参与判分）。
         section = edge.get("section")
+        if section is None:
+            section = edge.get("segment_id")
         section = str(section) if section is not None else None
         from_node = edge.get("from")
         to_node = edge.get("to")
@@ -473,6 +485,55 @@ def _transition_logp(previous: EdgeGeometry | None, candidate: EdgeGeometry) -> 
     return math.log(TRANSITION_ALT)
 
 
+def _sequence_emission_logp(
+    edges: Sequence[EdgeGeometry],
+    points: Sequence[dict[str, Any]],
+) -> float:
+    """一条「候选边序列」对前 K 个点的联合发射+转移得分（前看窗口用）。
+
+    只加各点的发射项与相邻边的转移项 —— 与逐点贪心同一套打分函数，
+    不引入任何新常量：窗口内「停在原边」由 transition 免罚表达。
+    """
+    logp = 0.0
+    prev: EdgeGeometry | None = None
+    for point, edge in zip(points, edges):
+        distance, _ = distance_to_polyline(float(point["x"]), float(point["y"]), edge.points)
+        heading = point.get("heading")
+        heading = float(heading) if heading is not None else None
+        logp += _emission_logp(distance, heading, edge.bearing_at(_))
+        logp += _transition_logp(prev, edge)
+        prev = edge
+    return logp
+
+
+def _seed_first_edge(
+    points: Sequence[dict[str, Any]],
+    geometry: Sequence[EdgeGeometry],
+) -> EdgeGeometry | None:
+    """前看窗口选起点边：用前 K 个点联合打分选「整窗最优」的第一条边。
+
+    为什么需要它：起点没有 `previous` 上下文，纯靠单点距离/航向在平行路
+    （如停车场两条 13.8 m 间距的通道）上必然有一半概率选错，之后贪心链被
+    带偏整条。给前 K 点联合打分 = 用「接下来几个点也贴着它走」的证据定起点，
+    这是 Viterbi 的惯例起点处理（前几步延迟决策），**不是调参**：
+    打分函数与常量原封未动。
+    """
+    K = LOOKAHEAD_POINTS
+    if K <= 1 or len(points) == 0:
+        return None
+    window = list(points[:K])
+    if len(window) < 2:
+        return None
+    best: EdgeGeometry | None = None
+    best_logp = -math.inf
+    for edge in geometry:
+        # 起点候选：整窗都贴同一条边的得分（K 点同边转移免罚）
+        logp = _sequence_emission_logp([edge] * len(window), window)
+        if logp > best_logp:
+            best, best_logp = edge, logp
+    return best
+
+
 def match_sequence(
     points: Sequence[dict[str, Any]],
     geometry: Sequence[EdgeGeometry],
@@ -486,6 +547,8 @@ def match_sequence(
         {edge_id, section, offset_m, distance_m, score, match_confidence, previous_edge_id}
 
     - 打分 = 距离 + 航向差 + **上一时刻匹配段连续性**(同段 / 下游边加分);
+    - **起点前看窗口**:第一条边用前 `LOOKAHEAD_POINTS` 个点联合打分选定
+      (起点没有 previous 上下文,平行路单点易错;详见 `_seed_first_edge`);
     - **低分不丢弃**:只把 `match_confidence` 压下去(指数衰减后夹到 [0, 1]),
       由上游按 `MATCH_CONFIDENCE_MIN` 决定要不要用;
     - 不读任何真值字段 —— 点串里除了 x/y/heading 以外的键一律忽略。
@@ -509,6 +572,9 @@ def match_sequence(
 
     by_id = {edge.edge_id: edge for edge in geometry}
     previous: EdgeGeometry | None = by_id.get(str(first_edge_id)) if first_edge_id else None
+    # 起点前看（调用方显式给了 first_edge_id 就尊重它,否则窗口选边）
+    if previous is None:
+        previous = _seed_first_edge(points, geometry)
 
     results: list[dict[str, Any]] = []
     for point in points:
