@@ -1827,3 +1827,190 @@ Vite 的 `resolve.extensions` 里 **`.js` 排在 `.ts` 之前**，所以 `import
   `watch routeEnd.point_id → setFilter`，换 OD / 换站跟随；无选中路线时全不亮；
 - 图层序：路网 → 方向标 → 落客区 → 路线 → 选中；全国视角不画；
 - 口径：圆是**演示范围圈**（示意划分，非实地划线、非真实围栏），图例有注。
+
+## 三十、应急态：停下引导，换「请服从现场指挥」（TC-10，2026-10-26）
+
+**口径来源**：手册 §11.1(3)「应急态：**停下路线引导**，替换为『请服从现场指挥』（**优先级高于一切推荐**）」；
+§4.6 降级链「红档（四级）→ 10 s 内自动关闭个性化推荐，切统一疏散引导」；§6.3 步骤 1「硬触发（熔断，跳过所有加权）」。
+验收用例 TC-10：注入事故封道后推荐被替换、红档熔断生效；解除后按防抖（连续 2 周期）撤档并可回放。
+
+### 30.1 只停「引导」，正文一字不减——这是业主明确纠正过的点
+
+`scripts/frontend_gate.py` 的 `gate_emergency_keep` 记着业主原话：
+
+> **「应急态的时候离站这个页面下面的字怎么全没了？给我恢复啊，下面依旧有字啊，
+> 我只是让你应急态的时候上面多一个弹框，并没有让你删任何的东西」**
+
+所以本单的实现纪律是：应急态 = **顶部加一条红条 + 把「推荐/引导」这一块换成固定措辞**，
+KPI、地图、路段信息、车辆、来源行、处置队列**全部照常显示**。任何把正文包进
+`v-if="!emergencyActive"` 的写法都是错的。
+
+### 30.2 数据从哪来（前端不判级）
+
+- `GET /api/traffic/emergency` → `EmergencyState`（类型在 `src/shared/traffic.ts`，
+  `getTrafficEmergency()` 在 `src/api/traffic.ts`）；快照里也带 `emergency?`（`SegmentsSnapshot` / `TrafficContext`）。
+- 字段：`active` / `level` / `level_source` / `segment_ids` / `factors` / `triggered_by` /
+  `message` / `guidance` / `hard_trigger_level` / `source` / `note`。
+- **前端不自己判等级**：`active` 是接口派生的结论，`level` 是上游判级原值。
+  `level_source === 'pending_perception_recompute'` 表示「事故已登记、判级还没重算」，
+  此时 **`level` 必须显示为「待重算」，不许填任何档位**。
+- **读不到就不停**：接口不可达时 `emergencyActive` 保持 `false`（宁可不误停，也不擅自撤引导），
+  与「不编造演示路线」同一条纪律。
+
+### 30.3 落点一：监控大屏（`DashboardView.vue`）
+
+| 位置 | 表现 |
+|---|---|
+| 页头下方 | `.emergency-bar`（左边 4px 红条 + 红底浅框，`role="alert"`）：`应急态` 标签 + **请服从现场指挥** + 一句「已停下路线引导（优先级高于一切推荐）；影响路段 SZ-003；判级待重算，此处不展示等级」 |
+| 推荐卡 `section.td-card.route-card` | 卡头文案由「推荐路线」改「路线引导」+ tag「应急态 · 已停下」；卡体整块换成 `.emergency-card`：固定措辞 + 停止引导说明 + 影响路段 + 等级（有则「N 级（由感知层判定，本页不重算）」，`pending` 则「待重算…不填任何档位」）+ 已登记因素 + 来源注 |
+| 地图 | `routeHighlights` / `routeStartMarker` / `routeEndMarker` 三个 computed 开头直接返回空——**路线图层不画**，但路网配色、摄像头图钉、落客区一律不变 |
+
+- 切站时 `resetStationState()` 清空 `emergency`，**不沿用上一站的应急结论**；
+- 应急解除（复位/重算完成）后，`refresh()` 拿到 `active:false`，推荐卡与路线图层**自动恢复**。
+
+### 30.4 落点二：决策层 · 路线规划（`RoutePlanView.vue`）
+
+`onMounted` 里 `loadEmergency()` 与 `loadOptions()` 并行；`active` 时在主推荐区
+（`main` 分支之前）插 `.emergency-panel`：固定措辞 + 「停止路线引导…引导恢复前不再给出推荐路线与 ETA」+
+影响路段 + 等级（同上口径）+ 来源注。**OD 选择器与「变化效果 · 两个 session 并排」照常显示**
+（那是历史产物对比，不是引导）。
+
+### 30.5 口径红线
+
+- 用户可见文案**不得出现**「实测 / 实时 / 现场」——唯一豁免是固定措辞**「请服从现场指挥」**本身；
+- 红 = **停下引导**，不等于「整页变红」、更不等于「数据不可用」（灰档是 TC-11，两件事）；
+- 页面上要能看出**为什么停**（影响哪段、什么因素、等级待不待重算），不能只甩一句标语。
+
+### 30.6 自检
+
+- `vue-tsc --noEmit` exit 0、`vite build` exit 0、`scripts/doc_gate.py` 8/8；
+- 注入 F07（`POST /api/traffic/factors`，`segment_id=SZ-003/target=lanes/multiplier=0.5`）→
+  大屏与决策页两处替换文案上屏、`GET /emergency` 返回 `active:true`；
+- `POST /api/traffic/factors/reset` → 刷新后红条消失、「推荐路线」与 `.route-plan` 恢复；
+- 离线构造上游硬触发（`triggered_by:["hard_factor"]` + `level:4`）→ `active:true / level:4 / level_source:"upstream"`；
+- 改站点包 `hard_trigger_level` → 输出跟随变，**代码里不写死档位**。
+
+## 三十一、路线规划补「上客路线」第⑤段：D3 往返三段齐全（TC-12，2026-10-26）
+
+**背景**：台账 TC-12「离站路线存在 / 出租车往返再返回 `pickup_route`」一直记「未过」，原因是
+`pickup_route` 恒为 null。核过之后发现两件事：① **引擎侧早就实现了**（`work/engine/run.py` 的
+`pickup_point_for_d3` / `d3_ratio` / `d3_pickup_edges` / `append_d3_requests`，样例跑 `--d3`
+就能出 `REQ-SAMPLE-D3-0002` 的完整 `pickup_route`），台账引用的 `run.py#L408` 那几处写 null 的是
+`--compare` 对照路径（`--compare` 与 `--d3` 互斥），**不是缺失**；② 真正的缺口在**接口层摘要和页面没端出来**。
+
+**这一单做了什么**（3 个文件）：
+
+1. `work/assembly/traffic.py`
+   - `_route_path_summary(route, *, pickup=False)`：只有 `pickup=True` 才追加 `"pickup_point"`。
+     上客点的契约字段名是 `pickup_point`（不是 `dropoff_point`），**混进别的路线会让读端误以为所有
+     路线都有上下客点**，所以 `arrival_route` / `departure_route` / `alternatives` 的摘要形状一字不改。
+   - `_route_option_summary()`：在 `alternatives` 之后、`departure_route` 之前插入 `"pickup_route"`。
+2. `src/shared/traffic.ts`：`RoutePath` / `RoutePathSummary` 加 `pickup_point`，
+   `RouteOption` 加 `pickup_route: RoutePathSummary | null`。
+3. `src/views/decision/components/RoutePlanView.vue`：完整链路从 4 段变 5 段，第⑤段只在引擎真给了
+   `pickup_route` 时出现（**非 D3 整段不出现，不补造上客点、不把落客点 pickup 化**）。
+
+**顺手修掉一个真 bug**：`.chain` 原来写死 4 列 `minmax(0,1fr) 16px ×3`，加到第 5 段时卡片被挤到
+第二行并压成竖排文字（第一轮截图实见细条）。改成 `grid-template-columns: var(--chain-tracks, minmax(0, 1fr))`，
+新增 `chainTracks(nodes)` 按段数生成 `2n-1` 条轨道（每段一条 `minmax(0,1fr)`、相邻之间插 `16px`），
+5 处 `.chain` 全部绑定 `:style="{ '--chain-tracks': chainTracks(...) }"` —— **段数变了不用再动 CSS**。
+
+**实测**（CDP，`--mode remote` + 系统 python 起接口层）：
+- D3 会话 `S-sample-0002-d3` → 主链 5 段，第⑤段文本「上客路线（D3 往返） / OD-02-PK /
+  1 段 · ETA 0.38 min · 步行 2.00 min / pickup_route / 上客点 P-02 · 首段 SEG-004 → 末段 SEG-004」；
+- 非 D3 会话（A/B 对比列各一）→ 仍 4 段，上客段整段不出现；
+- 标题多一个 chip「D3 往返另有上客路线」；页面来源行如实标「样例产物 engine.routes.sample（非本站真网）」。
+
+**真网的口径**：`_load_real_dataset` 现在显式 `"points": []`（点位归 IKMHMX / 池·S 踏勘），
+所以真网 D3 仍如实跳空 `d3_skipped: no_pickup_point` —— **不猜点位、不拿样例点位套真网节点**。
+等点位表进场后真网 D3 自然产出，不需要改这单的代码。
+
+**复跑**：
+```bash
+python work/engine/run.py --sample --d3 --out out/_v12      # 看 routes.json 的 pickup_route
+python work/assembly/traffic.py --port 8000                 # 系统 python（带 fastapi/uvicorn）
+curl -s http://127.0.0.1:8000/api/traffic/route/options | grep pickup_route
+# 页面：决策页 → 路线规划 → 选 S-sample-0002-d3 → 看第⑤段
+```
+> 注意：`work/engine/out/real/routes.json` 存在时真网优先，样例 D3 会被盖住；
+> 验证样例需临时把它移开，**测完必须移回**。
+
+---
+
+## 三十二、效果对比补「处置前后三项」：演示值换成引擎同一窗口现算（TC-09，2026-10-26）
+
+第二十八章把「效果对比」从空壳接上了引擎三组真产物，但手册第 17 章要的报表是
+**三组对照 + 处置前后三项**（排队长度峰值 / 拥堵持续时间 / 饱和度和差）。三项当时没有引擎产物，
+页面用的是 `shared/demoDecision.ts` 的 `ACK_COMPARISON` **写死的演示值**（340→180 m / 26→11 min /
+3.42→2.05），属于「拿演示值冒充报表」。本章把它换成引擎现算的真值。
+
+### 32.1 口径（引擎侧 `work/engine/run.py` 的 `_compare_treatment()`）
+
+- **等长时间窗**：处置前 = 组①（不推荐）、处置后 = 组③（协同推荐），两组跑**同一个**评估窗口
+  （同一 `base_ts` / 同一 `window_sec` / 同一车辆群 / 同一站点包参数），差异只来自推荐机制。
+  **不虚构两个时间段**——本项目没有「处置前 30 min」的真实历史窗口，编一个就是造假。
+- **对比范围 = 两侧橙红段并集**（`scope`）：处置前橙红段 ∪ 处置后橙红段。若只算「处置后自己的橙红段」，
+  协同推荐把流量挪走的段会凭空消失，分母变小造成假优势；并集保证两侧同一段号集合、分母可比。
+- **三项口径**（原文写进 `metrics.*.formula`，下游照抄不改写）：
+  - 排队长度峰值：逐时段 `q_veh = max(0, x-1) × capacity_per_slot`；
+    `L_q = min(L_seg_m, q_veh / 车道数 × queue_headway_m)`，取 scope 内最大。
+  - 拥堵持续时间：逐时段判 **`x >= 1.0`**（过饱和的物理定义，**不是等级档位**）——按等级橙档 `x>=0.8`
+    去判，三组整窗都算「拥堵 15 min」，一点区分度都没有；按过饱和判才有可比差异。取最长**连续**
+    过饱和时段数 × `slot_minutes`。
+  - 饱和度和：scope 内各段窗口内**最大**饱和度之和。
+  - `queue_headway_m` 读 `stations/thresholds.json` 的 `grading`（与孪生侧 `METRIC_FORMULAS` 同一出处），
+    非正数直接 `SystemExit`，**代码里不写死**。
+
+### 32.2 没有对比对象时如实标不可用
+
+`treatment.available = false` + `unavailable_reason`，三项的 `before/after/delta` **一律 `null`**。
+最常见的情形：用只有 1 个时段的上游快照跑（`--segments work/twin/out/latest/segments_twin.json`
+的 `window_sec=60` → 1 个 slot），窗口内没有任何段进橙红档，scope 为空。
+此时**绝不能输出 0 → 0**——那读起来像「改善到完美」。接口层 `_report_treatment()` 还兜了一层，
+老产物就算带了 0 → 0 也会被改判成 null。
+
+### 32.3 前端（`views/decision/components/EffectCompare.vue`）
+
+- 在 TC-17 判定行之后新增整段：标题「处置前后三项 · 同窗口两组对照（引擎现算）」+ 时间窗出处行
+  （起止时刻 / 窗口秒数 / 时段数 / 时段长度 / 处置前=组①·处置后=组③·同一窗口两组对照）+
+  「对比路段 N 段：SZ-004 · 口径：两侧橙红段并集」+ 三列表（指标 / 处置前 / **处置后** / 变化）。
+- 变化列：`delta < 0` 且 `better === 'down'` 时上 `.good`（绿）；变差保持中性，**不用红色催人**
+  ——红色在本项目是告警语义，不能拿来表示「指标变差了」。
+- 表格下方两行：各项 `formula` 拼成的「口径：…」，以及引擎 `treatment.note`
+  （「两项均由本引擎在同一评估窗口上现算（不是演示值）…若协同推荐把流量挪到别的段，和值可能不降——
+  如实输出，不挑口径」）。
+- **演示兜底只在真没有数据时出现**：`showDemo = reportRows.length === 0 && !treatment`，
+  即既无三组报表、也无真三项时才显示 `ACK_COMPARISON`，文案也改成「接口报表既无三组报表也无
+  处置前后三项时的兜底展示」。
+
+### 32.4 跑数记录（2026-10-26）
+
+**口径先说清**：下面两组数字是**引擎在同一评估窗口上现算的模拟对照值**（`run.py` 产物，`is_simulated`
+恒 `true`），**不是现场实测、也不是实测数据**；本节里只有「页面 CDP」那一段是**真的量了页面**
+（量的是"这些数字有没有如实上屏"，不是量路况）。
+
+真网（`run.py --network real --compare`，写 `work/engine/out/real/compare/`）：
+`scope = ['SZ-004']`，排队峰值 **23.33 → 0.0 m（−23.33）**、拥堵持续时间 **15 → 0 min（−15）**、
+饱和度和 **1.125 → 0.825（−0.3）**。
+
+样例（`--sample --compare`）：`scope = ['SEG-001','SEG-003','SEG-011']`、
+**23.33 → 0.0 m** / **15 → 0 min** / **2.8958 → 2.3958**。
+
+页面 CDP 实测（决策页 → 效果对比）：三组 9 行指标全部对上（600/600/600 attempted、
+inserted 600/600/480、completed 571/571/459、in_transit 29/29/21、not_entered 0/0/120、
+橙红 1/1/1、28254.81/28254.81/24043.86、28712.96/28712.96/23888.78、2.91/2.91/0.86），
+三项表上屏 `23.33 / 0 / -23.33`、`15 / 0 / -15`、`1.125 / 0.825 / -0.3`，演示脚本区已隐藏。
+
+### 32.5 复跑
+
+```bash
+python work/engine/run.py --compare --out out/_cmpT          # 样例三组 + 三项
+python work/engine/run.py --network real --compare           # 真网（写 out/real/compare/）
+python work/assembly/traffic.py --port 8000                  # 系统 python（带 fastapi/uvicorn）
+curl -s http://127.0.0.1:8000/api/traffic/report/compare | python -c "import sys,json;print(json.load(sys.stdin)['treatment'])"
+# 页面：决策页 → 效果对比 → 看「处置前后三项」表
+```
+> 注意：`--network real --compare` 默认没有 `--segments` 上游快照时全部路段 `q_vph=0`，
+> 三组差异只由时段预约占用产生（产物里 `comparison.scenario.note` 会明写）。
+> 要更真实的指标，加 `--segments <带 SZ-### 的快照>`；若该快照只有 1 个时段，三项会如实标
+> `available:false`（这是正确行为，不是 bug）。

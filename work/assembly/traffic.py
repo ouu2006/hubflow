@@ -2152,7 +2152,126 @@ def _attach_runtime_state(snapshot: dict[str, Any]) -> dict[str, Any]:
         note = snapshot["payload"].get("note")
         extra = "写端点内存态：人工置位 / 场景注入只改因素状态与环境上下文，接口层不重算 level / ci。"
         snapshot["payload"]["note"] = (note + "；" if isinstance(note, str) and note else "") + extra
+    # 应急态（TC-10）：只派生不改数值 —— 信号 A 透传上游硬触发，信号 B 标记待重算。
+    snapshot["payload"]["emergency"] = _derive_emergency(snapshot["payload"]["segments"])
     return snapshot
+
+
+#: 应急态固定措辞（手册 §11.1(3) / TC-10）：**逐字照抄，不得改写、不得加语气词**。
+EMERGENCY_MESSAGE = "请服从现场指挥"
+
+
+def _hard_trigger_factor_ids(grading: dict[str, Any] | None = None) -> tuple[str, ...]:
+    """硬触发因素编号（读站点包 `grading.hard_trigger_factor_ids`，代码里不写死 F07/F08）。"""
+    source = grading if isinstance(grading, dict) else _grading()
+    ids = source.get("hard_trigger_factor_ids")
+    if not isinstance(ids, list):
+        return ()
+    return tuple(str(item) for item in ids if isinstance(item, str) and item)
+
+
+def _hard_trigger_level(grading: dict[str, Any] | None = None) -> int | None:
+    """红档档位（读站点包 `grading.hard_trigger_level`，不写死 4）。"""
+    source = grading if isinstance(grading, dict) else _grading()
+    level = _num(source.get("hard_trigger_level"))
+    return int(level) if level is not None else None
+
+
+def _derive_emergency(
+    records: list[dict[str, Any]], grading: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """派生「应急态」（TC-10）。**只派生，不重算** —— 绝不改 level / ci。
+
+    两个信号都来自已经存在的状态，接口层不自己算判级：
+
+      · 信号 A（上游判级）：上游段的 `triggered_by` 含 `hard_factor`
+        → 感知层已按手册 §6.3 步骤 1 判了硬触发熔断，这里**只透传**它给的 level。
+      · 信号 B（管理端人工置位）：接口层内存态里有 F07/F08 登记，且该段在本次快照内
+        → 「事故已登记、等感知层重算」。此时 **level 必须是 None**，绝不自己填红档档位
+        （那是重算判级，违反 `work/assembly/README.md` 的「接口层不重算 level / ci」）。
+
+    两条都不命中 → `active: False`，不兜底成应急。
+    """
+    grading = grading if isinstance(grading, dict) else _grading()
+    hard_ids = _hard_trigger_factor_ids(grading)
+    hard_level = _hard_trigger_level(grading)
+
+    # —— 信号 A：上游已判硬触发（感知层给的结论，原样透传）——
+    upstream_hits = [
+        record
+        for record in records
+        if "hard_factor" in (record.get("triggered_by") or [])
+    ]
+    if upstream_hits:
+        levels = sorted(
+            int(record["level"]) for record in upstream_hits
+            if isinstance(record.get("level"), int) and record["level"] > 0
+        )
+        segment_ids = sorted(str(record.get("segment_id")) for record in upstream_hits)
+        factor_rows: list[dict[str, Any]] = []
+        for record in upstream_hits:
+            for factor in record.get("factors_applied") or []:
+                if not isinstance(factor, dict):
+                    continue
+                row = dict(factor)
+                row["segment_id"] = str(record.get("segment_id"))
+                factor_rows.append(row)
+        return {
+            "active": True,
+            "level": levels[-1] if levels else None,
+            "level_source": "upstream",
+            "segment_ids": segment_ids,
+            "factors": factor_rows,
+            "triggered_by": "upstream_hard_factor",
+            "message": EMERGENCY_MESSAGE,
+            "guidance": "stopped",
+            "hard_trigger_level": hard_level,
+            "source": "segments.triggered_by",
+            "note": (
+                "上游段 triggered_by 含 hard_factor：感知层已按硬触发熔断判级，"
+                "接口层原样透传 level，不重算。"
+            ),
+        }
+
+    # —— 信号 B：管理端已登记事故 / 管制，等感知层重算 ——
+    present = {str(record.get("segment_id")) for record in records if record.get("segment_id")}
+    manual_hits = [
+        dict(factor)
+        for factor in _MANUAL_FACTORS
+        if str(factor.get("factor_id") or "") in hard_ids
+        and str(factor.get("segment_id") or "") in present
+    ]
+    if manual_hits:
+        return {
+            "active": True,
+            "level": None,
+            "level_source": "pending_perception_recompute",
+            "segment_ids": sorted({str(factor.get("segment_id")) for factor in manual_hits}),
+            "factors": manual_hits,
+            "triggered_by": "manual_hard_factor",
+            "message": EMERGENCY_MESSAGE,
+            "guidance": "stopped",
+            "hard_trigger_level": hard_level,
+            "source": "manual_factors",
+            "note": (
+                "人工置位已登记（接口层内存态）：应急态已生效、路线引导已停下，"
+                "但**接口层不重算判级**，level 待感知层统一重算。"
+            ),
+        }
+
+    return {
+        "active": False,
+        "level": None,
+        "level_source": None,
+        "segment_ids": [],
+        "factors": [],
+        "triggered_by": None,
+        "message": EMERGENCY_MESSAGE,
+        "guidance": "running",
+        "hard_trigger_level": hard_level,
+        "source": None,
+        "note": "无硬触发因素、无人工置位登记：非常态，不进入应急。",
+    }
 
 
 def build_context() -> dict[str, Any]:
@@ -2208,6 +2327,7 @@ def build_context() -> dict[str, Any]:
         "derived_factors": derived,
         "injected": injected,
         "scenario": scenario,
+        "emergency": _derive_emergency(snapshot["payload"]["segments"], _grading()),
         "station_active_factors": len(active_factors),
         "summary": summary,
         "source": source,
@@ -2222,6 +2342,70 @@ def build_context() -> dict[str, Any]:
     if snapshot["note"]:
         payload["note"] = snapshot["note"] + payload["note"]
     return payload
+
+
+def _report_treatment(treatment: Any) -> dict[str, Any] | None:
+    """TC-09 处置前后三项：把引擎 `comparison.treatment` 规整成只读透传结构。
+
+    **只整形不改数**：值、单位、口径说明一律照引擎产物；缺键如实 None。
+    引擎明确标了 `available=False`（窗口内没有橙红段、没有对比对象）时，
+    三项的 before/after 应为 None —— 这里再兜一层，避免老产物写 0 → 0 被读成"完美改善"。
+    """
+    if not isinstance(treatment, dict):
+        return None
+    available = bool(treatment.get("available", True))
+    metrics_in = treatment.get("metrics")
+    metrics_in = metrics_in if isinstance(metrics_in, dict) else {}
+
+    def _pick(key: str) -> dict[str, Any]:
+        item = metrics_in.get(key)
+        item = item if isinstance(item, dict) else {}
+
+        def _num(field: str) -> Any:
+            if not available:
+                return None
+            value = item.get(field)
+            return value if isinstance(value, (int, float)) else None
+
+        return {
+            "name": item.get("name"),
+            "unit": item.get("unit"),
+            "before": _num("before"),
+            "after": _num("after"),
+            "delta": _num("delta"),
+            "better": item.get("better"),
+            "formula": item.get("formula"),
+            "before_segment": item.get("before_segment"),
+            "after_segment": item.get("after_segment"),
+        }
+
+    window_in = treatment.get("window") if isinstance(treatment.get("window"), dict) else {}
+    scope_in = treatment.get("scope") if isinstance(treatment.get("scope"), dict) else {}
+    return {
+        "available": available,
+        "unavailable_reason": treatment.get("unavailable_reason"),
+        "window": {
+            "start_ts": window_in.get("start_ts"),
+            "end_ts": window_in.get("end_ts"),
+            "window_sec": window_in.get("window_sec"),
+            "slot_minutes": window_in.get("slot_minutes"),
+            "slots": window_in.get("slots"),
+            "before_group": window_in.get("before_group"),
+            "after_group": window_in.get("after_group"),
+            "mode": window_in.get("mode"),
+            "note": window_in.get("note"),
+        },
+        "scope": {
+            "segment_ids": scope_in.get("segment_ids") or [],
+            "rule": scope_in.get("rule"),
+        },
+        "metrics": {
+            "queue": _pick("queue"),
+            "duration": _pick("duration"),
+            "saturation": _pick("saturation"),
+        },
+        "note": treatment.get("note"),
+    }
 
 
 def build_report_compare() -> dict[str, Any]:
@@ -2265,6 +2449,7 @@ def build_report_compare() -> dict[str, Any]:
                 "（样例）均缺失或不完整。复跑：python work/engine/run.py --network real --compare"
                 "（写 out/real/compare/）。接口层不编造对比数字。"
             ),
+            "treatment": None,
         }
 
     routes_doc, runlog_doc = chosen
@@ -2293,6 +2478,7 @@ def build_report_compare() -> dict[str, Any]:
         })
 
     criteria = comp.get("tc17", {}).get("criteria", {})
+    treatment = comp.get("treatment") if isinstance(comp.get("treatment"), dict) else None
     return {
         "ts": _latest_data_ts(),
         "is_simulated": True,
@@ -2316,6 +2502,10 @@ def build_report_compare() -> dict[str, Any]:
             "passed": comp.get("tc17", {}).get("passed"),
             "criteria": criteria,
         },
+        # TC-09「处置前后三项」：引擎在同一评估窗口上现算的排队长度峰值 / 拥堵持续时间 /
+        # 饱和度和，只读透传（接口层不重算、不改口径）。老产物没有该键 → 如实 None，
+        # 前端据此回退到「无产物」提示，绝不拿演示值顶上。
+        "treatment": _report_treatment(treatment),
         "note": (
             "效果对比报表数据端自引擎三组对照产物（只读、不代算）：① 不推荐 / ② 此刻最快 / "
             "③ 协同推荐在同一拓扑、同一输入、同一车辆群上跑，差异只来自推荐机制。"
@@ -2390,12 +2580,17 @@ def _route_request_segment_ids(request: dict[str, Any]) -> set[str]:
     return out
 
 
-def _route_path_summary(route: Any) -> dict[str, Any] | None:
-    """路线摘要：只取契约字段（path_id / segments / eta_min / length_m / dropoff_point / walk_min）。"""
+def _route_path_summary(route: Any, *, pickup: bool = False) -> dict[str, Any] | None:
+    """路线摘要：只取契约字段（path_id / segments / eta_min / length_m / dropoff_point / walk_min）。
+
+    `pickup=True` 时额外带 `pickup_point` —— 只有 **pickup_route**（TC-12 的 D3 往返）才有这个
+    字段；arrival / departure / alternatives 的摘要形状保持原样，不凭空多出 `pickup_point: null`
+    （契约里那是不同字段名，混进别的路线会让读端误以为所有路线都有上下客点）。
+    """
     if not isinstance(route, dict):
         return None
     segments = [str(item) for item in (route.get("segments") or []) if isinstance(item, str) and item]
-    return {
+    summary: dict[str, Any] = {
         "path_id": route.get("path_id") if isinstance(route.get("path_id"), str) else None,
         "segments": segments,
         "segment_count": len(segments),
@@ -2404,12 +2599,17 @@ def _route_path_summary(route: Any) -> dict[str, Any] | None:
         "dropoff_point": route.get("dropoff_point") if isinstance(route.get("dropoff_point"), str) else None,
         "walk_min": _num(route.get("walk_min")),
     }
+    if pickup:
+        summary["pickup_point"] = route.get("pickup_point") if isinstance(route.get("pickup_point"), str) else None
+    return summary
 
 
 def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
-    """`route/options` 的单条摘要：OD / session / 定位 / 进场路线 / 备选 / 离站路线。
+    """`route/options` 的单条摘要：OD / session / 定位 / 进场路线 / 备选 / 上客 / 离站路线。
 
     只做**摘要**（原样透传引擎字段），不重排路线、不代算 ETA；缺的字段如实 null。
+    `pickup_route` 是 TC-12 的 D3（往返）专属字段：引擎只在 D3 且登记了 pickup 点位时才给，
+    其余请求如实 null（不按 arrival_route 反推、不补造上客点）。
     """
     location = request.get("location") if isinstance(request.get("location"), dict) else {}
     alternatives: list[dict[str, Any]] = []
@@ -2424,6 +2624,7 @@ def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
         alternatives.append(summary)
     arrival_summary = _route_path_summary(request.get("arrival_route"))
     departure_summary = _route_path_summary(request.get("departure_route"))
+    pickup_summary = _route_path_summary(request.get("pickup_route"), pickup=True)
     return {
         "od_id": request.get("od_id") if isinstance(request.get("od_id"), str) else None,
         "session_id": request.get("session_id") if isinstance(request.get("session_id"), str) else None,
@@ -2437,6 +2638,7 @@ def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
         },
         "arrival_route": arrival_summary,
         "alternatives": alternatives,
+        "pickup_route": pickup_summary,
         "departure_route": departure_summary,
         "why": request.get("why") if isinstance(request.get("why"), str) else None,
         "is_simulated": True,
@@ -2910,6 +3112,17 @@ def api_thresholds() -> JSONResponse:
 def api_factors(segment_id: str | None = Query(default=None)) -> JSONResponse:
     snapshot = request_snapshot()
     return _json(build_factors(segment_id), source=snapshot["source"])
+
+
+@app.get("/api/traffic/emergency")
+def api_emergency() -> JSONResponse:
+    """应急态（TC-10）：停下路线引导、替换为「请服从现场指挥」。
+
+    只派生不改数值：信号 A 原样透传上游硬触发的 level；信号 B（人工置位已登记）
+    返回 active=true 但 level=null，等感知层重算。两条都不命中 → active=false。
+    """
+    snapshot = request_snapshot()
+    return _json(_derive_emergency(snapshot["payload"]["segments"]), source="segments.triggered_by+manual_factors")
 
 
 @app.get("/api/traffic/assimilation")
@@ -3389,6 +3602,9 @@ async def api_factors_post(request: Request) -> JSONResponse:
         ],
         "injected_factors": _manual_factor_rows(segment_id),
         "is_simulated": True,
+        "emergency": _derive_emergency(
+            build_segments_snapshot()["payload"]["segments"], _grading()
+        ),
         "note": (
             "人工置位已登记（接口层内存态，重启复位）：**只更新因素状态、不重算判级** —— "
             "判级由感知层统一重算、接口层不重算；level / level_name 为当前快照原值（注入前），"

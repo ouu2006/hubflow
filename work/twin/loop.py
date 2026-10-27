@@ -110,7 +110,7 @@ METRIC_FORMULAS = {
         "排队消散时间估计 = 排队车辆数 ÷ (saturation_flow_vph_per_lane × 车道数) × 60；"
         "排队车辆数 = L_q_m / queue_headway_m；L_q_m=0 → 0.0（估计量，不等同于消散时间采集值）"
     ),
-    "x": "q_vph / c_vph；c_vph = c_base_vph（本次无因素注入，factors_applied 恒空数组）",
+    "x": "q_vph / c_vph；c_vph 基数取 c_base_vph，场景因素生效时按注入后的 c_vph（TC-10）",
     "c_base_vph": (
         "双向段：车道数 × 2 个方向 × 站点包 grading.saturation_flow_vph_per_lane（来源写进 run_log.net_build）"
     ),
@@ -204,6 +204,138 @@ def load_samples(samples_dir: Path) -> dict[str, dict[str, Any]]:
     return samples
 
 
+def _inject_scenario_factors(
+    cfg: "LoopConfig",
+    segments_payload: dict[str, Any],
+    scene: Any,
+    thresholds: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """把场景注入事件落到段快照上（TC-10 红档熔断的孪生侧前提）。
+
+    做的事（顺序不能换）：
+    1. 取断面角色（段记录里没有 role，`prepare_injections` 判 demand 作用域要靠它）；
+    2. 场景行 + F01~F14 登记表 → 注入描述（`scenario_injections`）；
+    3. **先 `derive_evaluation_ts`**（取所有 `from` 的最晚值当 now_ts）——直接拿快照 ts
+       会把因素判成「不在生效区间（from/until）」，active 为空，整个机制静默失效；
+    4. `prepare_injections` 出 active / inactive；`inject_segments` 注入（内部只调
+       `level.grade`，不复制判级逻辑）；
+    5. 把 after 的 segments **塞回原 payload**（`inject_segments` 返回的 payload 只有 7 个字段，
+       整个替换会丢 source / background_source / note），并挂注入报告。
+
+    口径：未生效 / 段号不在本站段号集合内的因素**如实登记为未落地**，不猜映射、不混命名空间。
+    返回 (payload, report)；出错不改 payload，只在 report 里写原因。
+    """
+    import factors
+    import scenario as scenario_module
+    import sections as sections_module
+
+    base_ts = str(segments_payload.get("ts") or "")
+    scenario_id = getattr(scene, "name", None)
+
+    # 注入事件的真值出处是 stations/scenarios.json：`load_scenario()` 在 --no-sumo 下返回的是
+    # 样例场景（injected 为空），所以这里直接从站点包按场景名取那一行，取不到才退回 scene.injected。
+    raw_injections: list[dict[str, Any]] = []
+    scenario_source: str | None = None
+    try:
+        try:
+            station_scenarios = scenario_module.load_station_scenarios(cfg.stations_dir)
+        except SystemExit:
+            station_scenarios = None
+        if station_scenarios and scenario_id:
+            try:
+                row = scenario_module.find_scenario(station_scenarios, str(scenario_id))
+            except SystemExit:
+                row = None
+            if row:
+                raw_injections = [dict(item) for item in (row.get("factors") or [])]
+                scenario_source = str(
+                    getattr(station_scenarios, "get", lambda *_: None)("source_file") or ""
+                ) or str(Path(cfg.stations_dir) / "scenarios.json")
+    except Exception:  # 读站点包失败不阻断主循环，下面退回 scene.injected
+        raw_injections = []
+    if not raw_injections:
+        raw_injections = [dict(item) for item in (getattr(scene, "injected", None) or [])]
+    if not raw_injections:
+        # 整个场景没有任何注入事件（如 scenario_1 常态）：**返回 None**，
+        # 调用方不写任何新字段 —— 保证 `--no-sumo` 样例链路的 run_log 与改造前逐字节一致。
+        return segments_payload, None
+
+    scenario_row = {"scenario_id": scenario_id, "factors": raw_injections}
+    catalogue_payload, catalogue = factors.load_factor_catalogue(cfg.stations_dir)
+
+    try:
+        sections_payload, _site, _net_path = sections_module.load_sections_candidate(
+            site_id=cfg.site_id or None, ts=base_ts
+        )
+    except SystemExit as exc:  # 缺真网产物等：不注入，如实登记
+        return segments_payload, {
+            "injected": False,
+            "reason": f"取断面角色失败：{exc}",
+            "scenario_id": scenario_id,
+        }
+
+    # 断面角色的命名空间必须与**本次快照自己的段号**一致：
+    # 真孪生快照是 SZ-###（与站点真网一致）；`--no-sumo` 样例快照是 SEG-###（7 节点样例网）。
+    # 两者不一致时用本快照自己的段号兜底（不把 SEG 猜成 SZ、也不反过来猜），
+    # 角色一律 unknown —— demand 类因素因此记「作用范围为 0 段」而不是瞎判 boundary。
+    payload_ids = [
+        str(segment.get("segment_id"))
+        for segment in segments_payload.get("segments") or []
+    ]
+    candidate_ids = {
+        str(item.get("segment_id"))
+        for item in sections_payload.get("sections") or []
+    }
+    sections_namespace = "station"
+    if payload_ids and not set(payload_ids) <= candidate_ids:
+        sections_payload = {
+            "sections": [
+                {"segment_id": segment_id, "role": "unknown"} for segment_id in payload_ids
+            ],
+            "role_source": "snapshot_self（段号命名空间与站点真网不一致，不猜映射）",
+        }
+        sections_namespace = "snapshot"
+
+    injections = factors.scenario_injections(catalogue, scenario_row)
+    now_ts, ts_basis = factors.derive_evaluation_ts(injections, base_ts)
+    grading = (thresholds or {}).get("grading") or {}
+    observed_ids = [
+        str(segment.get("segment_id"))
+        for segment in segments_payload.get("segments") or []
+        if segment.get("q_vph") is not None
+    ]
+
+    active, inactive = factors.prepare_injections(
+        catalogue, scenario_row, sections_payload, observed_ids, now_ts
+    )
+
+    report: dict[str, Any] = {
+        "injected": False,
+        "scenario_id": scenario_id,
+        "evaluation_ts": now_ts,
+        "ts_basis": ts_basis,
+        "catalogue_size": len(catalogue),
+        "sections_namespace": sections_namespace,
+        "active_count": len(active),
+        "inactive": inactive,
+        "source": scenario_source or "stations/scenarios.json + stations/factors.json",
+    }
+
+    if not active:
+        report["reason"] = "场景因素均未落地（见 inactive）"
+        return segments_payload, report
+
+    after_payload, records = factors.inject_segments(segments_payload, active, grading)
+    # 只取回段数组：after_payload 只保留 ts / window_sec / is_simulated / source_chain /
+    # baseline_kind / note / segments 七个字段，整个替换会丢掉原 payload 的字段。
+    payload = dict(segments_payload)
+    payload["segments"] = after_payload.get("segments", segments_payload.get("segments"))
+    report["injected"] = True
+    report["records"] = records
+    payload["factors_injected"] = report
+    return payload, report
+
+
 def run_no_sumo(cfg: LoopConfig) -> int:
     """用 samples/ 走完整链路,不依赖 SUMO、不依赖上游数据。"""
     import calibrate
@@ -227,6 +359,11 @@ def run_no_sumo(cfg: LoopConfig) -> int:
     fleet = driver.load_drivers(samples["vehicles"])
 
     segments = detector.aggregate_snapshot(cfg, samples["segments"], applied, calendar.now())
+    # TC-10：场景因素注入（红档熔断的前提）。样例链路 cfg.no_sumo=True 时
+    # scene.injected 为空（load_station_factors 直接返回 []），这里会走「场景无注入事件」原样返回。
+    segments, factors_report = _inject_scenario_factors(
+        cfg, segments, scene, _read_thresholds(cfg.stations_dir)
+    )
     vehicles = driver.snapshot_fleet(samples["vehicles"], calendar.now())
     assimilation = calibrate.build_state(samples["assimilation_state"], camera_ts=calendar.now())
 
@@ -267,6 +404,10 @@ def run_no_sumo(cfg: LoopConfig) -> int:
             "--sample 只出 1 帧快照,时钟推进与 --duration 生效待 W1 的 run_with_sumo"
         ),
     }
+    # 只有场景真的有注入事件时才写这一段 —— 常态场景（scenario_1）不写，
+    # 保证 `--no-sumo` 回归基线的 run_log 与改造前逐字节一致。
+    if factors_report is not None:
+        log["factors_injection"] = factors_report
     written["run_log.json"] = write_json(cfg.out_dir / "run_log.json", log)
     assert_artifact(cfg.out_dir / "run_log.json")
     return 0
@@ -1019,6 +1160,11 @@ def _write_twin_artifacts(
         ),
         "segments": result["final_segments"],
     }
+    # TC-10：真孪生路径也要把场景注入事件落到最后一帧快照上（红档熔断的前提）。
+    # 注入事件读 stations/scenarios.json；段号不在本站段号集合内时如实登记为未落地。
+    segments_payload, factors_report = _inject_scenario_factors(
+        cfg, segments_payload, scene, _read_thresholds(cfg.stations_dir)
+    )
     timeseries_segments = []
     for segment_id in sorted(result["timeseries"]):
         series = result["timeseries"][segment_id]
@@ -1195,6 +1341,9 @@ def _write_twin_artifacts(
             "时钟从固定 base_ts 派生、不读系统时间；同命令两遍关键产物逐字节一致"
         ),
     }
+    # 只有场景真的有注入事件时才写这一段（常态场景不写，避免给无注入的跑动加噪声字段）。
+    if factors_report is not None:
+        run_log["factors_injection"] = factors_report
     write_json(latest_dir / "run_log.json", run_log)
     assert_artifact(latest_dir / "run_log.json")
     written["run_log.json"] = (latest_dir / "run_log.json").stat().st_size

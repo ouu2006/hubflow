@@ -844,3 +844,64 @@ python work/twin/netpack/tools/selftest_topology.py
 | 3 | **广州南站（IKNB9F / IKOQEI）** | 已扩演示范围 1000 m 重建（708 段）并补 `topology_boundary_mode=range_clipped` 边界分类；GZ `check_topology` **FAIL 0 / WARN 128**（断头/不可达逐条分类有证据）；Z 站报告/enriched 逐字节不变 |
 | 4 | **`left_turn_allowed` 不参与算路** | OSM 切片没有 turn restriction 数据；强行禁左会引入无依据的断连，只做字段/报告 |
 | 5 | **双向段两向共用同一容量** | OSM 没有 `lanes:forward/backward`；不拆车道、不编数，引擎 meta 已写明 |
+
+## 二十、场景因素注入：让「场景三」真的落到段上（TC-10 孪生侧，2026-10-26）
+
+**问题**：`stations/scenarios.json` 的场景三（S3 突发）本来就登记了
+F07「交通事故 / 故障车」`target: lanes, multiplier: 0.5`，但 W1 之前的孪生主循环**从来没有把它注入到段**——
+`run_no_sumo()` 拿到 `factors.load_station_factors()` 只用来记日志计数，
+`run_with_sumo()` 干脆没调；窗口聚合处 `record["factors_applied"] = []` 还是**写死空数组**。
+后果：`work/perception/level.py` 的硬触发（`hard_trigger_factor_ids = ["F07","F08"]`）永远命中不了，
+**红档永远不会出现**，TC-10 的孪生侧前提不成立。
+
+**改动**：`work/twin/loop.py` 新增 `_inject_scenario_factors(cfg, segments_payload, scene, thresholds)`，
+在两条路径落盘前调用（`run_no_sumo()` 的快照、`_write_twin_artifacts()` 的 `segments_payload`）：
+
+1. 用 `sections.load_sections_candidate(site_id=...)` 拿断面角色（段记录里没有 `role`，
+   `prepare_injections` 判 `demand` 作用域必须靠它）；**再按本次快照自己的段号复核命名空间**：
+   真孪生快照是 `SZ-###`（与站点真网一致），`--no-sumo` 样例快照是 `SEG-###`（7 节点样例网）。
+   两者对不上时**改用本快照自己的段号列断面、角色一律 `unknown`**（`sections_namespace: "snapshot"`），
+   既不把 `SEG` 猜成 `SZ`、也不反过来猜——`demand` 类因素因此如实记「作用范围为 0 段」而不是瞎判 boundary。
+   （不这么做的话，样例网注入会被误判成「段号不在本站段号集合内」，机制验证做不了。）
+2. `factors.load_factor_catalogue()` + `factors.scenario_injections()` 把场景行与 F01~F14 登记表合并；
+3. **先调 `factors.derive_evaluation_ts(injections, 快照 ts)`**——它取所有 `from` 的最晚值当
+   `now_ts`。**这一步不能省**：直接拿快照 `ts` 会让因素被判「不在生效区间（from/until）」，
+   `active` 为空 → 整个机制**静默失效**且不报错（实测踩过）；
+4. `factors.prepare_injections(...)` 出 `(active, inactive)`；`factors.inject_segments(...)` 注入
+   （内部只调 `level.grade`，不复制判级逻辑）；
+5. 把 after 的 `segments` **塞回原 payload**（`inject_segments` 返回的 payload 只保留 7 个字段，
+   整个替换会丢 `source` / `background_source` / `note`），并挂 `factors_injected` 报告；
+6. 注入报告写进 `run_log.json` 的 `factors_injection`：`injected` / `active_count` / `inactive`
+   / `records`（含 `affected_segment_ids`、`direction_passed`）/ `evaluation_ts` / `ts_basis`。
+
+**命名空间纪律不变**：`segment_id` 不在本站段号集合内就记为**未落地**、不猜映射。
+`stations/scenarios.json` 的 S3 现在仍写样例网 `SEG-003`，所以**拿真实 `stations/` 跑真网时
+正确结果是 `injected:false` + inactive 里如实记**
+「段号 'SEG-003' 不在本站段号集合内（疑似 7 节点样例网 SEG-### / 占位件），不猜映射、不混命名空间」——
+**这不是 bug，是纪律生效**。要验证机制得用临时站点包副本把 S3 的段号改成真网段：
+
+```bash
+# 机制验证（临时副本，跑完删）
+cp stations/*.json out/_tmp_stations/            # 把 S3 的 segment_id 改成 SZ-### 后
+python work/twin/loop.py --no-sumo --scenario scenario_3 \
+  --stations out/_tmp_stations --out out/_tmp_run
+# 期待：该段 c_vph 减半、x 翻倍、level 跳 4「严重拥堵」、triggered_by=["hard_factor"]；
+#       其余段逐字段不变；run_log.factors_injection.injected=true
+```
+
+**同批改掉的自相矛盾**：`METRIC_FORMULAS["x"]` 原注释写「本次无因素注入，`factors_applied` 恒空数组」，
+已改为如实描述注入后的口径。
+
+**回归**：`loop.py --no-sumo` 默认场景（`scenario_1`，无注入事件）四产物与改动前**逐字节一致**
+（2026-10-26 实测：`segments.json` `4EFFC723…` / `vehicles.json` `17BF4BA3…` /
+`assimilation_state.json` `8108980F…` / `run_log.json` `39A7341B…`，与第十七节冻结基线同值）。
+**机制**：场景**没有**注入事件时 `_inject_scenario_factors` 返回 `None`，调用方**不写任何新字段**
+—— 这是基线能逐字节不变的前提，改动时别把 `factors_injection` 改成无条件写入。
+
+**实测证据（2026-10-26）**：
+| 跑法 | 结果 |
+|---|---|
+| 临时包（S3 段号改 `SEG-002`）`--no-sumo --scenario scenario_3` | `SEG-002` `c_vph` 2000→**1000**、`x` 0.75→**1.5**、`level` 3→**4 严重拥堵**、`triggered_by` **`["hard_factor"]`**；`SEG-001` 逐字段不变；`factors_injection.injected=true` / `active_count=1` / `sections_namespace="snapshot"` |
+| 真实 `stations/`（S3 仍写 `SEG-003`）`--no-sumo --scenario scenario_3` | `injected=false`、`inactive` 如实记「段号 'SEG-003' 不在本站段号集合内…」；两段等级仍 `[2, 3]` |
+| 默认 `scenario_1`（无注入） | 四产物 sha256 与冻结基线一致 |
+| **真 SUMO 路径**（临时包 S3 段号改 `SZ-003`，`--scenario scenario_3 --duration 120 --seed 42`） | 61/61 段有有效点；`SZ-003` `c_vph` **9000→4500**、`level` **4「严重拥堵」**、`triggered_by` **`["hard_factor"]`**；其余 60 段等级 1×57 / 2×3 未受影响；`factors_injection.injected=true` / `sections_namespace="station"` / `records[0].affected_segment_ids=["SZ-003"]` / `direction_passed=true` |
