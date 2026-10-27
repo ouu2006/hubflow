@@ -15,11 +15,12 @@
 // 数据源口径：接口层真网产物优先、样例产物回退（engine.routes.real / engine.routes.sample）；
 // mock 侧回退站点包演示骨架。路线一律标「演示数据（模拟）」，沿用现有对外口径纪律。
 import { computed, onMounted, ref } from 'vue'
-import { getTrafficRouteOptions, postRouteRecommend } from '../../../api/traffic'
+import { getTrafficEmergency, getTrafficRouteOptions, postRouteRecommend } from '../../../api/traffic'
 import { demoSegment } from '../../../shared/demoNetwork'
 import { USE_MOCK } from '../../../shared/env'
 import { activePack } from '../../../station-packs/index'
 import type {
+  EmergencyState,
   RecommendResult,
   RouteOption,
   RouteOptionsSnapshot,
@@ -43,6 +44,22 @@ const optionsMeta = ref<RouteOptionsSnapshot | null>(null)
 const optionsLoading = ref(false)
 /** 空 = 正常；非空 = 辅助端点缺失 / 产物缺失，页面已回退演示会话（如实展示） */
 const optionsError = ref('')
+
+/**
+ * 应急态（TC-10，手册 §11.1(3)）：应急时**停下路线引导**，替换为「请服从现场指挥」。
+ *
+ * 口径：只消费接口层派生的 `emergency`（`GET /api/traffic/emergency`），**不自己判级**；
+ *      读不到 = 常态（不误停引导）；应急时只撤「路线规划」这一块的引导，
+ *      页面其余部分（来源行、选择器说明等）不动。
+ */
+const emergency = ref<EmergencyState | null>(null)
+const emergencyActive = computed(() => emergency.value?.active === true)
+const emergencySegmentText = computed(() => {
+  const ids = emergency.value?.segment_ids ?? []
+  if (ids.length === 0) return ''
+  const head = ids.slice(0, 3).join('、')
+  return ids.length > 3 ? `${head} 等 ${ids.length} 段` : head
+})
 
 // ---------- 当前 session 的完整路线（POST /route/recommend） ----------
 const mainSession = ref('')
@@ -116,9 +133,14 @@ function optionLabel(option: RouteOption): string {
 }
 
 /**
- * 链路条四段：起点 → 场区/落客点 → 终点（到达末段）→ 离站方向。
+ * 链路条常态四段：起点 → 场区/落客点 → 终点（到达末段）→ 离站方向。
+ * D3（往返）另加第五段「上客路线」（`pickup_route`，TC-12）—— 只有引擎真给了这一段才追加，
+ * 其余请求整段不出现，不补造上客点、不把落客点 pickup 化。
  * 落客点缺失时只如实写"引擎产物未给落客点"并用末段段号/路段名兜底，
  * 不把末段冒充成落客点（契约里 dropoff_point 为 null 就是 null）。
+ *
+ * D3（往返）另有第五段「上客路线」：只有引擎真给了 `pickup_route` 才追加，
+ * 非 D3 / 引擎未给时**整段不出现**（不补造上客点、不拿落客点顶替）。
  */
 function chainNodes(record: RecommendResult | null): ChainNode[] {
   if (!record) return []
@@ -128,9 +150,11 @@ function chainNodes(record: RecommendResult | null): ChainNode[] {
   const dropoff = arrival?.dropoff_point && arrival.dropoff_point.trim() ? arrival.dropoff_point : null
   const departure = record.departure_route
   const departureSegments = departure?.segments ?? []
+  const pickup = record.pickup_route ?? null
+  const pickupSegments = pickup?.segments ?? []
   const startSegment = record.location?.segment_id ?? ''
 
-  return [
+  const nodes: ChainNode[] = [
     {
       key: 'start',
       step: '①',
@@ -183,11 +207,48 @@ function chainNodes(record: RecommendResult | null): ChainNode[] {
       empty: !departure,
     },
   ]
+
+  // ⑤ 上客路线：只在引擎真给了 `pickup_route` 时追加（D3 往返专属，契约 §七）。
+  // 非 D3 请求整段不出现 —— 不补造上客点、不把落客点 pickup 化。
+  if (pickup) {
+    const pickupPoint = pickup.pickup_point && pickup.pickup_point.trim() ? pickup.pickup_point : null
+    nodes.push({
+      key: 'pickup',
+      step: '⑤',
+      title: '上客路线（D3 往返）',
+      primary: pickup.path_id || '上客路线',
+      secondary: `${pickupSegments.length} 段 · ETA ${fmtEta(pickup.eta_min)} min${
+        pickup.walk_min != null ? ` · 步行 ${fmtEta(pickup.walk_min)} min` : ''
+      }`,
+      tag: 'pickup_route',
+      note: pickupPoint
+        ? `上客点 ${pickupPoint}${pickupSegments.length ? ` · 首段 ${pickupSegments[0]} → 末段 ${pickupSegments[pickupSegments.length - 1]}` : ''}`
+        : '引擎未给上客点（pickup_point = null），如实空窗，不补造',
+      empty: false,
+    })
+  }
+  return nodes
 }
 
 const mainChain = computed<ChainNode[]>(() => chainNodes(main.value))
 const leftChain = computed<ChainNode[]>(() => chainNodes(left.value))
 const rightChain = computed<ChainNode[]>(() => chainNodes(right.value))
+
+/**
+ * 链路条的网格轨道（CSS 变量值）。
+ *
+ * 段数不是固定的：常态 4 段（起点/落客/终点/离站），D3 往返多一段上客路线共 5 段。
+ * 轨道 = 每段一条 `1fr` + 相邻段之间一条 `16px` 箭头轨道，共 `2n-1` 条。
+ * 必须按实际段数生成 —— 写死 4 段时第 5 段会被挤到第二行并压成竖排文字。
+ */
+function chainTracks(nodes: ChainNode[]): string {
+  const tracks: string[] = []
+  nodes.forEach((_node, index) => {
+    if (index > 0) tracks.push('16px')
+    tracks.push('minmax(0, 1fr)')
+  })
+  return tracks.join(' ')
+}
 const arrivalSegments = computed<string[]>(() => arrivalOf(main.value)?.segments ?? [])
 const alternatives = computed(() => main.value?.alternatives ?? [])
 const mainArrival = computed<RoutePath | null>(() => arrivalOf(main.value))
@@ -464,8 +525,27 @@ async function loadOptions(): Promise<void> {
   }
 }
 
+/**
+ * 读应急态（只读派生结果，不参与算路）。
+ *
+ * 失败时保持 `null` = 按常态渲染：应急是**停下引导**的强动作，读不到就不能擅自停，
+ * 也不能自己从路段等级里猜一个「大概是应急吧」。
+ */
+async function loadEmergency() {
+  if (USE_MOCK) {
+    emergency.value = null
+    return
+  }
+  try {
+    emergency.value = await getTrafficEmergency()
+  } catch {
+    emergency.value = null
+  }
+}
+
 onMounted(() => {
   void loadOptions()
+  void loadEmergency()
 })
 </script>
 
@@ -474,6 +554,7 @@ onMounted(() => {
     <section class="td-card">
       <div class="td-card-head">
         路线规划 · 完整链路（起点 → 落客 → 终点 → 离站）
+        <span v-if="main?.pickup_route" class="td-chip">D3 往返另有上客路线</span>
         <span class="td-chip on">读引擎算路产物，本页不重算</span>
         <span class="td-chip warn">演示数据（模拟）</span>
       </div>
@@ -522,9 +603,27 @@ onMounted(() => {
         </div>
 
         <p v-if="mainLoading" class="src">正在读取推荐快照…</p>
+        <!-- 应急态（TC-10，手册 §11.1(3)）：停下路线引导，替换为固定措辞。
+             注意：只替「路线规划」这一块，页面其它内容（来源行、选择器、说明）一字不减。 -->
+        <div v-else-if="emergencyActive" class="emergency-panel" role="alert">
+          <div class="em-title">{{ emergency?.message ?? '请服从现场指挥' }}</div>
+          <p class="em-line">
+            应急状态下<b>停止路线引导</b>（优先级高于一切推荐），请以现场指挥为准；引导恢复前不再给出推荐路线与 ETA。
+          </p>
+          <p v-if="emergencySegmentText" class="em-line">
+            影响路段：<b class="td-mono">{{ emergencySegmentText }}</b>
+          </p>
+          <p v-if="emergency?.level !== null && emergency?.level !== undefined" class="em-line">
+            等级：<b>{{ emergency.level }} 级</b>（由感知层判定，本页不重算）
+          </p>
+          <p v-else-if="emergency?.level_source === 'pending_perception_recompute'" class="em-line">
+            等级：<b>待重算</b> —— 事故/管制已登记，等感知层重算后才出等级；此处<b>不填任何档位</b>。
+          </p>
+          <p class="em-src">{{ emergency?.note ?? '' }}</p>
+        </div>
         <p v-else-if="mainError" class="src err">{{ mainError }}</p>
         <template v-else-if="main">
-          <div class="chain" aria-label="完整路线链路">
+          <div class="chain" :style="{ '--chain-tracks': chainTracks(mainChain) }" aria-label="完整路线链路">
             <template v-for="(node, index) in mainChain" :key="node.key">
               <div class="chain-node" :class="{ empty: node.empty }">
                 <div class="cn-step">{{ node.step }} {{ node.title }}</div>
@@ -630,13 +729,14 @@ onMounted(() => {
               <p v-if="leftLoading" class="src">正在读取左列…</p>
               <p v-else-if="leftError" class="src err">{{ leftError }}</p>
               <template v-else-if="left">
-                <div class="chain compact">
+                <div class="chain compact" :style="{ '--chain-tracks': chainTracks(leftChain) }">
                   <template v-for="(node, index) in leftChain" :key="`left-${node.key}`">
                     <div class="chain-node" :class="{ empty: node.empty }">
                       <div class="cn-step">{{ node.step }} {{ node.title }}</div>
                       <div class="cn-primary">{{ node.primary }}</div>
                       <div class="cn-secondary">{{ node.secondary }}</div>
                       <div class="cn-tag td-mono">{{ node.tag }}</div>
+                      <div v-if="node.key === 'pickup' && node.note" class="cn-note">{{ node.note }}</div>
                     </div>
                     <div v-if="index < leftChain.length - 1" class="chain-arrow" aria-hidden="true">→</div>
                   </template>
@@ -675,13 +775,14 @@ onMounted(() => {
               <p v-if="rightLoading" class="src">正在读取右列…</p>
               <p v-else-if="rightError" class="src err">{{ rightError }}</p>
               <template v-else-if="right">
-                <div class="chain compact">
+                <div class="chain compact" :style="{ '--chain-tracks': chainTracks(rightChain) }">
                   <template v-for="(node, index) in rightChain" :key="`right-${node.key}`">
                     <div class="chain-node" :class="{ empty: node.empty }">
                       <div class="cn-step">{{ node.step }} {{ node.title }}</div>
                       <div class="cn-primary">{{ node.primary }}</div>
                       <div class="cn-secondary">{{ node.secondary }}</div>
                       <div class="cn-tag td-mono">{{ node.tag }}</div>
+                      <div v-if="node.key === 'pickup' && node.note" class="cn-note">{{ node.note }}</div>
                     </div>
                     <div v-if="index < rightChain.length - 1" class="chain-arrow" aria-hidden="true">→</div>
                   </template>
@@ -711,13 +812,14 @@ onMounted(() => {
             不补造第二个 session，也不伪造差异。
           </p>
           <div v-if="main" class="cmp-side single">
-            <div class="chain compact">
+            <div class="chain compact" :style="{ '--chain-tracks': chainTracks(mainChain) }">
               <template v-for="(node, index) in mainChain" :key="`single-${node.key}`">
                 <div class="chain-node" :class="{ empty: node.empty }">
                   <div class="cn-step">{{ node.step }} {{ node.title }}</div>
                   <div class="cn-primary">{{ node.primary }}</div>
                   <div class="cn-secondary">{{ node.secondary }}</div>
                   <div class="cn-tag td-mono">{{ node.tag }}</div>
+                  <div v-if="node.key === 'pickup' && node.note" class="cn-note">{{ node.note }}</div>
                 </div>
                 <div v-if="index < mainChain.length - 1" class="chain-arrow" aria-hidden="true">→</div>
               </template>
@@ -821,6 +923,36 @@ onMounted(() => {
   gap: 10px;
   min-width: 0;
 }
+/* ---------- 应急态（TC-10）：停下引导，替换为「请服从现场指挥」 ----------
+   位置纪律：只替「路线规划」这一块；页面其它内容一字不减（见 scripts/frontend_gate.py 的
+   gate_emergency_keep 记录的历史教训）。颜色走 TD 变量，本文件不写死色值。 */
+.emergency-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  border-left: 4px solid var(--td-error-color);
+  background: var(--td-error-color-1);
+  border-radius: var(--td-radius-sm);
+}
+.em-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--td-error-color);
+}
+.em-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+}
+.em-src {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
 .src {
   margin: 0 0 8px;
   font-size: 11px;
@@ -872,12 +1004,12 @@ onMounted(() => {
   border-color: var(--td-brand-color);
 }
 
-/* 四段链路条：首尾相接，箭头只作连接语义 */
+/* 链路条：首尾相接，箭头只作连接语义。
+   轨道数随段数变化（常态 4 段、D3 往返 5 段），由行内 `--chain-tracks` 注入 ——
+   写死 4 列会把第 5 段挤到第二行、且挤成 1fr 之外的窄条（文字竖排）。 */
 .chain {
   display: grid;
-  grid-template-columns:
-    minmax(0, 1fr) 16px minmax(0, 1fr) 16px minmax(0, 1fr) 16px
-    minmax(0, 1fr);
+  grid-template-columns: var(--chain-tracks, minmax(0, 1fr));
   align-items: stretch;
   margin: 6px 0 8px;
 }

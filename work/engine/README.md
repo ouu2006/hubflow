@@ -125,11 +125,35 @@ def every_60s():
 
 ## 三、定位与地图匹配（`locate.py`）
 
-**实现状态（T4，2026-10-19）**：`locate.py` 已从 W0 空壳变为可运行实现（真值直读 + σ 噪声
-HMM-lite 匹配），但 **TC-18 验收证据阻塞**——缺 `work/twin/out/latest/vehicles.json`
-（W1 真孪生快照）、SUMO/TraCI 不可用、统一图无 WGS-84 几何（`map_ingest.py` Issue #37
-未做）。样例口径 3/3 只证明链路通，**不得当 TC-18 通过**；dev-debug 口径 σ=20 m = 0.7901
-（自造夹具，同样不得当验收）。解除条件见 T4 验收记录（交接目录，未随 PR 入库） §5。
+**实现状态（2026-10-26 更新）**：TC-18 的两个前置（W1 快照在场、真网 WGS-84 几何带显式锚点）
+已全部解开，两项判定**真跑**：
+
+- **① 真值直读一致率 1.0（38/38）PASS**；
+- **② σ=20 m 噪声匹配正确率 0.8997（260/289）**，未达 90%【demo 目标值】，
+  **如实登记 FAIL**——差值全部来自 SZ-018/019 这对**间距 10~13 m 的平行停车场通道**
+  （150–210 m 段 17 个错配点；该区单点错配的数学期望约 32%，σ=20 m 噪声下属于
+  在线贪心（任务卡原文「HMM-lite、无 Viterbi 回溯」）的**固有局限**，非代码缺陷）。
+  相比 dev-debug 时期的 0.7901 已提升 11 个点；继续追需要换全局解码（Viterbi），
+  超出任务卡算法范围，按口径纪律不硬凑。
+
+**本轮改动（均不碰打分常量）**：
+
+1. **判分字段对齐真网结构**：`build_geometry` 的 `section` 取不到时回退 `segment_id`
+   （真网 `network_junction.json` 的边只有 `segment_id`，两者语义相同——修复后判分
+   才真正生效；改前 `matched_section` 恒 None、②项恒 0 分是**判分 bug**）；
+2. **起点前看窗口（`LOOKAHEAD_POINTS = 3`）**：起点没有 previous 上下文，平行路单点
+   易错（历史上 0-120 m 段 8 个起点错配）；用前 3 个点联合打分选第一条边
+   （Viterbi 起点惯例的延迟决策，打分函数与常量原封未动）→ 起点段错配**清零**；
+3. **锚点几何产物**：`work/engine/out/real/network_junction_with_anchor.json`
+   （真网几何 + `anchor_lonlat` = 本图第一节点真值坐标，非外猜原点；锚点仅作
+   局部平面投影原点、纯平移，匹配结果与锚点选取无关）。
+
+**复跑**：
+`python work/engine/locate_check.py --vehicles work/twin/out/latest/vehicles.json --network real --geometry work/engine/out/real/network_junction_with_anchor.json --sigmas 10,20,30 --seed 42`
+（产物 `out/real/tc18_final.json`；`run.py --sample` 逐字节基线不受影响，已复核）。
+
+**历史留痕（2026-10-19 T4 状态，供追溯）**：样例口径 3/3 只证明链路通、dev-debug 口径
+σ=20 m = 0.7901（自造夹具），当时均不得当验收；解除条件见 T4 验收记录 §5。
 校验入口：`python work/engine/locate_check.py --vehicles <快照> --network sample --sigmas 10,20,30 --seed 42`。
 
 **两期用同一个函数形状，一期只换输入。**
@@ -320,8 +344,8 @@ python work/engine/predict_cli.py --segments work/engine/samples/segments_sample
 |---|---|
 | `work/engine/out/real/routes.json` | **默认模式**：真网协同推荐。`requests[]` 为契约第二节响应体（段号 `SZ-###`，路线额外带 `length_m`）；`network`（**61 段逐段** `length_m` / from-to / `param_source`）、`od_derivation`（OD 规则 / 入口 / 出口 / 跳过）、`segments_source`（上游快照命中与降级）三块可追溯元数据 |
 | `work/engine/out/real/run_log.json` | **默认模式**日志：真网统计（61 段 / 44 节点 / OD 数 / 备选数 / reservation 数 / M1-4 自检标志）、参数来源、可复现所需输入 |
-| `work/engine/out/real/compare/routes.json` | **`--compare` 模式**：真网三组对照（① 不推荐 ② 此刻最快 ③ 协同推荐）+ `comparison.tc17` 三项数据 + `capacity_shortage` / 租约释放 / 突发再疏导证据；`network` / `od_derivation` / `segments_source` 同默认模式 |
-| `work/engine/out/real/compare/run_log.json` | **`--compare` 模式**日志（三组计数 / TC-17 判据 / 再疏导计数） |
+| `work/engine/out/real/compare/routes.json` | **`--compare` 模式**：真网三组对照（① 不推荐 ② 此刻最快 ③ 协同推荐）+ `comparison.tc17` 三项数据 + `comparison.treatment` 处置前后三项（TC-09，见下节）+ `capacity_shortage` / 租约释放 / 突发再疏导证据；`network` / `od_derivation` / `segments_source` 同默认模式 |
+| `work/engine/out/real/compare/run_log.json` | **`--compare` 模式**日志（三组计数 / TC-17 判据 / `treatment_metrics` 三项摘要 / 再疏导计数） |
 | `work/engine/out/routes.json` | **样例基线产物，保持原样**（`--sample` / `--sample --compare` 写这里，逐字节基线） |
 
 > `--out` 可另指目录（**显式传参优先于上面的默认目录**）；`routes.json` 与 `run_log.json` 写同一目录。
@@ -340,6 +364,33 @@ python work/engine/predict_cli.py --segments work/engine/samples/segments_sample
 - 演示时刻 / 窗口：无上游 `ts` 时用固定常量 `realnet.DEMO_BASE_TS` / `DEMO_WINDOW_SEC`，**不读系统时钟**；
   同一输入连跑两遍 `routes.json` 逐字节一致（确定性硬约束）；
 - 口径恒为「**演示数据（模拟）**」：几何来自 OSM 真值，但指标 / 需求 / 时刻都是演示假设值。
+
+**处置前后三项（TC-09，`comparison.treatment`，2026-10-26）**
+
+手册第 17 章要求的效果对比报表 = 三组对照 **+ 处置前后三项**（排队长度峰值 / 拥堵持续时间 /
+饱和度和差）。三项**由本引擎在同一评估窗口上现算**——算的是**模拟对照值**（`is_simulated` 恒 `true`，
+既**不是**现场实测，也**不是**写死的演示常量）：
+
+- **等长时间窗**：处置前 = 组①（不推荐）、处置后 = 组③（协同推荐），两组跑**同一个**评估窗口
+  （同一 `base_ts` / `window_sec` / 车辆群 / 站点包参数），差异只来自推荐机制。**不虚构两个时间段**。
+- **对比范围（scope）** = 处置前橙红段 ∪ 处置后橙红段——两侧同一段号集合，分母可比，避免
+  「协同推荐把车挪走、自己那边没有橙红段」造成的假优势。
+- **三项口径**（原文写在 `comparison.treatment.metrics.*.formula`，下游照抄不改写）：
+  - 排队长度峰值：逐时段 `q_veh = max(0, x-1) × capacity_per_slot`；
+    `L_q = min(L_seg_m, q_veh / 车道数 × queue_headway_m)`，取 scope 内最大；
+  - 拥堵持续时间：逐时段判 `x >= 1.0`（**过饱和的物理定义，不是等级档位**；按等级橙档 x≥0.8 判
+    三组整窗都"拥堵"、没有区分度），取最长连续过饱和时段数 × `slot_minutes`；
+  - 饱和度和：scope 内各段窗口内最大饱和度之和。
+  - `queue_headway_m` 读 `stations/thresholds.json` 的 `grading`（与孪生侧 `METRIC_FORMULAS` 同一出处），
+    非正数直接 `SystemExit`，**代码里不写死**。
+- **没有对比对象时如实标不可用**：`treatment.available = false` + `unavailable_reason`，三项的
+  `before/after/delta` 一律 `null`（**不输出 0 → 0 冒充"完美改善"**）。典型场景：用只有 1 个时段的
+  上游快照跑（`--segments work/twin/out/latest/segments_twin.json` 的 `window_sec=60`、1 个 slot），
+  窗口内没有任何段进橙红档。
+- 真跑（2026-10-26，`--network real --compare`）：`scope = ['SZ-004']`，
+  排队峰值 **23.33 → 0.0 m**、拥堵持续时间 **15 → 0 min**、饱和度和 **1.125 → 0.825**；
+  样例（`--sample --compare`）：`scope = ['SEG-001','SEG-003','SEG-011']`，
+  **23.33 → 0.0 m** / **15 → 0 min** / **2.8958 → 2.3958**。
 
 **再疏导在真网的证据（默认 0 事件 ≠ 复用失效）**
 

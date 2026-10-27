@@ -49,7 +49,8 @@
 | `/api/traffic/context` | GET | **环境上下文**：天气 / 时间 + 折算出的因素（F01 / F02 / F03 / F10） | **已实现**（IKMS17；含场景注入内存态） |
 | `/api/traffic/scenario` | POST | **场景注入**（天气 / 时段 / 需求倍率）→ 折算因素 | **已实现**（IKMS17；内存态、**effects 如实为空**、不重算判级） |
 | `/api/traffic/scenario/reset` | POST | 清场景注入（与 `factors/reset` 同口径） | **已实现**（IKMS17；内存态复位） |
-| `/api/traffic/report/compare` | GET | 效果对比报表 | 空壳 + note（接口层无报表产物；前端已接，rows 空时如实提示） |
+| `/api/traffic/report/compare` | GET | 效果对比报表 | **已实现**（2026-10-25；只读端引擎 `--compare` 产物，真网优先、样例回退、缺失仍空壳 + note。2026-10-26 起含 `treatment` 处置前后三项 TC-09，见下） |
+| `/api/traffic/emergency` | GET | **应急态**（TC-10）：这一刻是否该停掉路线引导 | **已实现**（2026-10-26；**只派生不重算判级**，口径见本节末） |
 | `/perception-api/streams/{sid}/summary` | GET | 感知通道汇总（分车型 / 轨迹质量与标定 / 输出字段 / 处理口径） | **未实现**（属感知面，见 [`../perception/README.md`](../perception/README.md)；前端显示「—」并注明） |
 
 **2026-10-13 页面收敛（Issue #77）后的接口面变化**：管理端 Web 由四页收敛为**三层 3 页**（感知层 / 决策层 / 监控大屏，
@@ -96,8 +97,25 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
 | `POST /api/traffic/factors/reset` | — | 清空人工置位（幂等） | `{reset:true, cleared:N, note}` |
 | `POST /api/traffic/scenario` | `{weather?, session?, demand_mult?, segment_id?}`；**缺省 = 不改，显式 null = 清除** | 只更新环境状态 → 折算 F01/F02/F03/F10 | `applied:true` + `factors` + `effects:[]` + `recomputed:false` + `note`（接口层不伪造注入前后判级对照） |
 | `POST /api/traffic/scenario/reset` | — | 清空场景注入（幂等） | `{reset:true, was_injected:bool, note}` |
+| `GET /api/traffic/emergency` | — | 派生「这一刻该不该停掉路线引导」（TC-10） | `{active, level, level_source, segment_ids, factors, triggered_by, message, guidance, hard_trigger_level, source, note}`；恒带 `message:"请服从现场指挥"` |
 
+- **应急态（TC-10）同样不重算判级**：`_derive_emergency()` 只有两条信号——
+  **信号 A（上游已判级）**：`segments[].triggered_by` 含 `hard_factor`（即 `work/perception/level.py`
+  的硬触发命中）→ `active:true` + 直接用上游 `level`，`level_source:"upstream"`，
+  `triggered_by:"upstream_hard_factor"`；
+  **信号 B（管理端人工置位）**：内存态里有 F07 / F08（`hard_trigger_factor_ids`）→ `active:true`，
+  但 `level` **必须为 `null`** 且 `level_source:"pending_perception_recompute"`，
+  **不填任何档位**（接口层不 import `level.py`，等感知层统一重算），`triggered_by:"manual_hard_factor"`。
+  两条都不命中 → `active:false` + `guidance:"running"`。`hard_trigger_level` 原样透出站点包
+  `stations/thresholds.json` 的 `grading.hard_trigger_level`，**不写死**；改阈值输出跟随变。
 - **两个口子不混用**：人工置位只有 F07/F08/F11；F01/F02/F03/F10 属环境侧，只走 `/scenario`。
+- **效果对比报表的「处置前后三项」（TC-09）也只读透传**：`GET /api/traffic/report/compare` 的
+  `treatment` 段来自引擎 `comparison.treatment`，接口层只整形不改数（`_report_treatment()`）。
+  三项由引擎在同一评估窗口上现算（处置前 = 组①不推荐 / 处置后 = 组③协同推荐，同一 `base_ts`、
+  同一车辆群，**不虚构两个时间段**；对比范围 = 两侧橙红段并集，分母可比）。
+  **`available:false` 时 `before/after/delta` 一律 `null`**，接口层再兜一层，防老产物把 0 → 0
+  读成「完美改善」；引擎老产物没有该键 → `treatment: null`，前端如实空窗，
+  **不拿 `shared/demoDecision.ts` 的演示值顶上**。
 - **接口层不重算 level / ci**（判级唯一实现是感知层 `level.py`）：写端点只更新 `context` /
   `derived_factors` / 因素状态；`GET /factors`、`GET /segments` 里登记的因素带
   `injected:true, pending_recompute:true`，**不伪造等级变化**。复位方式：factors / scenario 走三个
@@ -119,9 +137,15 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
   **不把路线 ETA 与路段快照指标混算**；地图只画站点包几何里存在的段。
 - 两层产物都缺失 → 如实 404 `ROUTE_UNAVAILABLE` + note（不代算 ETA）。
 - **非契约辅助端点（Issue IKNAUI）**：`GET /api/traffic/route/options` 端出最高优先级产物 `requests` 的
-  OD / session / 进场路线 / 备选 / 离站路线**摘要**（`count` + `options[]`），供大屏「整条路线规划」
+  OD / session / 进场路线 / 备选 / **上客路线（D3）** / 离站路线**摘要**（`count` + `options[]`），供大屏「整条路线规划」
   选择器；同样真网优先、缺产物如实 404 + note。契约 §七 未定义该端点，接入方按辅助端点消费，
   **不得**把它当契约字段写回契约。响应示例（节选）：
+- **`pickup_route` 是 TC-12 的 D3（往返）专属字段**（2026-10-26 补）：只有引擎产物里真带 `pickup_route` 的请求
+  （出租车往返，`driver_type = D3`）才有值，其余请求如实 `null`；**不按 `arrival_route` 反推、不补造上客点**。
+  上客点字段名是 **`pickup_point`**（不是 `dropoff_point`），故 `_route_path_summary(..., pickup=True)` 才追加该键，
+  `arrival_route` / `departure_route` / `alternatives` 的摘要形状**保持不变**（不凭空多出 `pickup_point: null`）。
+  真网当前 `work/engine/run.py` 的 `_load_real_dataset` 显式 `"points": []`（点位归 IKMHMX / 池·S 踏勘）→
+  真网 D3 如实跳空 `d3_skipped: no_pickup_point`；样例网跑 `--d3` 可看完整形状。
 
 ```json
 {
@@ -135,11 +159,15 @@ cd work/frontend/ui-vue && npm run dev:remote    # http://localhost:5173/#/dashb
       "location": { "segment_id": "SZ-003", "offset_m": 0, "source": "twin" },
       "arrival_route": { "path_id": "OD-R-001-P1", "segments": ["SZ-003", "..."], "segment_count": 5, "eta_min": 0.82 },
       "alternatives": [{ "path_id": "OD-R-001-P2", "eta_min": 1.25, "reason": "比推荐多 0.43 分钟" }],
+      "pickup_route": null,
       "departure_route": { "path_id": "OD-R-001-D1", "segment_count": 3, "eta_min": 0.36 }
     }
   ]
 }
 ```
+
+> 上面是 D1（送客）请求，`pickup_route` 如实 `null`。D3（往返）才带值，形状为
+> `{ "path_id": "OD-02-PK", "segments": ["SEG-004"], "segment_count": 1, "eta_min": 0.38, "length_m": null, "dropoff_point": null, "walk_min": 2.0, "pickup_point": "P-02" }`。
 
 **自检（真跑命令）**：
 

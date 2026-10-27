@@ -80,6 +80,7 @@ import {
   type CiHistory,
   type CongestionLevel,
   type CongestionViewMode,
+  type EmergencyState,
   type FactorApplied,
   type HeatMatrix,
   type RecommendResult,
@@ -765,6 +766,8 @@ async function refresh(): Promise<void> {
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
+    // 应急态(TC-10)：接口层已在快照顶层派生好，这里**原样消费**，不自己判等级
+    emergency.value = seg.value.emergency ?? null
     if (selectedId.value === null) selectedId.value = pickDefaultId(seg.value.segments)
     applyDeepSegment()
   }
@@ -867,6 +870,8 @@ function resetStationState(): void {
   failedPanels.value = []
   servedFromCache.value = false
   cacheStamp.value = 0
+  // 应急态跟着快照一起清：切站后未拿到新快照前不得沿用上一站的应急结论
+  emergency.value = null
   // IKPFVN D 节：从这一行起，页面数据等“镜头到站”再上屏（骨架屏先亮着）；
   // `markArrived()`（地图组件报 arrived / 4 s 兜底）会把它放行。
   arriving.value = true
@@ -906,6 +911,8 @@ function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
   if (snapshot.segments) {
     segments.value = snapshot.segments.segments
     snapshotTs.value = snapshot.segments.ts
+    // 应急态(TC-10)：缓存里带着当时的派生结果，恢复时一并还原（不重算）
+    emergency.value = snapshot.segments.emergency ?? null
   }
   alerts.value = snapshot.alerts?.alerts ?? []
   allFactors.value = snapshot.factors ?? []
@@ -958,6 +965,34 @@ const ROUTE_VIEWS: { key: RouteView; name: string }[] = [
 const recommend = ref<RecommendResult | null>(null)
 const recommendLoading = ref(false)
 const recommendError = ref('')
+/**
+ * 应急态（TC-10，手册 §11.1(3)）：应急时**停下路线引导**，替换为固定措辞「请服从现场指挥」，
+ * 优先级高于一切推荐。
+ *
+ * 口径三条（别改错）：
+ *   ① 只消费接口层派生的 `emergency`，**不自己判**：不自算等级、不比对阈值、不看 factors 猜；
+ *   ② `active === false` 即常态，页面照常给推荐 —— 不得把「读不到」兜底成应急（会误停引导）；
+ *   ③ 应急 ≠ 清空页面：只收起**推荐路线那块**（这是被停下的「引导」），
+ *      地图、KPI、路段信息、车辆等正文一律照常显示。
+ */
+const emergency = ref<EmergencyState | null>(null)
+/** 应急是否生效（接口未给/读不到 → false，宁可不误停） */
+const emergencyActive = computed(() => emergency.value?.active === true)
+/** 应急影响路段的可读文案（超过 3 段只列前 3 段 + 省略，不糊满整行） */
+const emergencySegmentText = computed(() => {
+  const ids = emergency.value?.segment_ids ?? []
+  if (ids.length === 0) return ''
+  const head = ids.slice(0, 3).join('、')
+  return ids.length > 3 ? `${head} 等 ${ids.length} 段` : head
+})
+/** 应急已登记因素的可读文案（只列编号 + 目标 + 倍率，原样透传不自算） */
+const emergencyFactorText = computed(() => {
+  const list = emergency.value?.factors ?? []
+  return list
+    .slice(0, 4)
+    .map((f) => `${f.factor_id ?? '—'}（${f.target ?? '—'} ×${f.multiplier ?? '—'}）`)
+    .join('、')
+})
 /** 三态切换：全部 / 推荐 / 备选 / 离站（截图三态用同一套按钮） */
 const routeView = ref<RouteView>('all')
 /** 当前站点包内的段数（卡片文案用；切包后不写死 61） */
@@ -1185,6 +1220,8 @@ const startBoundarySection = computed(() => {
 })
 
 const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
+  // 应急态：起点标记属于引导，一并收起
+  if (emergencyActive.value) return null
   const s = currentStart.value
   if (!s) return null
   const seg = demoSegment(s.segment_id)
@@ -1204,6 +1241,8 @@ const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
 })
 
 const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
+  // 应急态：终点标记属于引导，一并收起
+  if (emergencyActive.value) return null
   const r = recommend.value
   if (!r) return null
   const segs = r.arrival_route.segments ?? []
@@ -1291,6 +1330,9 @@ function applyManualStart(): void {
 
 /** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
 const routeHighlights = computed<RouteHighlight[]>(() => {
+  // 应急态（TC-10）：路线引导已停下 → 地图上不再画任何推荐/备选/离站路线。
+  // 这是「停下路线引导」的落地：只停引导，不隐藏车流与路况本身（那些是态势，不是引导）。
+  if (emergencyActive.value) return []
   const r = recommend.value
   if (!r) return []
   const groups: RouteHighlight[] = []
@@ -1903,6 +1945,21 @@ function onCommandChanged(): void {
       <button class="td-btn sm" type="button" @click="refresh">立即刷新</button>
     </div>
 
+    <!-- 应急态（TC-10，手册 §11.1(3)）：顶部红条 + 固定措辞，优先级高于一切推荐。
+         口径：**只加提示，不删正文** —— 下面的 KPI / 地图 / 路段 / 车辆照常显示；
+         被停掉的只有「推荐路线」那一块的引导（那张卡自己会换成应急卡）。 -->
+    <div v-if="emergencyActive" class="emergency-bar" role="alert" aria-live="assertive">
+      <span class="emergency-tag">应急态</span>
+      <b class="emergency-msg">{{ emergency?.message ?? '请服从现场指挥' }}</b>
+      <span class="emergency-sub">
+        已停下路线引导（优先级高于一切推荐）<template v-if="emergencySegmentText">；影响路段
+          {{ emergencySegmentText }}</template
+        ><template v-if="emergency?.level_source === 'pending_perception_recompute'">
+          ；判级待重算，此处不展示等级</template
+        >。
+      </span>
+    </div>
+
     <!-- 切站缓存提示（Issue IKPFR4）：缓存数据必须有标识，不得冒充最新。
          有缓存 = 首屏已秒开，这里只说明"这是缓存、正在刷新"；没缓存才亮下面的骨架条。 -->
     <div v-if="cacheNote" class="cache-bar" role="status">
@@ -2256,10 +2313,31 @@ function onCommandChanged(): void {
         <!-- 推荐路线（Issue IKMF1W）：三态切换 + 来源标注；接口不可达时不画路线、不编造假路线 -->
         <section class="td-card route-card">
           <div class="td-card-head">
-            推荐路线
-            <span class="td-head-tag">{{ routeSourceTag }}</span>
+            {{ emergencyActive ? '路线引导' : '推荐路线' }}
+            <span class="td-head-tag">{{ emergencyActive ? '应急态 · 已停下' : routeSourceTag }}</span>
           </div>
-          <div class="td-card-body">
+          <!-- 应急态（TC-10，手册 §11.1(3)）：**只撤这一块的引导**，换成固定措辞。
+               注意这是替换「推荐」而非删正文：右边路段信息、地图、KPI 一律照常。 -->
+          <div v-if="emergencyActive" class="td-card-body emergency-card" role="alert">
+            <div class="em-title">{{ emergency?.message ?? '请服从现场指挥' }}</div>
+            <p class="em-line">
+              应急状态下<b>停止路线引导</b>（优先级高于一切推荐），请以现场指挥为准。
+            </p>
+            <p v-if="emergencySegmentText" class="em-line">
+              影响路段：<b class="td-mono">{{ emergencySegmentText }}</b>
+            </p>
+            <p v-if="emergency?.level !== null && emergency?.level !== undefined" class="em-line">
+              等级：<b>{{ emergency.level }} 级</b>（由感知层判定，本页不重算）
+            </p>
+            <p v-else-if="emergency?.level_source === 'pending_perception_recompute'" class="em-line">
+              等级：<b>待重算</b> —— 事故/管制已登记，等感知层重算后才出等级；此处<b>不填任何档位</b>。
+            </p>
+            <p v-if="emergency?.factors?.length" class="em-line">
+              已登记因素：<b>{{ emergencyFactorText }}</b>
+            </p>
+            <p class="em-src">{{ emergency?.note ?? '' }}</p>
+          </div>
+          <div v-else class="td-card-body">
             <!-- 整条路线规划（Issue IKNAUI）：引擎产物 OD/session 选择 → 完整路线 + 进场/落客/离站全程摘要 -->
             <div class="route-plan">
               <div class="route-plan-head">
@@ -2789,6 +2867,71 @@ function onCommandChanged(): void {
   border-radius: var(--td-radius-sm);
   background: var(--td-warning-color-1);
   color: #a06a00;
+}
+
+/* ---------- 应急态（TC-10）：红 = 停下引导，不等于整页变红 ----------
+   位置纪律：这是**顶部提示条 + 推荐卡替换**，正文（KPI / 地图 / 路段 / 车辆）一字不减。
+   历史教训见 scripts/frontend_gate.py 的 gate_emergency_keep：曾把正文包进 !emergency 条件，
+   应急一亮整页只剩一条红条，被业主驳回。 */
+.emergency-bar {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+  margin: 10px 16px 0;
+  padding: 8px 12px;
+  font-size: 12px;
+  line-height: 1.6;
+  border-radius: var(--td-radius-sm);
+  border-left: 4px solid #d92d20;
+  background: #fef3f2;
+  color: #7a271a;
+}
+
+.emergency-tag {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #d92d20;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.emergency-msg {
+  font-size: 13px;
+}
+
+.emergency-sub {
+  color: #93370d;
+}
+
+/* 推荐卡里的应急替身：只替这一块，不占别人的位置 */
+.emergency-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.em-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #b42318;
+}
+
+.em-line {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--td-text-color-primary);
+}
+
+.em-src {
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
 }
 
 /* ---------- 颜色模式切换（Issue IKNB9G：决策拥堵版 ↔ 纯车流量版） ---------- */
