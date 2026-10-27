@@ -2060,12 +2060,18 @@ function mergedStyle(remote: StyleSpecification): StyleSpecification {
     ...remote,
     sources: {
       ...(remote.sources ?? {}),
-      // 兜底轮廓 / 站点 pin / 路网 / 方向标 —— 四份 source 都必须带上，否则 setStyle 之后
+      // 兜底轮廓 / 站点 pin / 路网 / 方向标 / 落客区 —— 五份 source 都必须带上，否则 setStyle 之后
       // 图层在、数据源没了，地图会报错且 pin 直接消失。
+      // ⚠️ `DZ_SRC` 是 2026-10-25（!82 落客区）新加的一份：当时只补进了 `addOwnLayers()`（建图那条路），
+      // 漏在这里，于是**只要底图样式换过一次**（`applyBasemap` 成功或 `dropBasemap` 退回兜底），
+      // 新样式里的三个落客区图层就找不到 source —— MapLibre 在 `_load` 里直接抛
+      // `layers[N]: source "hubflow-dropzone" not found`，整份样式加载失败、底图整块不画
+      // （表现就是"底图刷新不出来"，且退回兜底样式也照样报错）。新增自有 source 时**两处都要加**。
       [OUTLINE_SRC]: outlineSource(),
       [SRC]: { type: 'geojson', data: routeGeoJson() },
       [DIR_SRC]: { type: 'geojson', data: directionGeoJson() },
       [STATION_SRC]: { type: 'geojson', data: stationGeoJson() },
+      [DZ_SRC]: { type: 'geojson', data: dropZoneGeoJson() },
     },
     // 自有图层的绘制顺序只有 `ownLayerSpecs()` 一份
     layers: [...(remote.layers ?? []), ...ownLayerSpecs()],
