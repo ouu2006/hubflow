@@ -319,6 +319,50 @@ function resetCols(): void {
 }
 
 loadColMem()
+// ---------- 区域收起 / 展开（KPI 条 / 底部热力带；业主 2026-10-28） ----------
+// 左右两栏已有「‹ 收起」；这里补齐其余区域：
+//   · KPI 条：收起后只留一条细栏，竖向空间让给地图；
+//   · 底部热力带：收起后三块（档位分布 / 热力矩阵 / CI 色阶）整条隐藏。
+// 记忆口径与栏收起一致：落 localStorage；读不到 / 坏值静默退回展开。
+const REGION_FOLD_KEY = 'hubflow.dashboard.regionFolded'
+const kpiFolded = ref(false)
+const heatFolded = ref(false)
+
+function saveRegionFoldMem(): void {
+  try {
+    localStorage.setItem(
+      REGION_FOLD_KEY,
+      JSON.stringify({ kpi: kpiFolded.value, heat: heatFolded.value }),
+    )
+  } catch {
+    /* 隐私模式等写不进去：不影响收起本身，只是不记忆 */
+  }
+}
+
+function setKpiFolded(v: boolean): void {
+  kpiFolded.value = v
+  saveRegionFoldMem()
+}
+
+function setHeatFolded(v: boolean): void {
+  heatFolded.value = v
+  saveRegionFoldMem()
+}
+
+function loadRegionFoldMem(): void {
+  try {
+    const raw = localStorage.getItem(REGION_FOLD_KEY)
+    if (!raw) return
+    const v = JSON.parse(raw) as { kpi?: unknown; heat?: unknown }
+    if (v.kpi === true) kpiFolded.value = true
+    if (v.heat === true) heatFolded.value = true
+  } catch {
+    /* localStorage 不可用 / 内容坏了：静默退回展开 */
+  }
+}
+
+loadRegionFoldMem()
+
 loadColFoldMem()
 
 /**
@@ -2084,8 +2128,32 @@ function onCommandChanged(): void {
       <span class="switch-skeleton" aria-hidden="true"><i /><i /><i /></span>
     </div>
 
-    <!-- KPI 条(取代页头) -->
-    <div class="td-card kpi-bar">
+    <!-- KPI 条(取代页头)。业主 2026-10-28：与左右两栏一致，支持收起 / 展开。
+         收起后只留一条细栏（「关键指标已收起 + 展开」），竖向空间让给地图；状态落 localStorage。 -->
+    <div class="td-card kpi-bar" :class="{ 'is-folded': kpiFolded }">
+      <button
+        v-if="!kpiFolded"
+        type="button"
+        class="region-fold kpi-fold"
+        aria-label="收起关键指标"
+        title="收起关键指标：把竖向空间让给地图；收起后本栏留「展开指标」"
+        @click="setKpiFolded(true)"
+      >
+        收起 ▴
+      </button>
+      <div v-if="kpiFolded" class="kpi-folded">
+        <span class="kpi-folded-label">关键指标已收起</span>
+        <button
+          type="button"
+          class="region-fold"
+          aria-label="展开关键指标"
+          title="展开关键指标（平均值 / 最堵路段 / 在途车辆 / 生效因素）"
+          @click="setKpiFolded(false)"
+        >
+          展开指标 ▾
+        </button>
+      </div>
+      <template v-if="!kpiFolded">
       <div class="kpi-cell">
         <div class="kpi-label">全网平均车速</div>
         <div class="kpi-value">{{ fmt(overview?.avg_speed_kmh, 1) }}<span class="kpi-unit">km/h</span></div>
@@ -2116,6 +2184,7 @@ function onCommandChanged(): void {
           <template v-else>无生效因素</template>
         </div>
       </div>
+      </template>
     </div>
 
     <!-- 颜色模式切换（Issue IKNB9G，业主 2026-10-18）：决策拥堵版 ↔ 纯车流量版 -->
@@ -2972,7 +3041,20 @@ function onCommandChanged(): void {
          （档位分布 / 路段×时间矩阵 / CI 色阶），站在全国视角时既没有当前站也不该占高度；
          收起后地图才真的"占满内容区"（NS 视角拿到的地图高度从 ~377 px 涨到 ~680 px，
          全国取景的 zoom 也随之落在 3–6 档，而不是挤在 2 档）。 -->
-    <div v-if="mapScope === 'station'" class="heat-band">
+    <div v-if="mapScope === 'station'" class="heat-band-wrap">
+      <div class="band-head">
+        <span class="band-title">底部态势 · 档位分布 / 热力矩阵 / CI 色阶</span>
+        <button
+          type="button"
+          class="region-fold"
+          :aria-expanded="!heatFolded"
+          :title="heatFolded ? '展开底部态势三块' : '收起底部态势三块：地图变高'"
+          @click="setHeatFolded(!heatFolded)"
+        >
+          {{ heatFolded ? '展开 ▾' : '收起 ▴' }}
+        </button>
+      </div>
+      <div v-show="!heatFolded" class="heat-band">
       <section class="td-card band-card">
         <div class="td-card-head">
           档位分布 · 当前时刻<span class="td-head-tag">
@@ -3022,6 +3104,7 @@ function onCommandChanged(): void {
           </p>
         </div>
       </section>
+      </div>
     </div>
 
     <!-- 底部告警条 -->
@@ -3929,11 +4012,66 @@ function onCommandChanged(): void {
 }
 
 /* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
+/* 区域收起 / 展开（业主 2026-10-28）：与栏收起同一套按钮样式 */
+.region-fold {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: var(--td-bg-color-container);
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.region-fold:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+.kpi-bar {
+  position: relative;
+}
+.kpi-bar.is-folded {
+  padding: 0;
+}
+.kpi-fold {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+}
+.kpi-folded {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  width: 100%;
+}
+.kpi-folded-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+.heat-band-wrap {
+  flex: 0 0 auto;
+  margin: 0 16px 8px;
+}
+.band-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.band-title {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
 .heat-band {
   flex: 0 0 auto;
   display: flex;
   gap: 10px;
-  margin: 0 16px 8px;
+  margin: 0;
 }
 .band-card {
   flex: 0 0 240px;
