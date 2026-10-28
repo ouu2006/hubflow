@@ -1598,10 +1598,12 @@ function applyModeLayers(map: MapLibreMap): void {
   const atStation = motionPhase.value === 'station'
   for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
   setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
-  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画
-  setLayerVisible(map, LAYER_DZ_FILL, atStation)
-  setLayerVisible(map, LAYER_DZ_HL, atStation)
-  setLayerVisible(map, LAYER_DZ_LINE, atStation)
+  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画；「落客点」开关关掉时也不画
+  // （否则视角往返/换站后 applyModeLayers 会把关掉的圈重新打开，与开关状态打架）
+  const dropZoneVisible = atStation && dropoffsVisible.value
+  setLayerVisible(map, LAYER_DZ_FILL, dropZoneVisible)
+  setLayerVisible(map, LAYER_DZ_HL, dropZoneVisible)
+  setLayerVisible(map, LAYER_DZ_LINE, dropZoneVisible)
   setLayerVisible(map, LAYER_STATION_HIT, !atStation)
   setLayerVisible(map, LAYER_STATION_DOT, !atStation)
   setLayerVisible(map, LAYER_STATION_LABEL, !atStation)
