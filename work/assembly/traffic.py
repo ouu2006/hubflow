@@ -161,6 +161,8 @@ CODE_NO_DATA = "NO_DATA"
 CODE_SEGMENT_NOT_FOUND = "SEGMENT_NOT_FOUND"
 CODE_ALERT_NOT_FOUND = "ALERT_NOT_FOUND"
 CODE_ROUTE_UNAVAILABLE = "ROUTE_UNAVAILABLE"
+#: 自定义起终点参数不合法（IKVQX6：点图选起终点）
+CODE_ROUTE_PARAM_INVALID = "ROUTE_PARAM_INVALID"
 #: 写端点参数不合法（人工置位 / 场景注入）
 CODE_FACTOR_INVALID = "FACTOR_INVALID"
 CODE_SCENARIO_INVALID = "SCENARIO_INVALID"
@@ -3253,6 +3255,257 @@ def api_route_options() -> JSONResponse:
         },
         source=f"engine.routes.{layer_key}",
     )
+
+
+# ---------------------------------------------------------------- 自定义起终点（IKVQX6）
+# 辅助端点（非契约 §七）：页面在地图上点起终点 → 吸附最近路段 → 算 1 主 + ≤2 备选 + 离站单算。
+# 接口层只调用 work/engine/route_service.py，**不复制**算路算法；不可达如实说、不编造路线。
+#: 引擎目录（惰性入 sys.path，只在自定义起终点端点里用，不拖慢启动）
+ENGINE_DIR = ROOT / "work" / "engine"
+#: 按站点缓存真网图（首次建图后复用，避免每请求重建 1892 节点图）
+_ROUTE_GRAPH_CACHE: dict[str, dict[str, Any]] = {}
+
+
+def _engine_modules() -> tuple[tuple[Any, Any], Any]:
+    """惰性导入引擎模块（network / realnet / route_service）。"""
+    if str(ENGINE_DIR) not in sys.path:
+        sys.path.insert(0, str(ENGINE_DIR))
+    import network as engine_network  # noqa: PLC0415
+    import realnet as engine_realnet  # noqa: PLC0415
+    import route_service as engine_route_service  # noqa: PLC0415
+
+    return (engine_network, engine_realnet), engine_route_service
+
+
+def _site_entry(site_id: str | None, pack: str | None = None) -> dict[str, Any] | None:
+    """按站点 id 或站点包 key（Z / GZ）找登记表条目；都缺省时用 default_site。"""
+    ranges = _site_ranges()
+    sites = [s for s in (ranges.get("sites") or []) if isinstance(s, dict)]
+    if pack:
+        for site in sites:
+            if str(site.get("station_pack_key")) == str(pack):
+                return site
+    target = str(site_id or ranges.get("default_site") or "")
+    for site in sites:
+        if str(site.get("site_id")) == target:
+            return site
+    return None
+
+
+def _route_site_id(site: str | None, pack: str | None = None) -> str:
+    entry = _site_entry(site, pack)
+    return str(
+        (entry or {}).get("site_id") or site or _site_ranges().get("default_site") or ""
+    )
+
+
+def _route_graph(site_id: str) -> tuple[Any, Any]:
+    """按站建/取真网图，返回 `(graph, route_service)`。"""
+    cached = _ROUTE_GRAPH_CACHE.get(site_id)
+    if cached is not None:
+        return cached["graph"], cached["service"]
+    (engine_network, engine_realnet), engine_route_service = _engine_modules()
+    site = _site_entry(site_id)
+    if site is None:
+        raise ValueError(f"站点 {site_id} 不在站点范围登记表 work/twin/site-ranges.json")
+    thresholds = read_json_cached(ROOT / "stations" / "thresholds.json") or {}
+    payload, _topo = engine_realnet.load_network_payload(site)
+    graph_payload, _meta = engine_realnet.normalize_network(
+        payload, site, thresholds.get("grading") or {}
+    )
+    graph = engine_network.Graph(graph_payload)
+    _ROUTE_GRAPH_CACHE[site_id] = {"graph": graph, "service": engine_route_service}
+    return graph, engine_route_service
+
+
+def _route_decision_params() -> dict[str, Any]:
+    """算路参数只认站点包阈值（k_candidates / max_path_overlap），不在这里改门槛。"""
+    thresholds = read_json_cached(ROOT / "stations" / "thresholds.json") or {}
+    decision = thresholds.get("decision") or {}
+    return {
+        "k_candidates": decision.get("k_candidates", 3),
+        "max_path_overlap": decision.get("max_path_overlap", 0.7),
+    }
+
+
+def _endpoint_echo(raw: dict[str, Any] | None) -> dict[str, Any]:
+    """把引擎端点结构摊平成页面契约形状（吸附距离 / 吸附点直接给字段，不用再挖 snap）。"""
+    raw = raw or {}
+    snap = raw.get("snap") or {}
+    return {
+        "label": raw.get("label"),
+        "node_id": raw.get("node_id"),
+        "segment_id": raw.get("segment_id"),
+        "offset_m": raw.get("offset_m"),
+        "direction": raw.get("direction"),
+        "distance_m": snap.get("distance_m"),
+        "lon": snap.get("lon"),
+        "lat": snap.get("lat"),
+        "click": snap.get("click"),
+    }
+
+
+def _route_error_body(
+    site_id: str, message: str, *, note: str, code: str = CODE_ROUTE_UNAVAILABLE
+) -> dict[str, Any]:
+    return {
+        "is_simulated": True,
+        "site_id": site_id,
+        "reachable": False,
+        "alternatives_status": "unreachable",
+        "routes": [],
+        "departure": None,
+        "code": code,
+        "reason": message,
+        "note": note,
+    }
+
+
+@app.get("/api/traffic/route/points")
+def api_route_points(
+    site: str | None = None, pack: str | None = None, station: str | None = None
+) -> JSONResponse:
+    """**辅助端点（非契约 §七）**：起终点注册表（`stations/<site>.points.json`）。
+
+    页面点图选起终点后，用这里的点位名做回显；点位口径是**演示点位**（未现场踏勘）。
+    """
+    site_id = _route_site_id(site, pack or station)
+    try:
+        _graph, service = _route_graph(site_id)
+    except ValueError as exc:
+        return _error(404, CODE_NO_DATA, str(exc), source="engine.points.none")
+    points = service.load_points(site_id)
+    if points.get("missing"):
+        return _error(
+            404,
+            CODE_NO_DATA,
+            f"站点 {site_id} 的点位注册表缺失：stations/{site_id}.points.json",
+            note="先跑 python scripts/gen_station_points.py 生成注册表（真网锚定 + 演示标注）。",
+            source="engine.points.none",
+        )
+    rows = points.get("points") or []
+    kinds: dict[str, int] = {}
+    for row in rows:
+        kinds[str(row.get("kind"))] = kinds.get(str(row.get("kind")), 0) + 1
+    return _json(
+        {
+            "is_simulated": True,
+            "site_id": site_id,
+            "site_name": points.get("site_name"),
+            "count": len(rows),
+            "kinds": kinds,
+            "points": rows,
+            "data_source": "engine.points",
+            "note": (
+                "辅助端点（非契约 §七）：点位来自 OSM 边界节点 + 站点包演示点，"
+                "source / verified 逐条标注；未现场踏勘，不得对外说成实测点位。"
+            ),
+        },
+        source="engine.points",
+    )
+
+
+@app.post("/api/traffic/route/snap")
+async def api_route_snap(request: Request) -> JSONResponse:
+    """**辅助端点（非契约 §七）**：把地图点击坐标吸附到最近的真网路段。
+
+    吸附半径 60 m（`route_service.snap_to_segment`）；超出半径 `matched=false`，
+    如实告诉页面「点得离线太远」，**不硬吸到几百米外的路段**。
+    """
+    body = await _read_body(request)
+    site_id = _route_site_id(
+        str(body.get("site_id") or body.get("site") or "") or None,
+        str(body.get("pack") or body.get("station") or "") or None,
+    )
+    lon, lat = body.get("lon"), body.get("lat")
+    if lon is None or lat is None:
+        return _error(
+            400,
+            CODE_ROUTE_PARAM_INVALID,
+            "snap 需要 lon / lat（地图点击坐标，WGS84 经纬度）",
+            note="示例：{\"lon\":112.4681,\"lat\":23.0512}",
+            source="engine.route_service.none",
+        )
+    try:
+        graph, service = _route_graph(site_id)
+        snap = service.snap_to_segment(graph, float(lon), float(lat))
+    except (TypeError, ValueError) as exc:
+        return _error(400, CODE_ROUTE_PARAM_INVALID, str(exc), source="engine.route_service.none")
+    snap["is_simulated"] = True
+    snap["site_id"] = site_id
+    snap["data_source"] = "engine.route_service.snap"
+    return _json(snap, source="engine.route_service.snap")
+
+
+@app.post("/api/traffic/route/plan")
+async def api_route_plan(request: Request) -> JSONResponse:
+    """**辅助端点（非契约 §七）**：任意起点 / 终点算路 → 1 主 + ≤2 备选 + 离站单独一条。
+
+    请求体：`{"site_id"?, "origin", "destination", "with_departure"?}`；
+    端点形态：`{lon,lat}`（点图选的任意坐标，先吸附） / `{point_id}` / `{segment_id, offset_m}` / `{node_id}`。
+    不可达 → **200 + reachable=false**（页面如实提示、不画假线）；参数不合法 → 400。
+    """
+    body = await _read_body(request)
+    site_id = _route_site_id(
+        str(body.get("site_id") or body.get("site") or "") or None,
+        str(body.get("pack") or body.get("station") or "") or None,
+    )
+    origin = body.get("origin")
+    destination = body.get("destination")
+    if not isinstance(origin, dict) or not isinstance(destination, dict):
+        return _error(
+            400,
+            CODE_ROUTE_PARAM_INVALID,
+            "origin / destination 必须是对象（{lon,lat} / point_id / segment_id+offset_m / node_id）",
+            note='示例：{"origin":{"lon":112.4681,"lat":23.0512},"destination":{"lon":112.4702,"lat":23.0501}}',
+            source="engine.route_service.none",
+        )
+    with_departure = bool(body.get("with_departure", True))
+    exit_node = body.get("exit_node")
+    _, engine_route_service = _engine_modules()
+    try:
+        graph, service = _route_graph(site_id)
+        points = service.load_points(site_id)
+        result = service.plan(
+            graph,
+            origin,
+            destination,
+            points=points,
+            params=_route_decision_params(),
+            with_departure=with_departure,
+            exit_node=str(exit_node) if exit_node else None,
+        )
+    except engine_route_service.UnreachableError as exc:
+        # 不可达是业务结论，不是服务端故障：200 + reachable=false，页面如实空窗
+        return _json(
+            _route_error_body(
+                site_id,
+                str(exc),
+                note=(
+                    "起点到终点在有向真网上不可达（单行 / 断头 / 片区不连通）：如实空窗，"
+                    "不退回样例网、不编造路线；可换个点再试。"
+                ),
+            ),
+            source="engine.route_service.unreachable",
+        )
+    except ValueError as exc:
+        return _error(
+            400,
+            CODE_ROUTE_UNAVAILABLE,
+            str(exc),
+            note="自定义起终点是辅助端点（非契约 §七）：参数不合法如实 400，不编造路线。",
+            source="engine.route_service.none",
+        )
+    result["origin"] = _endpoint_echo(result.get("origin"))
+    result["destination"] = _endpoint_echo(result.get("destination"))
+    result["reachable"] = True
+    result["data_source"] = "engine.route_service.live"
+    result["note"] = (
+        (result.get("note") or "")
+        + " 自定义起终点为辅助端点（非契约 §七），算路走 work/engine/route_service.py，"
+        "备选按全长共线比 ≤ max_path_overlap 判定，不足如实少给。"
+    ).strip()
+    return _json(result, source="engine.route_service.live")
 
 
 @app.post("/api/traffic/locate")
