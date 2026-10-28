@@ -1126,7 +1126,23 @@ REROUTE_DEMO_WINDOW_FRACTION = 0.5
 #:   · 另外两条 OD(N-013→N-012 / N-040→N-012)在真网拓扑上是**唯一通路**
 #:     (枚举简单路径各只有 1 条),任何 K 都出不来第二条 → 按契约如实 `no_alternative`,
 #:     不靠放宽重叠度门槛硬凑等价路径。
-CANDIDATE_SEARCH_K = 30
+CANDIDATE_SEARCH_K = realnet.CANDIDATE_SEARCH_K
+
+
+def _search_k(params: dict[str, Any]) -> int:
+    """候选生成的**搜索深度** K（Yen 先取 K 条原始候选，再按重叠度贪心筛）。
+
+    为什么不再直接用 `decision.k_candidates`（站点包，写手是开发B）：
+    契约 §二 / 手册 §7 锁的是「`alternatives` ≥ 2 条 + `no_alternative` 字段形状」，
+    而手册明写「**K 与候选生成算法属做法，可自选并申报**」。真网只有 44 节点 / 61 段，
+    按 K=3 取原始候选时，第一条最短路的近邻几乎全被重叠度 0.7 筛掉 → 四条 OD 全部
+    只剩 1 条，页面备选恒为 0 条（业主 2026-10-28 反馈「先把备用线路搞定」）。
+
+    所以搜索深度放到 `CANDIDATE_SEARCH_K`，筛完仍按重叠度取前 `k_candidates` 条——
+    重叠度门槛（站点包里的裁定值）**一个不动**，不放宽「等价路径」的判定。
+    """
+    keep = int(params.get("k_candidates", 3))
+    return max(keep, CANDIDATE_SEARCH_K)
 
 
 def _x_level_bounds(grading: dict[str, Any]) -> list[float]:
@@ -2099,23 +2115,7 @@ def _build_lease_release_evidence(
     }
 
 
-def _search_k(params: dict[str, Any]) -> int:
-    """候选生成的**搜索深度** K（Yen 先取 K 条原始候选，再按重叠度贪心筛）。
-
-    为什么不再直接用 `decision.k_candidates`（站点包，写手是开发B）：
-    契约 §二 / 手册 §7 锁的是「`alternatives` ≥ 2 条 + `no_alternative` 字段形状」，
-    而手册明写「**K 与候选生成算法属做法，可自选并申报**」。真网只有 44 节点 / 61 段，
-    按 K=3 取原始候选时，第一条最短路的近邻几乎全被重叠度 0.7 筛掉 → 四条 OD 全部
-    只剩 1 条，页面备选恒为 0 条（业主 2026-10-28 反馈「先把备用线路搞定」）。
-
-    所以搜索深度放到 `CANDIDATE_SEARCH_K`，筛完仍按重叠度取前 `k_candidates` 条——
-    重叠度门槛（站点包里的裁定值）**一个不动**，不放宽「等价路径」的判定。
-    """
-    keep = int(params.get("k_candidates", 3))
-    return max(keep, CANDIDATE_SEARCH_K)
-
-
-
+def _find_closure_factor(factors_payload: dict[str, Any]) -> dict[str, Any] | None:
     """从站点包 factors.json 的 demo_multipliers 里找"全封"级(倍率 ≤ 0)的因素。
 
     不写死因素编号:按文件顺序找第一条倍率 ≤ 0 的 demo 取值(样例里是 F07 交通事故·全封)。
