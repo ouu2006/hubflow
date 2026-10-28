@@ -219,7 +219,8 @@ const LAYER_ROUTE = `${SRC}-route`
 /**
  * 备选 1 / 备选 2（Issue IKP5CK）：两条备选必须**互相可区分**（原来一起画灰虚线）。
  * 分两个图层而不是一个「按属性取色」的图层：两者的**虚线节律 + 平行偏移**也不同，
- * 叠在同一段路时靠「颜色 + 节律 + ±2px 平行线」三重区分，不只靠颜色单通道。
+ * 叠在同一段路时靠「节律 + ±2px 平行线」区分。
+ * 2026-10-28 业主统一蓝色系后，两条备选同色（暗蓝），区分只靠节律与偏置。
  */
 const LAYER_ROUTE_ALT1_HALO = `${SRC}-route-alt1-halo`
 const LAYER_ROUTE_ALT1 = `${SRC}-route-alt1`
@@ -228,6 +229,18 @@ const LAYER_ROUTE_ALT2 = `${SRC}-route-alt2`
 /** 离站路线（紫色实线；第三种语义色，与等级色 / 品牌蓝分开） */
 const LAYER_ROUTE_DEP_HALO = `${SRC}-route-dep-halo`
 const LAYER_ROUTE_DEP = `${SRC}-route-dep`
+/**
+ * 被选中的那条路线（业主 2026-10-28）：天蓝，压在规划 / 备选之上。
+ * 底层各路线图层会把「被选中路线的段号」从 filter 里剔除，避免暗蓝粗线盖住天蓝。
+ */
+const LAYER_ROUTE_PICK_HALO = `${SRC}-route-pick-halo`
+const LAYER_ROUTE_PICK = `${SRC}-route-pick`
+/**
+ * 选中路线的**天蓝**（业主 2026-10-28）：与「规划蓝 #0052D9 / 备选暗蓝 #1E3A8A」同族，
+ * 明度最高 → 缩到 200 m 档也是一眼能挑出来的那条。
+ * 定义在图层常量旁，方便和 `LAYER_ROUTE_PICK*` 一起改。
+ */
+const ROUTE_PICKED_COLOR = '#38BDF8'
 const LAYER_SELECTED = `${SRC}-selected`
 
 // ---- IKPFVN · 全国视角的两个图层族（站点 pin / 底图兜底轮廓）----
@@ -266,15 +279,26 @@ const DZ_HL_OPACITY = 0.26
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 /**
- * 备选 1 = 青 `#0E7490`、备选 2 = 琥珀 `#B45309`（队长 2026-10-20 裁定）：
- * 两色都避开四级判级色（#2BA471 / #E9B32E / #E37318 / #D54941）、
- * 数据不可用灰 #8B8B8B、品牌蓝 #0052D9、离站紫 #7B61FF。
- * 虚线节律再分一套：备选 1 长虚（12/6）、备选 2 短虚（2.5/4.5）。
+ * 路线三档蓝（业主 2026-10-28 口径，替换掉原来的「青 / 琥珀 / 紫」三色）：
+ *   · 规划路线（推荐，未被选中）= 蓝 `#0052D9`（品牌蓝）
+ *   · 未选中的备用路线      = 暗蓝 `#1E3A8A`
+ *   · 被选中的路线（推荐或备选都算）= 天蓝 `#38BDF8`
+ *
+ * 为什么必须同一色系分三档：业主原话「都要用蓝色道路来显示规划路线和备用路线，
+ * 选中的路线为天蓝色，备用路线如果被选中就变成选择的路线，备用路线用暗蓝色」——
+ * 他要的是「蓝色系 + 一条亮起来」的层级，不是三种不同色相。
+ *
+ * 与既有颜色的边界（保持不撞）：
+ *   · 四级判级色 #2BA471 / #E9B32E / #E37318 / #D54941 —— 三档蓝都不含绿 / 黄 / 红；
+ *   · 数据不可用灰 #8B8B8B；
+ *   · 天蓝 #38BDF8 与暗蓝 #1E3A8A 明度差极大，缩到 100 m 档也分得开；
+ *   · 线宽 / 虚线节律继续分层级：规划 3.4 px 实线、备选 3 px 虚线（长虚 / 短虚）、选中 4.2 px 实线。
  */
-const ROUTE_ALT1_COLOR = '#0E7490'
-const ROUTE_ALT2_COLOR = '#B45309'
-/** 离站路线色（紫色；与品牌蓝 / 四级色都不撞，只表示"第 3 种路线语义"） */
+const ROUTE_ALT1_COLOR = '#1E3A8A'
+const ROUTE_ALT2_COLOR = '#1E3A8A'
+/** 离站路线色：仍用紫色（它不在「规划 / 备用 / 选中」这条层级里，是另一段行程） */
 const ROUTE_DEPART_COLOR = '#7B61FF'
+/** 被选中的路线色（天蓝）见上方 `LAYER_ROUTE_PICK*` 旁的 `ROUTE_PICKED_COLOR` */
 /**
  * 「凸显路线」时非路线段的中性灰（Issue IKP5CK）。
  * 必须与「数据不可用灰」#8B8B8B 视觉可区分：更浅（#C9CDD4）、更细（2 px vs 5.5 px）、
@@ -310,6 +334,12 @@ const props = withDefaults(
     vehicles?: VehicleRecord[]
     /** 推荐 / 备选 / 离站三组路线高亮（IKMF1W；空数组 = 不画路线） */
     routes?: RouteHighlight[]
+    /**
+     * 被选中的那条路线的 key（前端展示字段，非契约）：`arrival` / `alt:<序号>` / `departure`。
+     * 业主 2026-10-28：被选中的路线（不管是推荐还是备选）要画成天蓝、压在其它路线之上。
+     * `null` = 没有选中任何整条路线（此时规划蓝 / 备选暗蓝按原样画）。
+     */
+    pickedRouteKey?: string | null
     /** 路线起点标注（业主 2026-10-21：大道最外侧路段 = 起点） */
     routeStart?: RouteEndpointMarker | null
     /** 路线终点标注（停车场落客点 = 终点） */
@@ -339,6 +369,7 @@ const props = withDefaults(
   {
     vehicles: () => [],
     routes: () => [],
+    pickedRouteKey: null,
     routeStart: null,
     routeEnd: null,
     mode: 'level',
@@ -984,6 +1015,61 @@ function altFilter(n: 1 | 2): FilterSpecification {
   return ['in', ['get', 'segment_id'], ['literal', routeIdsOfAlternative(n)]]
 }
 
+/**
+ * 被选中的那条路线（业主 2026-10-28 口径）：
+ *   规划路线 = 蓝、未选中的备用路线 = 暗蓝、**被选中的路线（不管它原本是推荐还是备选）= 天蓝**。
+ *
+ * 所以「选中」不是独立的第五种颜色，而是**覆盖掉**该路线原本的蓝色档：
+ * 选中层画在最上面（`LAYER_ROUTE_PICK`），同时把底层里这条路线自己的段号从它的
+ * 常规图层 filter 里剔除 —— 否则天蓝细线会被自己的暗蓝粗线盖住（MapLibre 不做 alpha 混合替换）。
+ */
+function isPicked(g: RouteHighlight): boolean {
+  const key = props.pickedRouteKey ?? null
+  if (!key) return false
+  return (g.key ?? `${g.kind}:${altIndex(g)}`) === key
+}
+
+function routeIdsOfPicked(): string[] {
+  const out = new Set<string>()
+  for (const g of props.routes ?? []) {
+    if (!isPicked(g)) continue
+    for (const id of g.segments) out.add(id)
+  }
+  return [...out]
+}
+
+/** Legacy（表达式式）filter 的联合类型里 `['all', ...]` 的第二项必须是表达式子集，
+ *  而本文件其余 filter 都用 `FilterSpecification`（含 boolean 分支）——类型上拼不起来。
+ *  这里按 Legacy 形状收窄：`['all', legacy, ['!', ['in', ...]]]` 是 MapLibre 支持的标准写法。 */
+function routeFilterExcludingPicked(base: FilterSpecification): FilterSpecification {
+  const picked = routeIdsOfPicked()
+  if (picked.length === 0) return base
+  const exclude = ['!', ['in', ['get', 'segment_id'], ['literal', picked]]]
+  return ['all', base, exclude] as unknown as FilterSpecification
+}
+
+/** 选中路线的图层 filter（没有选中路线时永不命中，图层等于不画） */
+function pickedRouteFilter(): FilterSpecification {
+  return ['in', ['get', 'segment_id'], ['literal', routeIdsOfPicked()]]
+}
+
+/**
+ * 图例里「已选中：XX」那一行的名字（业主 2026-10-28）。
+ * 空串 = 没有选中任何整条路线（或选中的那条当前不在可见分组里）→ 图例不出这行。
+ */
+const pickedRouteName = computed<string>(() => {
+  const key = props.pickedRouteKey ?? null
+  if (!key) return ''
+  for (const g of props.routes ?? []) {
+    const gk = g.key ?? (g.kind === 'alternative' ? `alt:${altIndex(g)}` : g.kind)
+    if (gk !== key) continue
+    if (g.kind === 'arrival') return '规划路线'
+    if (g.kind === 'departure') return '离站路线'
+    return `备选 ${altIndex(g)}`
+  }
+  return ''
+})
+
 /** 任一组路线存在时才在图上画图例（否则不占地方） */
 const hasRoutes = computed(() => (props.routes ?? []).some((g) => g.segments.length > 0))
 /** 图例里的「备选 N 条」：按实际分组计数，不足 2 条时如实少画（不凑等价路线） */
@@ -1054,13 +1140,13 @@ function lineLayerSpecs(): LineLayerSpecification[] {
         ],
       },
     },
-    // 备选 1 / 备选 2：青 + 琥珀，长虚 / 短虚，且各偏 ±2 px 成平行线
-    // （两条备选叠在同一段时，颜色、节律、平行位置三处都可分辨；Issue IKP5CK）
+    // 备选 1 / 备选 2：同为**暗蓝**，靠虚线节律（长虚 12/6、短虚 2.5/4.5）+ ±2 px 平行偏置区分
+    // （业主 2026-10-28：规划蓝 / 备选暗蓝 / 选中天蓝，同色系分档）。
     {
       id: LAYER_ROUTE_ALT1_HALO,
       type: 'line',
       source: SRC,
-      filter: altFilter(1),
+      filter: routeFilterExcludingPicked(altFilter(1)),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': '#FFFFFF',
@@ -1073,7 +1159,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       id: LAYER_ROUTE_ALT1,
       type: 'line',
       source: SRC,
-      filter: altFilter(1),
+      filter: routeFilterExcludingPicked(altFilter(1)),
       layout: { 'line-cap': 'butt', 'line-join': 'round' },
       paint: {
         'line-color': ROUTE_ALT1_COLOR,
@@ -1087,7 +1173,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       id: LAYER_ROUTE_ALT2_HALO,
       type: 'line',
       source: SRC,
-      filter: altFilter(2),
+      filter: routeFilterExcludingPicked(altFilter(2)),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
         'line-color': '#FFFFFF',
@@ -1100,7 +1186,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       id: LAYER_ROUTE_ALT2,
       type: 'line',
       source: SRC,
-      filter: altFilter(2),
+      filter: routeFilterExcludingPicked(altFilter(2)),
       layout: { 'line-cap': 'butt', 'line-join': 'round' },
       paint: {
         'line-color': ROUTE_ALT2_COLOR,
@@ -1110,7 +1196,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
         'line-opacity': 0.95,
       },
     },
-    // 离站路线：紫色实线（第三语义色；不与推荐蓝、等级色混用）
+    // 离站路线：紫色实线（不在「规划 / 备用 / 选中」这条行程层级里）
     {
       id: LAYER_ROUTE_DEP_HALO,
       type: 'line',
@@ -1123,11 +1209,11 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       id: LAYER_ROUTE_DEP,
       type: 'line',
       source: SRC,
-      filter: routeFilterOf('departure'),
+      filter: routeFilterExcludingPicked(routeFilterOf('departure')),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': ROUTE_DEPART_COLOR, 'line-width': 3, 'line-opacity': 0.92 },
     },
-    // 推荐路线：品牌蓝（「推荐」语义，不得用等级色）——实线，最上层
+    // 规划路线：蓝（「推荐」语义）——实线
     {
       id: LAYER_ROUTE_HALO,
       type: 'line',
@@ -1137,15 +1223,33 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       paint: { 'line-color': BRAND, 'line-width': 17, 'line-opacity': 0.16 },
     },
     {
-      // ⚠️ 实线与旧版虚线的差别：IKMF1W 起推荐路线用**品牌蓝实线**（"当前 / 已选"语义），
-      //    备选是另一种虚线（IKP5CK 起按备选 1/2 分青、琥珀两色）；旧版把"推荐"画成虚线，
-      //    和"选中路段"的虚线语义撞车。
+      // ⚠️ 实线与旧版虚线的差别：IKMF1W 起推荐路线用**实线**（"当前 / 已选"语义），
+      //    备选是另一种虚线；2026-10-28 业主统一成蓝色系后，推荐与备选只靠
+      //    明度（蓝 vs 暗蓝）+ 线型（实线 vs 虚线）区分，不再用不同色相。
       id: LAYER_ROUTE,
       type: 'line',
       source: SRC,
-      filter: routeFilter(),
+      filter: routeFilterExcludingPicked(routeFilter()),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': BRAND, 'line-width': 3.4, 'line-opacity': 0.95 },
+    },
+    // 被选中的那条路线（天蓝，压在规划 / 备选之上）：底色图层已把它的段号剔除，
+    // 所以这里不会出现「暗蓝粗线把天蓝细线盖住」。
+    {
+      id: LAYER_ROUTE_PICK_HALO,
+      type: 'line',
+      source: SRC,
+      filter: pickedRouteFilter(),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ROUTE_PICKED_COLOR, 'line-width': 13, 'line-opacity': 0.22 },
+    },
+    {
+      id: LAYER_ROUTE_PICK,
+      type: 'line',
+      source: SRC,
+      filter: pickedRouteFilter(),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': ROUTE_PICKED_COLOR, 'line-width': 4.2, 'line-opacity': 1 },
     },
     // 选中路段描边：品牌蓝（「当前 / 已选」语义），虚线，不覆盖判级色
     {
@@ -2242,12 +2346,15 @@ function applyViewState(map: MapLibreMap): void {
     map.setFilter(LAYER_DZ_HL, dropZoneHighlightFilter())
   }
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
-  if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilter())
+  if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilterExcludingPicked(routeFilter()))
   if (map.getLayer(LAYER_ROUTE_HALO)) map.setFilter(LAYER_ROUTE_HALO, routeFilter())
-  if (map.getLayer(LAYER_ROUTE_ALT1)) map.setFilter(LAYER_ROUTE_ALT1, altFilter(1))
+  if (map.getLayer(LAYER_ROUTE_ALT1)) map.setFilter(LAYER_ROUTE_ALT1, routeFilterExcludingPicked(altFilter(1)))
   if (map.getLayer(LAYER_ROUTE_ALT1_HALO)) map.setFilter(LAYER_ROUTE_ALT1_HALO, altFilter(1))
-  if (map.getLayer(LAYER_ROUTE_ALT2)) map.setFilter(LAYER_ROUTE_ALT2, altFilter(2))
+  if (map.getLayer(LAYER_ROUTE_ALT2)) map.setFilter(LAYER_ROUTE_ALT2, routeFilterExcludingPicked(altFilter(2)))
   if (map.getLayer(LAYER_ROUTE_ALT2_HALO)) map.setFilter(LAYER_ROUTE_ALT2_HALO, altFilter(2))
+  if (map.getLayer(LAYER_ROUTE_DEP)) map.setFilter(LAYER_ROUTE_DEP, routeFilterExcludingPicked(routeFilterOf('departure')))
+  if (map.getLayer(LAYER_ROUTE_PICK)) map.setFilter(LAYER_ROUTE_PICK, pickedRouteFilter())
+  if (map.getLayer(LAYER_ROUTE_PICK_HALO)) map.setFilter(LAYER_ROUTE_PICK_HALO, pickedRouteFilter())
   // 三态图层显隐也重贴一次：换样式会把 `visibility` 回到默认的 visible
   applyModeLayers(map)
   // 换样式后 paint 全部回到 `lineLayerSpecs()` 的基准值 —— 必须强制重贴，
@@ -2533,6 +2640,22 @@ watch(routeKey, () => {
   applyViewState(map)
 })
 
+// 选中整条路线（业主 2026-10-28）：被选中那条画天蓝、其余仍按规划蓝 / 备选暗蓝。
+// 只换 filter（不动源数据）——`applyViewState` 会顺带重贴一次，这里直连更省一次重算。
+watch(
+  () => props.pickedRouteKey ?? null,
+  () => {
+    const map = mapRef.value
+    if (!map || !ready.value) return
+    if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilterExcludingPicked(routeFilter()))
+    if (map.getLayer(LAYER_ROUTE_ALT1)) map.setFilter(LAYER_ROUTE_ALT1, routeFilterExcludingPicked(altFilter(1)))
+    if (map.getLayer(LAYER_ROUTE_ALT2)) map.setFilter(LAYER_ROUTE_ALT2, routeFilterExcludingPicked(altFilter(2)))
+    if (map.getLayer(LAYER_ROUTE_DEP)) map.setFilter(LAYER_ROUTE_DEP, routeFilterExcludingPicked(routeFilterOf('departure')))
+    if (map.getLayer(LAYER_ROUTE_PICK)) map.setFilter(LAYER_ROUTE_PICK, pickedRouteFilter())
+    if (map.getLayer(LAYER_ROUTE_PICK_HALO)) map.setFilter(LAYER_ROUTE_PICK_HALO, pickedRouteFilter())
+  },
+)
+
 /** 起点 / 终点标注随推荐路线（或手动选起点）变化：重建两个 Marker 即可，不动其他图层。
  *  用**稳定字符串键**而不是数组/对象：数组每次求值都是新引用，会让 watch 在每次渲染都触发，
  *  反复重建 Marker 会把地图拖进渲染循环（表现为整张图空白）。 */
@@ -2812,10 +2935,13 @@ onUnmounted(() => {
         <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
         <template v-if="hasRoutes">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
-          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（青 · 长虚线）</div>
-          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（琥珀 · 短虚线）</div>
+          <div class="lg-row"><span class="lg-line recommended" />规划路线（蓝 · 实线）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（暗蓝 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（暗蓝 · 短虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div v-if="pickedRouteName" class="lg-row">
+            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（天蓝 · 实线，压在其它路线之上）
+          </div>
           <div v-if="routeStart" class="lg-row">
             <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（外围入口段）
           </div>
@@ -2872,10 +2998,13 @@ onUnmounted(() => {
         <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
         <template v-if="hasRoutes">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="lg-line recommended" />推荐路线（品牌蓝实线）</div>
-          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（青 · 长虚线）</div>
-          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（琥珀 · 短虚线）</div>
+          <div class="lg-row"><span class="lg-line recommended" />规划路线（蓝 · 实线）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（暗蓝 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（暗蓝 · 短虚线）</div>
           <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div v-if="pickedRouteName" class="lg-row">
+            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（天蓝 · 实线，压在其它路线之上）
+          </div>
           <div v-if="routeStart" class="lg-row">
             <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（外围入口段）
           </div>
@@ -3188,19 +3317,23 @@ onUnmounted(() => {
   display: inline-block;
   border-top: 3px solid #0052d9;
 }
-/* 备选 1 / 2 的图例线段：颜色 + 节律都与地图一致（长虚 12/6 vs 短虚 2.5/4.5） */
+/* 备选 1 / 2 的图例线段：同为暗蓝，靠虚线节律区分（长虚 12/6 vs 短虚 2.5/4.5） */
 .lg-line.alt1 {
   height: 3px;
   border-top: 0;
-  background: repeating-linear-gradient(90deg, #0e7490 0 7px, transparent 7px 10px);
+  background: repeating-linear-gradient(90deg, #1e3a8a 0 7px, transparent 7px 10px);
 }
 .lg-line.alt2 {
   height: 3px;
   border-top: 0;
-  background: repeating-linear-gradient(90deg, #b45309 0 3px, transparent 3px 6px);
+  background: repeating-linear-gradient(90deg, #1e3a8a 0 3px, transparent 3px 6px);
 }
 .lg-line.departure {
   border-top: 3px solid #7b61ff;
+}
+/* 已选中：天蓝（与地图选中的那条同色） */
+.lg-line.picked {
+  border-top: 3px solid #38bdf8;
 }
 /* 图例里的摄像头小圆点：与外圈同款（实心 = 有视频源、空心 = 未接入） */
 .dot.cam-dot {

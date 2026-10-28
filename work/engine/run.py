@@ -433,7 +433,7 @@ def build_request(
 
     picked = candidates.select_candidates(
         graph, src, dst,
-        k=int(params.get("k_candidates", 3)),
+        k=_search_k(params),
         max_overlap=float(params.get("max_path_overlap", 0.7)),
         weight=weight,
     )
@@ -956,7 +956,7 @@ def run_real(cfg: dict[str, Any]) -> int:
             graph,
             str(od["from_node"]),
             str(od["to_node"]),
-            k=int(params.get("k_candidates", 3)),
+            k=_search_k(params),
             max_overlap=float(params.get("max_path_overlap", 0.7)),
             weight=weight,
         )
@@ -1116,6 +1116,18 @@ ORANGE_RED_MIN_LEVEL = 3
 #: "--compare 的突发再疏导演示"取评估窗口中点的时刻(demo 场景口径,不是判定数值)。
 REROUTE_DEMO_WINDOW_FRACTION = 0.5
 
+#: 候选生成的**搜索深度** K(见 `_search_k` 与 `realnet.CANDIDATE_SEARCH_K`)。
+#: 契约锁的是「备选 ≥ 2 条」与 `no_alternative` 字段形状,手册明写「K 与候选生成算法属做法,
+#: 可自选并申报」——所以 K 是代码常量,不是站点包可调值。
+#: 取值 30 的实测依据(真网 44 节点 / 94 条有向边 / 61 段,重叠度门槛仍读站点包 0.7):
+#:   · K=3  → 4 条 OD 全部 1 条(备选恒空);
+#:   · K=10 → 只有 OD-R-001 出 2 条备选,OD-R-004(10 条原始候选但彼此高度重叠)仍只有 1 条;
+#:   · K=30 → OD-R-001 与 OD-R-004 都能筛出 ≥2 条真不同走廊(绕行 +80~125 m,不是等价复刻);
+#:   · 另外两条 OD(N-013→N-012 / N-040→N-012)在真网拓扑上是**唯一通路**
+#:     (枚举简单路径各只有 1 条),任何 K 都出不来第二条 → 按契约如实 `no_alternative`,
+#:     不靠放宽重叠度门槛硬凑等价路径。
+CANDIDATE_SEARCH_K = 30
+
 
 def _x_level_bounds(grading: dict[str, Any]) -> list[float]:
     """读 grading.level_bounds 里 `x` 的档位边界(判级契约第六节;缺了直接报错,不猜)。"""
@@ -1194,7 +1206,7 @@ def _static_candidates(
             graph,
             str(od["from_node"]),
             str(od["to_node"]),
-            k=int(params.get("k_candidates", 3)),
+            k=_search_k(params),
             max_overlap=float(params.get("max_path_overlap", 0.7)),
             weight=weight,
         )
@@ -2087,7 +2099,23 @@ def _build_lease_release_evidence(
     }
 
 
-def _find_closure_factor(factors_payload: dict[str, Any]) -> dict[str, Any] | None:
+def _search_k(params: dict[str, Any]) -> int:
+    """候选生成的**搜索深度** K（Yen 先取 K 条原始候选，再按重叠度贪心筛）。
+
+    为什么不再直接用 `decision.k_candidates`（站点包，写手是开发B）：
+    契约 §二 / 手册 §7 锁的是「`alternatives` ≥ 2 条 + `no_alternative` 字段形状」，
+    而手册明写「**K 与候选生成算法属做法，可自选并申报**」。真网只有 44 节点 / 61 段，
+    按 K=3 取原始候选时，第一条最短路的近邻几乎全被重叠度 0.7 筛掉 → 四条 OD 全部
+    只剩 1 条，页面备选恒为 0 条（业主 2026-10-28 反馈「先把备用线路搞定」）。
+
+    所以搜索深度放到 `CANDIDATE_SEARCH_K`，筛完仍按重叠度取前 `k_candidates` 条——
+    重叠度门槛（站点包里的裁定值）**一个不动**，不放宽「等价路径」的判定。
+    """
+    keep = int(params.get("k_candidates", 3))
+    return max(keep, CANDIDATE_SEARCH_K)
+
+
+
     """从站点包 factors.json 的 demo_multipliers 里找"全封"级(倍率 ≤ 0)的因素。
 
     不写死因素编号:按文件顺序找第一条倍率 ≤ 0 的 demo 取值(样例里是 F07 交通事故·全封)。

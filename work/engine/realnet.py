@@ -84,6 +84,17 @@ DEMO_DEMAND_VPH = 600.0
 #: M1-4 要求真网至少 3 个 OD 对；不足说明边界数据有问题，如实报错而不是硬凑。
 MIN_OD_PAIRS = 3
 
+#: 候选生成的**搜索深度** K（Yen 先取 K 条原始候选，再按站点包的重叠度门槛贪心筛）。
+#: 契约 / 手册锁定的是「备选 ≥ 2 条 + `no_alternative` 字段形状」，而手册明写
+#: 「K 与候选生成算法属做法，可自选并申报」——所以 K 归代码，**不写进站点包**。
+#: 取值理由（业主 2026-10-28「先把备用线路搞定」的实测标定）：真网只有 44 节点 /
+#: 94 条有向边 / 61 段，按 K=3 取原始候选时第一条最短路的近邻几乎全被重叠度 0.7 筛掉
+#: → 四条 OD 全部只剩 1 条。试到 K=30：OD-R-001 与 OD-R-004 都能筛出 ≥2 条真不同走廊
+#: （绕行 +80~125 m，不是等价复刻）；另两条 OD 在真网拓扑上本就是唯一通路（枚举简单路径
+#: 各只有 1 条），任何 K 都出不来第二条，按契约如实 `no_alternative`。
+#: 重叠度门槛本身仍在站点包 `decision.max_path_overlap`，这里只放宽**搜索深度**。
+CANDIDATE_SEARCH_K = 30
+
 #: 每个进场边界推导几个行程终点（演示 OD 覆盖广度，不是判据数值）。
 #: 取值理由：真网每个进场方向取"候选路线最丰富"的 3 个可达内部节点，
 #: 既覆盖不同方向的到达流量，又能让 K=3 候选 / 路径重叠度约束在真网可验（M1-4 备选 ≥2）。
@@ -797,7 +808,9 @@ def derive_od_pairs(
         return network.path_travel_time_s(graph, path, {}, params)
 
     weight = free_flow_weight
-    k = int(params.get("k_candidates", 3))
+    # 搜索深度用代码常量（见 CANDIDATE_SEARCH_K 注释：K 属「做法」不属站点包），
+    # 重叠度门槛仍读站点包 decision.max_path_overlap。
+    k = max(int(params.get("k_candidates", 3)), CANDIDATE_SEARCH_K)
     max_overlap = float(params.get("max_path_overlap", 0.7))
     forbid_u_turn = bool(graph.attributes.get("forbid_u_turn"))
 

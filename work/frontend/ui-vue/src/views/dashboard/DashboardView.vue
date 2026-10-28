@@ -1337,20 +1337,21 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
   if (!r) return []
   const groups: RouteHighlight[] = []
   if (routeView.value === 'all' || routeView.value === 'arrival') {
-    groups.push({ kind: 'arrival', segments: r.arrival_route.segments })
+    groups.push({ kind: 'arrival', key: 'arrival', segments: r.arrival_route.segments })
   }
   if (routeView.value === 'all' || routeView.value === 'alternative') {
     // Issue IKP5CK：备选不能再全压成同一个 `alternative` 分组（两条备选会画成同一套灰虚线）。
-    // `index` 是前端展示类型字段（非契约）：1 = 备选 1（青/长虚）、2 = 备选 2（琥珀/短虚）。
+    // `index` 是前端展示类型字段（非契约）：1 = 备选 1（长虚）、2 = 备选 2（短虚）；
+    // 2026-10-28 业主统一蓝色系后两条备选同色（暗蓝），只靠节律 + 平行偏置区分。
     r.alternatives.forEach((a, i) => {
       if (a.segments && a.segments.length > 0) {
-        groups.push({ kind: 'alternative', index: i + 1, segments: a.segments })
+        groups.push({ kind: 'alternative', index: i + 1, key: `alt:${i + 1}`, segments: a.segments })
       }
     })
   }
   if (routeView.value === 'all' || routeView.value === 'departure') {
     if (r.departure_route && r.departure_route.segments.length > 0) {
-      groups.push({ kind: 'departure', segments: r.departure_route.segments })
+      groups.push({ kind: 'departure', key: 'departure', segments: r.departure_route.segments })
     }
   }
   return groups
@@ -1358,6 +1359,11 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
 
 interface RouteCard {
   key: string
+  /**
+   * 对应地图 `RouteHighlight.key`（业主 2026-10-28）：点这张卡就把它那条路线画成天蓝。
+   * 与 `key` 分开是因为卡片的 key 带 path_id（防重复），地图分组只按「第几条」编号。
+   */
+  highlightKey: string
   kind: RouteHighlight['kind']
   kindName: string
   pathId: string
@@ -1373,6 +1379,23 @@ interface RouteCard {
   noAlternativeReason: string | null
 }
 
+/**
+ * 被选中的那条路线（业主 2026-10-28：选中的路线为天蓝，备用路线被选中就变成选中的样子）。
+ *
+ * 为什么只存一个 key 而不存段号：
+ *   · 两条备选可能共享段号（都走同一段主路），按段号存会对不准是「哪一条」被点了；
+ *   · key 与 `RouteHighlight.key` 同名字符串（`arrival` / `alt:<序号>` / `departure`），
+ *     地图侧直接比对即可，不需要任何反查。
+ *
+ * 默认选中推荐路线：业主那次的原话是「选中的路线为天蓝色」——第一次进站就有一条亮着的，
+ * 才叫「选中的规划路线」；点别的高亮条就换过去，再点同一条则取消（回到「只有规划蓝」）。
+ */
+const pickedRouteKey = ref<string | null>('arrival')
+
+function pickRoute(key: string): void {
+  pickedRouteKey.value = pickedRouteKey.value === key ? null : key
+}
+
 /** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
 const routeCards = computed<RouteCard[]>(() => {
   const r = recommend.value
@@ -1385,6 +1408,7 @@ const routeCards = computed<RouteCard[]>(() => {
   if (routeView.value === 'all' || routeView.value === 'arrival') {
     cards.push({
       key: 'arrival',
+      highlightKey: 'arrival',
       kind: 'arrival',
       kindName: '推荐路线',
       pathId: r.arrival_route.path_id,
@@ -1399,6 +1423,7 @@ const routeCards = computed<RouteCard[]>(() => {
     r.alternatives.forEach((a, i) => {
       cards.push({
         key: `alt-${a.path_id}-${i}`,
+        highlightKey: `alt:${i + 1}`,
         kind: 'alternative',
         kindName: `备选 ${i + 1}`,
         pathId: a.path_id,
@@ -1414,6 +1439,7 @@ const routeCards = computed<RouteCard[]>(() => {
     if (r.departure_route) {
       cards.push({
         key: 'departure',
+        highlightKey: 'departure',
         kind: 'departure',
         kindName: '离站路线',
         pathId: r.departure_route.path_id,
@@ -2287,6 +2313,7 @@ function onCommandChanged(): void {
                   :vehicles="vehicles"
                   :selected-id="selectedId"
                   :routes="routeHighlights"
+                  :picked-route-key="pickedRouteKey"
                   :route-start="routeStartMarker"
                   :route-end="routeEndMarker"
                   :mode="viewMode"
@@ -2500,9 +2527,22 @@ function onCommandChanged(): void {
                 </div>
               </div>
               <p v-if="routeSourceNote" class="route-source">{{ routeSourceNote }}</p>
-              <div v-for="c in routeCards" :key="c.key" class="route-item" :class="c.kind">
+              <div
+                v-for="c in routeCards"
+                :key="c.key"
+                class="route-item"
+                :class="[c.kind, { picked: pickedRouteKey === c.highlightKey }]"
+                role="button"
+                tabindex="0"
+                :aria-pressed="pickedRouteKey === c.highlightKey"
+                :title="pickedRouteKey === c.highlightKey ? '再点一次取消选中（全部按规划蓝 / 备选暗蓝画）' : '点为选中路线（地图上画成天蓝，压在其它路线之上）'"
+                @click="pickRoute(c.highlightKey)"
+                @keydown.enter.prevent="pickRoute(c.highlightKey)"
+                @keydown.space.prevent="pickRoute(c.highlightKey)"
+              >
                 <div class="route-item-head">
                   <span class="route-kind">{{ c.kindName }}</span>
+                  <span v-if="pickedRouteKey === c.highlightKey" class="route-picked-tag">已选中</span>
                   <span class="route-eta td-num">{{ c.eta }} min</span>
                 </div>
                 <div class="route-segs td-mono">{{ c.segments.join(' → ') || '—' }}</div>
@@ -3797,13 +3837,40 @@ function onCommandChanged(): void {
   padding: 7px 9px;
   background: var(--td-bg-color-container-hover);
   border-radius: var(--td-radius-sm);
+  /* 左侧色条 = 该路线在地图上的颜色（业主 2026-10-28 统一蓝色系）：
+     规划蓝 #0052D9 / 备选暗蓝 #1E3A8A / 离站紫 #7B61FF / 选中天蓝 #38BDF8 */
   border-left: 3px solid #0052d9;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+.route-item:hover {
+  box-shadow: inset 0 0 0 1px rgba(0, 82, 217, 0.28);
+}
+.route-item:focus-visible {
+  outline: 2px solid #0052d9;
+  outline-offset: 1px;
 }
 .route-item.alternative {
-  border-left-color: #8c8c8c;
+  border-left-color: #1e3a8a;
 }
 .route-item.departure {
   border-left-color: #7b61ff;
+}
+/* 被选中的那条：天蓝（与地图上的选中路线同色），再点一次取消 */
+.route-item.picked {
+  border-left-color: #38bdf8;
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.65);
+}
+.route-picked-tag {
+  margin-left: auto;
+  margin-right: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 16px;
+  color: #0b4a63;
+  background: #bae6fd;
+  border-radius: 8px;
+  white-space: nowrap;
 }
 .route-item-head {
   display: flex;
