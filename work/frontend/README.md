@@ -613,6 +613,40 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 `vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.18s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
 
+### 13.5c 三栏区与底部热力带之间可上下拉（2026-10-28，业主追问「上下可以那样拉吗」）
+
+**一句话口径**：13.5b 只解决了「左右挤」，业主紧接着问「上下能不能也那样」——三栏区（含地图）和底部那条热力带之间加一条**可拖的分隔条**，往上拖地图变高、往下拖热力带变高；分隔条右端带一个「⌄ 收起 / ⌃ 展开」键。
+
+| 项 | 值 |
+|---|---|
+| 拖条位置 | 三栏区底边、热力带顶边之间（`.band-drag`），在 `el-splitter` 之外、`.heat-band` 之前 |
+| 视觉 | 中间一根 40×3 的把手（`.band-drag-grip`，hover 变 64 px 品牌蓝）；**整条 16 px 都是拖拽热区**（视觉 10 px + 上下各 3 px padding），10 px 一根线太细按不住 |
+| 高度范围 | `BAND_MIN_H` 96 / `BAND_DEFAULT_H` 196 / `BAND_MAX_H` 460，`clampBand()` 统一钳制 |
+| 记忆 | `localStorage` 键 `hubflow.dashboard.bandHeight`（纯数字 px）；与 13.5 的 `colWidth`、13.5b 的 `colCollapsed` **三个键互不覆盖** |
+| 收起键 | `.band-drag-fold` 贴右端，`bandCollapsed` 由 `bandHeight <= BAND_MIN_H + 1` 推导；收起前记住高度到 `BAND_RECALL_H` |
+| 复位 | 拖条上**双击** = 回 `BAND_DEFAULT_H`（`onBandDblClick` → `resetBand()`），与左右栏双击分隔条复位同习惯 |
+| 与全国视角 | `.band-drag` 和 `.heat-band` 一样 `v-if="mapScope === 'station'"` —— 全国视角整条收起，没有拖条 |
+
+**踩过的坑（改这块必看）**：
+
+- **`.heat-band` 的高度不能再用 `flex` 撑**：原来是 `flex: 0 0 auto` 由内容决定高度，改成固定 `height: var(--band-h, 196px)` + `min-height: 0` + `overflow: hidden`。否则拉条改高度会被三张卡的内容 `min-height` 顶回去，拖起来毫无反应。
+- **必须用 pointer 事件 + `setPointerCapture`，不能用 mousedown**：用 mousedown/mousemove 时鼠标拖出条外、或拖到窗口外松手会收不到 mouseup，拖条「粘手」跟着鼠标不走。pointer 捕获保证拖出条外继续拖、松手一定收到 `pointerup`（模板还挂了 `@pointercancel="onBandDragUp"` 兜底）。
+- **方向是 `startH - dy` 不是 `startH + dy`**：拖条在热力带**上方**，鼠标上移（`clientY` 变小）= 热力带变高。写成 `+` 会上下颠倒。
+- **`:global(body.is-vdrag)` 在 Vue 3 scoped 里会编译错**，正确写法是 `:global(body).is-vdrag`（`<style scoped>` 在 `DashboardView.vue:3174`）。
+- 拖动期间给 `body` 挂 `is-vdrag` 禁 `user-select`，否则上下拖会顺手把页面文字刷蓝。
+- 收起键必须 `@pointerdown.stop`，否则按下收起键会先触发拖条的 `pointerdown` 进入拖状态。
+
+**实测记录（2026-10-28，Edge + 浏览器内 CDP，`--mode remote` 对真接口 8000，站区视角）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 点「⌄ 收起」 | 热力带从 460 px 收到 96 px、地图同步变高；按钮文案变「⌃ 展开」 |
+| 再点「⌃ 展开」 | 热力带回到收起前的高度、地图缩回；按钮变回「⌄ 收起」 |
+| 刷新同 URL | **高度记忆生效**（刷新后仍是上次拖/收起后的高度），说明 `bandHeight` 读写 localStorage 正常 |
+| 拖动手感 | **未能在自动化里验证**：本机浏览器工具注入的合成鼠标（`Input.dispatchMouseEvent`）不会让页面收到 `pointermove`；用同样 pointer-capture 写法的最小对照页也拖不动，属工具限制而非本功能缺陷。**该步需人工拖一次确认**（鼠标按住那根短横线上下拖即可）。 |
+
+`vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.29s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
+
 ### 13.6 告警判级取当前路段快照（Issue #75 第④条 / 回归修复 IKLLXG）
 
 **一句话口径**：告警自带的 `level` 是**派生时的记录值**（站点包预置剧本），与**当前路段快照**可能不同步——页面上**一律按快照判级**显示，快照缺该路段时**退回告警记录值**，不编造。

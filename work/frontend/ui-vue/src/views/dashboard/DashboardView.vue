@@ -311,6 +311,113 @@ function saveColMem(): void {
   }
 }
 
+/* ---------- 上下拉：三栏区 ↔ 底部热力带（业主 2026-10-28「上下可以那样拉吗」） ----------
+ * 之前只有左右能拖，底部热力带是 `flex: 0 0 auto` 固定高度、不给拖。
+ * 做法：在 `.td-body` 与 `.heat-band` 之间插一条 10px 横向拖条（`.band-drag`），
+ * 拖它改的是热力带的高度 `.heat-band` 的 `--band-h`：
+ *   往上拖 → 热力带变矮、三栏（含地图）变高；往下拖 → 热力带变高。
+ *
+ * ⚠️ 约束（改这块前必读）:
+ *   ① 热力带高度用 CSS 变量 `--band-h` 传给 `.heat-band`（`height: var(--band-h)`），
+ *      不把高度写成行内 style —— 否则窄屏断点里 `.heat-band` 的 flex 覆盖会打架。
+ *   ② 用 pointer 事件 + `setPointerCapture`，不是 mousedown：拖出拖条范围仍能继续拖，
+ *      松手一定收到 pointerup（mouse 事件离开窗口会收不到，拖条会卡在"粘手"状态）。
+ *   ③ 拖动期间给 body 加 `is-vdrag` 禁选中，否则拖动会顺手把页面文字刷蓝。
+ *   ④ 收起 / 展开走 `setBandCollapsed()`；展开回记住的高度，与左右栏的 COL_RECALL_* 同套路。
+ */
+const BAND_MEM_KEY = 'hubflow.dashboard.bandHeight'
+const BAND_DEFAULT_H = 196
+const BAND_MIN_H = 96
+const BAND_MAX_H = 460
+/** 记住的高度（展开时要回这个值，而不是默认值） */
+const BAND_RECALL_H = ref<number>(BAND_DEFAULT_H)
+const bandHeight = ref<number>(BAND_DEFAULT_H)
+
+function clampBand(h: number): number {
+  const n = Math.round(h)
+  return Math.min(BAND_MAX_H, Math.max(BAND_MIN_H, n))
+}
+
+function saveBandMem(): void {
+  try {
+    localStorage.setItem(BAND_MEM_KEY, String(bandHeight.value))
+  } catch {
+    /* 隐私模式写不进去：不记忆，不影响拖动 */
+  }
+}
+
+function loadBandMem(): void {
+  try {
+    const raw = localStorage.getItem(BAND_MEM_KEY)
+    if (raw === null) return
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) {
+      bandHeight.value = clampBand(n)
+      BAND_RECALL_H.value = bandHeight.value
+    }
+  } catch {
+    /* localStorage 不可用 / 内容坏了：静默退回默认高度 */
+  }
+}
+
+/** 热力带收到最小高度（相当于"收起到只剩标题"） */
+function collapseBand(): void {
+  if (bandHeight.value > BAND_MIN_H) BAND_RECALL_H.value = bandHeight.value
+  bandHeight.value = BAND_MIN_H
+  saveBandMem()
+}
+
+/** 展开回到收起前的高度 */
+function expandBand(): void {
+  bandHeight.value = clampBand(BAND_RECALL_H.value)
+  saveBandMem()
+}
+
+function resetBand(): void {
+  bandHeight.value = BAND_DEFAULT_H
+  BAND_RECALL_H.value = BAND_DEFAULT_H
+  saveBandMem()
+}
+
+/**
+ * 拖条上的 pointerdown：记录起点，之后 move 按位移改高度。
+ * 拖条在热力带**上方**，所以鼠标上移（clientY 变小）= 热力带变高；
+ * 反过来 `startH - dy` 才是正确方向（写成 `startH + dy` 会上下颠倒，踩过）。
+ */
+let bandDrag: { startY: number; startH: number } | null = null
+
+function onBandDragDown(e: PointerEvent): void {
+  if (e.button !== 0) return
+  bandDrag = { startY: e.clientY, startH: bandHeight.value }
+  BAND_RECALL_H.value = bandHeight.value
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  document.body.classList.add('is-vdrag')
+  e.preventDefault()
+}
+
+function onBandDragMove(e: PointerEvent): void {
+  if (!bandDrag) return
+  bandHeight.value = clampBand(bandDrag.startH - (e.clientY - bandDrag.startY))
+}
+
+function onBandDragUp(e: PointerEvent): void {
+  if (!bandDrag) return
+  bandDrag = null
+  ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+  document.body.classList.remove('is-vdrag')
+  saveBandMem()
+}
+
+/** 拖条上双击 = 热力带回默认高度（与左右栏双击分隔条复位的习惯一致） */
+function onBandDblClick(): void {
+  resetBand()
+}
+
+/** 热力带当前是否已收到底（拖条上的箭头按钮据此切换方向） */
+const bandCollapsed = computed(() => bandHeight.value <= BAND_MIN_H + 1)
+
+loadBandMem()
+
 /** 三栏回到默认宽度(左 296 / 中弹性 / 右 396)。双击分隔条时调用;默认态即此值,故本函数幂等 */
 function resetCols(): void {
   // 收起态也一并复位：否则双击分隔条后 colLeft=296、colLeftCollapsed 仍 true，
@@ -3402,12 +3509,46 @@ function onCommandChanged(): void {
       </el-splitter>
     </div>
 
+    <!-- 上下拉条（业主 2026-10-28「上下可以那样拉吗」）：
+         夹在三栏区与底部热力带之间，拖它改热力带高度 = 三栏区（含地图）跟着变高变矮。
+         用 pointer 事件 + setPointerCapture，拖出条外也能继续拖、松手一定收到 pointerup。
+         右侧小箭头键：热力带一键收到底 / 回记住的高度（与左右栏的收起键同一套习惯）。 -->
+    <div
+      v-if="mapScope === 'station'"
+      class="band-drag"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="拖动调整地图与底部热力带的高度"
+      :title="`拖动调整高度（双击复位 ${BAND_DEFAULT_H}px）· 当前 ${bandHeight}px`"
+      @pointerdown="onBandDragDown"
+      @pointermove="onBandDragMove"
+      @pointerup="onBandDragUp"
+      @pointercancel="onBandDragUp"
+      @dblclick="onBandDblClick"
+    >
+      <span class="band-drag-grip" aria-hidden="true" />
+      <button
+        type="button"
+        class="band-drag-fold"
+        :aria-label="bandCollapsed ? '展开底部热力带' : '收起底部热力带（地图变高）'"
+        :title="bandCollapsed ? '展开底部热力带' : '收起底部热力带：地图拿走这块高度'"
+        @pointerdown.stop
+        @click.stop="bandCollapsed ? expandBand() : collapseBand()"
+      >
+        {{ bandCollapsed ? '⌃ 展开' : '⌄ 收起' }}
+      </button>
+    </div>
+
     <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径)
          IKPFVN E1：全国视角下整条收起 —— 它三块内容全是"当前站"的路段维度
          （档位分布 / 路段×时间矩阵 / CI 色阶），站在全国视角时既没有当前站也不该占高度；
          收起后地图才真的"占满内容区"（NS 视角拿到的地图高度从 ~377 px 涨到 ~680 px，
          全国取景的 zoom 也随之落在 3–6 档，而不是挤在 2 档）。 -->
-    <div v-if="mapScope === 'station'" class="heat-band">
+    <div
+      v-if="mapScope === 'station'"
+      class="heat-band"
+      :style="{ '--band-h': `${bandHeight}px` }"
+    >
       <section class="td-card band-card">
         <div class="td-card-head">
           档位分布 · 当前时刻<span class="td-head-tag">
@@ -4363,12 +4504,69 @@ function onCommandChanged(): void {
   font-size: 13px;
 }
 
+/* ---------- 上下拉条（三栏区 ↔ 底部热力带） ---------- */
+.band-drag {
+  flex: 0 0 auto;
+  position: relative;
+  height: 10px;
+  margin: 0 16px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  /* 命中区比视觉高度大一圈：10px 太细，往上/下各偷 3px，拖起来不费劲 */
+  padding: 3px 0;
+  box-sizing: content-box;
+}
+.band-drag-grip {
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--td-component-stroke);
+  transition: background 120ms ease, width 120ms ease;
+}
+.band-drag:hover .band-drag-grip {
+  width: 64px;
+  background: var(--td-brand-color);
+}
+.band-drag-fold {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--td-text-color-placeholder);
+  background: transparent;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.band-drag-fold:hover {
+  color: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+}
+/* 拖动期间禁选中：否则上下拖会顺手把页面文字刷蓝。
+   本 <style> 是 scoped，body 不在组件内 → 必须用 :global(...)，写法是
+   `:global(body).is-vdrag`（`:global(body.is-vdrag)` 那种整段包进去的写法在
+   Vue 3 里会报编译错，别改）。 */
+:global(body).is-vdrag {
+  user-select: none;
+}
+
 /* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
 .heat-band {
+  /* 业主 2026-10-28「上下可以那样拉吗」：高度由拉条写入的 --band-h 决定，
+     不用 flex 撑（撑开的话拉条改高度会被内容 min-height 顶回去）。 */
   flex: 0 0 auto;
+  height: var(--band-h, 196px);
+  min-height: 0;
   display: flex;
   gap: 10px;
   margin: 0 16px 8px;
+  overflow: hidden;
 }
 .band-card {
   flex: 0 0 240px;
