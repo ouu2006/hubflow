@@ -78,6 +78,8 @@ import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   basemapEnabled,
   camerasVisible,
+  dropoffsVisible,
+  zonesVisible,
   directionsVisible,
   legendVisible,
   routeEmphasisEnabled,
@@ -1596,10 +1598,12 @@ function applyModeLayers(map: MapLibreMap): void {
   const atStation = motionPhase.value === 'station'
   for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
   setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
-  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画
-  setLayerVisible(map, LAYER_DZ_FILL, atStation)
-  setLayerVisible(map, LAYER_DZ_HL, atStation)
-  setLayerVisible(map, LAYER_DZ_LINE, atStation)
+  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画；「落客点」开关关掉时也不画
+  // （否则视角往返/换站后 applyModeLayers 会把关掉的圈重新打开，与开关状态打架）
+  const dropZoneVisible = atStation && dropoffsVisible.value
+  setLayerVisible(map, LAYER_DZ_FILL, dropZoneVisible)
+  setLayerVisible(map, LAYER_DZ_HL, dropZoneVisible)
+  setLayerVisible(map, LAYER_DZ_LINE, dropZoneVisible)
   setLayerVisible(map, LAYER_STATION_HIT, !atStation)
   setLayerVisible(map, LAYER_STATION_DOT, !atStation)
   setLayerVisible(map, LAYER_STATION_LABEL, !atStation)
@@ -1625,6 +1629,7 @@ function addOwnLayers(map: MapLibreMap): void {
     if (!map.getLayer(spec.id)) map.addLayer(spec)
   }
   applyModeLayers(map)
+  applyDropZoneVisibility(map)
 }
 
 // ---- 镜头取景（IKPFVN C 节；动效参数与状态机全在 `shared/mapMotion.ts`）----
@@ -2544,6 +2549,8 @@ function initMap(): void {
     // 起手取景按**当前视角**：全国（默认）→ 中国范围；深链 `?station=` → 直接站区（无动画）
     motionPhase.value = props.mapMode === 'station' ? 'station' : 'national'
     ready.value = true
+    // 落客点/场区开关：样式刚加载完补一次（`addOwnLayers()` 里 ready 还是 false，会被前置条件挡掉）
+    applyDropZoneVisibility(map)
     void syncCamera(false)
     // 首帧的容器宽度可能还没定型（左右栏正在收起 / 挂载时布局未稳定）——
     // 尺寸一变就补一次取景，见 `watchContainerSize()`。
@@ -2695,6 +2702,28 @@ watch(camerasVisible, (on) => {
   if (!on) pin.value = null
 })
 
+/**
+ * 落客点 / 场区显示开关。
+ *
+ * 落客点 = 图钉（`.lm-pin.dropoff`，CSS 类控制）+ 35 m 落客区演示圈（地图图层，走 `setLayoutProperty`）；
+ * 场区 = 只有图钉（`.lm-pin.zone`）。两层互不影响；关掉只是不画，右栏列表与接口数据不动。
+ */
+function applyDropZoneVisibility(map: MapLibreMap | null = mapRef.value): void {
+  if (!map || !ready.value) return
+  const visibility = dropoffsVisible.value ? 'visible' : 'none'
+  for (const id of [LAYER_DZ_FILL, LAYER_DZ_HL, LAYER_DZ_LINE]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility)
+  }
+}
+
+watch(dropoffsVisible, (on) => {
+  if (!on) landmarkPin.value = null
+  applyDropZoneVisibility()
+})
+watch(zonesVisible, (on) => {
+  if (!on && landmarkPin.value?.kind === 'zone') landmarkPin.value = null
+})
+
 /** 选中路线变化 → 终点落客点的「终点区域」高亮跟着走（换 OD / 换站都经这里） */
 watch(
   () => props.routeEnd?.point_id,
@@ -2781,7 +2810,12 @@ onUnmounted(() => {
        不要拿文案去判断当前视角。 -->
   <div
     class="mlmap"
-    :class="{ 'mode-national': mapMode === 'national', 'cams-off': !camerasVisible }"
+    :class="{
+      'mode-national': mapMode === 'national',
+      'cams-off': !camerasVisible,
+      'dropoffs-off': !dropoffsVisible,
+      'zones-off': !zonesVisible,
+    }"
     :data-map-mode="mapMode"
     :data-station="currentStationKey"
     :data-motion-phase="motionPhase"
@@ -3742,6 +3776,10 @@ onUnmounted(() => {
 /* 摄像头图钉显示开关（业主 2026-10-25）：关 = 整层不画（连外壳一起 display:none，
    悬停/点击也随之失效）；与全国模式同一套 CSS 机制，不删建 Marker。
    只关"图钉层"——台账、右栏路段卡、监控墙的数据与画面不受影响。 */
+.mlmap.dropoffs-off :deep(.lm-pin.dropoff),
+.mlmap.zones-off :deep(.lm-pin.zone) {
+  display: none;
+}
 .mlmap.cams-off :deep(.cam-pin-wrap) {
   display: none;
 }
