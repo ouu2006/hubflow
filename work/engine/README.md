@@ -485,6 +485,54 @@ $ python work/engine/run.py --sample / --sample --compare
   `od_derivation` 与其它字段不变。这是「K 变大」的直接结果，不是回归。
 - 复跑：`python work/engine/run.py --network real`（看 `od_derivation.multi_candidate_od_count`，现值 **2**）。
 
+### 5.4 自定义起终点：点图取坐标 → 吸附最近路段 → 一主两备 + 离站单算（IKVQX6，2026-10-28 重做）
+
+**业主口径（2026-10-28 返工原话）**：「从自定义起点终点开始做，可以直接选择图上的任意坐标点，然后跟最近的路段进行匹配，
+不要在右边那个什么选项那里做选择……先选择起点再选择终点，选完后右边点击开始，下面才是推荐路线显示，
+直接显示三条推荐路线，按主推荐，备用 1，备用 2 显示，离站另外计算」。
+
+上一版（PR `!85`）被业主否决：它在 `candidates.py` 里加 `_trim_common_head_tail()`，把两条路线**去掉公共首尾再算重叠度**，
+`max_path_overlap = 0.7` 这道门槛就被绕过去了（真跑 `OD-R-001` 三条全长重叠 **0.78**、ETA 差 0.0 min，只是同一走廊换匝道）。
+本版**删掉 trim 口径**，重叠度一律按**全长**比（`candidates.path_overlap` 的签名与默认值一个字节没动），
+只放大搜索深度：`route_service.K_GENERATE = 30`（对齐 `realnet.CANDIDATE_SEARCH_K`），
+`select_candidates(..., k_generate=...)` 的 `pool = max(int(k_generate or k), int(k))` —— **门槛不动，只多算候选**。
+
+**入口三个（`work/engine/route_service.py`）**
+
+| 函数 | 作用 |
+|---|---|
+| `snap_to_segment(graph, lon, lat, *, max_distance_m = 60.0)` | 点图坐标 → 最近路段。按边折线 `coords` 逐小段做点投影，返回 `matched` / `segment_id` / `offset_m` / `distance_m` / 回显 `lon,lat` / `node_id`；**超过 60 m 一律 `matched = False` 并写明「不硬吸附」**，不把远处的点偷偷吸到路上 |
+| `plan_departure(graph, destination, *, params, states, points, exit_node=None)` | 离站单独算：从终点所在路段驶到站界出口（有 `boundary` / `boundary_effective` 的节点里自由流最快者，tie-break 按 `node_id`），`role = departure` |
+| `plan(graph, origin, destination, *, params, states, points, with_departure=False, exit_node=None)` | 主算路。端点三种形态：`{point_id}` / `{segment_id, offset_m}` / `{lon, lat}`（坐标内部先 snap）。三条路线带 `role = primary / alt1 / alt2` + `is_recommended`；候选不足如实少给（`alternatives_status = single_path / no_diverse_path`）；不可达抛 `UnreachableError` |
+
+**两个必须知道的实现口径**
+
+- **命名点位按 `node_id` 算路，点图坐标按 segment + offset 中边算路。** 前者若也走中边，终点会被硬压到边起点、备选全没；
+  两者端点语义一致，但**路线集合可以不同** —— 这是设计选择，不是 bug（自检因此不做「点图 vs 点位逐段相同」的假断言）。
+- `candidates.dijkstra(...)` 返回的是**边序列**，不是代价：比较出口要 `sum(weight(eid) for eid in path)`。
+  本单踩过 `float(cost)` → `TypeError: float() argument must be a string or a real number, not 'list'`。
+
+**接口层（`work/assembly/traffic.py`，均为辅助端点、非契约 §七）**
+
+| 端点 | 说明 |
+|---|---|
+| `GET /api/traffic/route/points?site=` | 起终点点位下拉（`stations/*.points.json`：肇庆东 9 点 / 广州南 34 点） |
+| `POST /api/traffic/route/snap` | `{site, lon, lat}` → 吸附结果；超阈值 `matched: false` + `note` |
+| `POST /api/traffic/route/plan` | `{site, origin, destination, with_departure}`；**不可达 → HTTP 200 + `reachable: false` + `code = ROUTE_UNAVAILABLE`**（页面据此不画线），其余参数错 → 400 + `ROUTE_PARAM_INVALID` |
+
+**点图坐标口径的覆盖矩阵（全长重叠比、点击点取真网边中点）**
+
+| 站 | 组合数 | 出 1 条 | 出 2 条 | 出满 3 条 | 不可达 |
+|---|---|---|---|---|---|
+| 肇庆东（4 进场 × 5 终点） | 20 | 5 | 0 | 2 | 13 |
+| 广州南（25 进场 × 9 终点） | 225 | 45 | 33 | 59 | 88 |
+
+站区内部随便点两下（真网段中点，40 组）→ 18 组出满 3 条；只有贴着外围入口点才不可达。
+**要「点哪都有三条」就切广州南；肇庆东如实少给，不凑数。**
+
+- 自检：`python work/engine/selfcheck_custom_od.py` → **PASS 36 / FAIL 0**（两站；含点图吸附回注册表同段同偏移、
+  离线不硬吸附、`role` 顺序、备选**全长**重叠度 ≤ `max_path_overlap` 的自证、离站从边界驶出且不进 `routes`）。
+
 
 ## 六、交付标准
 
