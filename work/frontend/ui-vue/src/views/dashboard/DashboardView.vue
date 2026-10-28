@@ -47,6 +47,10 @@ import {
   routeEmphasisEnabled,
   setCamerasVisible,
   setDirectionsVisible,
+  setDropoffsVisible,
+  setZonesVisible,
+  dropoffsVisible,
+  zonesVisible,
   setRouteEmphasisEnabled,
 } from '../../shared/settings'
 import { landmarksNearSegment } from '../../shared/landmarks'
@@ -2701,6 +2705,41 @@ function onCommandChanged(): void {
                       @click="setCamerasVisible(!camerasVisible)"
                     >
                       摄像头 {{ camerasVisible ? '开' : '关' }}
+                    </button>
+                  </span>
+                  <!-- 落客点 / 场区显示开关（与「摄像头」同款）。只关显示，右栏列表与接口数据不动。 -->
+                  <span class="pack-switch" role="group" aria-label="落客点">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: dropoffsVisible }"
+                      role="switch"
+                      :aria-checked="dropoffsVisible"
+                      :title="
+                        dropoffsVisible
+                          ? '落客点：开（图钉 + 落客区演示圈）；点击整体隐藏'
+                          : '落客点：关（图钉与演示圈都不画）；点击恢复（列表与数据不受影响）'
+                      "
+                      @click="setDropoffsVisible(!dropoffsVisible)"
+                    >
+                      落客点 {{ dropoffsVisible ? '开' : '关' }}
+                    </button>
+                  </span>
+                  <span class="pack-switch" role="group" aria-label="场区">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: zonesVisible }"
+                      role="switch"
+                      :aria-checked="zonesVisible"
+                      :title="
+                        zonesVisible
+                          ? '场区（停车场 / 候客 / 蓄车）：开；点击整体隐藏'
+                          : '场区：关（图钉不画）；点击恢复（列表与数据不受影响）'
+                      "
+                      @click="setZonesVisible(!zonesVisible)"
+                    >
+                      场区 {{ zonesVisible ? '开' : '关' }}
                     </button>
                   </span>
                   <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
