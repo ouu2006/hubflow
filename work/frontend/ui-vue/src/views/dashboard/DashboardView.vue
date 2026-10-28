@@ -1532,7 +1532,7 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
   if (routeView.value === 'all' || routeView.value === 'alternative') {
     // Issue IKP5CK：备选不能再全压成同一个 `alternative` 分组（两条备选会画成同一套灰虚线）。
     // `index` 是前端展示类型字段（非契约）：1 = 备选 1（长虚）、2 = 备选 2（短虚）；
-    // 2026-10-28 业主统一蓝色系后两条备选同色（暗蓝），只靠节律 + 平行偏置区分。
+    // 2026-10-28 业主统一蓝色系后两条备选同色（中蓝 #2563EB），只靠节律 + 平行偏置区分。
     r.alternatives.forEach((a, i) => {
       if (a.segments && a.segments.length > 0) {
         groups.push({ kind: 'alternative', index: i + 1, key: `alt:${i + 1}`, segments: a.segments })
@@ -1666,9 +1666,9 @@ const routeSourceNote = computed<string>(() => recommend.value?.data_source_note
 const routeWhyLine = computed<string>(() => {
   const source = recommend.value?.data_source
   if (source === 'engine.routes.real' || source === 'engine.routes.sample') {
-    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。'
+    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，中蓝长虚线 = 备选 1，中蓝短虚线 = 备选 2，紫色实线 = 离站，天蓝 = 当前选中的那条。'
   }
-  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。`
+  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，中蓝长虚线 = 备选 1，中蓝短虚线 = 备选 2，紫色实线 = 离站，天蓝 = 当前选中的那条。`
 })
 /** 路线降级说明（session 未匹配 / 段号命名空间不一致等，来自接口响应 note；无则空）。
  *  session 未匹配已在下方单独用显式警示段落呈现，这里去掉重复的第一句。 */
@@ -2776,7 +2776,7 @@ function onCommandChanged(): void {
                 role="button"
                 tabindex="0"
                 :aria-pressed="pickedRouteKey === c.highlightKey"
-                :title="pickedRouteKey === c.highlightKey ? '再点一次取消选中（全部按规划蓝 / 备选暗蓝画）' : '点为选中路线（地图上画成天蓝，压在其它路线之上）'"
+                :title="pickedRouteKey === c.highlightKey ? '再点一次取消选中（全部按规划蓝 / 备选中蓝画）' : '点为选中路线（地图上画成天蓝，压在其它路线之上）'"
                 @click="pickRoute(c.highlightKey)"
                 @keydown.enter.prevent="pickRoute(c.highlightKey)"
                 @keydown.space.prevent="pickRoute(c.highlightKey)"
@@ -4238,7 +4238,7 @@ function onCommandChanged(): void {
   background: var(--td-bg-color-container-hover);
   border-radius: var(--td-radius-sm);
   /* 左侧色条 = 该路线在地图上的颜色（业主 2026-10-28 统一蓝色系）：
-     规划蓝 #0052D9 / 备选暗蓝 #1E3A8A / 离站紫 #7B61FF / 选中天蓝 #38BDF8 */
+     规划蓝 #0052D9 / 备选中蓝 #2563EB / 离站紫 #7B61FF / 选中天蓝 #38BDF8 */
   border-left: 3px solid #0052d9;
   cursor: pointer;
   transition: box-shadow 0.15s ease;
@@ -4251,7 +4251,7 @@ function onCommandChanged(): void {
   outline-offset: 1px;
 }
 .route-item.alternative {
-  border-left-color: #1e3a8a;
+  border-left-color: #2563eb;
 }
 .route-item.departure {
   border-left-color: #7b61ff;
