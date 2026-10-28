@@ -2143,3 +2143,74 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 ```
 > 取证截图时要先关「摄像头」和「箭头」两层：摄像头蓝圈编号、方向箭头的紫/深蓝会与三档蓝混在一起，
 > 看图容易误判成「备选的暗蓝画到了别的路上」。
+
+## 三十四、方向箭头「偏移」根治：侧偏加两道收窄 + 取景后重建（业主 2026-10-28）
+
+### 34.1 业主原话与两个成因
+
+> 「箭头偏移了，修一下」
+
+箭头画在 `MapLibreViewer.vue` 的 `directionGeoJson()` 里。双向段（本包 33 段）的
+两支箭头本来就该**分列折线两侧**，侧偏量写在 GeoJSON 坐标里 —— 这里叠了两个错：
+
+1. **侧偏量太大**。侧偏是 `DIR_BIDIR_OFFSET_PX`(12) × `metersPerPixel(fitZoom)`。这个
+   像素口径是按 7.5 px 小图标定的；图标三次定版涨到 **34 px** 后，Z 站取景档
+   `fitZoom ≈ 15.55`（3.004 m/px）下 **12 px = 36.05 m**。离线复刻本文件算法核对
+   （`stationZ` 61 段、94 支箭头）：**86 支**双向箭头落在离自己路段 20~36 m 处；
+   最刺眼的是 13 段停车场内部通道全长只有 **16.3~19.2 m**（SZ-037…044、049…053），
+   箭头偏出去 36 m —— 偏出距离是路段全长的两倍多，肉眼就是「箭头跑到没路的地方」。
+2. **取景后从不重算**。`commitFitZoom()` 原来只做 `fitZoom = map.getZoom()` +
+   线宽 + 图钉，**没重建箭头数据**；`applyDirectionScale()` 只改 `icon-size` /
+   `icon-opacity`，不动坐标。于是建图首帧用兜底 `fitZoom = 14` 算完就落死，
+   镜头真正 fitBounds 到 15.55 后偏移量仍是旧值 —— 位置和档位脱钩，整体偏出路边。
+
+### 34.2 修法
+
+| 位置 | 改动 |
+|---|---|
+| 常量 | 新增 `DIR_BIDIR_OFFSET_MAX_M = 4` —— 侧偏的**米上限** |
+| `directionGeoJson()` | `offsetM = Math.min(12 px × m/px, DIR_BIDIR_OFFSET_MAX_M, segLenM(coords) / 4)` |
+| 新增 | `segLenM(coords)`（折线总长，米） |
+| 新增 | `refreshDirectionData(map)` —— 按当前 `fitZoom` 重设 source data |
+| `commitFitZoom()` | 末尾 `applyDirectionScale(map, true)` + **档位真变了才** `refreshDirectionData(map)` |
+| `map.on('move')` | 去抖 120 ms + 判 `Math.abs(zoom - fitZoom) < 0.01` 早退，再 `refreshDirectionData(map)` |
+
+为什么上限取 4 m：真正该判的不是「离多少像素」而是「偏多远还算在路幅内」。本包车道按
+3.5 m 估（`lanes` 有值按实、缺值取 2 车道 = 7 m 路幅），半个路幅 ≈ 3.5 m，取 **4 m**
+略大于半路幅 —— 两支箭头刚好分列两侧、不压中心线，也绝不跨到隔壁地块。像素口径在小
+图标时仍生效（算出来比上限小就按像素走），老桩不动。短段再收一道 `段长 / 4`：16 m 的
+通道上两支箭头各自落在 4 m 处，不会跑到段外。
+
+### 34.3 ⚠️ 别把 `refreshDirectionData` 改成无条件调用
+
+`GeoJSONSource.setData()` **自己会派发 `move` 事件**，而 `move` 处理器里又调
+`refreshDirectionData` —— 无条件重建就是自触发死循环。实测症状：地图被锁在全国档不动、
+左栏「全路段状态」标题被压成竖排、图例叠在图上（每一帧都在重设 GeoJSON，镜头 fitBounds
+被反复打断）。
+
+所以两处调用都必须先判「档位真的变了」（`Math.abs(zoom - fitZoom) >= 0.01`），
+`move` 侧再加 120 ms 去抖。
+
+### 34.4 复核结果
+
+```bash
+# 离线几何核对（复刻 directionGeoJson 算法，量落点到所属折线最短距离）
+export PATH="/c/Users/陈冠佑/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin:$PATH"
+cd work/frontend/ui-vue
+node node_modules/vue-tsc/bin/vue-tsc.js --noEmit -p tsconfig.app.json   # TSC_OK
+cd ../../.. && python scripts/frontend_gate.py                          # 12/12
+```
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 94 支箭头最大偏差 | **36.05 m** | **4.00 m** |
+| 平均偏差 | 24.51 m | **2.758 m** |
+| 偏出 20 m 以上的箭头 | 86 支 | 0 支 |
+
+> **注意**：`switchStation(key)` 在 `key === activePackKey()` 时直接 `return false`
+> （`src/shared/stationSwitch.ts`）——URL 已是 `pack=Z` 时点顶栏「肇庆东站」是**空操作**，
+> 镜头不动，箭头停在手动缩放后的档位上。要复看站区箭头必须走「← 全国」→ 点
+> 「肇庆东站 61 段」，才会真正重新 `fitStationInstant`。
+>
+> 页面观感上还有一处**不是偏移**：34 px 的图标比停车场通道（约 5 px 宽）还大，图标
+> 本身就盖住了路面。34 px 是业主 2026-10-23 三次定版的口径，不擅自改小；要改走业主。
