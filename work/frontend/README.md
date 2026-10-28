@@ -580,6 +580,39 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 **实测记录（2026-10-14，1440×900，Chromium CDP 真实鼠标事件 + `npm run build`）**：默认态三栏 289 / 700 / 387px（= 设计稿减掉两条各 10px 的分隔条），无横向溢出（`scrollWidth === clientWidth`）；第一根 bar 右拖 120px → 407 / 582 / 387，第二根左拖 100px → 407 / 485 / 485，中栏确实跟着伸缩；两条 bar 各猛拖 900px → 停在 215 / 887 / 274（受左 220 + bar 10 / 中 320 / 右 280 三道 min 夹紧）；最小宽下左栏 `.td-seg-item`（92.5×40）与右栏 `.act-btn`（237.64×34）均点击成功、宽度不受影响；刷新后仍是 215 / 887 / 274 且 `localStorage` 为 `{"left":220,"right":280}`（记忆生效）；双击分隔条 → 回到 289 / 700 / 387，落盘回到 `{"left":296,"right":396}`。分隔条配色实测：默认线 `rgb(221,221,221)`（= `--td-component-border`）、hover / 拖拽中 `rgb(0,82,217)`（= `--td-brand-color`），**无 element-plus 默认蓝 `rgb(64,158,255)`**。`vue-tsc --noEmit` exit 0，`vite build` exit 0（`dist/assets/index-*.css` 406.05 kB、`index-*.js` 1149.26 kB），`python scripts/doc_gate.py` 七组全过。
 
+### 13.5b 左右两栏一键收起（2026-10-28，业主反馈「中间的图被挤到特别小」）
+
+**一句话口径**：左栏「选择监控」与右栏「路段信息」各有一个**收起键**，收起后中栏地图独占腾出的宽度；再用工具条上的「› 展开左栏 / ‹ 展开右栏」还原。
+
+| 项 | 值 |
+|---|---|
+| 收起键位置 | 左栏标题行右侧「‹ 收起」、右栏标题行右侧「收起 ›」（`.col-head` 内 `.col-fold`） |
+| 展开键位置 | 地图工具条左右两端（`.map-fold-btn`），**仅站区视角可见**（`mapScope === 'station'`） |
+| 收起效果 | 该 panel 宽度归 0 + `overflow:hidden` + `opacity:0`（220ms 过渡），**那条分隔线同步隐藏**（收起后拖不动，留着是死线） |
+| 展开宽度 | 回到收起前记住的值；记忆值异常时钳到 `COL_MIN_LEFT`(220) / `COL_MIN_RIGHT`(280) |
+| 记忆方式 | `localStorage` 键 `hubflow.dashboard.colCollapsed` = `{"left":bool,"right":bool}`；**与 13.5 的 `colWidth` 互不覆盖** |
+| 复位方式 | 双击任意分隔条（`resetCols()`）同时清宽度与收起标志 |
+| 与全国视角 | `is-national` 与 `is-fold-left/right` 都靠 CSS 强压 panel 宽度，**不会同时命中**（全国视角没有工具条） |
+
+**踩过的坑（改这块必看）**：
+
+- **panel 的 `:min` 必须跟着收起一起撤掉**：`ElSplitterPanel` 有 `min` 下限，左 220 / 右 280，收起时若仍写 `:min="COL_MIN_LEFT"`，宽度会被弹回 220、按钮看起来毫无反应。现写法 `:min="colLeftCollapsed ? 0 : COL_MIN_LEFT"`。
+- **右栏整栏是 `.td-scroll` 独立滚动**，收起键放普通位置会滚出视野 → `.col-head` 必须 `position:sticky; top:0`。
+- 收起的 panel 仍渲染 DOM（不 `v-if`），只是宽度 0 + `overflow:hidden`——**避免收起/展开时重建左栏 61 条路段清单**。
+- `COL_RECALL_*` 是「收起前记住的宽度」，只在此栏当前宽度有限且 > 0 时才更新，否则会把自己刚置的 0 记进去。
+
+**实测记录（2026-10-28，1600×1029，Edge + 浏览器内 CDP，`--mode remote` 对真接口 8000）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 点「收起左栏」 | 左栏内容消失、地图左边界左移；工具条出现 `button "展开左栏"` |
+| 再点「收起右栏」 | 右栏消失、地图**铺满整行**（截图确认左右都无留白），工具条出现 `button "展开右栏"` |
+| 刷新同 URL | **仍是两栏收起**（`localStorage` 记忆生效），工具条两个展开键都在 |
+| 点「› 展开左栏」 | 左栏 61 条路段清单恢复、地图右缩回；展开键消失 |
+| 点「‹ 展开右栏」 | 右栏路线卡与路段详情恢复；展开键消失 |
+
+`vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.18s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
+
 ### 13.6 告警判级取当前路段快照（Issue #75 第④条 / 回归修复 IKLLXG）
 
 **一句话口径**：告警自带的 `level` 是**派生时的记录值**（站点包预置剧本），与**当前路段快照**可能不同步——页面上**一律按快照判级**显示，快照缺该路段时**退回告警记录值**，不编造。

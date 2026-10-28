@@ -198,6 +198,81 @@ const COL_MEM_KEY = 'hubflow.dashboard.colWidth'
 const colLeft = ref<number | string>(COL_DEFAULT_LEFT)
 const colRight = ref<number | string>(COL_DEFAULT_RIGHT)
 
+/* ---------- 左右栏收起 / 展开（业主 2026-10-28） ----------
+ * 诉求原话：「我这个样子中间的图都被挤到特别小，能不能改成那种可以拉式放大的方式」。
+ * 做法：栏顶给「收起」键、地图工具条给「展开」键；收起时把 ElSplitterPanel 的 size
+ * 置 0，中栏是弹性栏，会自动吃掉腾出来的宽度（不需要手动算 px，也不碰 ElSplitter 的拖拽）。
+ *
+ * ⚠️ 三个约束（改这块前必读）:
+ *   ① `:min="COL_MIN_LEFT"` 会把 size 钳在 220 —— 光把 colLeft 设 0 拖不动。
+ *      所以收起态必须**同时撤掉 :min**（见模板里 `:min="colLeftCollapsed ? 0 : COL_MIN_LEFT"`）。
+ *   ② 收起前的宽度要单独记住（COL_RECALL_LEFT/RIGHT），否则展开只能回默认值，
+ *      把用户自己拖过的宽度丢掉。
+ *   ③ 记忆 key 与 `COL_MEM_KEY` 分开存：收起态是「布局偏好」，不是「栏宽」，
+ *      两者混一个 JSON 会让老版本读回来的 left:0 变成 220 的怪宽度。
+ * 与全国视角 `is-national` 的关系：那条是 CSS 强压 0（地图铺满），本功能是用户主动收起。
+ * 两者互不干扰 —— 全国视角下左右栏内容本来就 v-if 掉了，收起键也就不可见。
+ */
+const COL_FOLD_KEY = 'hubflow.dashboard.colCollapsed'
+const COL_RECALL_LEFT = ref<number>(COL_DEFAULT_LEFT)
+const COL_RECALL_RIGHT = ref<number>(COL_DEFAULT_RIGHT)
+const colLeftCollapsed = ref(false)
+const colRightCollapsed = ref(false)
+
+/** 记住当前栏宽（收起要先把宽度存起来，展开才有得回） */
+function rememberWidth(side: 'left' | 'right'): void {
+  const cur = side === 'left' ? colLeft.value : colRight.value
+  const n = Number(cur)
+  if (!Number.isFinite(n) || n <= 0) return
+  if (side === 'left') COL_RECALL_LEFT.value = n
+  else COL_RECALL_RIGHT.value = n
+}
+
+/**
+ * 收起 / 展开一栏。
+ * 收起时先记宽度再置 0；展开时回记住的宽度（保证至少到 min，避免被钳成非法值）。
+ */
+function setColCollapsed(side: 'left' | 'right', collapsed: boolean): void {
+  const isLeft = side === 'left'
+  const flag = isLeft ? colLeftCollapsed : colRightCollapsed
+  if (flag.value === collapsed) return
+  if (collapsed) {
+    rememberWidth(side)
+    flag.value = true
+    if (isLeft) colLeft.value = 0
+    else colRight.value = 0
+  } else {
+    flag.value = false
+    const back = Math.max(isLeft ? COL_RECALL_LEFT.value : COL_RECALL_RIGHT.value, isLeft ? COL_MIN_LEFT : COL_MIN_RIGHT)
+    if (isLeft) colLeft.value = back
+    else colRight.value = back
+  }
+  saveColFoldMem()
+}
+
+function loadColFoldMem(): void {
+  try {
+    const raw = localStorage.getItem(COL_FOLD_KEY)
+    if (!raw) return
+    const v = JSON.parse(raw) as { left?: unknown; right?: unknown }
+    if (v.left === true) setColCollapsed('left', true)
+    if (v.right === true) setColCollapsed('right', true)
+  } catch {
+    /* localStorage 不可用 / 内容坏了:静默退回「都展开」，不影响可用性 */
+  }
+}
+
+function saveColFoldMem(): void {
+  try {
+    localStorage.setItem(
+      COL_FOLD_KEY,
+      JSON.stringify({ left: colLeftCollapsed.value, right: colRightCollapsed.value }),
+    )
+  } catch {
+    /* 隐私模式等场景写不进去:不影响收起本身，只是不记忆 */
+  }
+}
+
 /** 拖完写一次记忆。切页 / 刷新时读回来;读不到或读坏了就用默认值,不影响可用性 */
 function loadColMem(): void {
   try {
@@ -227,12 +302,20 @@ function saveColMem(): void {
 
 /** 三栏回到默认宽度(左 296 / 中弹性 / 右 396)。双击分隔条时调用;默认态即此值,故本函数幂等 */
 function resetCols(): void {
+  // 收起态也一并复位：否则双击分隔条后 colLeft=296、colLeftCollapsed 仍 true，
+  // 两者打架（面板被 :min 钳住但被判定为"已收起"），展开键与宽度都不对。
+  colLeftCollapsed.value = false
+  colRightCollapsed.value = false
   colLeft.value = COL_DEFAULT_LEFT
   colRight.value = COL_DEFAULT_RIGHT
+  COL_RECALL_LEFT.value = COL_DEFAULT_LEFT
+  COL_RECALL_RIGHT.value = COL_DEFAULT_RIGHT
   saveColMem()
+  saveColFoldMem()
 }
 
 loadColMem()
+loadColFoldMem()
 
 /**
  * 分隔条上的鼠标按下:自己识别双击并调 `resetCols()`(可选加分项 #6)。
@@ -2068,18 +2151,34 @@ function onCommandChanged(): void {
     <div class="td-body">
       <el-splitter
         class="el-splitter td-splitter"
-        :class="{ 'is-national': mapScope === 'national' }"
+        :class="{ 'is-national': mapScope === 'national', 'is-fold-left': colLeftCollapsed, 'is-fold-right': colRightCollapsed }"
         @resize-end="saveColMem"
         @mousedown="onBarMouseDown"
       >
         <!-- `v-model:size` 而不是 `:size`:单向绑定不会把 ElSplitter 拖出来的 px 宽度
              回写到 colLeft/colRight,那样 @resize-end 存的一直是默认值,记忆功能等于没有。
              两个 ref 都是 `number | string`(元素自身声明 `size: { type: [String, Number] }`)。 -->
-        <el-splitter-panel v-model:size="colLeft" :min="COL_MIN_LEFT">
+        <!-- ⚠️ `:min` 在收起态要撤成 0：ElSplitter 会用 min 钳住 size，
+             不撤的话 colLeft=0 会被弹回 220，收起按钮看起来「没反应」（踩过一次）。 -->
+        <el-splitter-panel v-model:size="colLeft" :min="colLeftCollapsed ? 0 : COL_MIN_LEFT">
           <!-- 左栏 · 选择监控。
                IKPFVN：全国视角下左栏整体收起（v-if 卸掉内容 + `is-national` 把面板宽压到 0），
-               地图占满内容区；站区视角再滑入。 -->
+               地图占满内容区；站区视角再滑入。
+               业主 2026-10-28：「中间的图都被挤到特别小」→ 左栏顶部加「‹ 收起」按钮，
+               收起后左栏宽度归零、地图吃掉腾出来的宽度（见 script 内 COL_RECALL_LEFT）。 -->
           <div v-if="mapScope === 'station'" class="td-col col-left">
+            <div class="col-head">
+              <span class="col-head-title">路段监控</span>
+              <button
+                type="button"
+                class="col-fold"
+                aria-label="收起左栏（地图变宽）"
+                title="收起左栏：地图拿走这块宽度；收起后地图左上角出现「› 展开」"
+                @click="setColCollapsed('left', true)"
+              >
+                ‹ 收起
+              </button>
+            </div>
             <section class="td-card">
               <div class="td-card-head">
                 选择监控<span class="td-head-tag">{{ distTotal }} 个路段</span>
@@ -2215,9 +2314,31 @@ function onCommandChanged(): void {
                 <div class="map-toolbar-left">
                   <span class="map-title">{{ mapScope === 'national' ? '全国地图' : '全路段状态' }}</span>
                   <span class="map-tag">{{ basemapTag }}</span>
+                  <!-- 业主 2026-10-28：左右栏各自有「收起」键，收起后地图占满腾出的宽度。
+                       展开键放这里，跟标题同一行，一眼能找到，也在视线落点上。 -->
+                  <button
+                    v-if="mapScope === 'station' && colLeftCollapsed"
+                    type="button"
+                    class="map-fold-btn"
+                    aria-label="展开左栏"
+                    title="展开左栏（恢复原来的栏宽）"
+                    @click="setColCollapsed('left', false)"
+                  >
+                    › 展开左栏
+                  </button>
                 </div>
                 <!-- 路网版本切换（IKMDKY 子单①；IKP5D3 起 Z21 旧包已删，只剩 Z / GZ） -->
                 <div class="map-toolbar-right">
+                  <button
+                    v-if="mapScope === 'station' && colRightCollapsed"
+                    type="button"
+                    class="map-fold-btn"
+                    aria-label="展开右栏"
+                    title="展开右栏（恢复原来的栏宽）"
+                    @click="setColCollapsed('right', false)"
+                  >
+                    ‹ 展开右栏
+                  </button>
                   <!-- IKPFVN E2：「← 全国」与站点按钮走同一条链路（`pickStation` / `enterNational`），
                        不刷新、不重建地图，只换视角与镜头。 -->
                   <button
@@ -2334,9 +2455,22 @@ function onCommandChanged(): void {
           </div>
         </el-splitter-panel>
 
-        <el-splitter-panel v-model:size="colRight" :min="COL_MIN_RIGHT">
+        <el-splitter-panel v-model:size="colRight" :min="colRightCollapsed ? 0 : COL_MIN_RIGHT">
           <!-- 右栏 · 路段信息（IKPFVN：全国视角下同样收起，见左栏注释） -->
+          <!-- 收起后这里只剩一条 0 宽的面板，展开键移到地图工具条（见中栏 `.map-fold-*`） -->
           <div v-if="mapScope === 'station'" class="td-col col-right td-scroll">
+            <div class="col-head">
+              <span class="col-head-title">路段信息</span>
+              <button
+                type="button"
+                class="col-fold"
+                aria-label="收起右栏（地图变宽）"
+                title="收起右栏：地图拿走这块宽度；收起后地图右上角出现「‹ 展开」"
+                @click="setColCollapsed('right', true)"
+              >
+                收起 ›
+              </button>
+            </div>
         <!-- 推荐路线（Issue IKMF1W）：三态切换 + 来源标注；接口不可达时不画路线、不编造假路线 -->
         <section class="td-card route-card">
           <div class="td-card-head">
@@ -3258,6 +3392,74 @@ function onCommandChanged(): void {
   flex: 0 0 auto;
   height: 100%;
   min-width: 0;
+}
+
+/* ---------- 左右栏收起 / 展开（业主 2026-10-28） ----------
+   面板 width 已由 `colLeft/colRight = 0` + `:min="0"` 驱动，这里只补两件事：
+   ① 收起时把面板的 padding / border 也清掉，否则会留 1~2px 的"线"；
+   ② 收起面板对应的分隔条隐藏（两侧都收起 / 单侧收起时那条线拖不动，留着是死线）。
+   ⚠️ 与全国视角 `is-national` 的规则同权重（都是 !important），本块在**它之前**，
+      两者不会同时命中（全国视角下 colLeftCollapsed 无意义），不会打架。 */
+.el-splitter.td-splitter.is-fold-left :deep(> .el-splitter-panel:first-child),
+.el-splitter.td-splitter.is-fold-right :deep(> .el-splitter-panel:last-child) {
+  overflow: hidden;
+  opacity: 0;
+  transition: flex-basis 220ms ease, opacity 160ms ease;
+}
+.el-splitter.td-splitter.is-fold-left :deep(> .el-splitter-bar:nth-child(2)),
+.el-splitter.td-splitter.is-fold-right :deep(> .el-splitter-bar:nth-child(4)) {
+  display: none !important;
+}
+
+/* 栏顶工具条：左边是栏名，右边是「收起」键。吸在滚动容器顶部，
+   右栏整栏要滚（.td-scroll），不吸顶的话收起键会跟着内容滚走。 */
+.col-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  background: var(--td-bg-color-container);
+}
+.col-head-title {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+.col-fold {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: var(--td-bg-color-container);
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.col-fold:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+/* 地图工具条上的「展开」键：与「← 全国」同款中性描边，不用品牌蓝 */
+.map-fold-btn {
+  padding: 3px 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: var(--td-bg-color-container);
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.map-fold-btn:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
 }
 
 /* ---------- 左栏 · 选择监控 ---------- */
