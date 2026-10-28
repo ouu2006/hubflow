@@ -1305,14 +1305,52 @@ const odSnapError = ref('')
 const odPlan = ref<RoutePlanResult | null>(null)
 const odPlanLoading = ref(false)
 const odPlanError = ref('')
+
+/**
+ * 自定义路线**总开关**（业主 2026-10-28 当面要求：「弄个开关，启用自定义路线时才开启这个东西」）。
+ * 默认关闭：关闭时右栏不出现「自定义起终点」面板、地图点图**不进入拾取态**（点图仍按原来的「选路段」走），
+ * 也不会去发 `/route/snap`、`/route/plan`。打开后才点图选起点/终点、点「开始」出三条。
+ * 状态落 localStorage（键 `hubflow.dashboard.customRoute`），演示时不必每次开一遍。
+ */
+const CUSTOM_ROUTE_STORAGE_KEY = 'hubflow.dashboard.customRoute'
+
+function readCustomRouteEnabled(): boolean {
+  try {
+    return localStorage.getItem(CUSTOM_ROUTE_STORAGE_KEY) === '1'
+  } catch {
+    /* localStorage 不可用（隐私模式等）：退回默认关闭，不影响页面可用性 */
+    return false
+  }
+}
+
+const customRouteEnabled = ref<boolean>(readCustomRouteEnabled())
+
+function setCustomRouteEnabled(next: boolean): void {
+  customRouteEnabled.value = next
+  try {
+    localStorage.setItem(CUSTOM_ROUTE_STORAGE_KEY, next ? '1' : '0')
+  } catch {
+    /* 写不进去就只在本次会话生效，不弹错 */
+  }
+  // 关掉就把已选起终点与三条结果一起清掉：不留「开关关着、路线还挂着」的半截状态
+  if (!next) clearOd()
+}
+
+/**
+ * 老「引擎产物路线」详情块（`div.route-tabs` 底下那一整块：本次起点/终点确认、逐条 route-item、
+ * 备选不足说明、why 行…）**先下线**（业主 2026-10-28：「把 route-tabs 底下的部分先去掉」）。
+ * 代码保留在模板里，常量设 `true` 即可原样恢复 —— 改版时要么复用、要么整块删掉，别留两份结论。
+ */
+const LEGACY_ROUTE_DETAIL = false
 /**
  * 地图句柄：只用来在出路线后框视野（`fitSegments`）。
  * `MapLibreViewer` 是 `<script setup>`（默认封闭），对面用 `defineExpose({ fitSegments })` 明确开放了这个能力。
  */
 const mapRef = ref<InstanceType<typeof MapLibreViewer> | null>(null)
 
-/** 喂给地图的拾取模式：只有站区视角下、且确实在等某一端时才开 */
+/** 喂给地图的拾取模式：**总开关开着**、站区视角下、且确实在等某一端时才开 */
 const odPickMode = computed<'origin' | 'destination' | null>(() => {
+  if (!customRouteEnabled.value) return null
   if (mapScope.value !== 'station') return null
   return odPicking.value
 })
@@ -2764,7 +2802,34 @@ function onCommandChanged(): void {
                  点图选起点 → 再点图选终点 → 右侧点「开始」→ 下面才是三条推荐（主推荐 / 备用1 / 备用2），
                  离站路线另外计算、单独一块。原来这里的「整条路线规划」下拉（挑 OD / session）已被业主
                  明确要求去掉——「选右边那些选项太难抉择了」：改成直接点图取坐标，交后端吸附到最近路段。 -->
-            <div class="custom-od">
+            <!-- 自定义路线总开关：默认「未开启」，此时下面整块自定义起终点都不出现，
+                 地图点图也不进拾取态（业主 2026-10-28：「启用自定义路线时才开启这个东西」）。 -->
+            <div class="cod-toggle">
+              <button
+                type="button"
+                class="cod-toggle-btn"
+                role="switch"
+                :aria-checked="customRouteEnabled"
+                :title="
+                  customRouteEnabled
+                    ? '自定义路线：开（点图选起点 → 点图选终点 → 点「开始」出三条推荐）；点击关闭'
+                    : '自定义路线：关（右栏不出现自定义起终点，点图只选路段）；点击开启'
+                "
+                @click="setCustomRouteEnabled(!customRouteEnabled)"
+              >
+                <span class="cod-toggle-dot" :class="{ on: customRouteEnabled }" aria-hidden="true"></span>
+                启用自定义路线 {{ customRouteEnabled ? '已开启' : '未开启' }}
+              </button>
+              <span class="cod-toggle-note">
+                {{
+                  customRouteEnabled
+                    ? '在地图上点起点、再点终点，然后点「开始」出主推荐 / 备用1 / 备用2'
+                    : '默认关闭：不启用就不点图算路'
+                }}
+              </span>
+            </div>
+
+            <div v-if="customRouteEnabled" class="custom-od">
               <div class="route-plan-head">
                 自定义起终点
                 <span class="td-head-tag">{{
@@ -2939,6 +3004,9 @@ function onCommandChanged(): void {
                   {{ t.name }}
                 </button>
               </div>
+              <!-- 老「引擎产物路线」详情整块下线（业主 2026-10-28：「把 route-tabs 底下的部分先去掉」）。
+                   代码原样保留，把 `LEGACY_ROUTE_DETAIL` 改成 true 即恢复。 -->
+              <template v-if="LEGACY_ROUTE_DETAIL">
               <div class="route-meta">
                 <span class="route-badge">演示数据（模拟）</span>
                 <span>路线来自引擎算路产物 · 本页不重算</span>
@@ -3062,6 +3130,7 @@ function onCommandChanged(): void {
               </p>
               <p class="route-why">{{ routeWhyLine }}</p>
               <p v-if="routeDegradedNote" class="route-hint">{{ routeDegradedNote }}</p>
+              </template>
             </template>
             <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
             </template>
@@ -4489,6 +4558,47 @@ function onCommandChanged(): void {
 /* ---------- 自定义起终点算路（业主 2026-10-28 当面要求） ---------- */
 /* 配色沿用业主 2026-10-28 定的蓝色系：规划蓝 #0052D9 / 备选暗蓝 #1E3A8A / 离站紫 #7B61FF /
    选中天蓝 #38BDF8；不引入红绿黄（那三个颜色在这个页面已经有别的语义）。 */
+/* 开关本体：默认「未开启」，开启后才是品牌蓝底，一眼能看出这块到底在不在算自定义路线 */
+.cod-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+  margin-bottom: 8px;
+}
+.cod-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.cod-toggle-btn[aria-checked='true'] {
+  color: #ffffff;
+  background: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+}
+.cod-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--td-text-color-placeholder);
+}
+.cod-toggle-dot.on {
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 35%);
+}
+.cod-toggle-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
 .custom-od {
   margin-bottom: 8px;
   padding: 8px 9px;
