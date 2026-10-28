@@ -580,6 +580,39 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 **实测记录（2026-10-14，1440×900，Chromium CDP 真实鼠标事件 + `npm run build`）**：默认态三栏 289 / 700 / 387px（= 设计稿减掉两条各 10px 的分隔条），无横向溢出（`scrollWidth === clientWidth`）；第一根 bar 右拖 120px → 407 / 582 / 387，第二根左拖 100px → 407 / 485 / 485，中栏确实跟着伸缩；两条 bar 各猛拖 900px → 停在 215 / 887 / 274（受左 220 + bar 10 / 中 320 / 右 280 三道 min 夹紧）；最小宽下左栏 `.td-seg-item`（92.5×40）与右栏 `.act-btn`（237.64×34）均点击成功、宽度不受影响；刷新后仍是 215 / 887 / 274 且 `localStorage` 为 `{"left":220,"right":280}`（记忆生效）；双击分隔条 → 回到 289 / 700 / 387，落盘回到 `{"left":296,"right":396}`。分隔条配色实测：默认线 `rgb(221,221,221)`（= `--td-component-border`）、hover / 拖拽中 `rgb(0,82,217)`（= `--td-brand-color`），**无 element-plus 默认蓝 `rgb(64,158,255)`**。`vue-tsc --noEmit` exit 0，`vite build` exit 0（`dist/assets/index-*.css` 406.05 kB、`index-*.js` 1149.26 kB），`python scripts/doc_gate.py` 七组全过。
 
+### 13.5b 左右两栏一键收起（2026-10-28，业主反馈「中间的图被挤到特别小」）
+
+**一句话口径**：左栏「选择监控」与右栏「路段信息」各有一个**收起键**，收起后中栏地图独占腾出的宽度；再用工具条上的「› 展开左栏 / ‹ 展开右栏」还原。
+
+| 项 | 值 |
+|---|---|
+| 收起键位置 | 左栏标题行右侧「‹ 收起」、右栏标题行右侧「收起 ›」（`.col-head` 内 `.col-fold`） |
+| 展开键位置 | 地图工具条左右两端（`.map-fold-btn`），**仅站区视角可见**（`mapScope === 'station'`） |
+| 收起效果 | 该 panel 宽度归 0 + `overflow:hidden` + `opacity:0`（220ms 过渡），**那条分隔线同步隐藏**（收起后拖不动，留着是死线） |
+| 展开宽度 | 回到收起前记住的值；记忆值异常时钳到 `COL_MIN_LEFT`(220) / `COL_MIN_RIGHT`(280) |
+| 记忆方式 | `localStorage` 键 `hubflow.dashboard.colCollapsed` = `{"left":bool,"right":bool}`；**与 13.5 的 `colWidth` 互不覆盖** |
+| 复位方式 | 双击任意分隔条（`resetCols()`）同时清宽度与收起标志 |
+| 与全国视角 | `is-national` 与 `is-fold-left/right` 都靠 CSS 强压 panel 宽度，**不会同时命中**（全国视角没有工具条） |
+
+**踩过的坑（改这块必看）**：
+
+- **panel 的 `:min` 必须跟着收起一起撤掉**：`ElSplitterPanel` 有 `min` 下限，左 220 / 右 280，收起时若仍写 `:min="COL_MIN_LEFT"`，宽度会被弹回 220、按钮看起来毫无反应。现写法 `:min="colLeftCollapsed ? 0 : COL_MIN_LEFT"`。
+- **右栏整栏是 `.td-scroll` 独立滚动**，收起键放普通位置会滚出视野 → `.col-head` 必须 `position:sticky; top:0`。
+- 收起的 panel 仍渲染 DOM（不 `v-if`），只是宽度 0 + `overflow:hidden`——**避免收起/展开时重建左栏 61 条路段清单**。
+- `COL_RECALL_*` 是「收起前记住的宽度」，只在此栏当前宽度有限且 > 0 时才更新，否则会把自己刚置的 0 记进去。
+
+**实测记录（2026-10-28，1600×1029，Edge + 浏览器内 CDP，`--mode remote` 对真接口 8000）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 点「收起左栏」 | 左栏内容消失、地图左边界左移；工具条出现 `button "展开左栏"` |
+| 再点「收起右栏」 | 右栏消失、地图**铺满整行**（截图确认左右都无留白），工具条出现 `button "展开右栏"` |
+| 刷新同 URL | **仍是两栏收起**（`localStorage` 记忆生效），工具条两个展开键都在 |
+| 点「› 展开左栏」 | 左栏 61 条路段清单恢复、地图右缩回；展开键消失 |
+| 点「‹ 展开右栏」 | 右栏路线卡与路段详情恢复；展开键消失 |
+
+`vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.18s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
+
 ### 13.6 告警判级取当前路段快照（Issue #75 第④条 / 回归修复 IKLLXG）
 
 **一句话口径**：告警自带的 `level` 是**派生时的记录值**（站点包预置剧本），与**当前路段快照**可能不同步——页面上**一律按快照判级**显示，快照缺该路段时**退回告警记录值**，不编造。
@@ -2014,3 +2047,65 @@ curl -s http://127.0.0.1:8000/api/traffic/report/compare | python -c "import sys
 > 三组差异只由时段预约占用产生（产物里 `comparison.scenario.note` 会明写）。
 > 要更真实的指标，加 `--segments <带 SZ-### 的快照>`；若该快照只有 1 个时段，三项会如实标
 > `available:false`（这是正确行为，不是 bug）。
+
+## 三十三、备选路线补上 + 路线配色统一蓝色系（业主 2026-10-28）
+
+### 33.1 业主原话与拆解
+
+> 「先帮我把备用线路搞定，然后如果要显示路线或者备用路线的话，都要用蓝色道路来显示规划路线和备用路线，
+> 选中的路线为天蓝色，备用路线如果被选中就变成选择的路线，备用路线用暗蓝色」
+
+拆成三件事：① 页面上要**真的有备选**（以前常年 0 条）；② 画在地图上的路线全部走**蓝色系**；
+③ 选中的那条（不管是推荐还是备选）**亮成天蓝**。
+
+### 33.2 备选 0 条的修复在引擎侧，不在前端
+
+前端一直照实渲染——问题出在引擎那边 OD 根本没算出来备选（详见
+[`work/engine/README.md`](../engine/README.md) §5.3）：真网只有 44 节点 / 94 条有向边，
+Yen 搜索深度 K=3 时前几条最短路互相重叠 0.77~0.94，被站点包 `max_path_overlap = 0.7` 全部筛掉。
+本轮把**搜索深度**提到 `CANDIDATE_SEARCH_K = 30`（属手册允许的"做法"，重叠度门槛与站点包一个字节没改），
+真网 4 条 OD 里 **2 条有备选**（OD-R-001 / OD-R-004，绕行 +80~125 m 的真不同走廊），
+另外 2 条拓扑上唯一通路，按契约如实 `no_alternative`。
+
+前端这侧只补了「能被选中」和「配色」两件事。
+
+### 33.3 三档蓝（`MapLibreViewer.vue`）
+
+| 语义 | 颜色 | 线型 |
+|---|---|---|
+| 规划路线（推荐，未选中） | 品牌蓝 `#0052D9` | 3.4 px 实线 + 品牌蓝光晕 |
+| 未选中的备用路线 | 暗蓝 `#1E3A8A` | 3 px 虚线（备选 1 长虚 12/6、备选 2 短虚 2.5/4.5，各带 ±2 px 平行偏置） |
+| **被选中的那条**（推荐或备选都算） | 天蓝 `#38BDF8` | 4.2 px 实线 + 天蓝光晕，压在最上层 |
+
+- 两条备选**同色**（业主只要蓝色系），靠**虚线节律 + 平行偏置**区分，不再靠色相。
+- 「选中」不是新增的第五种颜色，而是**覆盖**掉该路线原本那档蓝。实现上：
+  新增 `LAYER_ROUTE_PICK` / `LAYER_ROUTE_PICK_HALO` 两个天蓝图层画在最上面，
+  同时底层 `LAYER_ROUTE` / `LAYER_ROUTE_ALT1` / `LAYER_ROUTE_ALT2` / `LAYER_ROUTE_DEP` 的 filter 都套
+  `routeFilterExcludingPicked(...)` 把**被选中那条的段号剔除**——否则天蓝细线会被自己的暗蓝粗线盖住
+  （MapLibre 不做 alpha 混合替换）。
+- 离站路线仍用紫 `#7B61FF`：它不在「规划 / 备用 / 选中」这条行程层级里，是另一段行程。
+- 与四级判级色（`#2BA471` / `#E9B32E` / `#E37318` / `#D54941`）、数据不可用灰 `#8B8B8B` 均不撞。
+
+### 33.4 交互（`DashboardView.vue`）
+
+- `RouteHighlight` 新增**前端展示字段** `key?: string`（`arrival` / `alt:<序号>` / `departure`）——
+  两条备选常共享段号，按段号对不准「点的是哪一条」。**非契约字段，引擎产物不含。**
+- 路线卡可点（`role="button"` + `tabindex="0"` + `aria-pressed` + 回车/空格），点一次选中、
+  再点同一条取消；默认选中推荐路线。
+- 选中态：卡片左侧色条转天蓝 + 内描边 + 卡头「已选中」小标；图例末行同步显示
+  「已选中：规划路线 / 备选 1 / …（天蓝 · 实线，压在其它路线之上）」。
+
+### 33.5 自检
+
+```bash
+cd work/frontend/ui-vue
+node_modules/.bin/vue-tsc --noEmit -p tsconfig.app.json   # exit 0
+node_modules/.bin/vite build                              # exit 0
+python work/engine/run.py --network real                  # multi_candidate_od_count 应为 2
+python work/assembly/traffic.py --port 8000               # 系统 python（带 fastapi/uvicorn）
+node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --mode remote
+# 大屏 → 点顶栏「肇庆东站」进站区 → 路线卡应有 4 张（推荐 + 备选 1 + 备选 2 + 离站）
+# 点备选 1 → 卡片与图例都变成「已选中：备选 1」；再点一次 → 全部回三档蓝
+```
+> 取证截图时要先关「摄像头」和「箭头」两层：摄像头蓝圈编号、方向箭头的紫/深蓝会与三档蓝混在一起，
+> 看图容易误判成「备选的暗蓝画到了别的路上」。

@@ -324,7 +324,8 @@ python work/engine/predict_cli.py --segments work/engine/samples/segments_sample
    从站点包 `dropoffs` 生成；如 Z 站 `DROP-02` → `N-028`）→ ②**场区内部节点**（所有相邻边 `kind=ramp`）
    → ③全部内部节点（兼容回退）。候选取「**候选路线数最多**」的前 3 个（并列按自由流耗时、节点 id）——
    业主 2026-10-21 口径：「停车场落客点是终点」；候选路线数由真网拓扑 + 站点包
-   `k_candidates` / `max_path_overlap` 算出，所以这是**数据 + 参数推出来的 OD**，不是手写；取 3 个是演示 OD
+   `max_path_overlap` 与**代码内搜索深度 `CANDIDATE_SEARCH_K`** 算出，所以这是**数据 + 参数推出来的 OD**，
+   不是手写；取 3 个是演示 OD
    的覆盖广度（常量 `realnet.OD_DESTINATIONS_PER_ENTRY`，不是判据数值），目的是覆盖各进场方向、并让
    「备选 ≥2」的 OD 对存在（M1-4）；
 4. 每个 OD 的 `exit_node` = 从行程终点出发**自由流最快的可达离场边界**——终点是内部节点、出口是边界节点，
@@ -455,6 +456,35 @@ $ python work/engine/run.py --sample / --sample --compare
 
 > **契约口径**：`legs[]` / `direction_counts` 是**追加字段**（不改既有字段、不改 `--sample` 产物）；
 > 契约字段裁定人是开发B，前端/接口按需消费，未消费也不影响旧字段。`docs/数据契约.md` 本单不改。
+
+### 5.3 备选路线为什么以前恒为 0：搜索深度 K（2026-10-28）
+
+**业主口径**：「先帮我把备用线路搞定」——页面上四条 OD 的备选常年 0 条，看着像没做。
+
+**根因不在重叠度门槛，在搜索深度**。`stations/thresholds.json` 的 `decision.max_path_overlap = 0.7`
+是对「两条路线必须真不一样」的门槛（`candidates.path_overlap` = 共线长度 ÷ 较短者长度）。
+真网 Z 站只有 **44 节点 / 94 条有向边 / 61 段**，Yen 取 K=3 时前三条最短路的近邻互相重叠 0.77~0.94，
+**全部被这道门槛筛掉**，`len(scored)==1` → 如实写 `no_alternative: true`。
+
+**改法（属"做法"，不改契约、不改站点包）**：手册 §「备选条数」锁定的是「`alternatives ≥ 2` + `no_alternative`
+字段形状」，明写「**K 与候选生成算法属做法，可自选并申报**」。因此新增代码常量
+`CANDIDATE_SEARCH_K = 30`（`realnet.py` / `run.py` 各一份），实际取值 = `max(站点包 k_candidates, 30)`：
+
+| 搜索深度 | 真网 4 条 OD 里有备选的条数 | 备注 |
+|---|---|---|
+| K = 3（原样） | **0 条** | 全部 `no_alternative` |
+| K = 10 | 1 条（OD-R-001） | OD-R-004 仍被 0.7 门槛筛掉 |
+| **K = 30（现值）** | **2 条**（OD-R-001 / OD-R-004） | 备选较推荐绕行 +80~125 m，是真不同走廊 |
+
+- **重叠度门槛没有放宽**，仍是站点包里的 0.7；站点包（`thresholds.json`）一个字节没动。
+- OD-R-002（`N-013→N-012`）与 OD-R-003（`N-040→N-012`）在真网拓扑上**唯一通路**（枚举简单路径各只有 1 条），
+  任何 K 都出不来 → 按契约如实 `no_alternative: true` + `no_alternative_reason`，
+  **不为凑数返回等价路径**（`docs/数据契约.md` 明文禁止）。
+- 副作用（已复核，属预期行为变化）：`--sample` 样例网的路由产物中
+  `REQ-SAMPLE-0001` 备选 2→6 条、`REQ-SAMPLE-0004` 备选 2→3 条，`--sample` 产物因此**不再逐字节等于改动前**；
+  `od_derivation` 与其它字段不变。这是「K 变大」的直接结果，不是回归。
+- 复跑：`python work/engine/run.py --network real`（看 `od_derivation.multi_candidate_od_count`，现值 **2**）。
+
 
 ## 六、交付标准
 

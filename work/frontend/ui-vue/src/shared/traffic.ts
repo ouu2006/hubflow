@@ -215,6 +215,12 @@ export interface RouteHighlight {
   segments: string[]
   /** 仅 `alternative` 用：1 = 备选 1，2 = 备选 2（>2 一并按备选 2 的画法，不新增第五色） */
   index?: number
+  /**
+   * 前端展示用的稳定标识（**非契约字段**）：`arrival` / `alt:<序号>` / `departure`。
+   * 业主 2026-10-28：点路线卡选中某一条时，那条要画成天蓝 —— 用这个键对上「选的是哪一条」，
+   * 不用段号数组（两条备选共享段号时对不准）。
+   */
+  key?: string
 }
 
 /**
