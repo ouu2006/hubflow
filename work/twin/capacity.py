@@ -28,6 +28,14 @@
 
 两条口径都写进每条记录的 `capacity_phase*` 字段,溯源清楚。
 
+## 表放在哪
+
+`work/twin/capacity-model.json`(**与本模块同目录**),不放 `stations/`:`stations/*.json` 是
+**表格转换产物**,受数据契约的字段命名(`scripts/doc_gate.py` 第 6 组)与填表报告台账
+(第 7 组)约束 —— 段号 `SZ-001`、阶段名 `早高峰` 这类**领域键**过不了 snake_case 门禁。
+本表是孪生侧的**演示标定参数**(跟 `capacity.py`、`thresholds` 的消费逻辑一起走),
+不是任何 T1~T9 表格转出来的东西,故与代码同目录、由代码维护。
+
 用法:由 `loop.py` 调用;`work/assembly/traffic.py` 也读同一张表做接口侧折算,不复制系数。
 """
 
@@ -43,6 +51,10 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parents[1]
 STATIONS = REPO_ROOT / "stations"
 
+#: 容量模型路径:与模块同目录(见文件头「表放在哪」)。不要挪回 `stations/`——
+#: 那是表格产物目录,`SZ-001` / `早高峰` 这类领域键会被 doc_gate 第 6 组判 snake_case 违规。
+MODEL_PATH = HERE / "capacity-model.json"
+
 #: 运营阶段顺序(与前端 TimeSession / 接口层 SESSION_ORDER 同集合,别改名)
 PHASE_ORDER = ("早高峰", "平峰", "晚高峰", "夜间")
 
@@ -50,9 +62,13 @@ PHASE_ORDER = ("早高峰", "平峰", "晚高峰", "夜间")
 DEFAULT_KIND = "main"
 
 
-def load(stations_dir: Path | str | None = None) -> dict[str, Any]:
-    """读 `stations/capacity-model.json` 并校验必需键(缺键直接报错,不猜默认值)。"""
-    path = Path(stations_dir or STATIONS) / "capacity-model.json"
+def load(model_path: Path | str | None = None) -> dict[str, Any]:
+    """读 `work/twin/capacity-model.json` 并校验必需键(缺键直接报错,不猜默认值)。
+
+    只接**模型文件路径**:容量模型不再住在 `stations/` 里,站点包目录对它没有意义,
+    留着 `stations_dir` 参数只会让调用方以为"每个站一份模型"。
+    """
+    path = Path(model_path) if model_path else MODEL_PATH
     if not path.is_file():
         raise SystemExit(f"缺容量模型 {path}（容量标定是 c_base_vph 的唯一出处）")
     with path.open("r", encoding="utf-8") as fp:

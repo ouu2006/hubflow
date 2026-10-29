@@ -613,8 +613,9 @@ def _run_twin_simulation(
         )
     if queue_headway_m <= 0 or saturation_vph <= 0:
         raise SystemExit("站点包 thresholds.grading 的 queue_headway_m / saturation_flow_vph_per_lane 非正")
-    # 容量模型：路型基数（单车道饱和流率）+ 时段运营系数，都在 stations/capacity-model.json
-    capacity_model = capacity.load(cfg.stations_dir)
+    # 容量模型：路型基数（单车道饱和流率）+ 时段运营系数，都在 work/twin/capacity-model.json
+    # （与 capacity.py 同目录：stations/*.json 是表格转换产物，段号 / 阶段名当键过不了 doc_gate 命名门禁）
+    capacity_model = capacity.load()
     confidence = float(defaults.get("confidence", FALLBACK_CONFIDENCE))
     level_module = _load_level_module()
 
@@ -1005,7 +1006,7 @@ def _run_twin_simulation(
         "timeseries": timeseries,
         "segment_ts": segment_ts,
         "capacity_model": {
-            "model_file": "stations/capacity-model.json",
+            "model_file": "work/twin/capacity-model.json",
             "phase_mode": capacity_model.get("demo_phase_mode"),
             "phase_cycle_s": capacity_model.get("demo_phase_cycle_s"),
             "phase_capacity_factor": capacity_model.get("phase_capacity_factor"),

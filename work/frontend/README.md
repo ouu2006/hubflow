@@ -613,6 +613,40 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 `vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.18s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
 
+### 13.5c 三栏区与底部热力带之间可上下拉（2026-10-28，业主追问「上下可以那样拉吗」）
+
+**一句话口径**：13.5b 只解决了「左右挤」，业主紧接着问「上下能不能也那样」——三栏区（含地图）和底部那条热力带之间加一条**可拖的分隔条**，往上拖地图变高、往下拖热力带变高；分隔条右端带一个「⌄ 收起 / ⌃ 展开」键。
+
+| 项 | 值 |
+|---|---|
+| 拖条位置 | 三栏区底边、热力带顶边之间（`.band-drag`），在 `el-splitter` 之外、`.heat-band` 之前 |
+| 视觉 | 中间一根 40×3 的把手（`.band-drag-grip`，hover 变 64 px 品牌蓝）；**整条 16 px 都是拖拽热区**（视觉 10 px + 上下各 3 px padding），10 px 一根线太细按不住 |
+| 高度范围 | `BAND_MIN_H` 96 / `BAND_DEFAULT_H` 196 / `BAND_MAX_H` 460，`clampBand()` 统一钳制 |
+| 记忆 | `localStorage` 键 `hubflow.dashboard.bandHeight`（纯数字 px）；与 13.5 的 `colWidth`、13.5b 的 `colCollapsed` **三个键互不覆盖** |
+| 收起键 | `.band-drag-fold` 贴右端，`bandCollapsed` 由 `bandHeight <= BAND_MIN_H + 1` 推导；收起前记住高度到 `BAND_RECALL_H` |
+| 复位 | 拖条上**双击** = 回 `BAND_DEFAULT_H`（`onBandDblClick` → `resetBand()`），与左右栏双击分隔条复位同习惯 |
+| 与全国视角 | `.band-drag` 和 `.heat-band` 一样 `v-if="mapScope === 'station'"` —— 全国视角整条收起，没有拖条 |
+
+**踩过的坑（改这块必看）**：
+
+- **`.heat-band` 的高度不能再用 `flex` 撑**：原来是 `flex: 0 0 auto` 由内容决定高度，改成固定 `height: var(--band-h, 196px)` + `min-height: 0` + `overflow: hidden`。否则拉条改高度会被三张卡的内容 `min-height` 顶回去，拖起来毫无反应。
+- **必须用 pointer 事件 + `setPointerCapture`，不能用 mousedown**：用 mousedown/mousemove 时鼠标拖出条外、或拖到窗口外松手会收不到 mouseup，拖条「粘手」跟着鼠标不走。pointer 捕获保证拖出条外继续拖、松手一定收到 `pointerup`（模板还挂了 `@pointercancel="onBandDragUp"` 兜底）。
+- **方向是 `startH - dy` 不是 `startH + dy`**：拖条在热力带**上方**，鼠标上移（`clientY` 变小）= 热力带变高。写成 `+` 会上下颠倒。
+- **`:global(body.is-vdrag)` 在 Vue 3 scoped 里会编译错**，正确写法是 `:global(body).is-vdrag`（`<style scoped>` 在 `DashboardView.vue:3174`）。
+- 拖动期间给 `body` 挂 `is-vdrag` 禁 `user-select`，否则上下拖会顺手把页面文字刷蓝。
+- 收起键必须 `@pointerdown.stop`，否则按下收起键会先触发拖条的 `pointerdown` 进入拖状态。
+
+**实测记录（2026-10-28，Edge + 浏览器内 CDP，`--mode remote` 对真接口 8000，站区视角）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 点「⌄ 收起」 | 热力带从 460 px 收到 96 px、地图同步变高；按钮文案变「⌃ 展开」 |
+| 再点「⌃ 展开」 | 热力带回到收起前的高度、地图缩回；按钮变回「⌄ 收起」 |
+| 刷新同 URL | **高度记忆生效**（刷新后仍是上次拖/收起后的高度），说明 `bandHeight` 读写 localStorage 正常 |
+| 拖动手感 | **未能在自动化里验证**：本机浏览器工具注入的合成鼠标（`Input.dispatchMouseEvent`）不会让页面收到 `pointermove`；用同样 pointer-capture 写法的最小对照页也拖不动，属工具限制而非本功能缺陷。**该步需人工拖一次确认**（鼠标按住那根短横线上下拖即可）。 |
+
+`vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.29s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
+
 ### 13.6 告警判级取当前路段快照（Issue #75 第④条 / 回归修复 IKLLXG）
 
 **一句话口径**：告警自带的 `level` 是**派生时的记录值**（站点包预置剧本），与**当前路段快照**可能不同步——页面上**一律按快照判级**显示，快照缺该路段时**退回告警记录值**，不编造。
@@ -2074,17 +2108,42 @@ Yen 搜索深度 K=3 时前几条最短路互相重叠 0.77~0.94，被站点包 
 | 语义 | 颜色 | 线型 |
 |---|---|---|
 | 规划路线（推荐，未选中） | 品牌蓝 `#0052D9` | 3.4 px 实线 + 品牌蓝光晕 |
-| 未选中的备用路线 | 暗蓝 `#1E3A8A` | 3 px 虚线（备选 1 长虚 12/6、备选 2 短虚 2.5/4.5，各带 ±2 px 平行偏置） |
+| 未选中的备用路线 | 中蓝 `#2563EB` | 3 px 虚线（备选 1 长虚 12/6、备选 2 短虚 2.5/4.5，各带 ±2 px 平行偏置） |
 | **被选中的那条**（推荐或备选都算） | 天蓝 `#38BDF8` | 4.2 px 实线 + 天蓝光晕，压在最上层 |
 
 - 两条备选**同色**（业主只要蓝色系），靠**虚线节律 + 平行偏置**区分，不再靠色相。
+- **三档蓝按明度排开**：天蓝 `#38BDF8`（L 最高）> 中蓝 `#2563EB` > 品牌蓝 `#0052D9`（L 最低）。
+  备选原来用暗蓝 `#1E3A8A`，2026-10-28 晚业主复核「备用路线和绿色路线重叠起来的颜色看的好像紫色」，
+  已弃用并改中蓝 —— 暗蓝明度太低，压在判级绿 `#2BA471` 上会互相压脏，远看发灰紫。
+- **共用段只画一条**：两条备选经常走同一批段（本包 OD-R-001 的备选 1/2 共 6 段：SZ-004 / SZ-035 /
+  SZ-052 / SZ-037 / SZ-041 / SZ-039）。各画一条带白边的 ±2 px 虚线会在同一条路上挤成
+  「蓝-白-蓝」三明治，白边把中间的判级绿漂成脏色。`altFilterExclusive(n)` 让**备选 2 让出与备选 1
+  共用的段**，共用段只由备选 1 画；路线数据本身不动，两张卡仍各自如实列出全部段号。
+- 白边（`LAYER_ROUTE_ALT*_HALO`）不透明度从 `0.65` 降到 `0.35`，避免把底下路面漂白。
 - 「选中」不是新增的第五种颜色，而是**覆盖**掉该路线原本那档蓝。实现上：
   新增 `LAYER_ROUTE_PICK` / `LAYER_ROUTE_PICK_HALO` 两个天蓝图层画在最上面，
   同时底层 `LAYER_ROUTE` / `LAYER_ROUTE_ALT1` / `LAYER_ROUTE_ALT2` / `LAYER_ROUTE_DEP` 的 filter 都套
-  `routeFilterExcludingPicked(...)` 把**被选中那条的段号剔除**——否则天蓝细线会被自己的暗蓝粗线盖住
+  `routeFilterExcludingPicked(...)` 把**被选中那条的段号剔除**——否则天蓝细线会被自己的中蓝粗线盖住
   （MapLibre 不做 alpha 混合替换）。
 - 离站路线仍用紫 `#7B61FF`：它不在「规划 / 备用 / 选中」这条行程层级里，是另一段行程。
 - 与四级判级色（`#2BA471` / `#E9B32E` / `#E37318` / `#D54941`）、数据不可用灰 `#8B8B8B` 均不撞。
+
+### 33.3b 2026-10-28 晚二次复核：暗蓝发紫 → 中蓝
+
+> 业主原话：「备用路线和绿色路线重叠起来的颜色看的好像紫色」
+
+用 PIL 统计修改前的页面截图（选中 / 未选中两张）才发现：暗蓝 `#1E3A8A` 在整张图上**只剩 1 个像素** ——
+两条 3 px 虚线被各自的 9 px 白色 halo（`line-opacity 0.65`）挤得几乎看不见，
+真正被眼睛读到的「颜色」是**白边把判级绿漂白后的灰紫**。所以这不是「暗蓝不好看」，
+而是**备选线根本没画出来，只剩下一圈脏白边**。三处一起改：
+
+1. 备选色 `#1E3A8A` → `#2563EB`（中蓝）：明度抬高，与品牌蓝、天蓝按 L 排成三档；
+2. `altFilterExclusive(n)`：共用段只由备选 1 画，消除「蓝-白-蓝」三明治；
+3. halo `line-opacity 0.65 → 0.35`、`altFilter`（旧的共享 filter 函数）删除，
+   5 处 `setFilter` 全部换到 `altFilterExclusive`（漏一处就会在切站 / 切路线视图时把共用段又画回来）。
+
+实测（CDP，OK-R-001 选中备选 1）：中蓝像素 35 → 291、品牌蓝 5624 → 5794，
+共用 6 段只出现一条虚线，备选 2 只剩独有 3 段（SZ-028 / SZ-045 / SZ-036）。
 
 ### 33.4 交互（`DashboardView.vue`）
 
@@ -2107,8 +2166,8 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 # 大屏 → 点顶栏「肇庆东站」进站区 → 路线卡应有 4 张（推荐 + 备选 1 + 备选 2 + 离站）
 # 点备选 1 → 卡片与图例都变成「已选中：备选 1」；再点一次 → 全部回三档蓝
 ```
-> 取证截图时要先关「摄像头」和「箭头」两层：摄像头蓝圈编号、方向箭头的深蓝会与三档蓝混在一起，
-> 看图容易误判成「备选的暗蓝画到了别的路上」。
+> 取证截图时要先关「摄像头」和「箭头」两层：摄像头蓝圈编号、方向箭头的紫/深蓝会与三档蓝混在一起，
+> 看图容易误判成「备选的中蓝画到了别的路上」。
 
 ## 三十三、落客点 / 场区显示开关（2026-10-28）
 
@@ -2126,7 +2185,6 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 - 落客区圈是**演示范围圈**（35 m 示意），不是实地划线；
 - 图钉用容器 class（`.dropoffs-off` / `.zones-off`）CSS 隐藏，地图图层用 `setLayoutProperty('visibility')`；
   样式重建后由 `ready` 钩子补一次，避免切底图后开关失效。
-
 ## 三十四、自定义起终点：点图选起终点 → 开始 → 一主两备 + 离站单算（IKVQX6，2026-10-28 重做）
 
 ### 34.1 业主原话与要改掉的东西
@@ -2154,7 +2212,7 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 
 业主另一句口径（2026-10-28）：「**发你的 html 的路线段是没有数据的，我们的路线段是注入数据的**，所以这样子才可以生成出我们的路线推荐」。
 所以这里**不吃参考 demo 的画法**（它是 OSRM 返回一条 geometry 自己描线），而是把 `routes[i].segments`（真段号 `SZ-###`）
-喂给 `MapLibreViewer` 既有的路线图层：主推荐走 `${SRC}-route`（品牌蓝 `#0052D9`）、备用走 `-route-alt1` / `-route-alt2`（暗蓝 `#1E3A8A`、靠虚实节律区分），
+喂给 `MapLibreViewer` 既有的路线图层：主推荐走 `${SRC}-route`（品牌蓝 `#0052D9`）、备用走 `-route-alt1` / `-route-alt2`（中蓝 `#2563EB`、靠虚实节律区分），
 离站走 `-route-dep`（紫 `#7B61FF`）；点卡片 → `pickRoute()` → 那条变天蓝 `#38BDF8` 压最上层（见第三十三章）。
 图层与配色一行没改，本轮只是把数据源从「4 条写死 OD」换成「自定义起终点的算路结果」。
 
@@ -2179,3 +2237,92 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --mode remote   
 # 反例：SZ-003 → SZ-004 有向真网不可达 → 如实空窗；离路网 10 km 处点击 → 「不硬吸附」
 ```
 
+## 三十五、大屏 KPI 条收起 / 展开（IKRANO，2026-10-28）
+
+左右两栏已有「‹ 收起」；本次补 KPI 条：
+
+| 区域 | 入口 | 收起后 | 键 |
+|---|---|---|---|
+| 左右两栏（已有） | 栏头「‹ 收起」/ 地图左上「› 展开」 | 栏宽归零，地图变宽 | `hubflow.dashboard.colCollapsed` |
+| **KPI 条** | KPI 右上「收起 ▴」 | 只留一条细栏「关键指标已收起 + 展开指标 ▾」 | `hubflow.dashboard.regionFolded`（`{kpi:true}`） |
+| 底部热力带 | 三栏区与热力带之间的上下拉条 `.band-drag`（!95） | 拖条上的箭头键收到底 / 回记住高度，高度落 `hubflow.dashboard.bandHeight` | 见第三十四章 |
+
+口径：
+
+- 收起只影响布局，不改任何数据 / 判级 / 路线；
+- 读不到或坏值静默退回「展开」，不抛错；
+- 全国视角下左/右栏与热力带本来就不渲染（既有口径），收起键随之不可见；
+- KPI 收起后仍保留「展开指标」入口，不会出现"收起来找不回"。
+- **热力带为什么不在本单**：!95 的上下拉条已带「收到底 / 展开」键；同一块区域两套收起键会出现两个按钮，
+  故合并 main 时删除本单原有的 `heatFolded` / `band-head` 实现，只保留 KPI 条这一半。
+
+## 三十六、方向箭头「偏移」根治：侧偏加两道收窄 + 取景后重建（业主 2026-10-28）
+
+### 34.1 业主原话与两个成因
+
+> 「箭头偏移了，修一下」
+
+箭头画在 `MapLibreViewer.vue` 的 `directionGeoJson()` 里。双向段（本包 33 段）的
+两支箭头本来就该**分列折线两侧**，侧偏量写在 GeoJSON 坐标里 —— 这里叠了两个错：
+
+1. **侧偏量太大**。侧偏是 `DIR_BIDIR_OFFSET_PX`(12) × `metersPerPixel(fitZoom)`。这个
+   像素口径是按 7.5 px 小图标定的；图标三次定版涨到 **34 px** 后，Z 站取景档
+   `fitZoom ≈ 15.55`（3.004 m/px）下 **12 px = 36.05 m**。离线复刻本文件算法核对
+   （`stationZ` 61 段、94 支箭头）：**86 支**双向箭头落在离自己路段 20~36 m 处；
+   最刺眼的是 13 段停车场内部通道全长只有 **16.3~19.2 m**（SZ-037…044、049…053），
+   箭头偏出去 36 m —— 偏出距离是路段全长的两倍多，肉眼就是「箭头跑到没路的地方」。
+2. **取景后从不重算**。`commitFitZoom()` 原来只做 `fitZoom = map.getZoom()` +
+   线宽 + 图钉，**没重建箭头数据**；`applyDirectionScale()` 只改 `icon-size` /
+   `icon-opacity`，不动坐标。于是建图首帧用兜底 `fitZoom = 14` 算完就落死，
+   镜头真正 fitBounds 到 15.55 后偏移量仍是旧值 —— 位置和档位脱钩，整体偏出路边。
+
+### 34.2 修法
+
+| 位置 | 改动 |
+|---|---|
+| 常量 | 新增 `DIR_BIDIR_OFFSET_MAX_M = 4` —— 侧偏的**米上限** |
+| `directionGeoJson()` | `offsetM = Math.min(12 px × m/px, DIR_BIDIR_OFFSET_MAX_M, segLenM(coords) / 4)` |
+| 新增 | `segLenM(coords)`（折线总长，米） |
+| 新增 | `refreshDirectionData(map)` —— 按当前 `fitZoom` 重设 source data |
+| `commitFitZoom()` | 末尾 `applyDirectionScale(map, true)` + **档位真变了才** `refreshDirectionData(map)` |
+| `map.on('move')` | 去抖 120 ms + 判 `Math.abs(zoom - fitZoom) < 0.01` 早退，再 `refreshDirectionData(map)` |
+
+为什么上限取 4 m：真正该判的不是「离多少像素」而是「偏多远还算在路幅内」。本包车道按
+3.5 m 估（`lanes` 有值按实、缺值取 2 车道 = 7 m 路幅），半个路幅 ≈ 3.5 m，取 **4 m**
+略大于半路幅 —— 两支箭头刚好分列两侧、不压中心线，也绝不跨到隔壁地块。像素口径在小
+图标时仍生效（算出来比上限小就按像素走），老桩不动。短段再收一道 `段长 / 4`：16 m 的
+通道上两支箭头各自落在 4 m 处，不会跑到段外。
+
+### 34.3 ⚠️ 别把 `refreshDirectionData` 改成无条件调用
+
+`GeoJSONSource.setData()` **自己会派发 `move` 事件**，而 `move` 处理器里又调
+`refreshDirectionData` —— 无条件重建就是自触发死循环。实测症状：地图被锁在全国档不动、
+左栏「全路段状态」标题被压成竖排、图例叠在图上（每一帧都在重设 GeoJSON，镜头 fitBounds
+被反复打断）。
+
+所以两处调用都必须先判「档位真的变了」（`Math.abs(zoom - fitZoom) >= 0.01`），
+`move` 侧再加 120 ms 去抖。
+
+### 34.4 复核结果
+
+```bash
+# 离线几何核对（复刻 directionGeoJson 算法，量落点到所属折线最短距离）
+export PATH="/c/Users/陈冠佑/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin:$PATH"
+cd work/frontend/ui-vue
+node node_modules/vue-tsc/bin/vue-tsc.js --noEmit -p tsconfig.app.json   # TSC_OK
+cd ../../.. && python scripts/frontend_gate.py                          # 12/12
+```
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 94 支箭头最大偏差 | **36.05 m** | **4.00 m** |
+| 平均偏差 | 24.51 m | **2.758 m** |
+| 偏出 20 m 以上的箭头 | 86 支 | 0 支 |
+
+> **注意**：`switchStation(key)` 在 `key === activePackKey()` 时直接 `return false`
+> （`src/shared/stationSwitch.ts`）——URL 已是 `pack=Z` 时点顶栏「肇庆东站」是**空操作**，
+> 镜头不动，箭头停在手动缩放后的档位上。要复看站区箭头必须走「← 全国」→ 点
+> 「肇庆东站 61 段」，才会真正重新 `fitStationInstant`。
+>
+> 页面观感上还有一处**不是偏移**：34 px 的图标比停车场通道（约 5 px 宽）还大，图标
+> 本身就盖住了路面。34 px 是业主 2026-10-23 三次定版的口径，不擅自改小；要改走业主。

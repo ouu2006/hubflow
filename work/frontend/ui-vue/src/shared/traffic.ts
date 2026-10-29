@@ -41,7 +41,7 @@ export interface SegmentRecord {
   c_base_vph?: number
   c_vph?: number
   /**
-   * 容量标定溯源：由孪生侧 work/twin/capacity.py 按 stations/capacity-model.json 标定。
+   * 容量标定溯源：由孪生侧 work/twin/capacity.py 按 work/twin/capacity-model.json 标定。
    * c_vph = c_base_vph × capacity_phase_factor × 因素系数；缺字段表示该段未标定。
    */
   capacity_class?: string
@@ -154,10 +154,18 @@ export interface CapacityPhaseSummary {
 
 export interface SegmentsSnapshot {
   ts: string
+  /** 演示时钟口径（契约 v2.5）：`data_age_s` 是「相对快照时钟的年龄」，真实数据年龄看 `content_age_s` */
+  time_basis?: 'demo_clock' | 'content'
+  /** 上游产物的**真实内容时刻**（样本视频 / 仿真起点）；演示时钟锚定后仍保留原值，供审计与对外口径 */
+  content_ts?: string | null
+  /** 内容时刻距**真实现在**的秒数 = 真实数据年龄（对外口径一律看它，别看逐条 `data_age_s`） */
+  content_age_s?: number | null
+  /** 演示时钟相对内容时刻的偏移秒数（`ts - content_ts`），`time_basis=content` 时恒 0 */
+  demo_clock_offset_s?: number | null
   window_sec: number
   is_simulated: true
   segments: SegmentRecord[]
-  /** 容量阶段摘要：孪生侧 work/twin/capacity.py 按 stations/capacity-model.json 标定（缺省=未标定） */
+  /** 容量阶段摘要：孪生侧 work/twin/capacity.py 按 work/twin/capacity-model.json 标定（缺省=未标定） */
   capacity?: CapacityPhaseSummary
   /** 接口层写端点内存态摘要（重启复位）：人工置位条数 / 场景注入状态 */
   injected_state?: {
@@ -522,6 +530,19 @@ export const LEVELS: Record<CongestionLevel, LevelStyle> = {
 export const UNAVAILABLE: LevelStyle = { name: '数据不可用', color: '#8B8B8B', text: '#8B8B8B', bars: 0 }
 
 export const STALE_AFTER_S = 120
+
+/**
+ * 秒数 → 人话年龄(`45 s` / `12 min` / `3.2 h` / `417 d`)。
+ * 用在「内容时刻距真实现在多久」这类**真实年龄**文案上:样本视频是 2026-10 的素材,
+ * 差值是几百天量级,直接把 `35832100 s` 印到页面上没人看得懂。
+ */
+export function formatAgeText(seconds: number | null | undefined): string {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) return '—'
+  if (seconds < 90) return `${Math.round(seconds)} s`
+  if (seconds < 5400) return `${Math.round(seconds / 60)} min`
+  if (seconds < 172800) return `${(seconds / 3600).toFixed(1)} h`
+  return `${(seconds / 86400).toFixed(0)} d`
+}
 
 /**
  * ISO8601(可带偏移)→ `YYYY-MM-DD HH:mm:ss`(本地展示口径)。

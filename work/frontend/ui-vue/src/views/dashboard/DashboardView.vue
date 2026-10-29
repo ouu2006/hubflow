@@ -78,6 +78,7 @@ import {
   CI_BANDS,
   CI_DISCLAIMER,
   formatClock,
+  formatAgeText,
   formatStamp,
   isStale,
   LEVELS,
@@ -312,6 +313,113 @@ function saveColMem(): void {
   }
 }
 
+/* ---------- 上下拉：三栏区 ↔ 底部热力带（业主 2026-10-28「上下可以那样拉吗」） ----------
+ * 之前只有左右能拖，底部热力带是 `flex: 0 0 auto` 固定高度、不给拖。
+ * 做法：在 `.td-body` 与 `.heat-band` 之间插一条 10px 横向拖条（`.band-drag`），
+ * 拖它改的是热力带的高度 `.heat-band` 的 `--band-h`：
+ *   往上拖 → 热力带变矮、三栏（含地图）变高；往下拖 → 热力带变高。
+ *
+ * ⚠️ 约束（改这块前必读）:
+ *   ① 热力带高度用 CSS 变量 `--band-h` 传给 `.heat-band`（`height: var(--band-h)`），
+ *      不把高度写成行内 style —— 否则窄屏断点里 `.heat-band` 的 flex 覆盖会打架。
+ *   ② 用 pointer 事件 + `setPointerCapture`，不是 mousedown：拖出拖条范围仍能继续拖，
+ *      松手一定收到 pointerup（mouse 事件离开窗口会收不到，拖条会卡在"粘手"状态）。
+ *   ③ 拖动期间给 body 加 `is-vdrag` 禁选中，否则拖动会顺手把页面文字刷蓝。
+ *   ④ 收起 / 展开走 `setBandCollapsed()`；展开回记住的高度，与左右栏的 COL_RECALL_* 同套路。
+ */
+const BAND_MEM_KEY = 'hubflow.dashboard.bandHeight'
+const BAND_DEFAULT_H = 196
+const BAND_MIN_H = 96
+const BAND_MAX_H = 460
+/** 记住的高度（展开时要回这个值，而不是默认值） */
+const BAND_RECALL_H = ref<number>(BAND_DEFAULT_H)
+const bandHeight = ref<number>(BAND_DEFAULT_H)
+
+function clampBand(h: number): number {
+  const n = Math.round(h)
+  return Math.min(BAND_MAX_H, Math.max(BAND_MIN_H, n))
+}
+
+function saveBandMem(): void {
+  try {
+    localStorage.setItem(BAND_MEM_KEY, String(bandHeight.value))
+  } catch {
+    /* 隐私模式写不进去：不记忆，不影响拖动 */
+  }
+}
+
+function loadBandMem(): void {
+  try {
+    const raw = localStorage.getItem(BAND_MEM_KEY)
+    if (raw === null) return
+    const n = Number(raw)
+    if (Number.isFinite(n) && n > 0) {
+      bandHeight.value = clampBand(n)
+      BAND_RECALL_H.value = bandHeight.value
+    }
+  } catch {
+    /* localStorage 不可用 / 内容坏了：静默退回默认高度 */
+  }
+}
+
+/** 热力带收到最小高度（相当于"收起到只剩标题"） */
+function collapseBand(): void {
+  if (bandHeight.value > BAND_MIN_H) BAND_RECALL_H.value = bandHeight.value
+  bandHeight.value = BAND_MIN_H
+  saveBandMem()
+}
+
+/** 展开回到收起前的高度 */
+function expandBand(): void {
+  bandHeight.value = clampBand(BAND_RECALL_H.value)
+  saveBandMem()
+}
+
+function resetBand(): void {
+  bandHeight.value = BAND_DEFAULT_H
+  BAND_RECALL_H.value = BAND_DEFAULT_H
+  saveBandMem()
+}
+
+/**
+ * 拖条上的 pointerdown：记录起点，之后 move 按位移改高度。
+ * 拖条在热力带**上方**，所以鼠标上移（clientY 变小）= 热力带变高；
+ * 反过来 `startH - dy` 才是正确方向（写成 `startH + dy` 会上下颠倒，踩过）。
+ */
+let bandDrag: { startY: number; startH: number } | null = null
+
+function onBandDragDown(e: PointerEvent): void {
+  if (e.button !== 0) return
+  bandDrag = { startY: e.clientY, startH: bandHeight.value }
+  BAND_RECALL_H.value = bandHeight.value
+  ;(e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId)
+  document.body.classList.add('is-vdrag')
+  e.preventDefault()
+}
+
+function onBandDragMove(e: PointerEvent): void {
+  if (!bandDrag) return
+  bandHeight.value = clampBand(bandDrag.startH - (e.clientY - bandDrag.startY))
+}
+
+function onBandDragUp(e: PointerEvent): void {
+  if (!bandDrag) return
+  bandDrag = null
+  ;(e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId)
+  document.body.classList.remove('is-vdrag')
+  saveBandMem()
+}
+
+/** 拖条上双击 = 热力带回默认高度（与左右栏双击分隔条复位的习惯一致） */
+function onBandDblClick(): void {
+  resetBand()
+}
+
+/** 热力带当前是否已收到底（拖条上的箭头按钮据此切换方向） */
+const bandCollapsed = computed(() => bandHeight.value <= BAND_MIN_H + 1)
+
+loadBandMem()
+
 /** 三栏回到默认宽度(左 296 / 中弹性 / 右 396)。双击分隔条时调用;默认态即此值,故本函数幂等 */
 function resetCols(): void {
   // 收起态也一并复位：否则双击分隔条后 colLeft=296、colLeftCollapsed 仍 true，
@@ -327,6 +435,41 @@ function resetCols(): void {
 }
 
 loadColMem()
+// ---------- 区域收起 / 展开（KPI 条；业主 2026-10-28，IKRANO） ----------
+// 左右两栏已有「‹ 收起」；这里补齐 KPI 条：收起后只留一条细栏，竖向空间让给地图。
+// **底部热力带不在这里做**：!95（`ce3f59b`）已在三栏区与热力带之间加了上下拉条 `.band-drag`，
+// 拖条上的箭头键就是「热力带收到底 / 回记住高度」，同一块区域两套收起键会让页面出现两个「收起」按钮，
+// 故本单只保留 KPI 条这一半（原 `heatFolded` / `band-head` 已随合并删除）。
+// 记忆口径与栏收起一致：落 localStorage；读不到 / 坏值静默退回展开。
+const REGION_FOLD_KEY = 'hubflow.dashboard.regionFolded'
+const kpiFolded = ref(false)
+
+function saveRegionFoldMem(): void {
+  try {
+    localStorage.setItem(REGION_FOLD_KEY, JSON.stringify({ kpi: kpiFolded.value }))
+  } catch {
+    /* 隐私模式等写不进去：不影响收起本身，只是不记忆 */
+  }
+}
+
+function setKpiFolded(v: boolean): void {
+  kpiFolded.value = v
+  saveRegionFoldMem()
+}
+
+function loadRegionFoldMem(): void {
+  try {
+    const raw = localStorage.getItem(REGION_FOLD_KEY)
+    if (!raw) return
+    const v = JSON.parse(raw) as { kpi?: unknown }
+    if (v.kpi === true) kpiFolded.value = true
+  } catch {
+    /* localStorage 不可用 / 内容坏了：静默退回展开 */
+  }
+}
+
+loadRegionFoldMem()
+
 loadColFoldMem()
 
 /**
@@ -662,6 +805,14 @@ function setColorMode(mode: ColorMode): void {
 /** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
 const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
+/**
+ * 时间口径三件套（契约 v2.5）：`ts` 可能是**演示时钟**锚定过的时刻，逐条 `data_age_s`
+ * 只表示「相对快照时钟的年龄」。真实数据有多旧看 `contentAgeS`（内容时刻距真实现在）。
+ * 页面必须把两者同时写出来，否则就是「把过期数据说成 45 s 前更新」的对外口径问题。
+ */
+const timeBasis = ref<'demo_clock' | 'content' | ''>('')
+const contentTs = ref('')
+const contentAgeS = ref<number | null>(null)
 
 // ---------- 中栏地图 · 单渲染器(Issue IKM5T1) ----------
 // 只留**一个**地图组件(MapLibre:矢量底图 + 描出的路网)。原先"示例路网 / 矢量地图"两个模式已删:
@@ -861,6 +1012,7 @@ async function refresh(): Promise<void> {
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
+    applyTimeBasis(seg.value)
     capacityInfo.value = seg.value.capacity ?? null
     // 应急态(TC-10)：接口层已在快照顶层派生好，这里**原样消费**，不自己判等级
     emergency.value = seg.value.emergency ?? null
@@ -963,6 +1115,9 @@ function resetStationState(): void {
   metaInfo.value = null
   metaStationName.value = null
   snapshotTs.value = ''
+  timeBasis.value = ''
+  contentTs.value = ''
+  contentAgeS.value = null
   failedPanels.value = []
   servedFromCache.value = false
   cacheStamp.value = 0
@@ -1007,6 +1162,7 @@ function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
   if (snapshot.segments) {
     segments.value = snapshot.segments.segments
     snapshotTs.value = snapshot.segments.ts
+    applyTimeBasis(snapshot.segments)
     capacityInfo.value = snapshot.segments.capacity ?? null
     // 应急态(TC-10)：缓存里带着当时的派生结果，恢复时一并还原（不重算）
     emergency.value = snapshot.segments.emergency ?? null
@@ -1074,10 +1230,33 @@ const recommendError = ref('')
  */
 const emergency = ref<EmergencyState | null>(null)
 /**
- * 容量阶段摘要（接口层聚合孪生侧 stations/capacity-model.json 的标定结果）。
+ * 容量阶段摘要（接口层聚合孪生侧 work/twin/capacity-model.json 的标定结果）。
  * 用途：页脚让"容量随运营阶段变化"在演示时可被看见；取不到就不显示这一项。
  */
 const capacityInfo = ref<CapacityPhaseSummary | null>(null)
+/** 读快照顶层的时间口径三件套：`ts` 是哪种时钟 / 真实内容时刻 / 真实数据年龄 */
+function applyTimeBasis(snap: {
+  time_basis?: 'demo_clock' | 'content'
+  content_ts?: string | null
+  content_age_s?: number | null
+}): void {
+  timeBasis.value = snap.time_basis ?? ''
+  contentTs.value = snap.content_ts ?? ''
+  contentAgeS.value = typeof snap.content_age_s === 'number' ? snap.content_age_s : null
+}
+/**
+ * 时间口径一行：演示时钟锚定时，把「快照时刻」与「真实内容时刻 / 真实数据年龄」写在一起。
+ * 口径红线（契约 v2.5）：`data_age_s` 只在演示时钟内成立，**不得**用它宣称数据是刚刚实测的。
+ */
+const timeBasisLine = computed<string>(() => {
+  if (!contentTs.value) return ''
+  const age = formatAgeText(contentAgeS.value)
+  const ageText = contentAgeS.value === null ? '' : `，距真实现在 ${age}`
+  if (timeBasis.value === 'demo_clock') {
+    return `内容时刻 ${formatStamp(contentTs.value)}（演示时钟锚定${ageText}）`
+  }
+  return `内容时刻 ${formatStamp(contentTs.value)}${ageText}`
+})
 /** 页脚容量阶段一行：阶段 · 系数 · 全站基线→有效容量区间 */
 const capacityLine = computed<string>(() => {
   const info = capacityInfo.value
@@ -1744,7 +1923,7 @@ const routeHighlights = computed<RouteHighlight[]>(() => {
   if (routeView.value === 'all' || routeView.value === 'alternative') {
     // Issue IKP5CK：备选不能再全压成同一个 `alternative` 分组（两条备选会画成同一套灰虚线）。
     // `index` 是前端展示类型字段（非契约）：1 = 备选 1（长虚）、2 = 备选 2（短虚）；
-    // 2026-10-28 业主统一蓝色系后两条备选同色（暗蓝），只靠节律 + 平行偏置区分。
+    // 2026-10-28 业主统一蓝色系后两条备选同色（中蓝 #2563EB），只靠节律 + 平行偏置区分。
     r.alternatives.forEach((a, i) => {
       if (a.segments && a.segments.length > 0) {
         groups.push({ kind: 'alternative', index: i + 1, key: `alt:${i + 1}`, segments: a.segments })
@@ -1878,9 +2057,9 @@ const routeSourceNote = computed<string>(() => recommend.value?.data_source_note
 const routeWhyLine = computed<string>(() => {
   const source = recommend.value?.data_source
   if (source === 'engine.routes.real' || source === 'engine.routes.sample') {
-    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。'
+    return '接口层只端引擎算路产物（真网产物优先、样例产物回退），不代算 ETA；颜色语义：品牌蓝实线 = 推荐 / 当前，中蓝长虚线 = 备选 1，中蓝短虚线 = 备选 2，紫色实线 = 离站，天蓝 = 当前选中的那条。'
   }
-  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，青长虚线 = 备选 1，琥珀短虚线 = 备选 2，紫色实线 = 离站。`
+  return `演示路线：在 ${packSegmentCount.value} 段真 OSM 路网上按“相邻段连通”拼出的演示序列，不是引擎 K 最短路 + 预约输出，也不是按当前路况重算出来的结果。颜色语义：品牌蓝实线 = 推荐 / 当前，中蓝长虚线 = 备选 1，中蓝短虚线 = 备选 2，紫色实线 = 离站，天蓝 = 当前选中的那条。`
 })
 /** 路线降级说明（session 未匹配 / 段号命名空间不一致等，来自接口响应 note；无则空）。
  *  session 未匹配已在下方单独用显式警示段落呈现，这里去掉重复的第一句。 */
@@ -2206,7 +2385,7 @@ const detailSummary = computed<string>(() => {
   const s = selected.value
   if (!s) return ''
   const parts = [`${s.level >= 1 ? CN_NUM[s.level as CongestionLevel] : '不可用'}级`, levelName(s)]
-  parts.push(`更新 ${s.data_age_s ?? '—'}s 前`)
+  parts.push(`更新 ${s.data_age_s ?? '—'}s 前${timeBasis.value === 'demo_clock' ? '(演示时钟)' : ''}`)
   parts.push(`饱和度 ${fmt(s.x)}`)
   if (s.triggered_by && s.triggered_by.length > 0) parts.push(`触发 ${s.triggered_by.join(' / ')}`)
   return parts.join(' · ')
@@ -2431,8 +2610,32 @@ function onCommandChanged(): void {
       <span class="switch-skeleton" aria-hidden="true"><i /><i /><i /></span>
     </div>
 
-    <!-- KPI 条(取代页头) -->
-    <div class="td-card kpi-bar">
+    <!-- KPI 条(取代页头)。业主 2026-10-28：与左右两栏一致，支持收起 / 展开。
+         收起后只留一条细栏（「关键指标已收起 + 展开」），竖向空间让给地图；状态落 localStorage。 -->
+    <div class="td-card kpi-bar" :class="{ 'is-folded': kpiFolded }">
+      <button
+        v-if="!kpiFolded"
+        type="button"
+        class="region-fold kpi-fold"
+        aria-label="收起关键指标"
+        title="收起关键指标：把竖向空间让给地图；收起后本栏留「展开指标」"
+        @click="setKpiFolded(true)"
+      >
+        收起 ▴
+      </button>
+      <div v-if="kpiFolded" class="kpi-folded">
+        <span class="kpi-folded-label">关键指标已收起</span>
+        <button
+          type="button"
+          class="region-fold"
+          aria-label="展开关键指标"
+          title="展开关键指标（平均值 / 最堵路段 / 在途车辆 / 生效因素）"
+          @click="setKpiFolded(false)"
+        >
+          展开指标 ▾
+        </button>
+      </div>
+      <template v-if="!kpiFolded">
       <div class="kpi-cell">
         <div class="kpi-label">全网平均车速</div>
         <div class="kpi-value">{{ fmt(overview?.avg_speed_kmh, 1) }}<span class="kpi-unit">km/h</span></div>
@@ -2463,6 +2666,7 @@ function onCommandChanged(): void {
           <template v-else>无生效因素</template>
         </div>
       </div>
+      </template>
     </div>
 
     <!-- 颜色模式切换（Issue IKNB9G，业主 2026-10-18）：决策拥堵版 ↔ 纯车流量版 -->
@@ -3192,7 +3396,7 @@ function onCommandChanged(): void {
                 role="button"
                 tabindex="0"
                 :aria-pressed="pickedRouteKey === c.highlightKey"
-                :title="pickedRouteKey === c.highlightKey ? '再点一次取消选中（全部按规划蓝 / 备选暗蓝画）' : '点为选中路线（地图上画成天蓝，压在其它路线之上）'"
+                :title="pickedRouteKey === c.highlightKey ? '再点一次取消选中（全部按规划蓝 / 备选中蓝画）' : '点为选中路线（地图上画成天蓝，压在其它路线之上）'"
                 @click="pickRoute(c.highlightKey)"
                 @keydown.enter.prevent="pickRoute(c.highlightKey)"
                 @keydown.space.prevent="pickRoute(c.highlightKey)"
@@ -3453,12 +3657,46 @@ function onCommandChanged(): void {
       </el-splitter>
     </div>
 
+    <!-- 上下拉条（业主 2026-10-28「上下可以那样拉吗」）：
+         夹在三栏区与底部热力带之间，拖它改热力带高度 = 三栏区（含地图）跟着变高变矮。
+         用 pointer 事件 + setPointerCapture，拖出条外也能继续拖、松手一定收到 pointerup。
+         右侧小箭头键：热力带一键收到底 / 回记住的高度（与左右栏的收起键同一套习惯）。 -->
+    <div
+      v-if="mapScope === 'station'"
+      class="band-drag"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="拖动调整地图与底部热力带的高度"
+      :title="`拖动调整高度（双击复位 ${BAND_DEFAULT_H}px）· 当前 ${bandHeight}px`"
+      @pointerdown="onBandDragDown"
+      @pointermove="onBandDragMove"
+      @pointerup="onBandDragUp"
+      @pointercancel="onBandDragUp"
+      @dblclick="onBandDblClick"
+    >
+      <span class="band-drag-grip" aria-hidden="true" />
+      <button
+        type="button"
+        class="band-drag-fold"
+        :aria-label="bandCollapsed ? '展开底部热力带' : '收起底部热力带（地图变高）'"
+        :title="bandCollapsed ? '展开底部热力带' : '收起底部热力带：地图拿走这块高度'"
+        @pointerdown.stop
+        @click.stop="bandCollapsed ? expandBand() : collapseBand()"
+      >
+        {{ bandCollapsed ? '⌃ 展开' : '⌄ 收起' }}
+      </button>
+    </div>
+
     <!-- 底部热力带(原 /heat:档位分布 | 路段×时间热力矩阵 | CI 色阶与口径)
          IKPFVN E1：全国视角下整条收起 —— 它三块内容全是"当前站"的路段维度
          （档位分布 / 路段×时间矩阵 / CI 色阶），站在全国视角时既没有当前站也不该占高度；
          收起后地图才真的"占满内容区"（NS 视角拿到的地图高度从 ~377 px 涨到 ~680 px，
          全国取景的 zoom 也随之落在 3–6 档，而不是挤在 2 档）。 -->
-    <div v-if="mapScope === 'station'" class="heat-band">
+    <div
+      v-if="mapScope === 'station'"
+      class="heat-band"
+      :style="{ '--band-h': `${bandHeight}px` }"
+    >
       <section class="td-card band-card">
         <div class="td-card-head">
           档位分布 · 当前时刻<span class="td-head-tag">
@@ -3494,7 +3732,7 @@ function onCommandChanged(): void {
 
       <section class="td-card band-card">
         <div class="td-card-head">
-          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}</span>
+          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}{{ timeBasis === 'demo_clock' ? '（演示时钟）' : '' }}</span>
         </div>
         <div class="td-card-body">
           <CiScale />
@@ -3532,7 +3770,9 @@ function onCommandChanged(): void {
     </div>
 
     <template #foot>
-      <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <span>快照时间 {{ formatStamp(snapshotTs) }}{{ timeBasis === 'demo_clock' ? '（演示时钟）' : '' }}</span>
+      <!-- 契约 v2.5：演示时钟锚定 ≠ 数据新鲜。真实内容时刻与真实年龄必须同屏写出，不许只说"45s 前更新" -->
+      <span v-if="timeBasisLine">{{ timeBasisLine }}</span>
       <!-- 切站缓存标识（IKPFR4）：页脚也要能看出"这不是刚拉到的" -->
       <span v-if="servedFromCache">数据标识:内存缓存快照 · 后台刷新中</span>
       <span>{{ footStationLine }}</span>
@@ -4415,12 +4655,109 @@ function onCommandChanged(): void {
   font-size: 13px;
 }
 
-/* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
-.heat-band {
+/* ---------- 上下拉条（三栏区 ↔ 底部热力带） ---------- */
+.band-drag {
   flex: 0 0 auto;
+  position: relative;
+  height: 10px;
+  margin: 0 16px;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+  /* 命中区比视觉高度大一圈：10px 太细，往上/下各偷 3px，拖起来不费劲 */
+  padding: 3px 0;
+  box-sizing: content-box;
+}
+.band-drag-grip {
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--td-component-stroke);
+  transition: background 120ms ease, width 120ms ease;
+}
+.band-drag:hover .band-drag-grip {
+  width: 64px;
+  background: var(--td-brand-color);
+}
+.band-drag-fold {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--td-text-color-placeholder);
+  background: transparent;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.band-drag-fold:hover {
+  color: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+}
+/* 拖动期间禁选中：否则上下拖会顺手把页面文字刷蓝。
+   本 <style> 是 scoped，body 不在组件内 → 必须用 :global(...)，写法是
+   `:global(body).is-vdrag`（`:global(body.is-vdrag)` 那种整段包进去的写法在
+   Vue 3 里会报编译错，别改）。 */
+:global(body).is-vdrag {
+  user-select: none;
+}
+
+/* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
+/* 区域收起 / 展开（业主 2026-10-28）：与栏收起同一套按钮样式 */
+.region-fold {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: var(--td-bg-color-container);
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.region-fold:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+.kpi-bar {
+  position: relative;
+}
+.kpi-bar.is-folded {
+  padding: 0;
+}
+.kpi-fold {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+}
+.kpi-folded {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  width: 100%;
+}
+.kpi-folded-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
+.heat-band {
+  /* 业主 2026-10-28「上下可以那样拉吗」：高度由拉条写入的 --band-h 决定，
+     不用 flex 撑（撑开的话拉条改高度会被内容 min-height 顶回去）。 */
+  flex: 0 0 auto;
+  height: var(--band-h, 196px);
+  min-height: 0;
   display: flex;
   gap: 10px;
   margin: 0 16px 8px;
+  overflow: hidden;
 }
 .band-card {
   flex: 0 0 240px;
@@ -4566,7 +4903,7 @@ function onCommandChanged(): void {
   background: var(--td-bg-color-container-hover);
   border-radius: var(--td-radius-sm);
   /* 左侧色条 = 该路线在地图上的颜色（业主 2026-10-28 统一蓝色系）：
-     规划蓝 #0052D9 / 备选暗蓝 #1E3A8A / 离站紫 #7B61FF / 选中天蓝 #38BDF8 */
+     规划蓝 #0052D9 / 备选中蓝 #2563EB / 离站紫 #7B61FF / 选中天蓝 #38BDF8 */
   border-left: 3px solid #0052d9;
   cursor: pointer;
   transition: box-shadow 0.15s ease;
@@ -4579,7 +4916,7 @@ function onCommandChanged(): void {
   outline-offset: 1px;
 }
 .route-item.alternative {
-  border-left-color: #1e3a8a;
+  border-left-color: #2563eb;
 }
 .route-item.departure {
   border-left-color: #7b61ff;
@@ -4647,7 +4984,7 @@ function onCommandChanged(): void {
 }
 
 /* ---------- 自定义起终点算路（业主 2026-10-28 当面要求） ---------- */
-/* 配色沿用业主 2026-10-28 定的蓝色系：规划蓝 #0052D9 / 备选暗蓝 #1E3A8A / 离站紫 #7B61FF /
+/* 配色沿用业主 2026-10-28 定的蓝色系：规划蓝 #0052D9 / 备选中蓝 #2563EB / 离站紫 #7B61FF /
    选中天蓝 #38BDF8；不引入红绿黄（那三个颜色在这个页面已经有别的语义）。 */
 /* 开关本体：默认「未开启」，开启后才是品牌蓝底，一眼能看出这块到底在不在算自定义路线 */
 .cod-toggle {
