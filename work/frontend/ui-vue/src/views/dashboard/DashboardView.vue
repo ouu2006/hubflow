@@ -33,6 +33,8 @@ import {
   getTrafficThresholds,
   getTrafficVehicles,
   postRouteRecommend,
+  postRoutePlan,
+  postRouteSnap,
   postTrafficLocate,
   subscribeTrafficSnapshot,
 } from '../../api/traffic'
@@ -45,6 +47,10 @@ import {
   routeEmphasisEnabled,
   setCamerasVisible,
   setDirectionsVisible,
+  setDropoffsVisible,
+  setZonesVisible,
+  dropoffsVisible,
+  zonesVisible,
   setRouteEmphasisEnabled,
 } from '../../shared/settings'
 import { landmarksNearSegment } from '../../shared/landmarks'
@@ -86,8 +92,13 @@ import {
   type RecommendResult,
   type RouteHighlight,
   type RouteEndpointMarker,
+  type RouteLonLat,
   type RouteOption,
   type RouteOptionsSnapshot,
+  type RoutePlanResult,
+  type RoutePlanRoute,
+  type RoutePlanRole,
+  type RouteSnapResult,
   type SegmentRecord,
   type SegmentSourcePair,
   type ThresholdSnapshot,
@@ -422,6 +433,41 @@ function resetCols(): void {
 }
 
 loadColMem()
+// ---------- 区域收起 / 展开（KPI 条；业主 2026-10-28，IKRANO） ----------
+// 左右两栏已有「‹ 收起」；这里补齐 KPI 条：收起后只留一条细栏，竖向空间让给地图。
+// **底部热力带不在这里做**：!95（`ce3f59b`）已在三栏区与热力带之间加了上下拉条 `.band-drag`，
+// 拖条上的箭头键就是「热力带收到底 / 回记住高度」，同一块区域两套收起键会让页面出现两个「收起」按钮，
+// 故本单只保留 KPI 条这一半（原 `heatFolded` / `band-head` 已随合并删除）。
+// 记忆口径与栏收起一致：落 localStorage；读不到 / 坏值静默退回展开。
+const REGION_FOLD_KEY = 'hubflow.dashboard.regionFolded'
+const kpiFolded = ref(false)
+
+function saveRegionFoldMem(): void {
+  try {
+    localStorage.setItem(REGION_FOLD_KEY, JSON.stringify({ kpi: kpiFolded.value }))
+  } catch {
+    /* 隐私模式等写不进去：不影响收起本身，只是不记忆 */
+  }
+}
+
+function setKpiFolded(v: boolean): void {
+  kpiFolded.value = v
+  saveRegionFoldMem()
+}
+
+function loadRegionFoldMem(): void {
+  try {
+    const raw = localStorage.getItem(REGION_FOLD_KEY)
+    if (!raw) return
+    const v = JSON.parse(raw) as { kpi?: unknown }
+    if (v.kpi === true) kpiFolded.value = true
+  } catch {
+    /* localStorage 不可用 / 内容坏了：静默退回展开 */
+  }
+}
+
+loadRegionFoldMem()
+
 loadColFoldMem()
 
 /**
@@ -1216,32 +1262,9 @@ const selectedOption = computed<RouteOption | null>(() => {
   return options.find((item) => item.session_id === selectedSession.value) ?? null
 })
 
-function fmtEta(value: number | null | undefined): string {
-  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '—'
-}
-
-/** 全程摘要（进场 → 落客 → 离站）：字段全部原样来自引擎摘要，不重算。 */
-const tripSummary = computed(() => {
-  const option = selectedOption.value
-  if (!option) return null
-  const arrival = option.arrival_route
-  const departure = option.departure_route
-  return {
-    od: option.od_id ?? '—',
-    session: option.session_id ?? '—',
-    start: option.location.segment_id ?? '—',
-    arrivalSegments: arrival?.segments.length ?? 0,
-    arrivalEta: fmtEta(arrival?.eta_min),
-    arrivalPath: arrival?.segments.join(' → ') ?? '',
-    dropoff: arrival?.dropoff_point ?? null,
-    alternatives: option.alternatives.length,
-    departureSegments: departure?.segments.length ?? 0,
-    departureEta: fmtEta(departure?.eta_min),
-    departurePath: departure?.segments.join(' → ') ?? '',
-    source: routeOptions.value?.data_source ?? 'engine.routes.real',
-    sourceNote: routeOptions.value?.data_source_note ?? '',
-  }
-})
+// 说明（2026-10-28）：原来这里有一份 `tripSummary`（选中 OD 的进场 / 落客 / 离站全程摘要）和配套的
+// `fmtEta`，只服务于已被业主砍掉的「整条路线规划」下拉；现在起终点由点图自定义、结果由 /route/plan 出，
+// 这两个视图模型没有任何使用者了，随之删除（取数逻辑 loadRouteOptions / loadRecommend 原样保留）。
 
 async function loadRecommend(sessionId?: string): Promise<void> {
   recommendLoading.value = true
@@ -1301,10 +1324,8 @@ async function loadRouteOptions(): Promise<void> {
   }
 }
 
-function onRouteSessionChange(): void {
-  if (!selectedSession.value) return
-  void loadRecommend(selectedSession.value)
-}
+// 说明（2026-10-28）：原来这里的 `onRouteSessionChange` 只给「整条路线规划」下拉的 `@change` 用，
+// 下拉已被业主砍掉（改为点图选起终点），该处理函数随之删除；`loadRouteOptions` 仍按原逻辑取首条并画路线。
 
 // ---------- 起点 / 终点确认（Issue IKP5C6）----------
 //
@@ -1409,9 +1430,310 @@ const startBoundarySection = computed(() => {
   return (activePack().sections ?? []).find((s) => s.segment_id === id && s.role === 'boundary') ?? null
 })
 
+// ---------- 自定义起终点算路（业主 2026-10-28 当面要求）----------
+//
+// 业主口径（要点原话）：「从自定义起点终点开始做，可以直接选择图上的任意坐标点，然后跟最近的路段进行匹配，
+// 不要在右边那个什么选项那里做选择，直接点击图来标记起终点，选右边那些选项太难抉择了，先选择起点再选择终点，
+// 选完后右边点击开始，下面才是推荐路线显示，直接显示三条推荐路线，按主推荐、备用1、备用2显示，离站另外计算」
+//
+// 落地形态：
+//   ① 点图选点 → 只把经纬度交给 `/route/snap` 吸附，页面**不做地图匹配**（不按站点包折线自己纠偏）；
+//   ② 一步一端：`odPicking` 决定地图现在认哪一端，起点没定之前点图不认终点；
+//   ③ 起终点都定好后才允许点「开始」→ `/route/plan`（不是「选完即算」）；
+//   ④ 结果只有「开始」按钮下方这三张卡（主推荐 / 备用1 / 备用2）+ 单列一块「离站路线」；
+//   ⑤ 备选不足 / 不可达一律如实说，绝不补假路线；不可达时地图不画线（后端 200 + reachable:false，不是报错）。
+const odOrigin = ref<RouteSnapResult | null>(null)
+const odDestination = ref<RouteSnapResult | null>(null)
+/** 地图当前在等哪一端（null = 不在拾取态，此时点图仍走原来的「选路段」） */
+const odPicking = ref<'origin' | 'destination' | null>('origin')
+const odSnapLoading = ref<'origin' | 'destination' | ''>('')
+const odSnapError = ref('')
+const odPlan = ref<RoutePlanResult | null>(null)
+const odPlanLoading = ref(false)
+const odPlanError = ref('')
+
+/**
+ * 自定义路线**总开关**（业主 2026-10-28 当面要求：「弄个开关，启用自定义路线时才开启这个东西」）。
+ * 默认关闭：关闭时右栏不出现「自定义起终点」面板、地图点图**不进入拾取态**（点图仍按原来的「选路段」走），
+ * 也不会去发 `/route/snap`、`/route/plan`。打开后才点图选起点/终点、点「开始」出三条。
+ * 状态落 localStorage（键 `hubflow.dashboard.customRoute`），演示时不必每次开一遍。
+ */
+const CUSTOM_ROUTE_STORAGE_KEY = 'hubflow.dashboard.customRoute'
+
+function readCustomRouteEnabled(): boolean {
+  try {
+    return localStorage.getItem(CUSTOM_ROUTE_STORAGE_KEY) === '1'
+  } catch {
+    /* localStorage 不可用（隐私模式等）：退回默认关闭，不影响页面可用性 */
+    return false
+  }
+}
+
+const customRouteEnabled = ref<boolean>(readCustomRouteEnabled())
+
+function setCustomRouteEnabled(next: boolean): void {
+  customRouteEnabled.value = next
+  try {
+    localStorage.setItem(CUSTOM_ROUTE_STORAGE_KEY, next ? '1' : '0')
+  } catch {
+    /* 写不进去就只在本次会话生效，不弹错 */
+  }
+  // 关掉就把已选起终点与三条结果一起清掉：不留「开关关着、路线还挂着」的半截状态
+  if (!next) clearOd()
+}
+
+/**
+ * 老「引擎产物路线」详情块（`div.route-tabs` 底下那一整块：本次起点/终点确认、逐条 route-item、
+ * 备选不足说明、why 行…）**先下线**（业主 2026-10-28：「把 route-tabs 底下的部分先去掉」）。
+ * 代码保留在模板里，常量设 `true` 即可原样恢复 —— 改版时要么复用、要么整块删掉，别留两份结论。
+ */
+const LEGACY_ROUTE_DETAIL = false
+/**
+ * 地图句柄：只用来在出路线后框视野（`fitSegments`）。
+ * `MapLibreViewer` 是 `<script setup>`（默认封闭），对面用 `defineExpose({ fitSegments })` 明确开放了这个能力。
+ */
+const mapRef = ref<InstanceType<typeof MapLibreViewer> | null>(null)
+
+/** 喂给地图的拾取模式：**总开关开着**、站区视角下、且确实在等某一端时才开 */
+const odPickMode = computed<'origin' | 'destination' | null>(() => {
+  if (!customRouteEnabled.value) return null
+  if (mapScope.value !== 'station') return null
+  return odPicking.value
+})
+
+/** 当前步骤（给用户看的那一步）：起点未定 = 第 1 步；起点已定终点未定 = 第 2 步；都定了 = 可以点开始 */
+const odStep = computed<'origin' | 'destination' | 'ready'>(() => {
+  if (!odOrigin.value) return 'origin'
+  if (!odDestination.value) return 'destination'
+  return 'ready'
+})
+
+/** 把吸附距离 / 偏移这类米制数值写成人话（接口给 null = 该字段没给，如实显示「—」） */
+function fmtMeters(value: number | null | undefined): string {
+  return typeof value === 'number' && Number.isFinite(value) ? `${value.toFixed(1)} m` : '—'
+}
+/** 段号 → 路段名；站点包里没有该段就如实显示段号本身（不编名字） */
+function odSegmentLabel(segmentId: string | null | undefined): string {
+  if (!segmentId) return '—'
+  const name = nameOf(segmentId)
+  return name && name !== segmentId ? `${segmentId}（${name}）` : segmentId
+}
+
+/** 吸附一端：坐标进、路段号 + 偏移 + 吸附距离出（`matched:false` 时如实提示，不硬猜一段） */
+async function snapOne(step: 'origin' | 'destination', point: RouteLonLat): Promise<RouteSnapResult | null> {
+  // mock 中间件没这两个端点（未匹配路径一律 404）：不去打注定 404 的请求，直接如实说明
+  if (USE_MOCK) {
+    odSnapError.value = 'mock 模式无自定义起终点端点（/route/snap · /route/plan）：不造假路线'
+    return null
+  }
+  odSnapLoading.value = step
+  odSnapError.value = ''
+  try {
+    const res = await postRouteSnap({ lon: point.lon, lat: point.lat })
+    if (!res.matched || !res.segment_id) {
+      odSnapError.value =
+        res.note || '该点附近没有可比对的路段（接口未吸附）：请在地图上换个位置重选'
+      return null
+    }
+    return res
+  } catch (e) {
+    odSnapError.value = `吸附接口不可达（${e instanceof Error ? e.message : '未知错误'}）：不猜路段`
+    return null
+  } finally {
+    odSnapLoading.value = ''
+  }
+}
+
+/** 地图点了一下（`MapLibreViewer` 的 `pick-point`）：按当前步骤吸附到起点或终点 */
+async function onPickPoint(point: RouteLonLat): Promise<void> {
+  const step = odPicking.value
+  if (!step) return
+  const res = await snapOne(step, point)
+  if (!res) return
+  // 起终点一变，上一轮算出的路线立刻作废（否则地图上会留着一条跟新起终点对不上的线）
+  odPlan.value = null
+  odPlanError.value = ''
+  if (step === 'origin') {
+    odOrigin.value = res
+    // 起点定好就自动进第 2 步等终点；终点已经有了（重选起点）就不用再等
+    odPicking.value = odDestination.value ? null : 'destination'
+  } else {
+    odDestination.value = res
+    odPicking.value = null
+  }
+}
+
+function reselectOrigin(): void {
+  odPlan.value = null
+  odPlanError.value = ''
+  odPicking.value = 'origin'
+}
+function reselectDestination(): void {
+  odPlan.value = null
+  odPlanError.value = ''
+  odPicking.value = 'destination'
+}
+function clearOd(): void {
+  odOrigin.value = null
+  odDestination.value = null
+  odPlan.value = null
+  odPlanError.value = ''
+  odSnapError.value = ''
+  odPicking.value = 'origin'
+}
+
+/** 点「开始」才算：起终点都吸附好了才发请求（业主口径：不是输入即算） */
+async function startOdPlan(): Promise<void> {
+  const origin = odOrigin.value
+  const destination = odDestination.value
+  if (!origin?.segment_id || !destination?.segment_id) return
+  if (USE_MOCK) {
+    odPlanError.value = 'mock 模式无自定义起终点端点（/route/plan）：不造假路线'
+    return
+  }
+  odPlanLoading.value = true
+  odPlanError.value = ''
+  try {
+    // 传吸附结果的 `{ segment_id, offset_m }`：不让后端再吸一次，避免「看到的点和算的点不是同一个」
+    const plan = await postRoutePlan({
+      origin: { segment_id: origin.segment_id, offset_m: origin.offset_m ?? 0 },
+      destination: { segment_id: destination.segment_id, offset_m: destination.offset_m ?? 0 },
+      with_departure: true,
+    })
+    odPlan.value = plan
+    // 有主推荐就让它默认是「选中的那条」（天蓝）；不可达时没有可点的卡，也就不设选中
+    pickedRouteKey.value = plan.routes.some((r) => r.role === 'primary') ? 'arrival' : null
+    // 出路线后把视野框到这批段上（业主 2026-10-28）：站区全览下三条线只有几十像素，看不出「出路线了」。
+    // 段号来源就是结果本身（各条 route.segments + 离站 departure.segments），去重后交给地图；
+    // 不可达（routes 为空）不调，地图保持原样 —— 不画线，也不替它编一个视野。
+    if (plan.reachable !== false && plan.routes.length > 0) {
+      const fitIds = new Set<string>()
+      for (const route of plan.routes) {
+        for (const id of route.segments ?? []) fitIds.add(id)
+      }
+      for (const id of plan.departure?.segments ?? []) fitIds.add(id)
+      if (fitIds.size > 0) mapRef.value?.fitSegments([...fitIds])
+    }
+  } catch (e) {
+    // 失败就是失败：清空结果 + 可读提示，不拿演示路线兜底
+    odPlan.value = null
+    odPlanError.value = `算路接口不可达（${e instanceof Error ? e.message : '未知错误'}）：不给假路线`
+  } finally {
+    odPlanLoading.value = false
+  }
+}
+
+const OD_ROLE_NAME: Record<RoutePlanRole, string> = {
+  primary: '主推荐',
+  alt1: '备用1',
+  alt2: '备用2',
+}
+/** 卡片标题（业主口径：按主推荐 / 备用1 / 备用2 显示） */
+function odRoleName(role: RoutePlanRole): string {
+  return OD_ROLE_NAME[role] ?? '备选'
+}
+/** 卡片 role → 地图 `RouteHighlight.key`（主推荐复用既有的 `arrival` 分组） */
+function odRoleKey(role: RoutePlanRole): string {
+  if (role === 'primary') return 'arrival'
+  return role === 'alt1' ? 'alt:1' : 'alt:2'
+}
+/** 里程（km，接口给米）——只做单位换算展示，不重算路线 */
+function odKm(lengthM: number): string {
+  return Number.isFinite(lengthM) ? (lengthM / 1000).toFixed(2) : '—'
+}
+/** 与主推荐的差异（只在备用卡上显示；主推荐本身没有差异） */
+function odDiffText(route: RoutePlanRoute): string {
+  const primary = odPlan.value?.routes.find((r) => r.role === 'primary')
+  if (!primary || route.role === 'primary') return ''
+  const dLen = (route.length_m - primary.length_m) / 1000
+  const dEta = route.eta_min - primary.eta_min
+  const sign = (v: number, digits: number): string => `${v >= 0 ? '+' : ''}${v.toFixed(digits)}`
+  return `较主推荐 ${sign(dLen, 2)} km / ${sign(dEta, 1)} min`
+}
+/** 该路线的注入数据回显：段号取自 `segments`，速度取这些真路段快照里的 `v_kmh` 均值（缺数据就不显示，不硬凑） */
+function odAvgSpeed(route: RoutePlanRoute): string {
+  const vals: number[] = []
+  for (const id of route.segments) {
+    const v = findSegment(id)?.v_kmh
+    if (typeof v === 'number' && Number.isFinite(v)) vals.push(v)
+  }
+  if (vals.length === 0) return ''
+  const avg = vals.reduce((sum, v) => sum + v, 0) / vals.length
+  return `${avg.toFixed(1)} km/h`
+}
+/** 备选不足 / 不可达的原因翻成人话（后端 `alternatives_status` 原样对应，不自己归类） */
+const odStatusNote = computed<string>(() => {
+  const plan = odPlan.value
+  if (!plan || !plan.reachable) return ''
+  const count = plan.routes.length
+  const engineReason = (plan.reason ?? '').trim()
+  if (plan.alternatives_status === 'single_path') {
+    return engineReason
+      ? `引擎只找到一条可行路径（single_path）：${engineReason}`
+      : `引擎只找到一条可行路径（single_path）：如实只给 ${count} 条，不补第二三条。`
+  }
+  if (plan.alternatives_status === 'no_diverse_path') {
+    return engineReason
+      ? `有路，但按差异化要求凑不出独立备选（no_diverse_path）：${engineReason}`
+      : `有路，但按差异化要求凑不出独立备选（no_diverse_path）：如实只给 ${count} 条。`
+  }
+  if (count < 3) {
+    return engineReason
+      ? `引擎本次只给出 ${count} 条候选（不足三条）：${engineReason}`
+      : `引擎本次只给出 ${count} 条候选（不足三条）：按实际条数显示，不补假路线。`
+  }
+  return ''
+})
+
+/** 自定义结果的地图高亮（映射到既有三态图层：arrival / alt:1 / alt:2 / departure） */
+const customRouteHighlights = computed<RouteHighlight[]>(() => {
+  // 应急态的高优先级高于一切推荐：连同自定义结果一起收起
+  if (emergencyActive.value) return []
+  const plan = odPlan.value
+  // 不可达：地图一条线都不画（不画假线，也不画「大概这样」的示意）
+  if (!plan || !plan.reachable) return []
+  const groups: RouteHighlight[] = []
+  for (const route of plan.routes) {
+    if (!route.segments || route.segments.length === 0) continue
+    if (route.role === 'primary') {
+      groups.push({ kind: 'arrival', key: 'arrival', segments: route.segments })
+    } else {
+      groups.push({
+        kind: 'alternative',
+        index: route.role === 'alt1' ? 1 : 2,
+        key: odRoleKey(route.role),
+        segments: route.segments,
+      })
+    }
+  }
+  // 离站路线单独一层（业主口径：离站另外计算，不与主推荐混在一起）
+  if (plan.departure && plan.departure.segments.length > 0) {
+    groups.push({ kind: 'departure', key: 'departure', segments: plan.departure.segments })
+  }
+  return groups
+})
+
+/** 地图实际要画哪一套：有自定义结果就画自定义的，没有就退回原来的三态路线 */
+const mapRoutes = computed<RouteHighlight[]>(() =>
+  odPlan.value ? customRouteHighlights.value : routeHighlights.value,
+)
+
 const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
   // 应急态：起点标记属于引导，一并收起
   if (emergencyActive.value) return null
+  // 自定义起点（业主 2026-10-28）：直接用接口吸附回来的落点坐标，不按站点包折线重算
+  const picked = odOrigin.value
+  if (picked?.matched && picked.lon !== null && picked.lat !== null && picked.segment_id) {
+    return {
+      kind: 'start',
+      label: '起点（点图选取）',
+      segment_id: picked.segment_id,
+      name: nameOf(picked.segment_id) || '点图吸附段',
+      lon: picked.lon,
+      lat: picked.lat,
+      note: `点图吸附 · 距路段 ${fmtMeters(picked.distance_m)}`,
+    }
+  }
   const s = currentStart.value
   if (!s) return null
   const seg = demoSegment(s.segment_id)
@@ -1433,6 +1755,19 @@ const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
 const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
   // 应急态：终点标记属于引导，一并收起
   if (emergencyActive.value) return null
+  // 自定义终点（业主 2026-10-28）：同起点口径，坐标与吸附距离都取接口回显值
+  const picked = odDestination.value
+  if (picked?.matched && picked.lon !== null && picked.lat !== null && picked.segment_id) {
+    return {
+      kind: 'end',
+      label: '终点（点图选取）',
+      segment_id: picked.segment_id,
+      name: nameOf(picked.segment_id) || '点图吸附段',
+      lon: picked.lon,
+      lat: picked.lat,
+      note: `点图吸附 · 距路段 ${fmtMeters(picked.distance_m)}`,
+    }
+  }
   const r = recommend.value
   if (!r) return null
   const segs = r.arrival_route.segments ?? []
@@ -2187,8 +2522,32 @@ function onCommandChanged(): void {
       <span class="switch-skeleton" aria-hidden="true"><i /><i /><i /></span>
     </div>
 
-    <!-- KPI 条(取代页头) -->
-    <div class="td-card kpi-bar">
+    <!-- KPI 条(取代页头)。业主 2026-10-28：与左右两栏一致，支持收起 / 展开。
+         收起后只留一条细栏（「关键指标已收起 + 展开」），竖向空间让给地图；状态落 localStorage。 -->
+    <div class="td-card kpi-bar" :class="{ 'is-folded': kpiFolded }">
+      <button
+        v-if="!kpiFolded"
+        type="button"
+        class="region-fold kpi-fold"
+        aria-label="收起关键指标"
+        title="收起关键指标：把竖向空间让给地图；收起后本栏留「展开指标」"
+        @click="setKpiFolded(true)"
+      >
+        收起 ▴
+      </button>
+      <div v-if="kpiFolded" class="kpi-folded">
+        <span class="kpi-folded-label">关键指标已收起</span>
+        <button
+          type="button"
+          class="region-fold"
+          aria-label="展开关键指标"
+          title="展开关键指标（平均值 / 最堵路段 / 在途车辆 / 生效因素）"
+          @click="setKpiFolded(false)"
+        >
+          展开指标 ▾
+        </button>
+      </div>
+      <template v-if="!kpiFolded">
       <div class="kpi-cell">
         <div class="kpi-label">全网平均车速</div>
         <div class="kpi-value">{{ fmt(overview?.avg_speed_kmh, 1) }}<span class="kpi-unit">km/h</span></div>
@@ -2219,6 +2578,7 @@ function onCommandChanged(): void {
           <template v-else>无生效因素</template>
         </div>
       </div>
+      </template>
     </div>
 
     <!-- 颜色模式切换（Issue IKNB9G，业主 2026-10-18）：决策拥堵版 ↔ 纯车流量版 -->
@@ -2514,6 +2874,41 @@ function onCommandChanged(): void {
                       摄像头 {{ camerasVisible ? '开' : '关' }}
                     </button>
                   </span>
+                  <!-- 落客点 / 场区显示开关（与「摄像头」同款）。只关显示，右栏列表与接口数据不动。 -->
+                  <span class="pack-switch" role="group" aria-label="落客点">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: dropoffsVisible }"
+                      role="switch"
+                      :aria-checked="dropoffsVisible"
+                      :title="
+                        dropoffsVisible
+                          ? '落客点：开（图钉 + 落客区演示圈）；点击整体隐藏'
+                          : '落客点：关（图钉与演示圈都不画）；点击恢复（列表与数据不受影响）'
+                      "
+                      @click="setDropoffsVisible(!dropoffsVisible)"
+                    >
+                      落客点 {{ dropoffsVisible ? '开' : '关' }}
+                    </button>
+                  </span>
+                  <span class="pack-switch" role="group" aria-label="场区">
+                    <button
+                      type="button"
+                      class="pack-switch-item"
+                      :class="{ on: zonesVisible }"
+                      role="switch"
+                      :aria-checked="zonesVisible"
+                      :title="
+                        zonesVisible
+                          ? '场区（停车场 / 候客 / 蓄车）：开；点击整体隐藏'
+                          : '场区：关（图钉不画）；点击恢复（列表与数据不受影响）'
+                      "
+                      @click="setZonesVisible(!zonesVisible)"
+                    >
+                      场区 {{ zonesVisible ? '开' : '关' }}
+                    </button>
+                  </span>
                   <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
                        默认开，落 localStorage；状态在图上与图例里都能看到。 -->
                   <span class="pack-switch" role="group" aria-label="凸显路线">
@@ -2537,13 +2932,15 @@ function onCommandChanged(): void {
               </div>
               <div class="td-card-body flush map-body">
                 <MapLibreViewer
+                  ref="mapRef"
                   :segments="segments"
                   :vehicles="vehicles"
                   :selected-id="selectedId"
-                  :routes="routeHighlights"
+                  :routes="mapRoutes"
                   :picked-route-key="pickedRouteKey"
                   :route-start="routeStartMarker"
                   :route-end="routeEndMarker"
+                  :pick-mode="odPickMode"
                   :mode="viewMode"
                   :color-mode="colorMode"
                   :map-mode="mapScope"
@@ -2551,6 +2948,7 @@ function onCommandChanged(): void {
                   :hover-chip="mapChip"
                   :legend="true"
                   @select="onSelect"
+                  @pick-point="onPickPoint"
                   @switch-station="pickStation"
                   @arrived="onMotionArrived"
                 />
@@ -2606,66 +3004,197 @@ function onCommandChanged(): void {
             <p class="em-src">{{ emergency?.note ?? '' }}</p>
           </div>
           <div v-else class="td-card-body">
-            <!-- 整条路线规划（Issue IKNAUI）：引擎产物 OD/session 选择 → 完整路线 + 进场/落客/离站全程摘要 -->
-            <div class="route-plan">
+            <!-- 自定义起终点算路（业主 2026-10-28 当面要求）：
+                 点图选起点 → 再点图选终点 → 右侧点「开始」→ 下面才是三条推荐（主推荐 / 备用1 / 备用2），
+                 离站路线另外计算、单独一块。原来这里的「整条路线规划」下拉（挑 OD / session）已被业主
+                 明确要求去掉——「选右边那些选项太难抉择了」：改成直接点图取坐标，交后端吸附到最近路段。 -->
+            <!-- 自定义路线总开关：默认「未开启」，此时下面整块自定义起终点都不出现，
+                 地图点图也不进拾取态（业主 2026-10-28：「启用自定义路线时才开启这个东西」）。 -->
+            <div class="cod-toggle">
+              <button
+                type="button"
+                class="cod-toggle-btn"
+                role="switch"
+                :aria-checked="customRouteEnabled"
+                :title="
+                  customRouteEnabled
+                    ? '自定义路线：开（点图选起点 → 点图选终点 → 点「开始」出三条推荐）；点击关闭'
+                    : '自定义路线：关（右栏不出现自定义起终点，点图只选路段）；点击开启'
+                "
+                @click="setCustomRouteEnabled(!customRouteEnabled)"
+              >
+                <span class="cod-toggle-dot" :class="{ on: customRouteEnabled }" aria-hidden="true"></span>
+                启用自定义路线 {{ customRouteEnabled ? '已开启' : '未开启' }}
+              </button>
+              <span class="cod-toggle-note">
+                {{
+                  customRouteEnabled
+                    ? '在地图上点起点、再点终点，然后点「开始」出主推荐 / 备用1 / 备用2'
+                    : '默认关闭：不启用就不点图算路'
+                }}
+              </span>
+            </div>
+
+            <div v-if="customRouteEnabled" class="custom-od">
               <div class="route-plan-head">
-                整条路线规划
-                <span class="td-head-tag">引擎路线产物</span>
-                <span class="route-badge">演示数据（模拟）</span>
+                自定义起终点
+                <span class="td-head-tag">{{
+                  USE_MOCK ? 'mock 模式无此端点' : '点图取坐标 · 后端吸附最近路段'
+                }}</span>
               </div>
-              <p v-if="routeOptionsLoading" class="route-hint">正在读取引擎路线选项…</p>
-              <template v-else-if="routeOptions && routeOptions.options.length > 0">
-                <select
-                  v-model="selectedSession"
-                  class="route-select"
-                  aria-label="选择引擎 OD / 行程"
-                  @change="onRouteSessionChange"
-                >
-                  <option
-                    v-for="option in routeOptions.options"
-                    :key="option.session_id || option.request_id || ''"
-                    :value="option.session_id || ''"
-                  >
-                    {{ option.od_id ?? 'OD' }} · 起点 {{ option.location.segment_id ?? '—' }}
-                    <template v-if="option.location.segment_id">（{{ nameOf(option.location.segment_id) }}）</template>
-                    · 到达 {{ fmtEta(option.arrival_route?.eta_min) }} min
-                  </option>
-                </select>
-                <div v-if="tripSummary" class="trip-summary">
-                  <div class="trip-line">
-                    <b>进场</b>：起点 {{ tripSummary.start }} · 推荐路径 {{ tripSummary.arrivalSegments }} 段 ·
-                    ETA {{ tripSummary.arrivalEta }} min
+
+              <!-- 步骤提示：现在在等哪一步，就明说哪一步 -->
+              <p class="cod-step" :class="`step-${odStep}`">
+                <template v-if="odStep === 'origin'">
+                  第 1 步：在地图上点一下标记<b>起点</b>（点哪儿用哪儿，坐标交后端吸附到最近路段）
+                </template>
+                <template v-else-if="odStep === 'destination'">
+                  第 2 步：起点已定，再在地图上点一下标记<b>终点</b>（现在点图只认终点）
+                </template>
+                <template v-else>
+                  起终点已定：点下面「开始」出路线（主推荐 / 备用1 / 备用2 直接列出来）
+                </template>
+              </p>
+
+              <p v-if="odSnapLoading" class="route-hint">正在把点击点吸附到最近路段…</p>
+              <p v-else-if="odSnapError" class="route-hint warn">{{ odSnapError }}</p>
+
+              <!-- 吸附回显：路段号 + 偏移 + 吸附距离。看不清楚算的是哪个点，就谈不上「跟着我点的位置算」 -->
+              <div class="cod-endpoints">
+                <div class="cod-end" :class="{ on: odPicking === 'origin' }">
+                  <div class="cod-end-head">
+                    起点
+                    <span v-if="odPicking === 'origin'" class="cod-tag pick">正在点图选…</span>
+                    <span v-else-if="odOrigin" class="cod-tag ok">已吸附</span>
+                    <span v-else class="cod-tag">未选</span>
                   </div>
-                  <div class="trip-segs td-mono">{{ tripSummary.arrivalPath || '—' }}</div>
-                  <div class="trip-line">
-                    <b>落客</b>：{{ tripSummary.dropoff ?? '引擎产物未给落客点（如实空窗）' }} · 备选
-                    {{ tripSummary.alternatives }} 条
+                  <template v-if="odOrigin">
+                    <div class="cod-end-line">
+                      路段 <b class="td-mono">{{ odSegmentLabel(odOrigin.segment_id) }}</b>
+                    </div>
+                    <div class="cod-end-line">
+                      偏移 {{ fmtMeters(odOrigin.offset_m) }} · 吸附距离 {{ fmtMeters(odOrigin.distance_m) }}
+                    </div>
+                    <button type="button" class="cod-mini" @click="reselectOrigin">重选起点</button>
+                  </template>
+                  <p v-else class="cod-end-line">在地图上点一下即可（不用在右侧选项里挑）</p>
+                </div>
+
+                <div class="cod-end" :class="{ on: odPicking === 'destination' }">
+                  <div class="cod-end-head">
+                    终点
+                    <span v-if="odPicking === 'destination'" class="cod-tag pick">正在点图选…</span>
+                    <span v-else-if="odDestination" class="cod-tag ok">已吸附</span>
+                    <span v-else class="cod-tag">未选</span>
                   </div>
-                  <div class="trip-line">
-                    <b>离站</b>：
-                    <template v-if="tripSummary.departureSegments > 0">
-                      {{ tripSummary.departureSegments }} 段 · ETA {{ tripSummary.departureEta }} min
-                    </template>
-                    <template v-else>引擎产物未给离站路线（如实空窗）</template>
-                  </div>
-                  <div v-if="tripSummary.departurePath" class="trip-segs td-mono">
-                    {{ tripSummary.departurePath }}
-                  </div>
-                  <p class="route-source">
-                    来源 {{ tripSummary.source }} · 段号命名空间
-                    {{ (routeOptions.segment_namespaces || []).join(' / ') || '—' }} ·
-                    ETA / 路径原样透传，接口层与前端均不代算
+                  <template v-if="odDestination">
+                    <div class="cod-end-line">
+                      路段 <b class="td-mono">{{ odSegmentLabel(odDestination.segment_id) }}</b>
+                    </div>
+                    <div class="cod-end-line">
+                      偏移 {{ fmtMeters(odDestination.offset_m) }} · 吸附距离
+                      {{ fmtMeters(odDestination.distance_m) }}
+                    </div>
+                    <button type="button" class="cod-mini" @click="reselectDestination">重选终点</button>
+                  </template>
+                  <p v-else class="cod-end-line">
+                    {{ odOrigin ? '在地图上点一下标记终点' : '起点定好后才认终点（先选起点）' }}
                   </p>
                 </div>
-              </template>
-              <p v-else-if="routeOptionsError" class="route-hint">
-                <template v-if="USE_MOCK">
-                  mock 模式无整条路线选项端点（/route/options）：下方为演示会话路线，不冒充引擎 OD。
+              </div>
+
+              <div class="cod-actions">
+                <button
+                  type="button"
+                  class="cod-start"
+                  :disabled="odStep !== 'ready' || odPlanLoading"
+                  @click="startOdPlan"
+                >
+                  {{ odPlanLoading ? '正在算路…' : '开始' }}
+                </button>
+                <button
+                  v-if="odOrigin || odDestination"
+                  type="button"
+                  class="cod-clear"
+                  @click="clearOd"
+                >
+                  清空起终点
+                </button>
+                <span v-if="odStep !== 'ready'" class="cod-tip">起终点都选好后才能「开始」</span>
+              </div>
+
+              <!-- 结果只出现在「开始」下方：一主二备 + 离站单独一块 -->
+              <p v-if="odPlanError" class="route-hint warn">{{ odPlanError }}</p>
+              <template v-else-if="odPlan">
+                <div v-if="!odPlan.reachable" class="cod-unreachable" role="status">
+                  <b>起点到该终点不可达（引擎如实告知）</b>
+                  <span v-if="odPlan.note"> · {{ odPlan.note }}</span>
+                  <div class="cod-end-line">
+                    地图不画示意线、也不给假路线；可重选起点或终点再试。
+                  </div>
+                </div>
+                <template v-else>
+                  <div class="cod-cards">
+                    <button
+                      v-for="r in odPlan.routes"
+                      :key="r.role"
+                      type="button"
+                      class="cod-card"
+                      :class="[r.role, { picked: pickedRouteKey === odRoleKey(r.role) }]"
+                      :aria-pressed="pickedRouteKey === odRoleKey(r.role)"
+                      :title="
+                        pickedRouteKey === odRoleKey(r.role)
+                          ? '再点一次取消选中（全部按原配色画）'
+                          : '点为选中路线（地图上画成天蓝，压在其它路线之上）'
+                      "
+                      @click="pickRoute(odRoleKey(r.role))"
+                    >
+                      <div class="cod-card-head">
+                        <span class="cod-card-role">{{ odRoleName(r.role) }}</span>
+                        <span class="cod-card-eta td-num">{{ r.eta_min }} min</span>
+                      </div>
+                      <div class="cod-card-metrics">
+                        里程 {{ odKm(r.length_m) }} km · 段数
+                        {{ r.segment_count ?? r.segments.length }}
+                        <template v-if="odAvgSpeed(r)"> · 均速 {{ odAvgSpeed(r) }}</template>
+                      </div>
+                      <div v-if="odDiffText(r)" class="cod-card-diff">{{ odDiffText(r) }}</div>
+                      <p class="cod-card-reason">{{ r.reason }}</p>
+                    </button>
+                  </div>
+                  <p v-if="odStatusNote" class="route-hint">{{ odStatusNote }}</p>
+
+                  <!-- 离站路线：另外计算，单独一块，不和主推荐混在一起 -->
+                  <div class="cod-dep">
+                    <div class="cod-dep-head">
+                      离站路线
+                      <span class="cod-tag">另外计算</span>
+                    </div>
+                    <template v-if="odPlan.departure">
+                      <div class="cod-end-line">
+                        里程 {{ odKm(odPlan.departure.length_m) }} km · 预计
+                        {{ odPlan.departure.eta_min }} min · 段数
+                        {{ odPlan.departure.segments.length }}
+                      </div>
+                      <div class="cod-segs td-mono">{{ odPlan.departure.segments.join(' → ') || '—' }}</div>
+                      <p v-if="odPlan.departure.note || odPlan.departure_note" class="cod-end-line">
+                        {{ odPlan.departure.note || odPlan.departure_note }}
+                      </p>
+                    </template>
+                    <p v-else class="cod-end-line">
+                      引擎本次未给离站路线：如实空窗，不拿主推荐凑一段。
+                    </p>
+                  </div>
+                  <p v-if="odPlan.note" class="route-source">{{ odPlan.note }}</p>
+                  <p class="route-source">
+                    段号 / ETA / 里程 / 备选理由全部由接口原样给出，本页不重算；点卡片可在图上高亮那条线（天蓝）。
+                  </p>
                 </template>
-                <template v-else>引擎路线选项不可用：{{ routeOptionsError }}</template>
-              </p>
-              <p v-else class="route-hint">引擎产物无 OD / session 选项：不编造路线选择。</p>
+              </template>
             </div>
+            <!-- 引擎产物那条老路（三态路线 / 全程摘要）保留为**没有自定义结果时**的兜底视图：
+                 自定义起终点一旦算过（`odPlan` 有值），这块就整体让位给上面的三张卡，避免同屏两套结论。 -->
+            <template v-if="!odPlan">
             <p v-if="recommendLoading" class="route-hint">正在读取推荐快照…</p>
             <p v-else-if="recommendError" class="route-hint warn">{{ recommendError }}</p>
             <template v-else-if="recommend">
@@ -2681,6 +3210,9 @@ function onCommandChanged(): void {
                   {{ t.name }}
                 </button>
               </div>
+              <!-- 老「引擎产物路线」详情整块下线（业主 2026-10-28：「把 route-tabs 底下的部分先去掉」）。
+                   代码原样保留，把 `LEGACY_ROUTE_DETAIL` 改成 true 即恢复。 -->
+              <template v-if="LEGACY_ROUTE_DETAIL">
               <div class="route-meta">
                 <span class="route-badge">演示数据（模拟）</span>
                 <span>路线来自引擎算路产物 · 本页不重算</span>
@@ -2804,8 +3336,10 @@ function onCommandChanged(): void {
               </p>
               <p class="route-why">{{ routeWhyLine }}</p>
               <p v-if="routeDegradedNote" class="route-hint">{{ routeDegradedNote }}</p>
+              </template>
             </template>
             <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
+            </template>
           </div>
         </section>
         <section class="td-card">
@@ -4083,6 +4617,46 @@ function onCommandChanged(): void {
 }
 
 /* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
+/* 区域收起 / 展开（业主 2026-10-28）：与栏收起同一套按钮样式 */
+.region-fold {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: var(--td-bg-color-container);
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.region-fold:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+.kpi-bar {
+  position: relative;
+}
+.kpi-bar.is-folded {
+  padding: 0;
+}
+.kpi-fold {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+}
+.kpi-folded {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  width: 100%;
+}
+.kpi-folded-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
 .heat-band {
   /* 业主 2026-10-28「上下可以那样拉吗」：高度由拉条写入的 --band-h 决定，
      不用 flex 撑（撑开的话拉条改高度会被内容 min-height 顶回去）。 */
@@ -4318,10 +4892,53 @@ function onCommandChanged(): void {
   color: var(--td-text-color-placeholder);
 }
 
-/* ---------- 整条路线规划（Issue IKNAUI） ---------- */
-.route-plan {
+/* ---------- 自定义起终点算路（业主 2026-10-28 当面要求） ---------- */
+/* 配色沿用业主 2026-10-28 定的蓝色系：规划蓝 #0052D9 / 备选中蓝 #2563EB / 离站紫 #7B61FF /
+   选中天蓝 #38BDF8；不引入红绿黄（那三个颜色在这个页面已经有别的语义）。 */
+/* 开关本体：默认「未开启」，开启后才是品牌蓝底，一眼能看出这块到底在不在算自定义路线 */
+.cod-toggle {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
   margin-bottom: 8px;
-  padding: 7px 9px;
+}
+.cod-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.cod-toggle-btn[aria-checked='true'] {
+  color: #ffffff;
+  background: var(--td-brand-color);
+  border-color: var(--td-brand-color);
+}
+.cod-toggle-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--td-text-color-placeholder);
+}
+.cod-toggle-dot.on {
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgb(255 255 255 / 35%);
+}
+.cod-toggle-note {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+}
+.custom-od {
+  margin-bottom: 8px;
+  padding: 8px 9px;
   border: 1px solid var(--td-component-stroke);
   border-radius: var(--td-radius-sm);
   background: var(--td-bg-color-secondarycontainer);
@@ -4336,35 +4953,214 @@ function onCommandChanged(): void {
   font-weight: 500;
   color: var(--td-text-color-primary);
 }
-.route-select {
-  width: 100%;
-  height: 26px;
-  margin-bottom: 5px;
-  padding: 0 6px;
-  font-size: 11px;
-  color: var(--td-text-color-primary);
-  background: var(--td-bg-color-container);
-  border: 1px solid var(--td-component-border);
-  border-radius: var(--td-radius-sm);
-}
-.trip-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.trip-line {
+/* 步骤提示：现在在等哪一步，一直摆在最显眼的位置 */
+.cod-step {
+  margin: 0 0 6px;
+  padding: 5px 8px;
   font-size: 11px;
   line-height: 1.6;
+  color: #0b4a63;
+  background: #e6f4ff;
+  border-left: 3px solid #0052d9;
+  border-radius: 3px;
+}
+.cod-step.step-ready {
+  background: #dbeafe;
+}
+.cod-endpoints {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.cod-end {
+  padding: 6px 8px;
+  background: var(--td-bg-color-container);
+  border: 1px solid var(--td-component-stroke);
+  border-left: 3px solid #0052d9;
+  border-radius: var(--td-radius-sm);
+}
+/* 正在等这一端：天蓝描边（与「正在选」这一步呼应） */
+.cod-end.on {
+  border-left-color: #38bdf8;
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.5);
+}
+.cod-end-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--td-text-color-primary);
 }
-.trip-line b {
-  display: inline-block;
-  min-width: 32px;
-  margin-right: 4px;
-  color: var(--td-brand-color);
+.cod-tag {
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 16px;
+  color: var(--td-text-color-secondary);
+  background: var(--td-bg-color-secondarycontainer);
+  border-radius: 8px;
+  white-space: nowrap;
 }
-.trip-segs {
-  margin: 0 0 3px 36px;
+.cod-tag.pick {
+  color: #0b4a63;
+  background: #bae6fd;
+}
+.cod-tag.ok {
+  color: #0b4a63;
+  background: #e0f2fe;
+}
+.cod-end-line {
+  margin-top: 2px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-secondary);
+  word-break: break-all;
+}
+.cod-end-line b {
+  color: var(--td-text-color-primary);
+}
+.cod-mini {
+  margin-top: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  color: var(--td-brand-color);
+  background: transparent;
+  border: 1px solid var(--td-component-border);
+  border-radius: 3px;
+  cursor: pointer;
+}
+.cod-mini:hover {
+  border-color: var(--td-brand-color);
+}
+.cod-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 8px;
+}
+.cod-start {
+  min-width: 84px;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--td-brand-color);
+  border: 1px solid var(--td-brand-color);
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.cod-start:disabled {
+  color: var(--td-text-color-placeholder);
+  background: var(--td-bg-color-container-hover);
+  border-color: var(--td-component-stroke);
+  cursor: not-allowed;
+}
+.cod-clear {
+  padding: 5px 10px;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  background: transparent;
+  border: 1px solid var(--td-component-border);
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+}
+.cod-tip {
+  font-size: 11px;
+  color: var(--td-text-color-placeholder);
+}
+/* 不可达：如实告知（不是报错红，是「引擎说没路」的说明块） */
+.cod-unreachable {
+  margin-bottom: 8px;
+  padding: 8px 9px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #a06a00;
+  background: var(--td-warning-color-1);
+  border-radius: var(--td-radius-sm);
+}
+.cod-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.cod-card {
+  padding: 7px 9px;
+  text-align: left;
+  background: var(--td-bg-color-container-hover);
+  border: 0;
+  border-left: 3px solid #0052d9;
+  border-radius: var(--td-radius-sm);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+.cod-card:hover {
+  box-shadow: inset 0 0 0 1px rgba(0, 82, 217, 0.28);
+}
+.cod-card:focus-visible {
+  outline: 2px solid #0052d9;
+  outline-offset: 1px;
+}
+.cod-card.alt1,
+.cod-card.alt2 {
+  border-left-color: #1e3a8a;
+}
+.cod-card.picked {
+  border-left-color: #38bdf8;
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.65);
+}
+.cod-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cod-card-role {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+.cod-card-eta {
+  font-size: 12px;
+  color: var(--td-text-color-primary);
+}
+.cod-card-metrics {
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+}
+.cod-card-diff {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+}
+.cod-card-reason {
+  margin: 4px 0 0;
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--td-text-color-placeholder);
+}
+/* 离站路线：单独一块（业主口径：离站另外计算，不和主推荐混在一起） */
+.cod-dep {
+  margin-top: 8px;
+  padding: 7px 9px;
+  background: var(--td-bg-color-container-hover);
+  border-left: 3px solid #7b61ff;
+  border-radius: var(--td-radius-sm);
+}
+.cod-dep-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--td-text-color-primary);
+}
+.cod-segs {
+  margin-top: 3px;
   font-size: 10px;
   line-height: 1.5;
   color: var(--td-text-color-secondary);

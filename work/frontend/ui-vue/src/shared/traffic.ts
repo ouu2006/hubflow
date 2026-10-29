@@ -298,6 +298,141 @@ export interface RouteOptionsSnapshot {
   note?: string
 }
 
+// ---------- 自定义起终点算路（业主 2026-10-28 当面要求；非契约辅助端点 /route/snap · /route/plan · /route/points） ----------
+// 业主口径原话要点：「从自定义起点终点开始做，可以直接选择图上的任意坐标点，然后跟最近的路段进行匹配，
+// 不要在右边那个什么选项那里做选择，直接点击图来标记起终点……先选择起点再选择终点，选完后右边点击开始，
+// 下面才是推荐路线显示，直接显示三条推荐路线，按主推荐、备用1、备用2显示，离站另外计算」。
+//
+// ⚠️ 前端只做**展示与传参**：吸附（point → 最近路段）、算路、ETA、备选条数全部由接口层给，
+// 页面一个数字都不重算；不可达 / 备选不足一律如实显示，**绝不补假路线**。
+
+/** 地图上点一下的坐标（纯前端值，不是契约字段） */
+export interface RouteLonLat {
+  lon: number
+  lat: number
+}
+
+/** `POST /api/traffic/route/snap` 响应：点击坐标 → 最近路段吸附结果 */
+export interface RouteSnapResult {
+  /** 是否吸附到路段（false 时下面各字段为 null，页面据此提示重选，不硬算） */
+  matched: boolean
+  site_id: string
+  segment_id: string | null
+  /** 沿路段方向的偏移（米） */
+  offset_m: number | null
+  /** 点击点 → 路段折线的垂直距离（米），页面回显给使用者看「吸到哪、差多远」 */
+  distance_m: number | null
+  /** 吸附后的落点坐标（页面用它画起 / 终标记，不用原始点击点） */
+  lon: number | null
+  lat: number | null
+  node_id: string | null
+  note?: string
+  is_simulated: true
+}
+
+/**
+ * `POST /api/traffic/route/plan` 的起 / 终点入参：三种形态任选一种。
+ * 页面走的是 `{ lon, lat }`：坐标交给后端吸附到最近路段（业主口径「不要在前端挑段号」）。
+ */
+export type RoutePlanAnchor =
+  | RouteLonLat
+  | { point_id: string }
+  | { segment_id: string; offset_m: number }
+
+/** 路线角色：一主二备（业主口径「按主推荐、备用1、备用2 显示」） */
+export type RoutePlanRole = 'primary' | 'alt1' | 'alt2'
+
+/** 一条候选路线（段号 / 边号 / ETA / 里程 / 引擎给的 reason 全部原样透传） */
+export interface RoutePlanRoute {
+  role: RoutePlanRole
+  /** 引擎给这条路径的 id（`OD-C-01` 这类），只用于展示 / 排重，不参与前端计算 */
+  path_id?: string
+  /** 引擎是否把这条标成推荐（`role:'primary'` 的一般同时为 true） */
+  is_recommended?: boolean
+  segments: string[]
+  edges: string[]
+  /** 引擎给的段数；缺省时页面用 `segments.length` 兜底显示 */
+  segment_count?: number
+  eta_min: number
+  length_m: number
+  /** 引擎说明（为什么推荐这条 / 与主推荐差在哪），页面原样展示 */
+  reason: string
+}
+
+/** 吸附后的端点（接口层算好回显给使用者：路段号 + 偏移 + 吸附距离） */
+export interface RoutePlanEndpoint {
+  segment_id: string
+  offset_m: number | null
+  distance_m: number | null
+  lon: number | null
+  lat: number | null
+  node_id: string | null
+  label: string
+}
+
+/**
+ * 备选充分性（契约口径）：
+ *   · `ok`              一主二备都在；
+ *   · `single_path`     只有一条可行路径；
+ *   · `no_diverse_path` 有路但不具备差异化（重叠度约束下凑不出第二条独立备选）；
+ *   · `unreachable`     不可达（此时 `reachable:false`，页面不画线、不弹红）。
+ */
+export type RouteAlternativesStatus = 'ok' | 'single_path' | 'no_diverse_path' | 'unreachable'
+
+/** 离站路线（**另外计算**，业主口径：单独一块，不与主推荐混在一起） */
+export interface RoutePlanDeparture {
+  segments: string[]
+  edges: string[]
+  eta_min: number
+  length_m: number
+  from: RoutePlanEndpoint
+  to: RoutePlanEndpoint
+  note?: string
+}
+
+/** `POST /api/traffic/route/plan` 响应 */
+export interface RoutePlanResult {
+  is_simulated: true
+  site_id: string
+  origin: RoutePlanEndpoint
+  destination: RoutePlanEndpoint
+  routes: RoutePlanRoute[]
+  /** 引擎实际给出的条数（缺省用 `routes.length`） */
+  route_count?: number
+  alternatives_status: RouteAlternativesStatus
+  /** 不可达时接口层返回 HTTP 200 + `reachable:false`（**不是**错误，不弹红） */
+  reachable: boolean
+  departure: RoutePlanDeparture | null
+  /** 备选不足时引擎给的原因（`single_path` / `no_diverse_path` 的具体解释），有就原样展示 */
+  reason?: string | null
+  /** 离站路线单独算时附带的说明 */
+  departure_note?: string | null
+  /** 不可达时的机读码（`ROUTE_UNAVAILABLE`） */
+  code?: string
+  /** 算路参数（k_candidates / max_path_overlap / weight 等），只作溯源展示 */
+  params?: Record<string, unknown>
+  note?: string
+}
+
+/** `GET /api/traffic/route/points` 的候选点位（业主不用它选点，只作辅助/未来接入） */
+export interface RoutePointEntry {
+  point_id: string
+  name: string
+  kind: string
+  node_id: string | null
+  segment_id: string | null
+  offset_m: number | null
+  lon: number
+  lat: number
+  source: string
+  verified: boolean
+}
+
+export interface RoutePointsSnapshot {
+  site_id: string
+  points: RoutePointEntry[]
+}
+
 // ---------- 四级编码(手册 §6.2,照抄) ----------
 
 export interface LevelStyle {

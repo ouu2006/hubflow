@@ -192,17 +192,23 @@ def select_candidates(
     max_overlap: float,
     weight: Callable[[str], float],
     forbid_u_turn: bool | None = None,
+    k_generate: int | None = None,
 ) -> list[list[str]]:
     """按 Yen 取候选,再按重叠度筛掉"等价路径"。
 
     贪心:按代价升序逐个看,与**已选中**的任一条重叠度超过 `max_overlap` 就丢弃。
     `forbid_u_turn=None` 时读图属性 `attributes.forbid_u_turn`（真网 enriched 图为 true；
     样例图没有该属性 → 保持旧行为逐字节不变）。
+
+    `k_generate`：**只放大候选池的搜索深度**（先把 Yen 的 K 放到 N 条，再按同一个
+    `max_overlap` 筛到 `k` 条）；默认 `None` = 旧行为（池深 = k）。重叠度口径一个不动：
+    仍然按**全长**共线比例算，绝不去掉公共首尾（业主 2026-10-28 裁定：那是绕过门槛凑数）。
     """
     if forbid_u_turn is None:
         forbid_u_turn = bool(graph.attributes.get("forbid_u_turn"))
+    pool = max(int(k_generate or k), int(k))
     picked: list[list[str]] = []
-    for path in k_shortest_paths(graph, src, dst, k, weight, forbid_u_turn=forbid_u_turn):
+    for path in k_shortest_paths(graph, src, dst, pool, weight, forbid_u_turn=forbid_u_turn):
         if all(path_overlap(graph, path, kept) <= max_overlap for kept in picked):
             picked.append(path)
         if len(picked) >= k:
