@@ -113,7 +113,11 @@ export interface SegmentSeriesPoint {
   x: number | null
   c_vph: number | null
   level: number | null
-  /** 该点所属运营阶段（接口层按 stations/capacity-model.json 同一口径打标） */
+  /**
+   * 该点所属运营阶段（接口层按 `work/twin/capacity-model.json` 与孪生侧
+   * `capacity.phase_at()` 同一口径打标，不在这里再加一套前端算法）。
+   * 标定表读不到时接口**不写这个键**（不是写空串）—— 前端按「无阶段」降级。
+   */
   phase?: string
 }
 

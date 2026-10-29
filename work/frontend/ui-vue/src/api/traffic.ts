@@ -64,14 +64,18 @@ export function getTrafficSegment(segmentId: string): Promise<SegmentRecord> {
 
 // GET /api/traffic/segment-series?segment_id=&limit= → 段级真时序(孪生 60 s 快照)
 // 口径:接口层只回产物里真实存在的点,不插值不补点;缺产物如实 404,页面按空窗降级。
+// `signal` 是切路段的丢弃通道:先发的旧段请求晚回来会盖掉新段的曲线,
+// 图上就成了「选了 A 段、画的是 B 段」——只多一个中止通道,不改端点/路径/响应形状。
 export function getTrafficSegmentSeries(
   segmentId: string,
   limit?: number,
+  opts: SnapshotFetchOptions = {},
 ): Promise<SegmentSeries> {
   const tail = typeof limit === 'number' && limit > 0 ? `&limit=${limit}` : ''
   return request<SegmentSeries>(
     'GET',
     `/api/traffic/segment-series?segment_id=${encodeURIComponent(segmentId)}${tail}`,
+    opts,
   )
 }
 

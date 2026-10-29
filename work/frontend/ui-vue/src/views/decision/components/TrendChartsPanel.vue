@@ -26,9 +26,13 @@
 //   ② 阈值虚线来自接口 /thresholds 的 grading.level_bounds（不写死）；取不到就不画那条线；
 //   ③ 曲线图三条线量级差太大（q≈千辆/h、v≈几十 km/h、x≈0~1.3），各自按**全量程归一化**后叠画
 //      ——归一化量程必须锁死在全量数据上，否则拖动游标时曲线会整体缩放抖动；
-//   ④ 全部 is_simulated = true，图上标注「孪生仿真快照，非实测」。
+//   ④ 全部 is_simulated = true，图上标注「孪生仿真快照，非实测」；
+//   ⑤ 等级 0（数据不可用）的帧一律当**断口**：不画线、连轨迹时断开、读数写「—」。
+//      这类帧在产物里常留 0 占位（SZ-061 的 13 帧就是 v=null / q=0 / x=0），
+//      把 0 当读数播出去就是替产物下结论「流量归零、车停了」——那是编数，不是降级。
 import { computed, onUnmounted, ref, watch } from 'vue'
 import { getTrafficSegmentSeries } from '../../../api/traffic'
+import { ApiError } from '../../../api/http'
 import {
   formatClock,
   type SegmentRecord,
@@ -50,31 +54,61 @@ const loading = ref(false)
 const errorText = ref('')
 
 function reasonOf(err: unknown): string {
+  // 服务端把「为什么没有」放在响应体的 `code` 上（api/http.ts 的 ApiError.code），
+  // message 是给人看的中文长句、还带着 http.ts 给 404 追加的「(端点不存在或服务未就绪)」尾巴。
+  // 按 code 判别才能给出可操作的降级提示；按 message 匹配子串会漏（旧写法就是这么失效的）。
+  const code = err instanceof ApiError ? err.code : ''
+  if (code === 'SERIES_NOT_AVAILABLE') return '孪生时序产物缺失（未跑孪生主循环）'
+  if (code === 'SERIES_NOT_FOUND') return '该路段不在孪生时序产物内'
+  if (code === 'SERIES_INVALID') return '缺少路段标识'
   const raw = err instanceof Error ? err.message : String(err)
-  if (raw.includes('SERIES_NOT_AVAILABLE')) return '孪生时序产物缺失（未跑孪生主循环）'
-  if (raw.includes('SERIES_NOT_FOUND')) return '该路段不在孪生时序产物内'
   return raw
 }
 
+/** 在途请求序号 + 中止通道：切路段时旧响应一律作废（见 api/traffic.ts 注释） */
+let loadSeq = 0
+let inflight: AbortController | null = null
+
 async function load(): Promise<void> {
+  inflight?.abort()
+  inflight = null
   if (!props.segmentId) {
     series.value = null
+    errorText.value = ''
+    loading.value = false
     return
   }
+  const seq = (loadSeq += 1)
+  const controller = new AbortController()
+  inflight = controller
   loading.value = true
   errorText.value = ''
   try {
-    series.value = await getTrafficSegmentSeries(props.segmentId)
+    const data = await getTrafficSegmentSeries(props.segmentId, undefined, {
+      signal: controller.signal,
+    })
+    if (seq !== loadSeq) return // 过期响应：新请求已经发出，不覆盖它
+    series.value = data
     cursor.value = 0
+    // 换段 = 换一条时间序列，从头播；不恢复播放的话，上一段「播到底停住」的暂停态会带过来，
+    // 新段停在第一帧不动，看着像图表坏了。
+    playing.value = true
   } catch (err) {
+    if (seq !== loadSeq) return
+    if (controller.signal.aborted) return // 自己主动中止的，不当作错误
     series.value = null
     errorText.value = reasonOf(err)
   } finally {
-    loading.value = false
+    if (seq === loadSeq) {
+      loading.value = false
+      inflight = null
+    }
   }
 }
 
 watch(() => props.segmentId, load, { immediate: true })
+
+onUnmounted(() => inflight?.abort())
 
 const points = computed<SegmentSeriesPoint[]>(() => series.value?.series ?? [])
 const all = computed(() => points.value)
@@ -200,8 +234,11 @@ interface CurveLine extends LineSpec {
   areaPath: string
   min: number
   max: number
-  last: number
+  /** 游标当前帧的产物原值（读数口径） */
+  last: number | null
   lastY: number
+  /** 游标当前帧是否有这条线的数：无数据就不画端点圆点，别把点钉在空洞上 */
+  hasCursor: boolean
 }
 
 const curveBaseY = CURVE_H - PAD_B
@@ -219,16 +256,34 @@ const curveBaseY = CURVE_H - PAD_B
  */
 const SMOOTH_WINDOW = 5
 
+/** 该帧是否「数据不可用」（level 缺省或 0）：这类帧产物里常留 0 占位，图与读数都当作空洞 */
+function unavailablePoint(p: SegmentSeriesPoint | null | undefined): boolean {
+  const lv = num(p?.level)
+  return lv === null || Math.round(lv) === 0
+}
+
+/** 真正可用的帧（画图、算占比只用这些） */
+const availablePoints = computed<SegmentSeriesPoint[]>(() => all.value.filter((p) => !unavailablePoint(p)))
+
 function smoothSeries(pts: SegmentSeriesPoint[], key: SeriesKey): (number | null)[] {
-  const raw = pts.map((p) => num(p[key]))
+  const raw = pts.map((p) => (unavailablePoint(p) ? null : num(p[key])))
   const half = Math.floor(SMOOTH_WINDOW / 2)
-  return raw.map((_, i) => {
-    const win: number[] = []
-    for (let j = i - half; j <= i + half; j += 1) {
+  return raw.map((value, i) => {
+    // 空洞仍是空洞：`level=0`（数据不可用）那几帧产物里是 null 或 0 占位，
+    // 平滑只改「线怎么画」，不负责把没有的数补出来 —— 否则窗口里只要有一个数值邻居，
+    // 空洞处就会凭空长出一条穿过洞的线，等于替产物编了一段车速 / 一段流量归零。
+    if (typeof value !== 'number') return null
+    const win: number[] = [value]
+    for (let j = i - 1; j >= Math.max(0, i - half); j -= 1) {
       const v = raw[j]
-      if (typeof v === 'number') win.push(v)
+      if (typeof v !== 'number') break // 不跨洞取邻居：洞边的点会被洞另一侧的值拉走
+      win.push(v)
     }
-    if (!win.length) return null
+    for (let j = i + 1; j <= Math.min(raw.length - 1, i + half); j += 1) {
+      const v = raw[j]
+      if (typeof v !== 'number') break
+      win.push(v)
+    }
     return win.reduce((a, b) => a + b, 0) / win.length
   })
 }
@@ -274,10 +329,21 @@ const curveLines = computed<CurveLine[]>(() => {
     const areaPath = spec.area && path && firstIdx >= 0
       ? `${path}L${xAt(lastIdx).toFixed(1)} ${curveBaseY} L${xAt(firstIdx).toFixed(1)} ${curveBaseY} Z`
       : ''
-    // 端点跟随游标：y 用平滑值（贴线），读数用原始值
-    const curSmooth = num(sv[cursor.value]) ?? finite[finite.length - 1] ?? 0
-    const curRaw = num(full[cursor.value]?.[spec.key]) ?? curSmooth
-    out.push({ ...spec, path: path.trim(), areaPath, min, max, last: curRaw, lastY: yOf(curSmooth) })
+    // 端点跟随游标：y 用平滑值（贴线），读数用原始值；
+    // 游标落在「数据不可用」的帧上时端点直接不画 —— 拿最后一个有值的点顶上去
+    // 等于把圆点钉在没有数据的地方，图上看着像那帧真有读数。
+    const curSmooth = num(sv[cursor.value])
+    const hasCursor = curSmooth !== null
+    out.push({
+      ...spec,
+      path: path.trim(),
+      areaPath,
+      min,
+      max,
+      last: num(full[cursor.value]?.[spec.key]),
+      lastY: hasCursor ? yOf(curSmooth) : PAD_T,
+      hasCursor,
+    })
   }
   return out
 })
@@ -298,8 +364,14 @@ const levelJumps = computed<LevelJump[]>(() => {
   if (pts.length < 2) return []
   const out: LevelJump[] = []
   for (let i = 1; i < pts.length; i += 1) {
-    const prev = Math.round(num(pts[i - 1]?.level) ?? 0)
-    const next = Math.round(num(pts[i]?.level) ?? 0)
+    const prevRaw = num(pts[i - 1]?.level)
+    const nextRaw = num(pts[i]?.level)
+    // level=0 是「数据不可用」，不是"最畅通"：把它当起点会把「数据恢复」画成一次判级升档，
+    // 而等级的 1~4 才是真实判级。任一侧不可用就不算升档事件。
+    if (prevRaw === null || nextRaw === null) continue
+    const prev = Math.round(prevRaw)
+    const next = Math.round(nextRaw)
+    if (prev === 0 || next === 0) continue
     if (next > prev) {
       out.push({
         x: xAt(i),
@@ -435,7 +507,7 @@ const xBounds = computed<number[]>(() => {
 
 /** 坐标域锁在全量上，播放时散点不会整体漂移 */
 const scatterDomain = computed(() => {
-  const pts = all.value.filter((p) => num(p.q_vph) !== null && num(p.x) !== null)
+  const pts = availablePoints.value.filter((p) => num(p.q_vph) !== null && num(p.x) !== null)
   if (pts.length < 2) return { qMin: 0, qMax: 1, xMax: 1.15 }
   const qs = pts.map((p) => num(p.q_vph) as number)
   const xs = pts.map((p) => num(p.x) as number)
@@ -453,6 +525,8 @@ interface ScatterDot {
   level: number
   ts: string
   isCursor: boolean
+  /** 在全量序列里的下标：轨迹线靠它判断相邻，数据不可用的帧会把线断开 */
+  index: number
 }
 
 const scatterDots = computed<ScatterDot[]>(() => {
@@ -463,6 +537,9 @@ const scatterDots = computed<ScatterDot[]>(() => {
   // 点云一次画完整（不平滑、不按游标截断）：轨迹的分布形状本身就是要看的信息，
   // 平滑会把"贴着阈值线上冲"这种关键形态抹平；游标只负责高亮当前点。
   all.value.forEach((p, i) => {
+    // 数据不可用的帧不入轨迹：那几帧的 q=0 / x=0 是产物占位，画进图里就成了
+    // 「流量归零、饱和度归零」的假事实，还会把横轴量程拽到 0。
+    if (unavailablePoint(p)) return
     const q = num(p.q_vph)
     const x = num(p.x)
     if (q === null || x === null) return
@@ -474,14 +551,31 @@ const scatterDots = computed<ScatterDot[]>(() => {
       level,
       ts: p.ts,
       isCursor: i === cursor.value,
+      index: i,
     })
   })
   return out
 })
 
-const scatterPolyline = computed<string>(() =>
-  scatterDots.value.map((d) => `${d.cx.toFixed(1)},${d.cy.toFixed(1)}`).join(' '),
-)
+/**
+ * 轨迹线按「连续帧」切段：中间有数据不可用的帧就断开，
+ * 不拿一条直线把空洞两侧连起来（那就是在替产物补一段走势）。
+ */
+const scatterSegments = computed<string[]>(() => {
+  const segs: string[] = []
+  let cur: string[] = []
+  let prevIndex = -2
+  for (const d of scatterDots.value) {
+    if (cur.length && d.index !== prevIndex + 1) {
+      segs.push(cur.join(' '))
+      cur = []
+    }
+    cur.push(`${d.cx.toFixed(1)},${d.cy.toFixed(1)}`)
+    prevIndex = d.index
+  }
+  if (cur.length) segs.push(cur.join(' '))
+  return segs.filter((seg) => seg.includes(' ')) // 单点画不成线
+})
 
 function scatterYOf(value: number): number {
   const bottom = SCAT_H - PAD_B
@@ -504,15 +598,25 @@ const cursorText = computed(() => {
   return `${formatClock(c.ts)}（${cursor.value + 1}/${total.value}）${tail}`
 })
 
+/** 该帧是否「数据不可用」（level=0）：这种帧的 q/x 可能是产物里的 0 占位，不能当读数播出来 */
+const currentUnavailable = computed<boolean>(() => unavailablePoint(current.value))
+
+/** 读数格式化：没有值就写「—」，不写 0 —— 0 是个结论，null 是「没测到」，两者不能混 */
+function readText(value: number | null | undefined, digits: number, unit = ''): string {
+  const n = currentUnavailable.value ? null : num(value)
+  if (n === null) return '—'
+  return unit ? `${n.toFixed(digits)} ${unit}` : n.toFixed(digits)
+}
+
 const readout = computed(() => {
   const c = current.value
   if (!c) return []
   const lv = Math.round(num(c.level) ?? 0)
   return [
-    { k: '流量 q', v: `${(num(c.q_vph) ?? 0).toFixed(0)} 辆/h` },
-    { k: '车速 v', v: `${(num(c.v_kmh) ?? 0).toFixed(1)} km/h` },
-    { k: '饱和度 x', v: (num(c.x) ?? 0).toFixed(3) },
-    { k: '该点容量 c', v: `${(num(c.c_vph) ?? 0).toFixed(0)} 辆/h` },
+    { k: '流量 q', v: readText(c.q_vph, 0, '辆/h') },
+    { k: '车速 v', v: readText(c.v_kmh, 1, 'km/h') },
+    { k: '饱和度 x', v: readText(c.x, 3) },
+    { k: '该点容量 c', v: readText(c.c_vph, 0, '辆/h') },
     { k: '等级', v: `${LEVEL_NAME[lv] ?? '—'}` },
   ]
 })
@@ -535,10 +639,17 @@ const levelShareText = computed<string>(() => {
 })
 
 const overCapacityShare = computed<string>(() => {
-  const pts = all.value.filter((p) => num(p.x) !== null)
+  // 分母只算「有判级的帧」：把数据不可用的帧（x 是 0 占位）算进来会把占比摊薄
+  const pts = availablePoints.value.filter((p) => num(p.x) !== null)
   if (!pts.length) return '—'
   const over = pts.filter((p) => (num(p.x) as number) > 1).length
   return `${((over / pts.length) * 100).toFixed(0)}%`
+})
+
+/** 有一半以上的帧是数据不可用：图上会大面积断线，得当面说清不是"走势断了" */
+const mostlyUnavailable = computed<boolean>(() => {
+  if (total.value < 2) return false
+  return availablePoints.value.length * 2 <= total.value
 })
 </script>
 
@@ -558,9 +669,19 @@ const overCapacityShare = computed<string>(() => {
     <p v-if="loading" class="trend-note">正在读取孪生时序…</p>
     <p v-else-if="errorText" class="trend-note warn">时序不可用：{{ errorText }}（不画替代曲线）</p>
     <p v-else-if="!hasCurve" class="trend-note">该路段暂无可用时序（快照点不足 2 个），不画替代曲线。</p>
+    <!-- 画法口径必须挂在界面上，不能只写在代码注释里：图题写着「真孪生时序」，
+         不说明画法，看的人就会把平滑过的起伏当成逐帧真值（红线：加工过的数不许当原值讲） -->
+    <p v-if="hasCurve" class="trend-note">
+      画法口径：曲线为 <b>5 点滑动平均</b>，只改线的形状；读数行、等级占比、超容量占比一律取
+      <b>该帧产物原值</b>；等级 0 / 缺测帧是<b>断口</b>，不补 0、不连线、不参与占比。
+    </p>
     <p v-if="sourceMismatch && hasCurve" class="trend-note warn">
       口径提示：本段当前快照来自「{{ record?.source }}」检测，下图曲线来自孪生仿真，
       两者不是同一把尺子，<b>不可直接对照</b>（讲解时以面板当期值为准，曲线只看走势）。
+    </p>
+    <p v-if="mostlyUnavailable" class="trend-note warn">
+      本段有一半以上快照是「数据不可用」（等级 0）：图上这些帧是空白断口，不是走势断了，
+      更不是流量归零（产物里留的是占位值，不拿来画线、也不当读数）。
     </p>
 
     <!-- 时间轴播放器 -->
@@ -617,7 +738,7 @@ const overCapacityShare = computed<string>(() => {
           <path v-if="line.areaPath" :d="line.areaPath" :fill="line.color" fill-opacity="0.10" />
           <path :d="line.path" fill="none" :stroke="line.color" stroke-width="1.8"
                 stroke-linejoin="round" stroke-linecap="round" />
-          <circle :cx="cursorX" :cy="line.lastY" r="2.8" :fill="line.color" />
+          <circle v-if="line.hasCursor" :cx="cursorX" :cy="line.lastY" r="2.8" :fill="line.color" />
         </g>
         <!-- 判级升档刻度：等级调高的那一帧（单列出来讲，不跟曲线锯齿混在一起） -->
         <g v-for="(j, i) in levelJumps" :key="`jump-${i}`">
@@ -693,7 +814,8 @@ const overCapacityShare = computed<string>(() => {
         </g>
         <line :x1="PAD_L" :y1="SCAT_H - PAD_B" :x2="CHART_W - PAD_R" :y2="SCAT_H - PAD_B"
               stroke="#D9DDE3" stroke-width="1" />
-        <polyline :points="scatterPolyline" fill="none" stroke="#BFC6D2" stroke-width="1.2" />
+        <polyline v-for="(seg, i) in scatterSegments" :key="`seg-${i}`" :points="seg" fill="none"
+                  stroke="#BFC6D2" stroke-width="1.2" />
         <circle v-for="(d, i) in scatterDots" :key="`dot-${i}`" :cx="d.cx" :cy="d.cy"
                 :r="d.isCursor ? 4.6 : 2.6" :fill="d.color" :fill-opacity="d.isCursor ? 1 : 0.9"
                 :stroke="d.isCursor ? '#1F2329' : 'none'" stroke-width="1">
