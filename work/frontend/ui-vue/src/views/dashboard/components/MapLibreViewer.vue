@@ -436,6 +436,12 @@ const RETRY_DELAYS_MS = [2000, 6000, 12000]
 let retryStep = 0
 let retryTimer = 0
 /**
+ * 方向标记**数据重建**的去抖计时器。
+ * 双向段的侧偏写死在 GeoJSON 坐标里（`12 px × 当前档米数`），缩放后必须按新档位重算；
+ * 挂在 `move` 上逐帧重建代价太大（88 支 × 每帧），所以停手 120 ms 才重建一次。
+ */
+let dirDataTimer = 0
+/**
  * 底图这一轮拉取的**代次**。每次 `applyBasemap` 自增，用来让"上一轮"的异步尾巴（瓦片轮询、
  * 关开关后的在途请求）认出自己已经过期 —— 只看 `disposed` 不够：开关一开一关、或手动连点两次
  * 「重试」时，旧那一轮还会把状态写回 `ok`。
@@ -601,6 +607,24 @@ const directionDrawable = computed<boolean>(() => directionsAvailable.value && d
  * 缩远等比缩 → 偏移跟半（保证远档两支仍能分辨而不叠成一团）。
  */
 const DIR_BIDIR_OFFSET_PX = 12
+
+/**
+ * 侧偏的**上限**：不论按像素算出多少，一支双向箭头偏离其所在路段折线最多这么多米。
+ *
+ * 起因（业主 2026-10-28「箭头偏移了，修一下」）：上面 12 px 的像素口径只在「图标很小时」
+ * 等于视觉上的「贴着路边」，图标涨到 34 px 后 12 px 换算成米就太大了。离线核对
+ * （复刻本文件算法，`stationZ` 61 段、`fitZoom = 15.55` → 3.004 m/px）：
+ *   · 12 px = **36.05 m**；
+ *   · 33 段双向段共 88 支箭头，其中 **86 支**落到离自己路段 20~36 m 的地方；
+ *   · 最刺眼的是 13 段停车场内部通道只有 **16.3~19.2 m** 长（SZ-037…044、049…053），
+ *     箭头却偏出去 36 m —— 偏出距离是路段全长的两倍多，肉眼就是「箭头跑到没路的地方」。
+ *
+ * 所以真正的判据不是「离多少像素」，而是「偏出去多远还算在路幅内」：一条双向路两侧各偏移
+ * 半个路幅最自然。本包车道按 3.5 m 估（`lanes` 有值时按实、缺值取 2 车道 = 7 m 路幅），
+ * 半个路幅 ≈ 3.5 m，取 4 m 作为**上限**——略大于半路幅，两支箭头刚好分列两侧不压中心线，
+ * 但绝不跨到隔壁地块。像素口径在小图标时仍生效（比上限小就按像素走），桩不动。
+ */
+const DIR_BIDIR_OFFSET_MAX_M = 4
 /** 双向段两支箭头的沿线位置（中点前后）：不用 0.45/0.55——短段（本包中位约 53 m）会叠在一起 */
 const DIR_BIDIR_FRACTIONS: readonly [number, number] = [0.35, 0.65]
 
@@ -608,6 +632,20 @@ const DIR_BIDIR_FRACTIONS: readonly [number, number] = [0.35, 0.65]
 function metersPerPixel(zoom: number): number {
   // Web Mercator：赤道 156543.03 m/px @ zoom 0（256px 瓦片），按纬度缩、按 zoom 半
   return (156543.03 / Math.pow(2, zoom)) * Math.cos((22.99 * Math.PI) / 180)
+}
+
+/** 折线总长（米，纬度用 111320、经度按中点纬度缩；只用于展示落点的短段收窄判断） */
+function segLenM(coords: readonly [number, number][]): number {
+  if (coords.length < 2) return 0
+  const lat0 = (coords[0][1] * Math.PI) / 180
+  const sx = Math.cos(lat0)
+  let total = 0
+  for (let i = 1; i < coords.length; i += 1) {
+    const dx = (coords[i][0] - coords[i - 1][0]) * sx
+    const dy = coords[i][1] - coords[i - 1][1]
+    total += Math.hypot(dx, dy)
+  }
+  return total * 111_320
 }
 
 /** 沿走向法向偏移一个点（米 → 度；近似平面，只用于展示落点） */
@@ -642,10 +680,16 @@ function directionGeoJson(): FeatureCollection {
     const bearing = bearingDeg(seg.coords)
     if (kind === 'bidirectional') {
       // 像素口径偏移（业主 2026-10-23 修复「没路的地方有箭头」）：
-      // ±12 px 换算成当前档的米数——任何档位下两支都稳定分列路两侧，
-      // 不再出现「100 m 档下 14 m 固定偏移 ≈ 17 px、箭头甩出路边」的悬空感。
-      // fitZoom 未定（建图首帧）时用兜底值，`applyDirectionScale` 每帧重建数据会再修正。
-      const offsetM = DIR_BIDIR_OFFSET_PX * metersPerPixel(fitZoom)
+      // ±12 px 换算成当前档的米数——小图标时两支稳定分列路两侧，
+      // 但**不得超过半个路幅**（`DIR_BIDIR_OFFSET_MAX_M`）：34 px 图标下 12 px = 36 m，
+      // 比停车场通道（16~19 m）还长，箭头会飞到隔壁地块（业主 2026-10-28「箭头偏移了」）。
+      // 短段再收一道：侧偏不超过段长的 1/4，否则 16 m 的通道上两支箭头会各自落在段外。
+      // fitZoom 未定（建图首帧）时用兜底值，`refreshDirectionData` 每帧重建数据会再修正。
+      const offsetM = Math.min(
+        DIR_BIDIR_OFFSET_PX * metersPerPixel(fitZoom),
+        DIR_BIDIR_OFFSET_MAX_M,
+        segLenM(seg.coords) / 4,
+      )
       DIR_BIDIR_FRACTIONS.forEach((fraction, i) => {
         const base = pointAtFraction(seg.coords, fraction)
         // 第一支偏左、顺走向；第二支偏右、逆走向
@@ -815,6 +859,16 @@ function ensureDirectionSource(map: MapLibreMap): void {
 }
 
 /**
+ * 按**当前** `fitZoom` 重建方向标记数据（双向段的侧偏随档位变，数据不能一次算死）。
+ * 源还在、图层还在才写；换样式期间源被清掉时由 `applyViewState` 重建时再算一遍。
+ */
+function refreshDirectionData(map: MapLibreMap): void {
+  const src = map.getSource(DIR_SRC) as GeoJSONSource | undefined
+  if (!src) return
+  src.setData(directionGeoJson())
+}
+
+/**
  * 当前是否处于「凸显路线」：开关开 **且** 真有路线可凸显。
  * 没路线时不能把整张图压灰——那会让人读成"全网数据不可用"。
  */
@@ -977,9 +1031,19 @@ function applyLineScale(map: MapLibreMap, force = false): void {
  * 两站 `fitBounds` 落到的档位本来就不同。
  */
 function commitFitZoom(map: MapLibreMap): void {
-  fitZoom = map.getZoom()
+  const zoom = map.getZoom()
+  const changed = Math.abs(zoom - fitZoom) >= 0.01
+  fitZoom = zoom
   applyLineScale(map, true)
   applyCameraPinScale(map, true)
+  // ⚠️ 方向箭头也必须重贴数据：双向段的侧偏是 `12 px × metersPerPixel(fitZoom)`，
+  // GeoJSON 一旦按旧 fitZoom（建图首帧兜底 14）算完就落死在那儿，只改 icon-size 不会
+  // 挪位置 —— 取景档变了而偏移量没跟着变，箭头就整体偏出路边（业主 2026-10-28
+  // 「箭头偏移了」的第二个成因）。这里必须连数据一起重建。
+  // ⚠️ 只在档位真的变了才重建：`setData` 会派发 `move`，而 `move` 又会回来调取景，
+  // 无条件重建会在建图阶段自触发（实测地图被锁在全国档、左栏标题被压成竖排）。
+  applyDirectionScale(map, true)
+  if (changed) refreshDirectionData(map)
 }
 
 function selectedFilter(): FilterSpecification {
@@ -2647,6 +2711,19 @@ function initMap(): void {
       applyLineScale(map)
       applyCameraPinScale(map)
       applyDirectionScale(map)
+      // 双向箭头的侧偏是「12 px × 当前档米数」，位置写在 GeoJSON 里 —— 只改 icon-size
+      // 不会挪位置。缩放停下后按**当前** zoom 重建一次数据，否则偏移量一直停在取景那一刻
+      // （业主 2026-10-28「箭头偏移了」的第二个成因）。去抖：连续 drag 只算最后一次。
+      // ⚠️ 必须判「档位真的变了」才重建：`setData` 自己也会派发 `move`，无条件重建就是
+      // 自触发死循环（实测把地图缩到全国档不动了，左栏标题被压成竖排 —— 每一帧都在重设数据）。
+      window.clearTimeout(dirDataTimer)
+      dirDataTimer = window.setTimeout(() => {
+        if (disposed) return
+        const zoom = map.getZoom()
+        if (Math.abs(zoom - fitZoom) < 0.01) return
+        fitZoom = zoom
+        refreshDirectionData(map)
+      }, 120)
     })
     map.on('mousemove', onMapMouseMove)
     map.on('mouseout', onMapMouseOut)
