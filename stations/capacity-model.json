@@ -1,0 +1,119 @@
+{
+  "schema_version": "1.0",
+  "is_simulated": true,
+  "note": "容量模型（演示标定·模拟）：单车道饱和流率按路型分档，再乘时段运营系数。旧口径 lanes×方向数×1800 对停车场内部通道/匝道过高（一条 44 m 通道给到 7200 辆/h，相当于四车道主干道），本表按路型重标定；时段系数是演示口径（信号配时/占道/闸机排队），不是实测标定。",
+  "class_by_kind": {
+    "main": "arterial",
+    "ramp": "service"
+  },
+  "lane_saturation_vph_by_class": {
+    "arterial": 1800,
+    "collector": 1500,
+    "local": 1100,
+    "service": 620,
+    "parking_aisle": 420
+  },
+  "lanes_cap_per_direction_by_class": {
+    "arterial": 3,
+    "collector": 3,
+    "local": 2,
+    "service": 1,
+    "parking_aisle": 1
+  },
+  "segment_kind": {
+    "SZ-001": "main",
+    "SZ-002": "main",
+    "SZ-003": "main",
+    "SZ-004": "main",
+    "SZ-005": "main",
+    "SZ-006": "main",
+    "SZ-007": "main",
+    "SZ-008": "main",
+    "SZ-009": "main",
+    "SZ-010": "main",
+    "SZ-011": "main",
+    "SZ-012": "main",
+    "SZ-013": "main",
+    "SZ-014": "main",
+    "SZ-015": "main",
+    "SZ-016": "main",
+    "SZ-017": "main",
+    "SZ-018": "ramp",
+    "SZ-019": "ramp",
+    "SZ-020": "ramp",
+    "SZ-021": "ramp",
+    "SZ-022": "ramp",
+    "SZ-023": "ramp",
+    "SZ-024": "ramp",
+    "SZ-025": "ramp",
+    "SZ-026": "ramp",
+    "SZ-027": "ramp",
+    "SZ-028": "ramp",
+    "SZ-029": "ramp",
+    "SZ-030": "ramp",
+    "SZ-031": "ramp",
+    "SZ-032": "ramp",
+    "SZ-033": "ramp",
+    "SZ-034": "ramp",
+    "SZ-035": "ramp",
+    "SZ-036": "ramp",
+    "SZ-037": "ramp",
+    "SZ-038": "ramp",
+    "SZ-039": "ramp",
+    "SZ-040": "ramp",
+    "SZ-041": "ramp",
+    "SZ-042": "ramp",
+    "SZ-043": "ramp",
+    "SZ-044": "ramp",
+    "SZ-045": "ramp",
+    "SZ-046": "ramp",
+    "SZ-047": "ramp",
+    "SZ-048": "ramp",
+    "SZ-049": "ramp",
+    "SZ-050": "ramp",
+    "SZ-051": "ramp",
+    "SZ-052": "ramp",
+    "SZ-053": "ramp",
+    "SZ-054": "ramp",
+    "SZ-055": "ramp",
+    "SZ-056": "ramp",
+    "SZ-057": "ramp",
+    "SZ-058": "ramp",
+    "SZ-059": "ramp",
+    "SZ-060": "ramp",
+    "SZ-061": "ramp"
+  },
+  "phase_capacity_factor": {
+    "早高峰": 0.8,
+    "平峰": 1.0,
+    "晚高峰": 0.75,
+    "夜间": 0.92
+  },
+  "phase_clock_windows": {
+    "早高峰": [
+      "06:00",
+      "09:00"
+    ],
+    "平峰": [
+      "09:00",
+      "16:00"
+    ],
+    "晚高峰": [
+      "16:00",
+      "20:00"
+    ],
+    "夜间": [
+      "20:00",
+      "06:00"
+    ]
+  },
+  "phase_note": "早高峰 ×0.80 / 晚高峰 ×0.75：信号周期拉长 + 支路绿信比压缩 + 站前落客占道 + 停车场闸机排队，有效通行能力下降；平峰 ×1.00 为基期；夜间 ×0.92：流量低但占道作业/施工窗口，略低于基期。",
+  "demo_phase_mode": "cycle",
+  "demo_phase_cycle_s": 900,
+  "demo_phase_note": "演示时间轴压缩：仿真时钟只覆盖 base_ts + duration（约 65 min，全程落在夜间），看不出时段变化。mode=cycle 时按每 demo_phase_cycle_s 秒轮转一个运营阶段（早高峰→平峰→晚高峰→夜间），用于演示容量随手变化；mode=clock 时按仿真钟点取阶段。",
+  "attributes": {
+    "why_recalibrate": "原 c_base_vph = 每方向车道数 × 方向数 × 1800 对 ramp 段（44/61）口径失真，7200/9000 不得用于停车场通道",
+    "lanes_cap": "OSM lanes 标签存在 5 车道/33 m 段这类明显异常，按路型设每方向车道数上限兜底",
+    "phase_source": "时段系数为演示标定，非实测；上生产须用信号配时与占道数据标定"
+  }
+}

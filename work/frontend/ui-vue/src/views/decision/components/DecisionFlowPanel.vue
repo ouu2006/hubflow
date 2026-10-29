@@ -82,7 +82,7 @@ const inputRows = computed<InRow[]>(() => {
     { k: '排队长度 L_q', v: `${fmt(r.L_q_m, 0)} m` },
     { k: '路段长度 L_seg', v: `${fmt(r.L_seg_m, 0)} m` },
     { k: '消散时间 T_d', v: `${fmt(r.T_d_min, 1)} min` },
-    { k: '通行能力 c', v: `${fmt(r.c_vph, 0)} 辆/h`, note: r.c_base_vph !== undefined ? `基准 ${r.c_base_vph} 辆/h` : undefined },
+    { k: '通行能力 c', v: `${fmt(r.c_vph, 0)} 辆/h`, note: capacityNote(r) },
     { k: '饱和度 x', v: fmt(r.x) },
     { k: '检测置信度', v: fmt(r.confidence) },
     { k: '数据年龄', v: `${r.data_age_s ?? '—'} s`, note: '> 120 s 判陈旧(TC-11)' },
@@ -327,12 +327,14 @@ const factorEffect = computed(() => {
   return { c, q, conf, count: props.factors.length }
 })
 
-/** 未折减的通行能力(从 c 反推;用于展示"折减前 → 折减后") */
-const cBeforeFactors = computed(() => {
-  const r = props.record
-  if (!r || typeof r.c_vph !== 'number') return null
-  const m = factorEffect.value.c
-  return m > 0 ? r.c_vph / m : null
+/** 运营阶段的容量系数(孪生侧 capacity.py 标定;缺省 1 = 未标定) */
+const phaseFactor = computed(() => {
+  const v = props.record?.capacity_phase_factor
+  return typeof v === 'number' && v > 0 ? v : 1
+})
+const phaseLabel = computed(() => {
+  const p = props.record?.capacity_phase
+  return typeof p === 'string' ? p : ''
 })
 
 /** CI 四项加权构成 */
@@ -345,6 +347,19 @@ const ciValue = computed(() => {
 function ratio(a?: number, b?: number): string {
   const q = divOrNull(a, b)
   return q === null ? '—' : q.toFixed(2)
+}
+
+/** 通行能力的基准说明:路型基线 × 运营阶段系数(缺阶段字段时退回旧口径) */
+function capacityNote(r: typeof props.record): string | undefined {
+  if (!r) return undefined
+  const base = r.c_base_vph
+  if (typeof base !== 'number') return undefined
+  const f = r.capacity_phase_factor
+  const phase = r.capacity_phase
+  if (typeof f === 'number' && f > 0 && phase) {
+    return `路型基线 ${fmt(base, 0)} 辆/h × 阶段 ${fmt(f, 2)}(${phase})`
+  }
+  return `基准 ${fmt(base, 0)} 辆/h`
 }
 
 function metricValue(key: string): string {
@@ -414,11 +429,16 @@ function metricValue(key: string): string {
             <div class="step-body">
               <div class="step-title">因素加权 · 通行能力折减</div>
               <div class="step-line td-num">
-                c = {{ fmt(cBeforeFactors, 0) }} × {{ fmt(factorEffect.c, 2) }} = <b>{{ fmt(record.c_vph, 0) }}</b> 辆/h
+                c = c_base {{ fmt(record.c_base_vph, 0) }}
+                <template v-if="phaseLabel">
+                  × 阶段 {{ fmt(phaseFactor, 2) }}<span class="phase-tag">{{ phaseLabel }}</span>
+                </template>
+                × 因素 {{ fmt(factorEffect.c, 2) }} = <b>{{ fmt(record.c_vph, 0) }}</b> 辆/h
                 <span class="sep">|</span>需求 q × {{ fmt(factorEffect.q, 2) }}
                 <span class="sep">|</span>置信度 × {{ fmt(factorEffect.conf, 2) }}
               </div>
               <div class="step-note">
+                容量三段式:c_base(路型基数 × 每方向车道数) → × 运营阶段系数 → × 多因素相乘修正;
                 手册第 19 章:多因素**相乘**修正通行能力与畅通速度,合成后不低于原值 40%【待标定】
               </div>
             </div>
@@ -620,6 +640,18 @@ function metricValue(key: string): string {
 .sep {
   margin: 0 4px;
   color: var(--td-text-color-placeholder);
+}
+/* 运营阶段标签:紧贴阶段系数,证明容量随阶段变化 */
+.phase-tag {
+  display: inline-block;
+  margin: 0 2px 0 3px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--td-brand-color-light);
+  color: var(--td-brand-color);
+  font-size: 10px;
+  line-height: 14px;
+  vertical-align: 1px;
 }
 
 /* ② 处理过程步骤 */

@@ -40,6 +40,17 @@ export interface SegmentRecord {
   x?: number
   c_base_vph?: number
   c_vph?: number
+  /**
+   * 容量标定溯源：由孪生侧 work/twin/capacity.py 按 stations/capacity-model.json 标定。
+   * c_vph = c_base_vph × capacity_phase_factor × 因素系数；缺字段表示该段未标定。
+   */
+  capacity_class?: string
+  capacity_kind?: string
+  capacity_phase?: string
+  capacity_phase_factor?: number
+  capacity_phase_source?: string
+  capacity_lanes_per_direction?: number
+  capacity_lane_saturation_vph?: number
   factors_applied?: FactorApplied[]
   ci?: number
   /**
@@ -91,11 +102,26 @@ export interface EmergencyState {
   note: string
 }
 
+/** 容量阶段摘要（接口层只聚合孪生侧标定结果，不重算容量） */
+export interface CapacityPhaseSummary {
+  phase: string
+  phase_factor?: number | null
+  phase_source?: string | null
+  phase_capacity_factor?: Record<string, number>
+  phase_mode?: string
+  phase_cycle_s?: number
+  class_by_segment_count?: Record<string, number>
+  segments_by_phase?: Record<string, number>
+  note?: string
+}
+
 export interface SegmentsSnapshot {
   ts: string
   window_sec: number
   is_simulated: true
   segments: SegmentRecord[]
+  /** 容量阶段摘要：孪生侧 work/twin/capacity.py 按 stations/capacity-model.json 标定（缺省=未标定） */
+  capacity?: CapacityPhaseSummary
   /** 接口层写端点内存态摘要（重启复位）：人工置位条数 / 场景注入状态 */
   injected_state?: {
     manual_factors: number

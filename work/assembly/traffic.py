@@ -1212,11 +1212,58 @@ def _normalize_segment(raw: dict[str, Any], grading: dict[str, Any],
         record["triggered_by"] = []
         record["level_source"] = "upstream_missing"
 
+    # 容量阶段溯源：由孪生侧 work/twin/capacity.py 按 stations/capacity-model.json 标定，
+    # 上游给了就透传（接口层不重算容量）；缺字段不写键，前端按"未标定"处理。
+    for field in ("capacity_class", "capacity_kind", "capacity_phase", "capacity_phase_source"):
+        if raw.get(field) is not None:
+            record[field] = raw[field]
+    for field in ("capacity_phase_factor", "capacity_lanes_per_direction", "capacity_lane_saturation_vph"):
+        if raw.get(field) is not None:
+            record[field] = _num(raw.get(field))
+
     record["is_simulated"] = True
     # pred 是可选字段：上游没有就不写这个键（契约 §1.1）
     if isinstance(raw.get("pred"), dict):
         record["pred"] = raw["pred"]
     return record
+
+
+def _capacity_summary(records: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """容量阶段摘要：接口层只聚合孪生侧 capacity.py 的标定结果，绝不重算容量。"""
+    model = read_json_cached(STATIONS_DIR / "capacity-model.json") or {}
+    factor_table = model.get("phase_capacity_factor") or {}
+    phases: dict[str, int] = {}
+    classes: dict[str, int] = {}
+    phase_factor: float | None = None
+    phase_source: Any = None
+    for record in records.values():
+        phase = record.get("capacity_phase")
+        if isinstance(phase, str) and phase:
+            phases[phase] = phases.get(phase, 0) + 1
+            if phase_factor is None:
+                phase_factor = _num(record.get("capacity_phase_factor"))
+            if phase_source is None:
+                phase_source = record.get("capacity_phase_source")
+        cls = record.get("capacity_class")
+        if isinstance(cls, str) and cls:
+            classes[cls] = classes.get(cls, 0) + 1
+    if not phases:
+        return None
+    phase = max(phases.items(), key=lambda item: item[1])[0]
+    return {
+        "phase": phase,
+        "phase_factor": phase_factor if phase_factor is not None else _num(factor_table.get(phase)),
+        "phase_source": phase_source,
+        "phase_capacity_factor": factor_table,
+        "phase_mode": model.get("demo_phase_mode"),
+        "phase_cycle_s": model.get("demo_phase_cycle_s"),
+        "class_by_segment_count": classes,
+        "segments_by_phase": phases,
+        "note": (
+            "c_vph = c_base_vph × 阶段容量系数（早高峰 / 平峰 / 晚高峰 / 夜间）；"
+            "c_base_vph 由路型基数与每方向车道数上限标定，阶段系数是演示标定、不是实测标定。"
+        ),
+    }
 
 
 def _raw_segment_layers() -> list[tuple[str, str, dict[str, Any]]]:
@@ -1321,6 +1368,7 @@ def build_segments_snapshot() -> dict[str, Any]:
             "content_ts": main_ts,
             "window_sec": max(windows) if windows else 0,
             "is_simulated": True,
+            "capacity": _capacity_summary(merged),
             "segments": list(merged.values()),
         }
         _anchor_demo_clock(payload)

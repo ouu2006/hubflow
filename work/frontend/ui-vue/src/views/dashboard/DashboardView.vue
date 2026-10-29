@@ -99,6 +99,7 @@ import {
   type RoutePlanRoute,
   type RoutePlanRole,
   type RouteSnapResult,
+  type CapacityPhaseSummary,
   type SegmentRecord,
   type SegmentSourcePair,
   type ThresholdSnapshot,
@@ -860,6 +861,7 @@ async function refresh(): Promise<void> {
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
+    capacityInfo.value = seg.value.capacity ?? null
     // 应急态(TC-10)：接口层已在快照顶层派生好，这里**原样消费**，不自己判等级
     emergency.value = seg.value.emergency ?? null
     if (selectedId.value === null) selectedId.value = pickDefaultId(seg.value.segments)
@@ -1005,6 +1007,7 @@ function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
   if (snapshot.segments) {
     segments.value = snapshot.segments.segments
     snapshotTs.value = snapshot.segments.ts
+    capacityInfo.value = snapshot.segments.capacity ?? null
     // 应急态(TC-10)：缓存里带着当时的派生结果，恢复时一并还原（不重算）
     emergency.value = snapshot.segments.emergency ?? null
   }
@@ -1070,6 +1073,22 @@ const recommendError = ref('')
  *      地图、KPI、路段信息、车辆等正文一律照常显示。
  */
 const emergency = ref<EmergencyState | null>(null)
+/**
+ * 容量阶段摘要（接口层聚合孪生侧 stations/capacity-model.json 的标定结果）。
+ * 用途：页脚让"容量随运营阶段变化"在演示时可被看见；取不到就不显示这一项。
+ */
+const capacityInfo = ref<CapacityPhaseSummary | null>(null)
+/** 页脚容量阶段一行：阶段 · 系数 · 全站基线→有效容量区间 */
+const capacityLine = computed<string>(() => {
+  const info = capacityInfo.value
+  if (!info?.phase) return ''
+  const factor = typeof info.phase_factor === 'number' ? ` ×${info.phase_factor.toFixed(2)}` : ''
+  const table = info.phase_capacity_factor ?? {}
+  const tableText = Object.entries(table)
+    .map(([phase, value]) => `${phase} ${Number(value).toFixed(2)}`)
+    .join(' / ')
+  return `容量阶段:${info.phase}${factor}${tableText ? `（${tableText}）` : ''}`
+})
 /** 应急是否生效（接口未给/读不到 → false，宁可不误停） */
 const emergencyActive = computed(() => emergency.value?.active === true)
 /** 应急影响路段的可读文案（超过 3 段只列前 3 段 + 省略，不糊满整行） */
@@ -3519,6 +3538,7 @@ function onCommandChanged(): void {
       <span>{{ footStationLine }}</span>
       <span>数据来源:{{ footDataSource }} · 底图:{{ sourceLabel }}</span>
       <span>{{ packLine }}</span>
+      <span v-if="capacityLine">{{ capacityLine }}</span>
       <span>
         颜色模式:{{ isFlow ? '纯车流量（q 四档，仅展示，不代表拥堵结论）' : '决策拥堵（接口 level）' }}
       </span>

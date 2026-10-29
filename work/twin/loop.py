@@ -565,7 +565,7 @@ def _repo_rel(path: Path) -> str:
 
 
 #: 时序文件里每段的指标数组（自描述，供 M1-2 孪生侧举证）
-TIMESERIES_FIELDS = ("q_vph", "v_kmh", "k_vpk", "L_q_m", "T_d_min", "level")
+TIMESERIES_FIELDS = ("q_vph", "v_kmh", "k_vpk", "L_q_m", "T_d_min", "x", "c_vph", "level")
 
 
 def _run_twin_simulation(
@@ -577,6 +577,7 @@ def _run_twin_simulation(
     thresholds: dict[str, Any],
 ) -> dict[str, Any]:
     """TraCI 主循环本体：1 s 步进、逐秒进车统计、每 60 s 快照。"""
+    import capacity
     import demand
     import driver
     import sumonet
@@ -612,6 +613,8 @@ def _run_twin_simulation(
         )
     if queue_headway_m <= 0 or saturation_vph <= 0:
         raise SystemExit("站点包 thresholds.grading 的 queue_headway_m / saturation_flow_vph_per_lane 非正")
+    # 容量模型：路型基数（单车道饱和流率）+ 时段运营系数，都在 stations/capacity-model.json
+    capacity_model = capacity.load(cfg.stations_dir)
     confidence = float(defaults.get("confidence", FALLBACK_CONFIDENCE))
     level_module = _load_level_module()
 
@@ -760,6 +763,15 @@ def _run_twin_simulation(
             flow_entries = 0
             queue_lengths: list[float] = []
             dissipation_minutes: list[float] = []
+            # 容量模型（IKM 演示标定）：路型基数 × 时段运营系数，取代统一 1800 的老口径。
+            # c_base_vph 是路型基线容量，c_vph 是这一刻的**有效**容量（乘时段系数后）。
+            c_base_vph, capacity_meta = capacity.base_capacity(
+                capacity_model, segment_id, info["lanes"], len(info["dirs"])
+            )
+            phase = capacity.phase_at(capacity_model, cfg.base_ts, step_no)
+            c_vph = round(c_base_vph * float(phase["phase_factor"]), 1)
+            # 单方向有效容量：排队消散时间的分母（原有口径是 saturation_vph × 该方向车道数）
+            c_vph_per_dir = c_vph / max(1, capacity_meta["direction_count"])
             for row in info["dirs"].values():
                 edge = row["edge_id"]
                 vehicle_steps += window_vehicle_steps[edge]
@@ -773,7 +785,9 @@ def _run_twin_simulation(
                 queue_lengths.append(queue_m)
                 queue_vehicles = queue_m / queue_headway_m
                 dissipation_minutes.append(
-                    (queue_vehicles / (saturation_vph * lanes)) * 60.0 if queue_m > 0 else 0.0
+                    (queue_vehicles / c_vph_per_dir) * 60.0
+                    if queue_m > 0 and c_vph_per_dir > 0
+                    else 0.0
                 )
             v_kmh = round((speed_weight / vehicle_steps) * 3.6, 2) if vehicle_steps > 0 else None
             q_vph = round(flow_entries / max(1, window_s) * 3600.0, 2)
@@ -782,7 +796,7 @@ def _run_twin_simulation(
             k_vpk = round(mean_vehicle_count / length_km, 3) if length_km > 0 else None
             queue_m = round(max(queue_lengths), 1) if queue_lengths else 0.0
             t_d_min = round(max(dissipation_minutes), 2) if dissipation_minutes else 0.0
-            c_base_vph = round(info["lanes"] * len(info["dirs"]) * saturation_vph, 1)
+            x_ratio = round(q_vph / c_vph, 4) if c_vph > 0 else None
             record: dict[str, Any] = {
                 "segment_id": segment_id,
                 "source": "twin",
@@ -793,9 +807,18 @@ def _run_twin_simulation(
                 "L_q_m": queue_m,
                 "L_seg_m": round(info["length_m"], 1),
                 "T_d_min": t_d_min,
-                "x": round(q_vph / c_base_vph, 4) if c_base_vph > 0 else None,
+                "x": x_ratio,
                 "c_base_vph": c_base_vph,
-                "c_vph": c_base_vph,
+                "c_vph": c_vph,
+                # 容量模型溯源（不进契约响应，供接口层/前端展示「这是怎么来的」）
+                "capacity_class": capacity_meta["class"],
+                "capacity_kind": capacity_meta["kind"],
+                "capacity_lanes_per_direction": capacity_meta["lanes_per_direction"],
+                "capacity_lanes_raw": capacity_meta["lanes_raw"],
+                "capacity_lane_saturation_vph": capacity_meta["lane_saturation_vph"],
+                "capacity_phase": phase["phase_id"],
+                "capacity_phase_factor": phase["phase_factor"],
+                "capacity_phase_source": phase["phase_source"],
                 "factors_applied": [],
                 "confidence": confidence,
                 "data_age_s": 0,
@@ -981,6 +1004,13 @@ def _run_twin_simulation(
         "vehicles_payload": final_vehicles,
         "timeseries": timeseries,
         "segment_ts": segment_ts,
+        "capacity_model": {
+            "model_file": "stations/capacity-model.json",
+            "phase_mode": capacity_model.get("demo_phase_mode"),
+            "phase_cycle_s": capacity_model.get("demo_phase_cycle_s"),
+            "phase_capacity_factor": capacity_model.get("phase_capacity_factor"),
+            "phase_note": capacity_model.get("phase_note"),
+        },
         "fleet_history": [
             {"step": item["step"], "ts": item["ts"], "fleet": item["fleet"]} for item in snapshots
         ],
@@ -1195,6 +1225,14 @@ def _write_twin_artifacts(
         "points": points,
         "point_ts": result["segment_ts"],
         "segments": timeseries_segments,
+        "capacity": {
+            **(result.get("capacity_model") or {}),
+            "note": (
+                "每段的 c_vph 随运营阶段变化：c_vph = c_base_vph × phase_capacity_factor。"
+                "c_base_vph 由路型基数（lane_saturation_vph_by_class）与每方向车道数上限算出；"
+                "时段系数是演示标定，不是实测标定。"
+            ),
+        },
         "coverage": coverage_summary,
         "fleet": {
             "driver_types": ["D1", "D2", "D3"],
