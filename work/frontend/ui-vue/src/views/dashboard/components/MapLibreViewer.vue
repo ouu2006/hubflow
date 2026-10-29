@@ -78,6 +78,8 @@ import { DRIVER_COLORS, TD } from '../../../shared/theme'
 import {
   basemapEnabled,
   camerasVisible,
+  dropoffsVisible,
+  zonesVisible,
   directionsVisible,
   legendVisible,
   routeEmphasisEnabled,
@@ -365,6 +367,14 @@ const props = withDefaults(
      *    当初差点把这个 prop 也叫 `mode`——两个同名 prop 会直接报重复声明，也算提醒。
      */
     mapMode?: MapScope
+    /**
+     * 点图拾取模式（业主 2026-10-28 当面要求：直接点图选起终点，不在右边列表里挑）：
+     *   `'origin'` / `'destination'` = 正在等用户点哪一端；`null` = 不拾取（点击仍走既有「选路段」）。
+     *
+     * 本组件只负责**把点击坐标交出去**（`pick-point`）；吸附到最近路段、算路全部由后端做，
+     * 地图侧不做任何匹配 / 纠偏，也不画假点——标记回显等父级把吸附结果传回 `routeStart/routeEnd`。
+     */
+    pickMode?: 'origin' | 'destination' | null
   }>(),
   {
     vehicles: () => [],
@@ -378,6 +388,7 @@ const props = withDefaults(
     hoverChip: '',
     legend: true,
     mapMode: 'national',
+    pickMode: null,
   },
 )
 
@@ -387,6 +398,11 @@ const emit = defineEmits<{
   (e: 'switch-station', key: string): void
   /** 镜头真的落到站区（父级据此提交页面数据，见 IKPFVN D 节时序） */
   (e: 'arrived'): void
+  /**
+   * 点图拾取到坐标（业主 2026-10-28）：`pickMode` 非空时，点图不再报路段，只报经纬度。
+   * 父级拿这个坐标调 `/route/snap` 吸附，再把结果回显。
+   */
+  (e: 'pick-point', point: { lon: number; lat: number }): void
 }>()
 
 /** 容器**始终渲染**（不用 v-if 挂载），从根上避免「容器还没进 DOM 就初始化」那类静默失败 */
@@ -1660,10 +1676,12 @@ function applyModeLayers(map: MapLibreMap): void {
   const atStation = motionPhase.value === 'station'
   for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
   setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
-  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画
-  setLayerVisible(map, LAYER_DZ_FILL, atStation)
-  setLayerVisible(map, LAYER_DZ_HL, atStation)
-  setLayerVisible(map, LAYER_DZ_LINE, atStation)
+  // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画；「落客点」开关关掉时也不画
+  // （否则视角往返/换站后 applyModeLayers 会把关掉的圈重新打开，与开关状态打架）
+  const dropZoneVisible = atStation && dropoffsVisible.value
+  setLayerVisible(map, LAYER_DZ_FILL, dropZoneVisible)
+  setLayerVisible(map, LAYER_DZ_HL, dropZoneVisible)
+  setLayerVisible(map, LAYER_DZ_LINE, dropZoneVisible)
   setLayerVisible(map, LAYER_STATION_HIT, !atStation)
   setLayerVisible(map, LAYER_STATION_DOT, !atStation)
   setLayerVisible(map, LAYER_STATION_LABEL, !atStation)
@@ -1689,6 +1707,7 @@ function addOwnLayers(map: MapLibreMap): void {
     if (!map.getLayer(spec.id)) map.addLayer(spec)
   }
   applyModeLayers(map)
+  applyDropZoneVisibility(map)
 }
 
 // ---- 镜头取景（IKPFVN C 节；动效参数与状态机全在 `shared/mapMotion.ts`）----
@@ -1780,6 +1799,63 @@ function fitOverviewInstant(map: MapLibreMap): void {
   clampOverviewZoom(map)
   commitFitZoom(map)
 }
+
+/**
+ * 框住一批路段（业主 2026-10-28 观感要求）：点「开始」出路线后，站区全览下三条线只有几十像素，
+ * 看不出「出路线了」，所以由父级把结果路线的段号丢进来，这里平滑缩到这批段的包围盒。
+ *
+ * 几何口径沿用本文件既有的 `net.value`（当前站点包的路段折线，与 `routeGeoJson()` / 浮牌取点同源），
+ * 不另外造一套几何、也不去读后端返回的 `edges`。
+ *
+ * 取不到几何（段号不在当前包里 / 地图还没就绪）时**静默 return**：不动相机、不抛错
+ * —— 宁可地图停在原处，也不能因为一条段号对不上就把视野甩到别处或崩掉。
+ */
+function fitSegments(segmentIds: string[]): void {
+  const map = mapRef.value
+  if (!map || !ready.value || disposed) return
+  const ids = new Set(segmentIds.filter((id) => typeof id === 'string' && id.length > 0))
+  if (ids.size === 0) return
+  let west = Number.POSITIVE_INFINITY
+  let south = Number.POSITIVE_INFINITY
+  let east = Number.NEGATIVE_INFINITY
+  let north = Number.NEGATIVE_INFINITY
+  let points = 0
+  for (const seg of net.value) {
+    if (!ids.has(seg.segment_id)) continue
+    for (const [lon, lat] of seg.coords) {
+      if (!Number.isFinite(lon) || !Number.isFinite(lat)) continue
+      if (lon < west) west = lon
+      if (lon > east) east = lon
+      if (lat < south) south = lat
+      if (lat > north) north = lat
+      points++
+    }
+  }
+  if (points === 0) return
+  // 只有一段、且几何退化成一条线（东西或南北跨度为 0）时撑开一点点，
+  // 否则 MapLibre 会把它算成无限缩放（虽然有 maxZoom 兜着，但先给个有限盒子更稳）
+  const minSpan = 1e-6 // ≈0.1 m，肉眼无感
+  if (east - west < minSpan) {
+    const mid = (east + west) / 2
+    west = mid - minSpan / 2
+    east = mid + minSpan / 2
+  }
+  if (north - south < minSpan) {
+    const mid = (north + south) / 2
+    south = mid - minSpan / 2
+    north = mid + minSpan / 2
+  }
+  map.fitBounds(
+    [
+      [west, south],
+      [east, north],
+    ],
+    { padding: 80, duration: 600, maxZoom: 18 },
+  )
+}
+
+/** 对父级开放的能力：目前只有「框住一批段」（父级用 `ref` 调用；`<script setup>` 默认是封闭的） */
+defineExpose({ fitSegments })
 
 /**
  * 快门标志：`flyToStation()` / `flyToOverview()` 正在跑。
@@ -2469,6 +2545,12 @@ function onMapMouseMove(e: MapMouseEvent): void {
   const map = mapRef.value
   if (!map) return
   mouse.value = { x: e.point.x, y: e.point.y }
+  // 点图拾取模式（业主 2026-10-28）：十字光标 + **不**随悬停改选中路段，
+  // 否则鼠标一路划过，右侧面板的段信息会乱跳，用户点下去还会以为选错了对象。
+  if (props.pickMode) {
+    map.getCanvas().style.cursor = 'crosshair'
+    return
+  }
   // 全国视角：只有站点 pin 是可选对象（路网图层已隐藏，路口悬停不该再报路段）
   const stationKey = stationKeyAt(map, e.point)
   syncStationHover(map, stationKey)
@@ -2491,6 +2573,12 @@ function onMapMouseOut(): void {
 function onMapClick(e: MapMouseEvent): void {
   const map = mapRef.value
   if (!map) return
+  // 点图拾取起 / 终点（业主 2026-10-28）：优先级最高——正在选点时用户点的每一处都是「坐标」，
+  // 不能顺手切站、也不能顺手改选中路段（那会让右侧面板的段信息跳走，干扰「点哪儿就是哪儿」）。
+  if (props.pickMode) {
+    emit('pick-point', { lon: e.lngLat.lng, lat: e.lngLat.lat })
+    return
+  }
   // 全国视角：点 pin = 切站（父级走 `switchStation`，本组件不自己换包）
   const stationKey = stationKeyAt(map, e.point)
   if (stationKey) {
@@ -2608,6 +2696,8 @@ function initMap(): void {
     // 起手取景按**当前视角**：全国（默认）→ 中国范围；深链 `?station=` → 直接站区（无动画）
     motionPhase.value = props.mapMode === 'station' ? 'station' : 'national'
     ready.value = true
+    // 落客点/场区开关：样式刚加载完补一次（`addOwnLayers()` 里 ready 还是 false，会被前置条件挡掉）
+    applyDropZoneVisibility(map)
     void syncCamera(false)
     // 首帧的容器宽度可能还没定型（左右栏正在收起 / 挂载时布局未稳定）——
     // 尺寸一变就补一次取景，见 `watchContainerSize()`。
@@ -2772,6 +2862,28 @@ watch(camerasVisible, (on) => {
   if (!on) pin.value = null
 })
 
+/**
+ * 落客点 / 场区显示开关。
+ *
+ * 落客点 = 图钉（`.lm-pin.dropoff`，CSS 类控制）+ 35 m 落客区演示圈（地图图层，走 `setLayoutProperty`）；
+ * 场区 = 只有图钉（`.lm-pin.zone`）。两层互不影响；关掉只是不画，右栏列表与接口数据不动。
+ */
+function applyDropZoneVisibility(map: MapLibreMap | null = mapRef.value): void {
+  if (!map || !ready.value) return
+  const visibility = dropoffsVisible.value ? 'visible' : 'none'
+  for (const id of [LAYER_DZ_FILL, LAYER_DZ_HL, LAYER_DZ_LINE]) {
+    if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visibility)
+  }
+}
+
+watch(dropoffsVisible, (on) => {
+  if (!on) landmarkPin.value = null
+  applyDropZoneVisibility()
+})
+watch(zonesVisible, (on) => {
+  if (!on && landmarkPin.value?.kind === 'zone') landmarkPin.value = null
+})
+
 /** 选中路线变化 → 终点落客点的「终点区域」高亮跟着走（换 OD / 换站都经这里） */
 watch(
   () => props.routeEnd?.point_id,
@@ -2858,7 +2970,12 @@ onUnmounted(() => {
        不要拿文案去判断当前视角。 -->
   <div
     class="mlmap"
-    :class="{ 'mode-national': mapMode === 'national', 'cams-off': !camerasVisible }"
+    :class="{
+      'mode-national': mapMode === 'national',
+      'cams-off': !camerasVisible,
+      'dropoffs-off': !dropoffsVisible,
+      'zones-off': !zonesVisible,
+    }"
     :data-map-mode="mapMode"
     :data-station="currentStationKey"
     :data-motion-phase="motionPhase"
@@ -3020,10 +3137,10 @@ onUnmounted(() => {
             <span class="lg-line picked" />已选中：{{ pickedRouteName }}（天蓝 · 实线，压在其它路线之上）
           </div>
           <div v-if="routeStart" class="lg-row">
-            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（外围入口段）
+            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（{{ routeStart.note || '起点' }}）
           </div>
           <div v-if="routeEnd" class="lg-row">
-            <span class="rt-dot end">终</span>{{ routeEnd.label }} · 停车场落客点（演示）
+            <span class="rt-dot end">终</span>{{ routeEnd.label }} · {{ routeEnd.segment_id }}（{{ routeEnd.note || '终点' }}）
           </div>
           <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
           <div class="lg-note">
@@ -3083,10 +3200,10 @@ onUnmounted(() => {
             <span class="lg-line picked" />已选中：{{ pickedRouteName }}（天蓝 · 实线，压在其它路线之上）
           </div>
           <div v-if="routeStart" class="lg-row">
-            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（外围入口段）
+            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（{{ routeStart.note || '起点' }}）
           </div>
           <div v-if="routeEnd" class="lg-row">
-            <span class="rt-dot end">终</span>{{ routeEnd.label }} · 停车场落客点（演示）
+            <span class="rt-dot end">终</span>{{ routeEnd.label }} · {{ routeEnd.segment_id }}（{{ routeEnd.note || '终点' }}）
           </div>
           <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
           <div class="lg-note">
@@ -3819,6 +3936,10 @@ onUnmounted(() => {
 /* 摄像头图钉显示开关（业主 2026-10-25）：关 = 整层不画（连外壳一起 display:none，
    悬停/点击也随之失效）；与全国模式同一套 CSS 机制，不删建 Marker。
    只关"图钉层"——台账、右栏路段卡、监控墙的数据与画面不受影响。 */
+.mlmap.dropoffs-off :deep(.lm-pin.dropoff),
+.mlmap.zones-off :deep(.lm-pin.zone) {
+  display: none;
+}
 .mlmap.cams-off :deep(.cam-pin-wrap) {
   display: none;
 }
