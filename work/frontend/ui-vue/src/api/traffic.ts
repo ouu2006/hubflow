@@ -25,6 +25,7 @@ import type {
   ScenarioInput,
   ScenarioResult,
   SegmentRecord,
+  SegmentSeries,
   SegmentSourcePair,
   SegmentsSnapshot,
   ThresholdSnapshot,
@@ -59,6 +60,19 @@ export function getTrafficSegments(opts: SnapshotFetchOptions = {}): Promise<Seg
 // GET /api/traffic/segments/{id} → 单路段详情(含 factors_applied / pred),形状与列表元素一致
 export function getTrafficSegment(segmentId: string): Promise<SegmentRecord> {
   return request<SegmentRecord>('GET', `/api/traffic/segments/${encodeURIComponent(segmentId)}`)
+}
+
+// GET /api/traffic/segment-series?segment_id=&limit= → 段级真时序(孪生 60 s 快照)
+// 口径:接口层只回产物里真实存在的点,不插值不补点;缺产物如实 404,页面按空窗降级。
+export function getTrafficSegmentSeries(
+  segmentId: string,
+  limit?: number,
+): Promise<SegmentSeries> {
+  const tail = typeof limit === 'number' && limit > 0 ? `&limit=${limit}` : ''
+  return request<SegmentSeries>(
+    'GET',
+    `/api/traffic/segment-series?segment_id=${encodeURIComponent(segmentId)}${tail}`,
+  )
 }
 
 // GET /api/traffic/vehicles → 孪生车辆位置(仅一期演示用,二期端点下线)

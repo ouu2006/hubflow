@@ -110,6 +110,9 @@ PERCEPTION_VIDEO = ROOT / "work" / "perception" / "out" / "latest" / "segments_v
 TWIN_LATEST = ROOT / "work" / "twin" / "out" / "latest" / "segments_twin.json"
 TWIN_SNAPSHOT = ROOT / "work" / "twin" / "out" / "segments.json"
 TWIN_VEHICLES = ROOT / "work" / "twin" / "out" / "vehicles.json"
+#: 孪生侧真时序（每 60 s 一快照 × 全部路段，含 q/v/k/x/c_vph/level）。
+#: 这是接口层唯一可用的**真实**时序来源：有就用它，没有才回单点快照，绝不拼造走势。
+TWIN_TIMESERIES = ROOT / "work" / "twin" / "out" / "latest" / "twin_timeseries.json"
 TWIN_ASSIMILATION = ROOT / "work" / "twin" / "out" / "assimilation_state.json"
 # 引擎路线：真网产物（IKMS11，SZ-###）优先，回退样例产物（SEG-###）。两者都只读、不混算。
 ENGINE_ROUTES_REAL = ROOT / "work" / "engine" / "out" / "real" / "routes.json"
@@ -852,6 +855,7 @@ def _station_paths(station_key: str | None = None) -> dict[str, Any]:
             "twin_snapshot": TWIN_SNAPSHOT,
             "twin_vehicles": TWIN_VEHICLES,
             "twin_assimilation": TWIN_ASSIMILATION,
+            "twin_timeseries": TWIN_TIMESERIES,
             "engine_routes": (("real", ENGINE_ROUTES_REAL), ("sample", ENGINE_ROUTES_SAMPLE)),
             "network_json": None,
         }
@@ -869,6 +873,7 @@ def _station_paths(station_key: str | None = None) -> dict[str, Any]:
         "twin_snapshot": (twin_root / "segments.json") if twin_root else None,
         "twin_vehicles": (twin_root / "vehicles.json") if twin_root else None,
         "twin_assimilation": (twin_root / "assimilation_state.json") if twin_root else None,
+        "twin_timeseries": (twin_root / "latest" / "twin_timeseries.json") if twin_root else None,
         "engine_routes": ((("real", engine_root / "routes.json"),) if engine_root else ()),
         "network_json": network_json,
     }
@@ -2074,6 +2079,136 @@ def build_ci_history(
     return payload
 
 
+def _phase_timeline(stamps: list[str], window_sec: float) -> list[str]:
+    """按孪生侧同一口径给每个时序点打运营阶段标签（cycle 优先，否则按钟点）。
+
+    为什么接口层也算一遍：`twin_timeseries.json` 只存数值列，阶段名是标定表的派生量；
+    前端要画阶段色带，但**不希望前端自己实现一遍阶段算法**（两处口径必然漂移）。
+    顺序从 `phase_capacity_factor` 的键序取，不在这里硬编码阶段名。
+    """
+    model = read_json_cached(STATIONS_DIR / "capacity-model.json") or {}
+    factors = model.get("phase_capacity_factor") or {}
+    order = [str(name) for name in factors.keys()]
+    if not order:
+        return []
+    windows = model.get("phase_clock_windows") or {}
+    if str(model.get("demo_phase_mode") or "") == "cycle":
+        cycle_s = float(model.get("demo_phase_cycle_s") or 900)
+        labels: list[str] = []
+        for index in range(len(stamps)):
+            elapsed = index * window_sec
+            labels.append(order[int(elapsed // cycle_s) % len(order)])
+        return labels
+    # clock 口径：按每个点的钟点落窗口（夜间跨零点由 windows 里的区间自行表达）
+    labels = []
+    for stamp in stamps:
+        moment = _parse_iso(stamp)
+        if moment is None:
+            labels.append("")
+            continue
+        minutes = moment.hour * 60 + moment.minute
+        hit = ""
+        for name in order:
+            span = windows.get(name) or []
+            if not isinstance(span, list) or len(span) != 2:
+                continue
+            start = _clock_minutes(span[0])
+            end = _clock_minutes(span[1])
+            if start is None or end is None:
+                continue
+            inside = (start <= minutes < end) if start < end else (minutes >= start or minutes < end)
+            if inside:
+                hit = name
+                break
+        labels.append(hit)
+    return labels
+
+
+def _clock_minutes(text: Any) -> int | None:
+    """`"06:00"` → 360；不可解析返回 None。"""
+    if not isinstance(text, str) or ":" not in text:
+        return None
+    hour, _, minute = text.partition(":")
+    try:
+        return int(hour) * 60 + int(minute)
+    except ValueError:
+        return None
+
+
+#: 段级时序对外暴露的数值列（孪生侧 TIMESERIES_FIELDS 的展示子集）
+_SERIES_FIELDS = ("q_vph", "v_kmh", "k_vpk", "L_q_m", "T_d_min", "x", "c_vph", "level")
+
+
+def build_segment_series(segment_id: str | None, limit: int | None = None) -> dict[str, Any] | str:
+    """段级真时序：读孪生侧 `twin_timeseries.json`（每 60 s 一快照 × 全部路段）。
+
+    边界（与 `build_ci_history` 同一自治口径）：
+      · 只回产物里**真实存在**的点，不插值、不补零、不按曲线拼造；
+      · 产物缺失 / 该段不在产物里 → 返回错误码，端点转 404，前端按"无时序"降级，
+        绝不拿当前快照编一条水平线出来；
+      · `level = 0`（数据不可用）原样保留，断线交给前端处理；
+      · `limit` 只截最近 N 点（图表宽度有限），不改变点的内容。
+    """
+    if not segment_id:
+        return "SERIES_INVALID"
+    paths = _station_paths()
+    payload = _read_if_exists(paths.get("twin_timeseries"))
+    if not payload or not isinstance(payload.get("segments"), list):
+        return "SERIES_NOT_AVAILABLE"
+    row = next(
+        (item for item in payload["segments"]
+         if isinstance(item, dict) and item.get("segment_id") == segment_id),
+        None,
+    )
+    if row is None:
+        return "SERIES_NOT_FOUND"
+    stamps = [str(ts) for ts in (payload.get("point_ts") or [])]
+    if limit is not None and limit > 0:
+        stamps = stamps[-limit:]
+        offset = max(0, len([str(ts) for ts in (payload.get("point_ts") or [])]) - limit)
+    else:
+        offset = 0
+    window_sec = float(_num(payload.get("window_sec")) or 60)
+    points: list[dict[str, Any]] = []
+    for index, stamp in enumerate(stamps):
+        point: dict[str, Any] = {"ts": stamp}
+        for field in _SERIES_FIELDS:
+            column = row.get(field)
+            source_index = offset + index
+            point[field] = _num(column[source_index]) if isinstance(column, list) and source_index < len(column) else None
+        points.append(point)
+    labels = _phase_timeline(stamps, window_sec)
+    for index, point in enumerate(points):
+        if index < len(labels):
+            point["phase"] = labels[index]
+
+    def _span(field: str) -> dict[str, float | None]:
+        values = [point[field] for point in points if isinstance(point.get(field), (int, float))]
+        return {"min": min(values) if values else None, "max": max(values) if values else None}
+
+    model = read_json_cached(STATIONS_DIR / "capacity-model.json") or {}
+    return {
+        "segment_id": segment_id,
+        "is_simulated": True,
+        "window_sec": window_sec,
+        "points": len(points),
+        "series": points,
+        "range": {field: _span(field) for field in _SERIES_FIELDS},
+        "capacity": {
+            "phase_capacity_factor": model.get("phase_capacity_factor") or {},
+            "phase_order": [str(name) for name in (model.get("phase_capacity_factor") or {}).keys()],
+            "phase_mode": model.get("demo_phase_mode"),
+            "phase_cycle_s": model.get("demo_phase_cycle_s"),
+            "class_by_kind": model.get("class_by_kind") or {},
+            "lane_saturation_vph_by_class": model.get("lane_saturation_vph_by_class") or {},
+        },
+        "note": (
+            "真孪生时序（模拟）：由 work/twin/loop.py 每 60 s 快照累积，"
+            "c_vph = c_base_vph × 阶段容量系数；本接口不插值、不补点、不拼造走势。"
+        ),
+    }
+
+
 def build_predict(segment_id: str | None, horizon: int | None) -> dict[str, Any] | str:
     """返回预测响应；`segment_id` 缺失时返回错误 code（由端点转 400）。"""
     if not segment_id:
@@ -3276,6 +3411,20 @@ def api_ci_history(segment_id: str | None = Query(default=None),
     if payload is None:
         return _error(404, CODE_SEGMENT_NOT_FOUND, f"路段不存在: {segment_id}", source=snapshot["source"])
     return _json(payload, source=snapshot["source"])
+
+
+@app.get("/api/traffic/segment-series")
+def api_segment_series(segment_id: str | None = Query(default=None),
+                       limit: int | None = Query(default=None)) -> JSONResponse:
+    """段级真时序（孪生侧 60 s 快照）：供决策层画曲线 / 柱状 / 点线图。"""
+    payload = build_segment_series(segment_id, limit)
+    if isinstance(payload, str):
+        if payload == "SERIES_INVALID":
+            return _error(400, payload, "缺少 segment_id")
+        if payload == "SERIES_NOT_AVAILABLE":
+            return _error(404, payload, "孪生产物缺 twin_timeseries.json（未跑过孪生主循环）")
+        return _error(404, payload, f"该路段不在孪生时序产物内: {segment_id}")
+    return _json(payload, source="twin.timeseries")
 
 
 @app.get("/api/traffic/context")
