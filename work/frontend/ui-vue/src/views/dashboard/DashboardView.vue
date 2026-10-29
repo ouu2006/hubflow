@@ -433,6 +433,41 @@ function resetCols(): void {
 }
 
 loadColMem()
+// ---------- 区域收起 / 展开（KPI 条；业主 2026-10-28，IKRANO） ----------
+// 左右两栏已有「‹ 收起」；这里补齐 KPI 条：收起后只留一条细栏，竖向空间让给地图。
+// **底部热力带不在这里做**：!95（`ce3f59b`）已在三栏区与热力带之间加了上下拉条 `.band-drag`，
+// 拖条上的箭头键就是「热力带收到底 / 回记住高度」，同一块区域两套收起键会让页面出现两个「收起」按钮，
+// 故本单只保留 KPI 条这一半（原 `heatFolded` / `band-head` 已随合并删除）。
+// 记忆口径与栏收起一致：落 localStorage；读不到 / 坏值静默退回展开。
+const REGION_FOLD_KEY = 'hubflow.dashboard.regionFolded'
+const kpiFolded = ref(false)
+
+function saveRegionFoldMem(): void {
+  try {
+    localStorage.setItem(REGION_FOLD_KEY, JSON.stringify({ kpi: kpiFolded.value }))
+  } catch {
+    /* 隐私模式等写不进去：不影响收起本身，只是不记忆 */
+  }
+}
+
+function setKpiFolded(v: boolean): void {
+  kpiFolded.value = v
+  saveRegionFoldMem()
+}
+
+function loadRegionFoldMem(): void {
+  try {
+    const raw = localStorage.getItem(REGION_FOLD_KEY)
+    if (!raw) return
+    const v = JSON.parse(raw) as { kpi?: unknown }
+    if (v.kpi === true) kpiFolded.value = true
+  } catch {
+    /* localStorage 不可用 / 内容坏了：静默退回展开 */
+  }
+}
+
+loadRegionFoldMem()
+
 loadColFoldMem()
 
 /**
@@ -2487,8 +2522,32 @@ function onCommandChanged(): void {
       <span class="switch-skeleton" aria-hidden="true"><i /><i /><i /></span>
     </div>
 
-    <!-- KPI 条(取代页头) -->
-    <div class="td-card kpi-bar">
+    <!-- KPI 条(取代页头)。业主 2026-10-28：与左右两栏一致，支持收起 / 展开。
+         收起后只留一条细栏（「关键指标已收起 + 展开」），竖向空间让给地图；状态落 localStorage。 -->
+    <div class="td-card kpi-bar" :class="{ 'is-folded': kpiFolded }">
+      <button
+        v-if="!kpiFolded"
+        type="button"
+        class="region-fold kpi-fold"
+        aria-label="收起关键指标"
+        title="收起关键指标：把竖向空间让给地图；收起后本栏留「展开指标」"
+        @click="setKpiFolded(true)"
+      >
+        收起 ▴
+      </button>
+      <div v-if="kpiFolded" class="kpi-folded">
+        <span class="kpi-folded-label">关键指标已收起</span>
+        <button
+          type="button"
+          class="region-fold"
+          aria-label="展开关键指标"
+          title="展开关键指标（平均值 / 最堵路段 / 在途车辆 / 生效因素）"
+          @click="setKpiFolded(false)"
+        >
+          展开指标 ▾
+        </button>
+      </div>
+      <template v-if="!kpiFolded">
       <div class="kpi-cell">
         <div class="kpi-label">全网平均车速</div>
         <div class="kpi-value">{{ fmt(overview?.avg_speed_kmh, 1) }}<span class="kpi-unit">km/h</span></div>
@@ -2519,6 +2578,7 @@ function onCommandChanged(): void {
           <template v-else>无生效因素</template>
         </div>
       </div>
+      </template>
     </div>
 
     <!-- 颜色模式切换（Issue IKNB9G，业主 2026-10-18）：决策拥堵版 ↔ 纯车流量版 -->
@@ -4557,6 +4617,46 @@ function onCommandChanged(): void {
 }
 
 /* ---------- 底部热力带(原 /heat 三栏内容) ---------- */
+/* 区域收起 / 展开（业主 2026-10-28）：与栏收起同一套按钮样式 */
+.region-fold {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid var(--td-component-stroke);
+  border-radius: 4px;
+  background: var(--td-bg-color-container);
+  font: inherit;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.region-fold:hover {
+  border-color: var(--td-brand-color);
+  color: var(--td-brand-color);
+}
+.kpi-bar {
+  position: relative;
+}
+.kpi-bar.is-folded {
+  padding: 0;
+}
+.kpi-fold {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  z-index: 2;
+}
+.kpi-folded {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  width: 100%;
+}
+.kpi-folded-label {
+  font-size: 12px;
+  color: var(--td-text-color-secondary);
+}
 .heat-band {
   /* 业主 2026-10-28「上下可以那样拉吗」：高度由拉条写入的 --band-h 决定，
      不用 flex 撑（撑开的话拉条改高度会被内容 min-height 顶回去）。 */
