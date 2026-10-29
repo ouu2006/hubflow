@@ -19,6 +19,8 @@ import { STATION_Z_SEGMENTS } from './stationZ.network.ts'
 import { STATION_Z_DIRECTIONS } from './stationZ.directions.generated.ts'
 import { CAMERA_CHANNELS } from './cameraChannels.generated.ts'
 import { DEMO_CAMERA_CHANNELS } from './demoCameraChannels.generated.ts'
+// 2026-10-29 演示验收：真值路网底衬（脚本 work/frontend/scripts/gen_station_roads.py 生成）
+import { STATION_Z_ROADS } from './stationZ.roads.ts'
 import type { PackSegmentBase, StationPack } from './types.ts'
 
 // ---- 摄像头：源台账（6 路）＋ 演示层 N 段 N 路（业主 2026-10-25 口径落页面）----
@@ -211,6 +213,19 @@ export const STATION_Z: StationPack = {
   },
 
   segments: STATION_Z_SEGMENTS,
+  /**
+   * **真值路网底衬**（2026-10-29 演示验收）。
+   *
+   * 底图源 TileJSON maxzoom=14，站区视角 zoom≈16.5 是 overzoom：z14 瓦片没有 service/track
+   * 级道路，本站 44 段 ramp（停车场内部通道/服务道路/连接匝道）在底图上是空白 + 建筑面，
+   * 彩色路段看起来"悬空穿场地"；干道也被合并简化，彩色线与底图黄线错开 10~15 m。
+   *
+   * 解决办法：把同一份 OSM 切片里的车行道自己画一遍当底衬，并让底图道路图层在
+   * zoom ≥ 14.5 整族退出（见 `MapLibreViewer.vue` 的 `BASEMAP_ROAD_MAXZOOM`）。
+   * 几何取 OSM 原始节点，与 `stationZ.network.ts` 的 61 段同源同口径 —— 所以彩色段
+   * 一定长在自己画的路网上，也与图上那句「路网几何为真值（OSM 切片）」自洽。
+   */
+  roads: STATION_Z_ROADS,
   // IKOQEJ：方向 / 车道 / 对向 / 贯通（只读 enriched 生成；非契约、不参与判级）
   segmentDirections: STATION_Z_DIRECTIONS,
 

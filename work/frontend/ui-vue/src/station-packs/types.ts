@@ -40,6 +40,41 @@ export interface PackSegment {
 }
 
 /**
+ * 底衬路网的分类（2026-10-29 演示验收）。
+ *
+ * **只决定底衬描边的线宽与色调，没有任何业务含义**——不参与判级、不上色、不进接口。
+ * 为什么必须分类：`parking_aisle` 与主干道同样是"路"，但按主干道的宽度压进停车场，
+ * 44 段 ramp 的彩色线会被底衬糊掉，所以按类分档收细。
+ */
+export type PackRoadClass = 'arterial' | 'link' | 'local' | 'aisle'
+
+/**
+ * 一条**真值路网底衬**折线（2026-10-29 演示验收）。
+ *
+ * 为什么需要它：底图源（OpenFreeMap `planet`）TileJSON 的 `maxzoom` 是 **14**，而大屏站区
+ * 视角 zoom≈16.5 —— 等于把 z14 瓦片放大 2.5~3.6 倍。z14 瓦片里**没有 service/track 级道路**，
+ * 于是本站 44 段 ramp（停车场内部通道 / 服务道路 / 连接匝道）在底图上是空白 + 建筑面，
+ * 彩色路段看起来"悬空穿过场地"，被读成"线路画错了"；干道也被合并简化过，彩色线与底图
+ * 黄线肉眼错开 10~15 m。
+ *
+ * 已排除"几何画错"这条路：61 段逐顶点 + 每条边每 5% 内插点求到实时 OSM 车道的距离，
+ * `N>5m 0 / N>15m 0 / median 0.0 m / 最大偏差 0.2 m`。所以修法是**换底衬**，不是改几何：
+ * 把同一份 OSM 切片里的车行道自己画一遍，底图道路图层在站区档整族关掉。
+ *
+ * ⚠️ 几何取自 OSM 原始节点（不插值、不简化、不移动），与 `build_junction_pack.py` 同口径；
+ *    本数据**只用于绘制底衬**，不含任何指标，不得当成"路段"参与任何业务计算。
+ */
+export interface PackRoadLine {
+  cls: PackRoadClass
+  /** OSM `highway` 原值（绘制用不到，留作排错与自检） */
+  hw: string
+  /** OSM `name`（多数小路没有名字） */
+  name?: string
+  /** [lon, lat] 折线 */
+  coords: [number, number][]
+}
+
+/**
  * 路段贯通性（Issue IKOQEJ；只读 enriched 字段，**不是契约字段、不参与判级**）。
  * 全部可为 null：老包 / 未标定 = 页面如实显示「— / 未标定」，不编。
  */
@@ -292,6 +327,12 @@ export interface StationPack {
    * 缺省 / 键缺失 = 该段未标定（页面显示「—/未标定」，不编真实车道）。
    */
   segmentDirections?: Record<string, PackSegmentDirection>
+  /**
+   * **真值路网底衬**（2026-10-29 演示验收；生成物 `stationZ.roads.ts`）。
+   * 缺省 = 该包没有底衬数据 → 大屏照旧用底图自带道路（不隐藏底图道路图层，
+   * 否则会把站区画成一片空白），见 `MapLibreViewer.vue` 的 `BASEMAP_ROAD_MAXZOOM`。
+   */
+  roads?: PackRoadLine[]
   /** 底图来源口径(页面水印用);`osm` 为真时触发 OSM 署名义务 */
   source: { osm: boolean; label: string; attribution?: string }
   sections: PackSection[]

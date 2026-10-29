@@ -17,6 +17,22 @@ defineProps<{
 }>()
 
 const emit = defineEmits<{ (e: 'select', id: string): void }>()
+
+/**
+ * 列表里显示的路段名（2026-10-29 演示验收）。
+ *
+ * 原先名称单行 `nowrap + ellipsis`，而左栏只有 230 px —— 站区里"停车场内部通道（N-014→N-016）"
+ * 这种名字被截成 **「停…」**，一屏三行全是同一个"停…"，只能靠别处去猜，演示时根本没法
+ * 指着某一行说"看这段"。所以两处一起改：
+ *   ① 去掉名字尾部的括注 `（N-014→N-016）`——那是路网节点编号，对观众没有意义，
+ *      而它占掉的宽度正好是"停车场内部通道"这七个字；
+ *   ② 允许最多两行（`-webkit-line-clamp`），段号单独一行小字常显。
+ * 段号必须留着：它是页面上唯一能把这一行和地图、和决策页对上的钥匙。
+ */
+function shortName(name: string): string {
+  const trimmed = name.replace(/（[^）]*）\s*$/, '').trim()
+  return trimmed || name
+}
 </script>
 
 <template>
@@ -29,7 +45,10 @@ const emit = defineEmits<{ (e: 'select', id: string): void }>()
       role="button"
       @click="emit('select', it.id)"
     >
-      <span class="rank-name">{{ it.name }}</span>
+      <span class="rank-name">
+        <span class="rank-id">{{ it.id }}</span>
+        <span class="rank-text">{{ shortName(it.name) }}</span>
+      </span>
       <template v-if="it.available && it.ci !== null">
         <span class="rank-ci td-num">{{ (it.ci ?? 0).toFixed(1) }}</span>
         <LevelBadge :level="it.level" />
@@ -48,9 +67,26 @@ const emit = defineEmits<{ (e: 'select', id: string): void }>()
 .rank-name {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* 段号：唯一能和地图 / 决策页对上的钥匙，必须常显（原来只藏在名字的括注里） */
+.rank-id {
+  font-size: 11px;
+  line-height: 1.2;
+  letter-spacing: 0.03em;
+  color: var(--td-text-color-placeholder);
+  font-variant-numeric: tabular-nums;
+}
+/* 名称最多两行：宁可换行也不截成「停…」（左栏 230 px 放不下站区这些长名） */
+.rank-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.25;
   color: var(--td-text-color-primary);
 }
 .rank-ci {

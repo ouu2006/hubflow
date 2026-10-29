@@ -183,6 +183,88 @@ const BASEMAP_TILES_TIMEOUT_MS = 8000
 const BASEMAP_PROBE_TIMEOUT_MS = 1500
 
 const SRC = 'hubflow-route'
+// ---- 真值路网底衬（2026-10-29 演示验收）----
+//
+// 为什么要在**底图之外**再画一遍路网：
+//   底图源（OpenFreeMap `planet`）TileJSON 的 `maxzoom` 是 **14**，而站区视角 zoom≈16.5
+//   —— 等于把 z14 瓦片放大 2.5~3.6 倍。z14 瓦片里没有 service/track 级道路，本站 44 段
+//   ramp（停车场内部通道 / 服务道路 / 连接匝道）在底图上是空白 + 建筑面，彩色路段看起来
+//   "悬空穿过场地"，被业主读成"线路画错了"；干道也被 z14 合并简化过，彩色线与底图黄线
+//   肉眼错开 10~15 m。
+//   先排除过"几何画错"：61 段逐顶点 + 每条边每 5% 内插点到实时 OSM 车道的距离，
+//   `N>5m 0 / N>15m 0 / median 0.0 m / 最大偏差 0.2 m` —— 几何是真值。所以修法是换底衬。
+//   做法：把同一份 OSM 切片里的车行道自己画一遍（数据见站点包 `roads`，生成脚本
+//   `work/frontend/scripts/gen_station_roads.py`），并让底图道路图层在站区档整族退出。
+const ROADS_SRC = 'hubflow-truth-roads'
+const LAYER_ROADS_CASING = `${ROADS_SRC}-casing`
+const LAYER_ROADS_LINE = `${ROADS_SRC}-line`
+/**
+ * 底图道路图层的**退出档**：zoom ≥ 14.5 时整族不画，站区路网一律由上面那份真值底衬承担。
+ * 为什么是 14.5：底图瓦片只到 z14，14→14.5 是"瓦片还够用"的最后半档；再放大就全是 overzoom
+ * 的插值结果，留着的唯一效果是**和自绘路网打架**（两套宽窄、两套简化程度）。
+ * 全国视角（zoom 3~6）与过渡中仍用底图道路 —— 那时底图是够准的，自绘底衬也是隐藏的。
+ */
+const BASEMAP_ROAD_MAXZOOM = 14.5
+/**
+ * 把底图道路「放回来」时用的 `maxzoom`。
+ *
+ * Liberty 的道路层多数不写 `maxzoom`（等价于一路画到 24）。`setLayerZoomRange()` 必须给一个
+ * 具体数值，所以用 24 这个"等于没限制"的值兜底 —— 只有当原层本来就没写时才用得上。
+ */
+const BASEMAP_ROAD_RESTORE_MAXZOOM = 24
+/** Liberty 样式里矢量源的 id（底图道路图层的 `source`；关它之前要按这个筛） */
+const OPENMAPTILES_SRC = 'openmaptiles'
+/**
+ * 底衬的外观分档（屏幕 px，不参与 `applyLineScale()` 的缩放折算 —— 它只在站区视角出现，
+ * 而站区视角的 zoom 基本固定在 fitZoom 附近）。
+ *
+ * `edge` = 灰色路缘（外圈），`road` = 路面（内圈）。取"比彩色段自己的描边明显更宽"
+ * （彩色段 casing 主 11 / 支 9，路面 15.5 / 8.6）：这样彩色段像**压在路面上的一条检测线**，
+ * 两侧各露出 3 px 左右的路肩，一眼就能看出"线长在路上"，而不是悬空的色块。
+ * 停车场通道（aisle）最细，免得把 44 段 ramp 糊掉。
+ *
+ * ⚠️ 第一版取「比彩色段宽 1~2 px」+ 纯白路面，实测**等于没画**：纯白跟底图 landuse 底色
+ * （≈`#F8F4F0`）糊成一片，截图像素统计里路缘色只有几十个像素。所以路面色是**比背景深半档**
+ * 的米灰，宽度也拉到彩色段之外 —— 这两个值要一起调，只改一个都看不出来。
+ */
+const ROADS_W_EDGE = { arterial: 18, link: 15, local: 12.5, aisle: 10.5 } as const
+const ROADS_W_ROAD = { arterial: 15.5, link: 12.6, local: 10.2, aisle: 8.6 } as const
+const ROADS_C_EDGE = { arterial: '#BEB3A5', link: '#C3B9AC', local: '#CCC3B6', aisle: '#D2CABE' } as const
+/**
+ * 路面色：比底图的 landuse 底色（≈`#F8F4F0`）**深半档**，而不是纯白 —— 纯白在这个底色上
+ * 会跟背景糊成一片（第一版就是这样，等于白画），只有比背景深的路面才看得出"这里有一条路"。
+ */
+const ROADS_C_ROAD = { arterial: '#F1EBE2', link: '#F3EEE6', local: '#F6F1EA', aisle: '#F8F4EE' } as const
+
+/** 按底衬分类取宽度/颜色（`cls` 由生成脚本打，取值见 `PackRoadClass`） */
+function roadsByClass(
+  table: Record<'arterial' | 'link' | 'local' | 'aisle', number>,
+): ExpressionSpecification {
+  return [
+    'match',
+    ['get', 'cls'],
+    'arterial', table.arterial,
+    'link', table.link,
+    'local', table.local,
+    'aisle', table.aisle,
+    table.arterial,
+  ] as ExpressionSpecification
+}
+
+/** 同上，颜色版（`line-color` 不接受 number） */
+function roadsColorByClass(
+  table: Record<'arterial' | 'link' | 'local' | 'aisle', string>,
+): ExpressionSpecification {
+  return [
+    'match',
+    ['get', 'cls'],
+    'arterial', table.arterial,
+    'link', table.link,
+    'local', table.local,
+    'aisle', table.aisle,
+    table.arterial,
+  ] as ExpressionSpecification
+}
 // IKOQEJ · 方向标记：独立 GeoJSON 点源 + canvas 生成的图标（不依赖字体 glyph ——
 // 底图挂掉走本地兜底样式时也能画，不会只剩一根无方向的线）
 const DIR_SRC = 'hubflow-direction'
@@ -887,6 +969,25 @@ function routeSegmentIds(): Set<string> {
   return out
 }
 
+/**
+ * 真值路网底衬的 GeoJSON（2026-10-29 演示验收）。
+ *
+ * 数据直接取**当前站点包**的 `roads`（脚本生成，几何是 OSM 原始节点），不做任何加工：
+ * 不简化、不合并、不补插值 —— 底衬的价值就在于"和彩色段同源同口径"，一动就失真。
+ * 包没有 `roads`（老包 / 未生成底衬的站）时返回空集合：图层还在但什么都不画，
+ * 底图道路也不会被关掉（`applyBasemapRoadMask()` 按同一判据），页面退化成改之前的样子。
+ */
+function roadsGeoJson(): FeatureCollection {
+  return {
+    type: 'FeatureCollection',
+    features: (activePack().roads ?? []).map((r) => ({
+      type: 'Feature' as const,
+      properties: { cls: r.cls, hw: r.hw, name: r.name ?? '' },
+      geometry: { type: 'LineString' as const, coordinates: r.coords },
+    })),
+  }
+}
+
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
 function routeGeoJson(): FeatureCollection {
   const routed = routeSegmentIds()
@@ -1187,6 +1288,39 @@ const altRouteCount = computed(
  */
 function lineLayerSpecs(): LineLayerSpecification[] {
   return [
+    // ---- 真值路网底衬（2026-10-29 演示验收）：先铺灰路缘、再铺白路面，然后才轮到彩色路段 ----
+    {
+      id: LAYER_ROADS_CASING,
+      type: 'line',
+      source: ROADS_SRC,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': roadsColorByClass(ROADS_C_EDGE),
+        // 场内小路压在建筑面上时容易显得"多了一层厚边"，按分类压一档透明度退回背景；
+        // 干道保持实色 —— 它是业主看"线是不是长在路上"的第一参照物，不能虚。
+        'line-opacity': [
+          'match', ['get', 'cls'],
+          'arterial', 1, 'link', 1, 'local', 0.85, 'aisle', 0.8,
+          1,
+        ] as ExpressionSpecification,
+        'line-width': roadsByClass(ROADS_W_EDGE),
+      },
+    },
+    {
+      id: LAYER_ROADS_LINE,
+      type: 'line',
+      source: ROADS_SRC,
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': roadsColorByClass(ROADS_C_ROAD),
+        'line-opacity': [
+          'match', ['get', 'cls'],
+          'arterial', 1, 'link', 1, 'local', 0.9, 'aisle', 0.85,
+          1,
+        ] as ExpressionSpecification,
+        'line-width': roadsByClass(ROADS_W_ROAD),
+      },
+    },
     // 白色描边底衬：让彩色路段在浅底图上分得开（与自绘视图同一手法）
     {
       id: LAYER_CASING,
@@ -1699,6 +1833,8 @@ function setLayerVisible(map: MapLibreMap, id: string, visible: boolean): void {
 function applyModeLayers(map: MapLibreMap): void {
   const atStation = motionPhase.value === 'station'
   for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
+  // 底图道路与自绘真值路网是**互斥的一对**：站区有底衬就让底图道路退出，其余场合放回来
+  applyBasemapRoadMask(map, atStation)
   setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
   // 落客区（终点区域）也是「某一个站」的面：全国不画、到站才画；「落客点」开关关掉时也不画
   // （否则视角往返/换站后 applyModeLayers 会把关掉的圈重新打开，与开关状态打架）
@@ -1724,6 +1860,8 @@ function applyModeLayers(map: MapLibreMap): void {
 function addOwnLayers(map: MapLibreMap): void {
   if (!map.getSource(OUTLINE_SRC)) map.addSource(OUTLINE_SRC, outlineSource())
   if (!map.getSource(SRC)) map.addSource(SRC, { type: 'geojson', data: routeGeoJson() })
+  // 真值路网底衬：必须排在 `ownLayerSpecs()` 之前建源，否则第一层的 addLayer 会报 source 找不到
+  if (!map.getSource(ROADS_SRC)) map.addSource(ROADS_SRC, { type: 'geojson', data: roadsGeoJson() })
   if (!map.getSource(DZ_SRC)) map.addSource(DZ_SRC, { type: 'geojson', data: dropZoneGeoJson() })
   ensureDirectionSource(map)
   ensureStationSource(map)
@@ -2317,6 +2455,46 @@ function syncVehicles(map: MapLibreMap | null): void {
 // ---- 底图：异步、可失败、失败只丢自己 ----
 
 /**
+ * 让底图道路图层在**站区档**整族退出（2026-10-29 演示验收）。
+ *
+ * 为什么必须按「到站」判断、不能按 zoom 写死在样式里：底图源 TileJSON `maxzoom: 14`，
+ * 站区视角 zoom≈16.5 是 overzoom，z14 瓦片里没有 service/track 级道路，本站 44 段 ramp
+ * （停车场内部通道/服务道路/连接匝道）在底图上是空白 + 建筑面，彩色段看起来"悬空穿场地"；
+ * 干道也被合并简化，彩色线与底图黄线错开 10~15 m。所以站区档要关掉底图道路、改用自绘真值路网。
+ *
+ * 但**「不在站区」时必须把底图道路放回来**：全国模式下手动放大到 z16~18 是常态
+ * （演示时观众会自己滚轮），那时没有自绘路网（全国档路网图层是隐藏的），
+ * 若底图道路也被 zoom 挡住，整幅地图会空成一张白纸 —— 这比"线不贴路"更难看。
+ * 因此这里用运行时 `setLayerZoomRange()`，判据跟着 `motionPhase` 走，
+ * 并由 `applyModeLayers()`（唯一的三态开关入口）在每次相位变化后重贴。
+ *
+ * 判据：① 该包**真的有**真值路网底衬（否则关掉底图道路会把站区画成空白，宁可不动）；
+ *      ② 图层 id 落在 Liberty 的道路族（`road_*` / `bridge_road_*` / `tunnel_road_*`）；
+ *      ③ 该层确实是底图矢量源（别误伤别家的 `road_` 图层）。
+ * 已经有更小 `maxzoom` 的层保持原样（只收紧不放松）。
+ */
+function applyBasemapRoadMask(map: MapLibreMap, hide: boolean): void {
+  if (!(activePack().roads ?? []).length) return
+  // 建图/换样式瞬间 `getStyle()` 可能还没有 `layers`（真报过 `Cannot read properties of undefined
+  // (reading 'layers')`），这里当"样式还没到"处理，下一次 `applyModeLayers()` 会补上
+  const layers = map.getStyle()?.layers
+  if (!Array.isArray(layers)) return
+  for (const layer of layers) {
+    if (!/^(?:bridge_|tunnel_)?road_/.test(layer.id)) continue
+    if ((layer as { source?: string }).source !== OPENMAPTILES_SRC) continue
+    const orig = (layer as { maxzoom?: number }).maxzoom
+    const maxzoom = hide
+      ? (typeof orig === 'number' ? Math.min(orig, BASEMAP_ROAD_MAXZOOM) : BASEMAP_ROAD_MAXZOOM)
+      : (typeof orig === 'number' ? orig : BASEMAP_ROAD_RESTORE_MAXZOOM)
+    try {
+      map.setLayerZoomRange(layer.id, (layer as { minzoom?: number }).minzoom ?? 0, maxzoom)
+    } catch {
+      // 图层刚被 setStyle 换掉时 getStyle() 与 setLayerZoomRange 之间有窗口期，忽略即可
+    }
+  }
+}
+
+/**
  * 把 OpenFreeMap 的样式与**本组件自己的图层**合成一份再挂载。
  *
  * 为什么不用 `map.setStyle(STYLE_URL)` 直接换：那会把路网图层一起冲掉，
@@ -2337,11 +2515,16 @@ function mergedStyle(remote: StyleSpecification): StyleSpecification {
       // （表现就是"底图刷新不出来"，且退回兜底样式也照样报错）。新增自有 source 时**两处都要加**。
       [OUTLINE_SRC]: outlineSource(),
       [SRC]: { type: 'geojson', data: routeGeoJson() },
+      // 真值路网底衬（2026-10-29）：漏在这里的话，底图一换样式第一层 addLayer 就报
+      // `source "hubflow-truth-roads" not found`，整份样式加载失败（同 DZ_SRC 那次事故）
+      [ROADS_SRC]: { type: 'geojson', data: roadsGeoJson() },
       [DIR_SRC]: { type: 'geojson', data: directionGeoJson() },
       [STATION_SRC]: { type: 'geojson', data: stationGeoJson() },
       [DZ_SRC]: { type: 'geojson', data: dropZoneGeoJson() },
     },
-    // 自有图层的绘制顺序只有 `ownLayerSpecs()` 一份
+    // 自有图层的绘制顺序只有 `ownLayerSpecs()` 一份；
+    // 底图道路的退出不在这里做（那是"到站才关"的运行时状态，见 `applyBasemapRoadMask()`），
+    // 合成样式时保持远程原样 —— 否则全国档放大就成了白纸。
     layers: [...(remote.layers ?? []), ...ownLayerSpecs()],
   }
 }
@@ -2503,6 +2686,9 @@ function applyViewState(map: MapLibreMap): void {
   if (stSrc) void stSrc.setData(stationGeoJson())
   const src = map.getSource(SRC) as GeoJSONSource | undefined
   if (src) void src.setData(routeGeoJson())
+  // 真值路网底衬（2026-10-29）：切站后按新包重贴（Z / GZ 各一份；包没有 roads 时是空集合）
+  const roadsSrc = map.getSource(ROADS_SRC) as GeoJSONSource | undefined
+  if (roadsSrc) void roadsSrc.setData(roadsGeoJson())
   // 落客区（终点区域）：切站 / 换样式后按当前包重贴；高亮层按选中路线的终点落客点收口
   const dzSrc = map.getSource(DZ_SRC) as GeoJSONSource | undefined
   if (dzSrc) void dzSrc.setData(dropZoneGeoJson())
