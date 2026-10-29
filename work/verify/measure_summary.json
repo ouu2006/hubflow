@@ -1,0 +1,1405 @@
+{
+ "_meta": {
+  "purpose": "三档/四档视口箭头落点与朝向的跨分辨率汇总（验收报告 5.4 主证据）",
+  "generated_by": "work/verify/summarize_measure.py",
+  "source": "work/verify/shots/<WxH>/measure.json（cdp_measure.mjs 产出）",
+  "criterion": {
+   "pos_px": 0.5,
+   "ratio": 0.01,
+   "rotate_deg": 0.5,
+   "screen_bearing_deg": 1.0
+  }
+ },
+ "viewports": {
+  "1280x720": {
+   "viewport": "1280x720",
+   "passes": {
+    "natural": {
+     "ok": true,
+     "viewport": "1280x720",
+     "canvas": [
+      562,
+      164
+     ],
+     "zoom": 0.2481,
+     "center": [
+      108.5055855,
+      26.4361634
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 0.0,
+     "icon_size_at_zoom": 0.2656,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "backward": 14,
+       "forward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0457,
+     "max_ratio": 215.559515,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        288.04,
+        88.02
+       ],
+       "d_pos_px": 0.0368,
+       "ratio": 18.438638,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 0.0
+      },
+      "SZ-005": {
+       "arrow_px": [
+        288.04,
+        88.02
+       ],
+       "d_pos_px": 0.0385,
+       "ratio": 28.000375,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 0.0
+      },
+      "SZ-013": {
+       "arrow_px": [
+        288.04,
+        88.02
+       ],
+       "d_pos_px": 0.0435,
+       "ratio": 95.302257,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 0.0
+      },
+      "SZ-023": {
+       "arrow_px": [
+        288.04,
+        88.02
+       ],
+       "d_pos_px": 0.0385,
+       "ratio": 36.709182,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 0.0
+      },
+      "SZ-060": {
+       "arrow_px": [
+        288.04,
+        88.02
+       ],
+       "d_pos_px": 0.0435,
+       "ratio": 95.302257,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 0.0
+      }
+     }
+    },
+    "pinned": {
+     "ok": true,
+     "viewport": "1280x720",
+     "canvas": [
+      562,
+      164
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 42,
+      "withGeom": 42,
+      "byKind": {
+       "bidirectional": 31,
+       "backward": 3,
+       "forward": 8
+      }
+     },
+     "segments_measured": 42,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000169,
+     "max_d_screen_bearing_deg": 0.000169,
+     "key": {
+      "SZ-023": {
+       "arrow_px": [
+        300.89,
+        164.65
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    },
+    "rotated": {
+     "ok": true,
+     "viewport": "1280x720",
+     "canvas": [
+      562,
+      164
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 30,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 40,
+      "withGeom": 40,
+      "byKind": {
+       "bidirectional": 33,
+       "forward": 7
+      }
+     },
+     "segments_measured": 40,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000169,
+     "max_d_screen_bearing_deg": 0.000169,
+     "key": {
+      "SZ-023": {
+       "arrow_px": [
+        339.55,
+        143.63
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    }
+   }
+  },
+  "1440x900": {
+   "viewport": "1440x900",
+   "passes": {
+    "natural": {
+     "ok": true,
+     "viewport": "1440x900",
+     "canvas": [
+      698,
+      221
+     ],
+     "zoom": 15.5,
+     "center": [
+      112.6565382,
+      23.2146432
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "backward": 14,
+       "forward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0555,
+     "max_ratio": 0.006277,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        484.82,
+        209.45
+       ],
+       "d_pos_px": 0.0467,
+       "ratio": 0.000599,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 77.85
+      },
+      "SZ-005": {
+       "arrow_px": [
+        427.81,
+        176.93
+       ],
+       "d_pos_px": 0.0478,
+       "ratio": 0.000891,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 53.59
+      },
+      "SZ-013": {
+       "arrow_px": [
+        243.61,
+        92.25
+       ],
+       "d_pos_px": 0.0057,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 17.82
+      },
+      "SZ-023": {
+       "arrow_px": [
+        452.74,
+        145.73
+       ],
+       "d_pos_px": 0.0486,
+       "ratio": 0.00119,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 40.87
+      },
+      "SZ-060": {
+       "arrow_px": [
+        243.61,
+        92.25
+       ],
+       "d_pos_px": 0.0057,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 17.82
+      }
+     }
+    },
+    "pinned": {
+     "ok": true,
+     "viewport": "1440x900",
+     "canvas": [
+      698,
+      221
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 51,
+      "withGeom": 51,
+      "byKind": {
+       "bidirectional": 33,
+       "backward": 9,
+       "forward": 9
+      }
+     },
+     "segments_measured": 51,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-005": {
+       "arrow_px": [
+        328.25,
+        243.83
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-023": {
+       "arrow_px": [
+        368.89,
+        193.15
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      },
+      "SZ-013": {
+       "arrow_px": [
+        29.09,
+        106.35
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 28.96
+      },
+      "SZ-060": {
+       "arrow_px": [
+        29.09,
+        106.35
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 28.96
+      }
+     }
+    },
+    "rotated": {
+     "ok": true,
+     "viewport": "1440x900",
+     "canvas": [
+      698,
+      221
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 30,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 47,
+      "withGeom": 47,
+      "byKind": {
+       "backward": 6,
+       "bidirectional": 33,
+       "forward": 8
+      }
+     },
+     "segments_measured": 47,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000169,
+     "max_d_screen_bearing_deg": 0.000169,
+     "key": {
+      "SZ-005": {
+       "arrow_px": [
+        397.7,
+        236.34
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-004": {
+       "arrow_px": [
+        504.52,
+        235.85
+       ],
+       "d_pos_px": 0.032,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 126.47
+      },
+      "SZ-023": {
+       "arrow_px": [
+        407.55,
+        172.13
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    }
+   }
+  },
+  "1920x1080": {
+   "viewport": "1920x1080",
+   "passes": {
+    "natural": {
+     "ok": true,
+     "viewport": "1920x1080",
+     "canvas": [
+      1174,
+      488
+     ],
+     "zoom": 15.7592,
+     "center": [
+      112.6543329,
+      23.2145966
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "backward": 14,
+       "forward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0664,
+     "max_ratio": 0.006277,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        923.5,
+        358.43
+       ],
+       "d_pos_px": 0.0558,
+       "ratio": 0.000599,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 93.17
+      },
+      "SZ-005": {
+       "arrow_px": [
+        855.27,
+        319.5
+       ],
+       "d_pos_px": 0.0572,
+       "ratio": 0.000891,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 64.14
+      },
+      "SZ-013": {
+       "arrow_px": [
+        634.82,
+        218.16
+       ],
+       "d_pos_px": 0.0068,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 21.33
+      },
+      "SZ-023": {
+       "arrow_px": [
+        885.1,
+        282.16
+       ],
+       "d_pos_px": 0.0582,
+       "ratio": 0.00119,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 48.91
+      },
+      "SZ-060": {
+       "arrow_px": [
+        634.82,
+        218.16
+       ],
+       "d_pos_px": 0.0068,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 21.33
+      }
+     }
+    },
+    "pinned": {
+     "ok": true,
+     "viewport": "1920x1080",
+     "canvas": [
+      1174,
+      488
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "forward": 14,
+       "backward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        659.01,
+        430.32
+       ],
+       "d_pos_px": 0.032,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 126.47
+      },
+      "SZ-005": {
+       "arrow_px": [
+        566.25,
+        377.33
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-023": {
+       "arrow_px": [
+        606.89,
+        326.65
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      },
+      "SZ-013": {
+       "arrow_px": [
+        267.09,
+        239.85
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 28.96
+      },
+      "SZ-060": {
+       "arrow_px": [
+        267.09,
+        239.85
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 28.96
+      }
+     }
+    },
+    "rotated": {
+     "ok": true,
+     "viewport": "1920x1080",
+     "canvas": [
+      1174,
+      488
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 30,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "forward": 14,
+       "backward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-013": {
+       "arrow_px": [
+        307.87,
+        400.36
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 28.96
+      },
+      "SZ-060": {
+       "arrow_px": [
+        307.87,
+        400.36
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 28.96
+      },
+      "SZ-005": {
+       "arrow_px": [
+        635.7,
+        369.84
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-004": {
+       "arrow_px": [
+        742.52,
+        369.35
+       ],
+       "d_pos_px": 0.032,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 126.47
+      },
+      "SZ-023": {
+       "arrow_px": [
+        645.55,
+        305.63
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    }
+   }
+  },
+  "2560x1440": {
+   "viewport": "2560x1440",
+   "passes": {
+    "natural": {
+     "ok": true,
+     "viewport": "2560x1440",
+     "canvas": [
+      1811,
+      848
+     ],
+     "zoom": 16.7335,
+     "center": [
+      112.6552348,
+      23.2146194
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "backward": 14,
+       "bidirectional": 33,
+       "forward": 14
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0677,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        1426.98,
+        652.79
+       ],
+       "d_pos_px": 0.0463,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 183.06
+      },
+      "SZ-023": {
+       "arrow_px": [
+        1351.54,
+        502.73
+       ],
+       "d_pos_px": 0.0329,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 96.1
+      },
+      "SZ-005": {
+       "arrow_px": [
+        1292.72,
+        576.1
+       ],
+       "d_pos_px": 0.049,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 126.01
+      },
+      "SZ-013": {
+       "arrow_px": [
+        859.68,
+        377.09
+       ],
+       "d_pos_px": 0.0133,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 41.91
+      },
+      "SZ-060": {
+       "arrow_px": [
+        859.68,
+        377.09
+       ],
+       "d_pos_px": 0.0133,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 41.91
+      }
+     }
+    },
+    "pinned": {
+     "ok": true,
+     "viewport": "2560x1440",
+     "canvas": [
+      1811,
+      848
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "forward": 14,
+       "backward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        977.51,
+        610.32
+       ],
+       "d_pos_px": 0.032,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 126.47
+      },
+      "SZ-005": {
+       "arrow_px": [
+        884.75,
+        557.33
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-023": {
+       "arrow_px": [
+        925.39,
+        506.65
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      },
+      "SZ-013": {
+       "arrow_px": [
+        585.59,
+        419.85
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 28.96
+      },
+      "SZ-060": {
+       "arrow_px": [
+        585.59,
+        419.85
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 28.96
+      }
+     }
+    },
+    "rotated": {
+     "ok": true,
+     "viewport": "2560x1440",
+     "canvas": [
+      1811,
+      848
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 30,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "forward": 14,
+       "backward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-013": {
+       "arrow_px": [
+        626.37,
+        580.36
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 28.96
+      },
+      "SZ-060": {
+       "arrow_px": [
+        626.37,
+        580.36
+       ],
+       "d_pos_px": 0.0092,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 28.96
+      },
+      "SZ-005": {
+       "arrow_px": [
+        954.2,
+        549.84
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-004": {
+       "arrow_px": [
+        1061.02,
+        549.35
+       ],
+       "d_pos_px": 0.032,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 126.47
+      },
+      "SZ-023": {
+       "arrow_px": [
+        964.05,
+        485.63
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    }
+   }
+  },
+  "375x812": {
+   "viewport": "375x812",
+   "passes": {
+    "natural": {
+     "ok": true,
+     "viewport": "375x812",
+     "canvas": [
+      357,
+      243
+     ],
+     "zoom": 15.5,
+     "center": [
+      112.6565382,
+      23.2146419
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 61,
+      "withGeom": 61,
+      "byKind": {
+       "backward": 14,
+       "forward": 14,
+       "bidirectional": 33
+      }
+     },
+     "segments_measured": 61,
+     "max_d_pos_px": 0.0555,
+     "max_ratio": 0.006277,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-004": {
+       "arrow_px": [
+        314.32,
+        220.36
+       ],
+       "d_pos_px": 0.0467,
+       "ratio": 0.000599,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 77.85
+      },
+      "SZ-005": {
+       "arrow_px": [
+        257.31,
+        187.84
+       ],
+       "d_pos_px": 0.0478,
+       "ratio": 0.000891,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 53.59
+      },
+      "SZ-013": {
+       "arrow_px": [
+        73.11,
+        103.16
+       ],
+       "d_pos_px": 0.0057,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 17.82
+      },
+      "SZ-023": {
+       "arrow_px": [
+        282.24,
+        156.64
+       ],
+       "d_pos_px": 0.0486,
+       "ratio": 0.00119,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 40.87
+      },
+      "SZ-060": {
+       "arrow_px": [
+        73.11,
+        103.16
+       ],
+       "d_pos_px": 0.0057,
+       "ratio": 0.000317,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "forward",
+       "span_px": 17.82
+      }
+     }
+    },
+    "pinned": {
+     "ok": true,
+     "viewport": "375x812",
+     "canvas": [
+      357,
+      243
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 0,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 43,
+      "withGeom": 43,
+      "byKind": {
+       "bidirectional": 33,
+       "backward": 4,
+       "forward": 6
+      }
+     },
+     "segments_measured": 43,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000185,
+     "max_d_screen_bearing_deg": 0.000185,
+     "key": {
+      "SZ-005": {
+       "arrow_px": [
+        157.75,
+        254.83
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-023": {
+       "arrow_px": [
+        198.39,
+        204.15
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    },
+    "rotated": {
+     "ok": true,
+     "viewport": "375x812",
+     "canvas": [
+      357,
+      243
+     ],
+     "zoom": 16.2,
+     "center": [
+      112.6579271,
+      23.214862
+     ],
+     "bearing": 30,
+     "icon_opacity_at_zoom": 1.0,
+     "icon_size_at_zoom": 0.5312,
+     "counts": {
+      "netSegments": 61,
+      "dirFeatures": 43,
+      "withGeom": 43,
+      "byKind": {
+       "backward": 4,
+       "bidirectional": 33,
+       "forward": 6
+      }
+     },
+     "segments_measured": 43,
+     "max_d_pos_px": 0.0468,
+     "max_ratio": 0.002289,
+     "max_d_rotate_deg": 0.000169,
+     "max_d_screen_bearing_deg": 0.000169,
+     "key": {
+      "SZ-005": {
+       "arrow_px": [
+        227.2,
+        247.34
+       ],
+       "d_pos_px": 0.0339,
+       "ratio": 0.000389,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "backward",
+       "span_px": 87.06
+      },
+      "SZ-004": {
+       "arrow_px": [
+        334.02,
+        246.85
+       ],
+       "d_pos_px": 0.032,
+       "ratio": 0.000253,
+       "d_rotate_deg": 0.0001,
+       "d_screen_bearing_deg": 0.0001,
+       "dir_kind": "backward",
+       "span_px": 126.47
+      },
+      "SZ-023": {
+       "arrow_px": [
+        237.05,
+        183.13
+       ],
+       "d_pos_px": 0.0228,
+       "ratio": 0.000343,
+       "d_rotate_deg": 0.0,
+       "d_screen_bearing_deg": 0.0,
+       "dir_kind": "bidirectional",
+       "span_px": 66.39
+      }
+     }
+    }
+   }
+  }
+ },
+ "conditions": {
+  "1280x720": {
+   "viewport": "1280x720",
+   "canvas": [
+    562,
+    164
+   ],
+   "pinned_zoom": 16.2,
+   "pinned_center": [
+    112.6579271,
+    23.214862
+   ],
+   "natural_zoom": 0.2481,
+   "note": "pinned = 钉死相机（中心=站点包几何中位数，zoom 见 pinned_zoom，bearing 0），用于跨分辨率比对；natural = 应用自己 fitBounds 的取景，用于看「看不看得见箭头」。"
+  },
+  "1440x900": {
+   "viewport": "1440x900",
+   "canvas": [
+    698,
+    221
+   ],
+   "pinned_zoom": 16.2,
+   "pinned_center": [
+    112.6579271,
+    23.214862
+   ],
+   "natural_zoom": 15.5,
+   "note": "pinned = 钉死相机（中心=站点包几何中位数，zoom 见 pinned_zoom，bearing 0），用于跨分辨率比对；natural = 应用自己 fitBounds 的取景，用于看「看不看得见箭头」。"
+  },
+  "1920x1080": {
+   "viewport": "1920x1080",
+   "canvas": [
+    1174,
+    488
+   ],
+   "pinned_zoom": 16.2,
+   "pinned_center": [
+    112.6579271,
+    23.214862
+   ],
+   "natural_zoom": 15.7592,
+   "note": "pinned = 钉死相机（中心=站点包几何中位数，zoom 见 pinned_zoom，bearing 0），用于跨分辨率比对；natural = 应用自己 fitBounds 的取景，用于看「看不看得见箭头」。"
+  },
+  "2560x1440": {
+   "viewport": "2560x1440",
+   "canvas": [
+    1811,
+    848
+   ],
+   "pinned_zoom": 16.2,
+   "pinned_center": [
+    112.6579271,
+    23.214862
+   ],
+   "natural_zoom": 16.7335,
+   "note": "pinned = 钉死相机（中心=站点包几何中位数，zoom 见 pinned_zoom，bearing 0），用于跨分辨率比对；natural = 应用自己 fitBounds 的取景，用于看「看不看得见箭头」。"
+  },
+  "375x812": {
+   "viewport": "375x812",
+   "canvas": [
+    357,
+    243
+   ],
+   "pinned_zoom": 16.2,
+   "pinned_center": [
+    112.6579271,
+    23.214862
+   ],
+   "natural_zoom": 15.5,
+   "note": "pinned = 钉死相机（中心=站点包几何中位数，zoom 见 pinned_zoom，bearing 0），用于跨分辨率比对；natural = 应用自己 fitBounds 的取景，用于看「看不看得见箭头」。"
+  }
+ },
+ "cross_viewport": {
+  "SZ-023": {
+   "viewports": [
+    "1280x720",
+    "1440x900",
+    "1920x1080",
+    "2560x1440",
+    "375x812"
+   ],
+   "ratio_min": 0.000343,
+   "ratio_max": 0.000343,
+   "ratio_spread": 0.0,
+   "rotate_min": 0.0,
+   "rotate_max": 0.0,
+   "rotate_spread_deg": 0.0
+  },
+  "SZ-005": {
+   "viewports": [
+    "1440x900",
+    "1920x1080",
+    "2560x1440",
+    "375x812"
+   ],
+   "ratio_min": 0.000389,
+   "ratio_max": 0.000389,
+   "ratio_spread": 0.0,
+   "rotate_min": 0.0,
+   "rotate_max": 0.0,
+   "rotate_spread_deg": 0.0
+  },
+  "SZ-013": {
+   "viewports": [
+    "1440x900",
+    "1920x1080",
+    "2560x1440"
+   ],
+   "ratio_min": 0.000317,
+   "ratio_max": 0.000317,
+   "ratio_spread": 0.0,
+   "rotate_min": 0.0,
+   "rotate_max": 0.0,
+   "rotate_spread_deg": 0.0
+  },
+  "SZ-060": {
+   "viewports": [
+    "1440x900",
+    "1920x1080",
+    "2560x1440"
+   ],
+   "ratio_min": 0.000317,
+   "ratio_max": 0.000317,
+   "ratio_spread": 0.0,
+   "rotate_min": 0.0,
+   "rotate_max": 0.0,
+   "rotate_spread_deg": 0.0
+  },
+  "SZ-004": {
+   "viewports": [
+    "1920x1080",
+    "2560x1440"
+   ],
+   "ratio_min": 0.000253,
+   "ratio_max": 0.000253,
+   "ratio_spread": 0.0,
+   "rotate_min": 0.0001,
+   "rotate_max": 0.0001,
+   "rotate_spread_deg": 0.0
+  }
+ },
+ "canvas": {
+  "1280x720": [
+   562,
+   164
+  ],
+  "1440x900": [
+   698,
+   221
+  ],
+  "1920x1080": [
+   1174,
+   488
+  ],
+  "2560x1440": [
+   1811,
+   848
+  ],
+  "375x812": [
+   357,
+   243
+  ]
+ }
+}

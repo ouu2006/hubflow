@@ -1,0 +1,625 @@
+{
+ "_meta": {
+  "purpose": "POST /api/traffic/route/plan 的 trim_head_m / trim_tail_m 口径验收（起终点落在段中）",
+  "generated_by": "work/verify/verify_route_plan_trim.py",
+  "api": "http://127.0.0.1:8001",
+  "at": "2026-10-29T12:16:21+08:00",
+  "matrix": {
+   "segments": [
+    "SZ-004",
+    "SZ-023"
+   ],
+   "fractions": [
+    0.25,
+    0.5,
+    0.75
+   ],
+   "cases": [
+    "A 起点在段中",
+    "B 终点在段中"
+   ]
+  },
+  "tolerances": {
+   "head_tail_m": 1.0,
+   "length_m": 0.5
+  },
+  "caliber_note": "trim_head_m/trim_tail_m = 首末段各有多少米不在行程内；起点/终点的 offset_m 是 coords 顺序，offset_travel_m 是行进顺序。反向段二者互补（L - offset_m），倒置即本次缺陷。"
+ },
+ "counts": {
+  "rows": 12,
+  "pass": 12,
+  "fail": 0,
+  "assert_fail": {
+   "trim_head_vs_geom0": 0,
+   "trim_tail_vs_geom_last": 0,
+   "length_vs_steps": 0,
+   "trim_head_semantic": 0,
+   "trim_tail_semantic": 0,
+   "route_level_trim_present": 0
+  }
+ },
+ "rows": [
+  {
+   "case": "A 起点在段中",
+   "segment_id": "SZ-004",
+   "caliber": "reverse",
+   "length_m": 120.7,
+   "offset_m": 30.18,
+   "travel_from": "N-040",
+   "travel_to": "N-022",
+   "checks": {
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_head_m": 90.5,
+   "trim_head_m": 90.5,
+   "trim_tail_m": 0.0,
+   "route_length_m": 30.2,
+   "steps_length_sum_m": 120.7,
+   "step_count": 1,
+   "start_offset_travel_m": 90.5,
+   "dest_offset_travel_m": null,
+   "start_lonlat": [
+    112.658344,
+    23.2133986
+   ],
+   "dest_lonlat": null,
+   "route_trim_head_m": 90.5,
+   "route_trim_tail_m": 0.0,
+   "step0_trim_head_m": 90.5,
+   "step_last_trim_tail_m": 0.0,
+   "step0_geometry0": [
+    112.6591106,
+    23.2129909
+   ],
+   "step_last_geometry_last": [
+    112.6580882,
+    23.2135346
+   ],
+   "dist_start_geom0_m": 90.51274866911328,
+   "dist_dest_geom_last_m": null
+  },
+  {
+   "case": "B 终点在段中",
+   "segment_id": "SZ-004",
+   "caliber": "reverse",
+   "length_m": 120.7,
+   "offset_m": 30.18,
+   "travel_from": "N-040",
+   "travel_to": "N-022",
+   "checks": {
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_tail_m": 30.200000000000003,
+   "trim_head_m": 0.0,
+   "trim_tail_m": 30.2,
+   "route_length_m": 90.5,
+   "steps_length_sum_m": 120.7,
+   "step_count": 1,
+   "start_offset_travel_m": 0.0,
+   "dest_offset_travel_m": 90.5,
+   "start_lonlat": [
+    112.6591106,
+    23.2129909
+   ],
+   "dest_lonlat": [
+    112.65834398469175,
+    23.213398576783145
+   ],
+   "route_trim_head_m": 0.0,
+   "route_trim_tail_m": 30.2,
+   "step0_trim_head_m": 0.0,
+   "step_last_trim_tail_m": 30.2,
+   "step0_geometry0": [
+    112.6591106,
+    23.2129909
+   ],
+   "step_last_geometry_last": [
+    112.6580882,
+    23.2135346
+   ],
+   "dist_start_geom0_m": 0.0,
+   "dist_dest_geom_last_m": 30.19996547889888
+  },
+  {
+   "case": "A 起点在段中",
+   "segment_id": "SZ-004",
+   "caliber": "reverse",
+   "length_m": 120.7,
+   "offset_m": 60.35,
+   "travel_from": "N-040",
+   "travel_to": "N-022",
+   "checks": {
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_head_m": 60.4,
+   "trim_head_m": 60.4,
+   "trim_tail_m": 0.0,
+   "route_length_m": 60.3,
+   "steps_length_sum_m": 120.7,
+   "step_count": 1,
+   "start_offset_travel_m": 60.4,
+   "dest_offset_travel_m": null,
+   "start_lonlat": [
+    112.658599,
+    23.213263
+   ],
+   "dest_lonlat": null,
+   "route_trim_head_m": 60.4,
+   "route_trim_tail_m": 0.0,
+   "step0_trim_head_m": 60.4,
+   "step_last_trim_tail_m": 0.0,
+   "step0_geometry0": [
+    112.6591106,
+    23.2129909
+   ],
+   "step_last_geometry_last": [
+    112.6580882,
+    23.2135346
+   ],
+   "dist_start_geom0_m": 60.40573732415957,
+   "dist_dest_geom_last_m": null
+  },
+  {
+   "case": "B 终点在段中",
+   "segment_id": "SZ-004",
+   "caliber": "reverse",
+   "length_m": 120.7,
+   "offset_m": 60.35,
+   "travel_from": "N-040",
+   "travel_to": "N-022",
+   "checks": {
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_tail_m": 60.300000000000004,
+   "trim_head_m": 0.0,
+   "trim_tail_m": 60.3,
+   "route_length_m": 60.4,
+   "steps_length_sum_m": 120.7,
+   "step_count": 1,
+   "start_offset_travel_m": 0.0,
+   "dest_offset_travel_m": 60.4,
+   "start_lonlat": [
+    112.6591106,
+    23.2129909
+   ],
+   "dest_lonlat": [
+    112.65859976938353,
+    23.213262553566295
+   ],
+   "route_trim_head_m": 0.0,
+   "route_trim_tail_m": 60.3,
+   "step0_trim_head_m": 0.0,
+   "step_last_trim_tail_m": 60.3,
+   "step0_geometry0": [
+    112.6591106,
+    23.2129909
+   ],
+   "step_last_geometry_last": [
+    112.6580882,
+    23.2135346
+   ],
+   "dist_start_geom0_m": 0.0,
+   "dist_dest_geom_last_m": 60.39995399499114
+  },
+  {
+   "case": "A 起点在段中",
+   "segment_id": "SZ-004",
+   "caliber": "reverse",
+   "length_m": 120.7,
+   "offset_m": 90.53,
+   "travel_from": "N-040",
+   "travel_to": "N-022",
+   "checks": {
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_head_m": 30.2,
+   "trim_head_m": 30.2,
+   "trim_tail_m": 0.0,
+   "route_length_m": 90.5,
+   "steps_length_sum_m": 120.7,
+   "step_count": 1,
+   "start_offset_travel_m": 30.2,
+   "dest_offset_travel_m": null,
+   "start_lonlat": [
+    112.6588548,
+    23.2131269
+   ],
+   "dest_lonlat": null,
+   "route_trim_head_m": 30.2,
+   "route_trim_tail_m": 0.0,
+   "step0_trim_head_m": 30.2,
+   "step_last_trim_tail_m": 0.0,
+   "step0_geometry0": [
+    112.6591106,
+    23.2129909
+   ],
+   "step_last_geometry_last": [
+    112.6580882,
+    23.2135346
+   ],
+   "dist_start_geom0_m": 30.200095787182487,
+   "dist_dest_geom_last_m": null
+  },
+  {
+   "case": "B 终点在段中",
+   "segment_id": "SZ-004",
+   "caliber": "reverse",
+   "length_m": 120.7,
+   "offset_m": 90.53,
+   "travel_from": "N-040",
+   "travel_to": "N-022",
+   "checks": {
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_tail_m": 90.5,
+   "trim_head_m": 0.0,
+   "trim_tail_m": 90.5,
+   "route_length_m": 30.2,
+   "steps_length_sum_m": 120.7,
+   "step_count": 1,
+   "start_offset_travel_m": 0.0,
+   "dest_offset_travel_m": 30.2,
+   "start_lonlat": [
+    112.6591106,
+    23.2129909
+   ],
+   "dest_lonlat": [
+    112.6588547071061,
+    23.213126980757444
+   ],
+   "route_trim_head_m": 0.0,
+   "route_trim_tail_m": 90.5,
+   "step0_trim_head_m": 0.0,
+   "step_last_trim_tail_m": 90.5,
+   "step0_geometry0": [
+    112.6591106,
+    23.2129909
+   ],
+   "step_last_geometry_last": [
+    112.6580882,
+    23.2135346
+   ],
+   "dist_start_geom0_m": 0.0,
+   "dist_dest_geom_last_m": 90.49996546909017
+  },
+  {
+   "case": "A 起点在段中",
+   "segment_id": "SZ-023",
+   "caliber": "forward",
+   "length_m": 63.4,
+   "offset_m": 15.85,
+   "travel_from": "N-029",
+   "travel_to": "N-019",
+   "checks": {
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_head_m": 15.8,
+   "trim_head_m": 15.8,
+   "trim_tail_m": 0.0,
+   "route_length_m": 47.6,
+   "steps_length_sum_m": 63.4,
+   "step_count": 1,
+   "start_offset_travel_m": 15.8,
+   "dest_offset_travel_m": null,
+   "start_lonlat": [
+    112.6582467,
+    23.2140799
+   ],
+   "dest_lonlat": null,
+   "route_trim_head_m": 15.8,
+   "route_trim_tail_m": 0.0,
+   "step0_trim_head_m": 15.8,
+   "step_last_trim_tail_m": 0.0,
+   "step0_geometry0": [
+    112.6583799,
+    23.2140079
+   ],
+   "step_last_geometry_last": [
+    112.6578455,
+    23.214297
+   ],
+   "dist_start_geom0_m": 15.791920316115078,
+   "dist_dest_geom_last_m": null
+  },
+  {
+   "case": "B 终点在段中",
+   "segment_id": "SZ-023",
+   "caliber": "forward",
+   "length_m": 63.4,
+   "offset_m": 15.85,
+   "travel_from": "N-029",
+   "travel_to": "N-019",
+   "checks": {
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_tail_m": 47.599999999999994,
+   "trim_head_m": 0.0,
+   "trim_tail_m": 47.6,
+   "route_length_m": 15.8,
+   "steps_length_sum_m": 63.4,
+   "step_count": 1,
+   "start_offset_travel_m": 0.0,
+   "dest_offset_travel_m": 15.8,
+   "start_lonlat": [
+    112.6583799,
+    23.2140079
+   ],
+   "dest_lonlat": [
+    112.658246659654,
+    23.214079980434185
+   ],
+   "route_trim_head_m": 0.0,
+   "route_trim_tail_m": 47.6,
+   "step0_trim_head_m": 0.0,
+   "step_last_trim_tail_m": 47.6,
+   "step0_geometry0": [
+    112.6583799,
+    23.2140079
+   ],
+   "step_last_geometry_last": [
+    112.6578455,
+    23.214297
+   ],
+   "dist_start_geom0_m": 0.0,
+   "dist_dest_geom_last_m": 47.570585436345254
+  },
+  {
+   "case": "A 起点在段中",
+   "segment_id": "SZ-023",
+   "caliber": "forward",
+   "length_m": 63.4,
+   "offset_m": 31.7,
+   "travel_from": "N-029",
+   "travel_to": "N-019",
+   "checks": {
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_head_m": 31.7,
+   "trim_head_m": 31.7,
+   "trim_tail_m": 0.0,
+   "route_length_m": 31.7,
+   "steps_length_sum_m": 63.4,
+   "step_count": 1,
+   "start_offset_travel_m": 31.7,
+   "dest_offset_travel_m": null,
+   "start_lonlat": [
+    112.6581127,
+    23.2141525
+   ],
+   "dest_lonlat": null,
+   "route_trim_head_m": 31.7,
+   "route_trim_tail_m": 0.0,
+   "step0_trim_head_m": 31.7,
+   "step_last_trim_tail_m": 0.0,
+   "step0_geometry0": [
+    112.6583799,
+    23.2140079
+   ],
+   "step_last_geometry_last": [
+    112.6578455,
+    23.214297
+   ],
+   "dist_start_geom0_m": 31.688130910781165,
+   "dist_dest_geom_last_m": null
+  },
+  {
+   "case": "B 终点在段中",
+   "segment_id": "SZ-023",
+   "caliber": "forward",
+   "length_m": 63.4,
+   "offset_m": 31.7,
+   "travel_from": "N-029",
+   "travel_to": "N-019",
+   "checks": {
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_tail_m": 31.7,
+   "trim_head_m": 0.0,
+   "trim_tail_m": 31.7,
+   "route_length_m": 31.7,
+   "steps_length_sum_m": 63.4,
+   "step_count": 1,
+   "start_offset_travel_m": 0.0,
+   "dest_offset_travel_m": 31.7,
+   "start_lonlat": [
+    112.6583799,
+    23.2140079
+   ],
+   "dest_lonlat": [
+    112.65811257601466,
+    23.214152517073654
+   ],
+   "route_trim_head_m": 0.0,
+   "route_trim_tail_m": 31.7,
+   "step0_trim_head_m": 0.0,
+   "step_last_trim_tail_m": 31.7,
+   "step0_geometry0": [
+    112.6583799,
+    23.2140079
+   ],
+   "step_last_geometry_last": [
+    112.6578455,
+    23.214297
+   ],
+   "dist_start_geom0_m": 0.0,
+   "dist_dest_geom_last_m": 31.670582236229723
+  },
+  {
+   "case": "A 起点在段中",
+   "segment_id": "SZ-023",
+   "caliber": "forward",
+   "length_m": 63.4,
+   "offset_m": 47.55,
+   "travel_from": "N-029",
+   "travel_to": "N-019",
+   "checks": {
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_head_m": 47.5,
+   "trim_head_m": 47.5,
+   "trim_tail_m": 0.0,
+   "route_length_m": 15.9,
+   "steps_length_sum_m": 63.4,
+   "step_count": 1,
+   "start_offset_travel_m": 47.5,
+   "dest_offset_travel_m": null,
+   "start_lonlat": [
+    112.6579795,
+    23.2142245
+   ],
+   "dest_lonlat": null,
+   "route_trim_head_m": 47.5,
+   "route_trim_tail_m": 0.0,
+   "step0_trim_head_m": 47.5,
+   "step_last_trim_tail_m": 0.0,
+   "step0_geometry0": [
+    112.6583799,
+    23.2140079
+   ],
+   "step_last_geometry_last": [
+    112.6578455,
+    23.214297
+   ],
+   "dist_start_geom0_m": 47.480037183439954,
+   "dist_dest_geom_last_m": null
+  },
+  {
+   "case": "B 终点在段中",
+   "segment_id": "SZ-023",
+   "caliber": "forward",
+   "length_m": 63.4,
+   "offset_m": 47.55,
+   "travel_from": "N-029",
+   "travel_to": "N-019",
+   "checks": {
+    "trim_tail_vs_geom_last": true,
+    "trim_tail_semantic": true,
+    "trim_head_vs_geom0": true,
+    "trim_head_semantic": true,
+    "length_vs_steps": true,
+    "route_level_trim_present": true
+   },
+   "ok": true,
+   "note": null,
+   "reachable": true,
+   "expected_trim_tail_m": 15.899999999999999,
+   "trim_head_m": 0.0,
+   "trim_tail_m": 15.9,
+   "route_length_m": 47.5,
+   "steps_length_sum_m": 63.4,
+   "step_count": 1,
+   "start_offset_travel_m": 0.0,
+   "dest_offset_travel_m": 47.5,
+   "start_lonlat": [
+    112.6583799,
+    23.2140079
+   ],
+   "dest_lonlat": [
+    112.65797933566864,
+    23.214224597507844
+   ],
+   "route_trim_head_m": 0.0,
+   "route_trim_tail_m": 15.9,
+   "step0_trim_head_m": 0.0,
+   "step_last_trim_tail_m": 15.9,
+   "step0_geometry0": [
+    112.6583799,
+    23.2140079
+   ],
+   "step_last_geometry_last": [
+    112.6578455,
+    23.214297
+   ],
+   "dist_start_geom0_m": 0.0,
+   "dist_dest_geom_last_m": 15.870585406854156
+  }
+ ]
+}

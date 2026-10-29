@@ -179,6 +179,114 @@ export interface RoutePath {
   /** 仅 pickup_route（D3 往返）带：上客点编号（契约字段名是 pickup_point，不是 dropoff_point） */
   pickup_point?: string
   walk_min?: number
+  /**
+   * 行进箭头用（2026-10-29 方案 §2，接口层透传字段）：逐步几何。
+   * 缺省 = 老产物 / 老接口没有该字段 → 页面退回「链式连通性定向」，**不按 coords 顺序瞎画**。
+   */
+  steps?: RouteStep[]
+  /** 起点的真实落点（有就直接用；缺省时才按 offset_m + 段方向反算） */
+  start_point?: RouteStartPoint | null
+}
+
+/**
+ * 路线「一步」（2026-10-29 方案 §2 的接口契约字段；接口层产出，前端只读展示）。
+ *
+ * ⚠️ `geometry` 必须**已按行车顺序**排列（reverse 段也已经是正向——按后端的遍历边口径给）：
+ * 前端画行进箭头时**不再**按 `segment_id` / `_rev` 后缀二次判向，避免两份方向解释打架。
+ */
+export interface RouteStep {
+  segment_id: string
+  /** 遍历边 id（如 `SZ-004` / `SZ-012_rev`），只作溯源展示 */
+  edge_id?: string | null
+  /** 行车方向（forward / reverse / bidirectional）：与 `geometry` 已经对齐，只供浮牌展示 */
+  direction?: string | null
+  from_node?: string | null
+  to_node?: string | null
+  length_m?: number | null
+  /** 该步折线（**行车顺序**）；缺省 → 该步不画箭头，也不猜 */
+  geometry?: [number, number][]
+  /** 首段有多少米不在本次行程内（起点落在段中时 >0，画线要裁掉）；方案 §2 附加字段 */
+  trim_head_m?: number | null
+  /** 末段同理 */
+  trim_tail_m?: number | null
+}
+
+/**
+ * 起点落点（方案 §2 契约字段）：后端把 `offset_m`（**coords 序**，见 `shared/routeArrows.ts` 里的口径说明）
+ * 连同算好的经纬度一起给出，页面直接用 `lon/lat`，不必自己反算。
+ * （2026-10-29 实测：`offset_m` 从 `coords[0]` 量起，reverse 段**不做**镜像；`offset_travel_m` 才是行进序。）
+ */
+export interface RouteStartPoint {
+  segment_id: string
+  offset_m: number
+  /** 同段的行进口径里程（reverse 段 = `length_m - offset_m`）；只作核对，落点用 lon/lat */
+  offset_travel_m?: number
+  /** 遍历边 id（如 `SZ-004` / `SZ-012_rev`） */
+  edge_id?: string | null
+  node_id?: string | null
+  direction?: string | null
+  lon: number
+  lat: number
+}
+
+/**
+ * `GET /api/traffic/route/{request_id}/steps` —— **非契约辅助端点**（lead 2026-10-29 拍板）。
+ *
+ * 为什么单独拉：`/route/options` 与 `/route/recommend` 的 `arrival_route` **不带 `steps` / `start_point`**
+ * （契约字段集一改就要业主侧回归，收益不抵风险），而大屏要的正是"后端权威行进序"。
+ * 于是大屏按 `request_id` 单拉这一份，一次拿到该请求下 arrival / departure / pickup / alternatives
+ * **全部路线的 steps**，浏览器侧按 `request_id` 缓存（见 `shared/routeStepsCache.ts`）。
+ *
+ * 拿不到（404 / 超时 / 字段缺失）时前端退回链式连通性定向，并在控制台留
+ * `[route-arrows] steps unavailable for <id>, fallback to chain-orientation` —— 不允许静默降级。
+ */
+export interface RouteStepsRoute {
+  path_id?: string | null
+  segments?: string[]
+  steps?: RouteStep[] | null
+  length_m?: number | null
+  eta_min?: number | null
+  segment_count?: number | null
+  step_count?: number | null
+  /**
+   * 该条路线的起点真实落点（2026-10-29 接口层补充，与 `/route/plan` 的 `start_point` 同构）。
+   * 大屏画「起点」标记时**优先用它**，取代前端 `pointAtOffset(coords, offset_m)` 的复刻口径。
+   */
+  start_point?: RouteStartPoint | null
+}
+
+export interface RouteStepsSnapshot {
+  request_id: string | null
+  ts?: string
+  is_simulated?: boolean
+  data_source?: string
+  data_source_note?: string
+  /** 与 `/route/plan` 的 `start_point` 同源（`offset_m` = coords 序、`offset_travel_m` = 行进序） */
+  start_point?: RouteStartPoint | null
+  routes?: {
+    pickup_route?: RouteStepsRoute | null
+    arrival_route?: RouteStepsRoute | null
+    departure_route?: RouteStepsRoute | null
+    alternatives?: RouteStepsRoute[] | null
+  } | null
+  /** 后端对 `steps[].geometry` 的口径说明（`geometry_order: "travel"` 等） */
+  caliber?: Record<string, string> | null
+}
+
+/**
+ * 地图「行进箭头」的一段（**前端展示类型**，不是接口字段）：地图组件只认这个，
+ * 不关心它来自后端 `steps[]` 还是前端按链式连通性补出来的。
+ *
+ * ⚠️ `geometry` 必须**已按行车顺序**排列（reverse 段要反过来），否则箭头会指着倒车方向。
+ */
+export interface RouteArrowStep {
+  segment_id?: string
+  /** 遍历边 id（`SZ-004` / `SZ-012_rev`），只作溯源展示 */
+  edge_id?: string
+  geometry: [number, number][]
+  /** 首 / 尾要裁掉的米数（`trim_head_m` / `trim_tail_m`；缺省 0，裁完不够两点就不画） */
+  trim_head_m?: number
+  trim_tail_m?: number
 }
 
 /** 备选:契约示例在 path_id / eta_min 之外必带 reason;segments 等渲染字段与 arrival_route 同族 */
@@ -391,6 +499,18 @@ export interface RoutePlanRoute {
   length_m: number
   /** 引擎说明（为什么推荐这条 / 与主推荐差在哪），页面原样展示 */
   reason: string
+  /**
+   * 行进箭头用（2026-10-29 方案 §2，接口层透传字段）：这段路逐步几何，
+   * **已按行车顺序**排列。缺省 → 该路线退回链式连通性定向（见 `shared/routeArrows.ts`）。
+   */
+  steps?: RouteStep[]
+  /**
+   * 路线级裁切量（2026-10-29 接口层补充，**行进序**，不再是 null）：
+   * 值恒等于 `steps[0].trim_head_m` / `steps.at(-1).trim_tail_m`。
+   * 要「实际行驶长度」直接用 `length_m`（已扣掉这两段），**不要**再自己加减。
+   */
+  trim_head_m?: number | null
+  trim_tail_m?: number | null
 }
 
 /** 吸附后的端点（接口层算好回显给使用者：路段号 + 偏移 + 吸附距离） */
@@ -430,6 +550,14 @@ export interface RoutePlanResult {
   site_id: string
   origin: RoutePlanEndpoint
   destination: RoutePlanEndpoint
+  /** 起点的真实落点（方案 §2；有就用，避免 reverse 段上按 offset_m 反算出镜像点） */
+  start_point?: RouteStartPoint | null
+  /**
+   * 终点的真实落点（2026-10-29 后备端补充，结构与 `start_point` **逐字同构**）：
+   * 大屏画终点标记时优先用它，**不再**按 `offset_m` + `coords` 自己折
+   * （那正是刚被修掉的口径分叉点：`offset_m` 是 coords 序、行进里程是 `offset_travel_m`）。
+   */
+  destination_point?: RouteStartPoint | null
   routes: RoutePlanRoute[]
   /** 引擎实际给出的条数（缺省用 `routes.length`） */
   route_count?: number

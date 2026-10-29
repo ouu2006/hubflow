@@ -40,6 +40,10 @@ import {
 } from '../../api/traffic'
 import type { LocateResult } from '../../api/traffic'
 import { demoSegment, networkGeometryNote, networkSourceLabel, pointAtOffset, segmentLengthM } from '../../shared/demoNetwork'
+// 路线行进箭头（2026-10-29 方案 §3）：后端 steps 优先，没有 steps 就按链式连通性定向
+import { segmentIdsToArrowSteps, stepsToArrowSteps } from '../../shared/routeArrows'
+// 权威 steps 按 `request_id` 单拉（非契约辅助端点）并缓存在浏览器侧 —— 契约不动的正解（lead 2026-10-29）
+import { cachedRouteSteps, ensureRouteSteps } from '../../shared/routeStepsCache'
 import {
   basemapEnabled,
   camerasVisible,
@@ -92,6 +96,7 @@ import {
   type HeatMatrix,
   type RecommendResult,
   type RouteHighlight,
+  type RouteArrowStep,
   type RouteEndpointMarker,
   type RouteLonLat,
   type RouteOption,
@@ -101,6 +106,9 @@ import {
   type RoutePlanRole,
   type RouteSnapResult,
   type CapacityPhaseSummary,
+  type RouteStartPoint,
+  type RouteStep,
+  type RouteStepsSnapshot,
   type SegmentRecord,
   type SegmentSourcePair,
   type ThresholdSnapshot,
@@ -1774,6 +1782,158 @@ const mapRoutes = computed<RouteHighlight[]>(() =>
   odPlan.value ? customRouteHighlights.value : routeHighlights.value,
 )
 
+/** 段号 → 当前包里的折线（拿不到就不画那一段的箭头，也不猜方向） */
+function coordsOfSegment(segmentId: string): [number, number][] | null {
+  const seg = demoSegment(segmentId)
+  return seg && seg.coords.length >= 2 ? seg.coords : null
+}
+
+/**
+ * 路线**行进箭头**（业主 2026-10-29：路线上一支方向箭头都没有，后端标的向对不对肉眼无法验证）。
+ *
+ * 定向口径只认三种来源，按优先级：
+ *   ① 后端 `steps[].geometry` —— **两条入口**：
+ *      · `/route/plan` 的 `routes[].steps`（自定义起终点，随响应一起给）；
+ *      · `GET /api/traffic/route/{request_id}/steps`（大屏 `/route/recommend` 这条路：契约里
+ *        `arrival_route` 不带 steps，改为按 request_id 单拉一份，见 `shared/routeStepsCache.ts`）。
+ *      接口层已按**行车顺序**排好，**原样透传**，前端不二次判向；
+ *   ② 老链路确实没有 steps（端点 404 / 超时 / 字段缺失）→ 按**链式连通性**定向
+ *      （`shared/routeArrows.ts` 的 `segmentIdsToArrowSteps`），**并在控制台留痕**：
+ *      `[route-arrows] steps unavailable for <id>, fallback to chain-orientation`；
+ *   ③ 再没有（段号都取不到几何）→ 空数组，**一支都不画**。
+ *   ⚠️ 任何情况下都**不按 `coords` 顺序直接画**：那是几何方向，不是行车方向（reverse 段正好相反）。
+ *
+ * 画哪一条：跟随「被选中的那条路线」（与右栏卡片 / 地图高亮同一套 key），
+ * 取消选中时退回主推荐 / arrival。
+ */
+
+// ── 权威 steps 的取用（按 request_id 单拉 + 浏览器侧缓存）─────────────────────────────
+// 当前大屏这一屏属于哪个请求：`/route/recommend` 的 `request_id`（`/route/plan` 响应不带该字段，
+// 它的 steps 就在 `routes[].steps` 里，不需要单拉）。
+const routeRequestId = computed<string | null>(() => recommend.value?.request_id ?? null)
+/** 本屏拿到的权威 steps 快照（null = 还没拿到 / 拿不到） */
+const routeStepsSnap = ref<RouteStepsSnapshot | null>(null)
+/** 已经为"拿不到权威 steps"打过日志的 request_id（同一条只吵一次，避免每次渲染刷屏） */
+const fallbackWarned = new Set<string>()
+
+/** 把快照里的 `steps[]` 按地图分组的 key 取出来（arrival / departure / pickup / alt:N） */
+function stepsOfRouteKey(snap: RouteStepsSnapshot | null, key: string): RouteStep[] | null {
+  const r = snap?.routes
+  if (!r) return null
+  const pick = (x: { steps?: RouteStep[] | null } | null | undefined): RouteStep[] | null =>
+    x && Array.isArray(x.steps) && x.steps.length > 0 ? x.steps : null
+  if (key === 'arrival') return pick(r.arrival_route)
+  if (key === 'departure') return pick(r.departure_route)
+  if (key === 'pickup') return pick(r.pickup_route)
+  const alt = /^alt:(\d+)$/.exec(key)
+  if (alt) return pick(r.alternatives?.[Number(alt[1]) - 1])
+  return null
+}
+
+/**
+ * steps 取用状态（**区分"还在路上"和"确定拿不到"**）：
+ * 首位渲染时快照必然为空，此时不能喊"拿不到" —— 那会把一次正常的 200 响应也报成兜底。
+ * 只有 `settled` 且快照为空（真 404 / 超时 / 字段缺失）才允许打兜底告警。
+ */
+const routeStepsState = ref<'idle' | 'loading' | 'ready' | 'missing'>('idle')
+
+/** 拉一次权威 steps（失败留给调用方兜底 + 打日志；这里不抛） */
+async function loadRouteSteps(): Promise<void> {
+  const id = routeRequestId.value
+  if (!id) {
+    routeStepsSnap.value = null
+    routeStepsState.value = 'idle'
+    return
+  }
+  if (!routeStepsSnap.value) routeStepsState.value = 'loading'
+  const snap = await ensureRouteSteps(id)
+  // 等响应期间换了请求 / 换了站：晚到的结果不落地（否则会把上一条线的权威值贴到新线上）
+  if (routeRequestId.value !== id) return
+  routeStepsSnap.value = snap
+  routeStepsState.value = snap ? 'ready' : 'missing'
+}
+
+watch(
+  routeRequestId,
+  (id) => {
+    // 先同步吃缓存（切回已拉过的请求时零延迟），再按需补拉
+    const cached = cachedRouteSteps(id)
+    routeStepsSnap.value = cached
+    routeStepsState.value = cached ? 'ready' : 'loading'
+    void loadRouteSteps()
+  },
+  { immediate: true },
+)
+
+/** 兜底可见：一旦走链式定向，控制台必须留下"这条线为什么是兜底值"的证据（lead 2026-10-29） */
+function warnFallbackOnce(id: string | null): void {
+  const tag = id ?? 'unknown-request'
+  if (fallbackWarned.has(tag)) return
+  fallbackWarned.add(tag)
+  console.warn(`[route-arrows] steps unavailable for ${tag}, fallback to chain-orientation`)
+}
+
+const mapRouteSteps = computed<RouteArrowStep[]>(() => {
+  if (emergencyActive.value) return []
+  const key = pickedRouteKey.value
+  const plan = odPlan.value
+  if (plan && plan.reachable) {
+    const route = plan.routes.find((r) => odRoleKey(r.role) === key)
+      ?? plan.routes.find((r) => r.role === 'primary')
+    if (!route) return []
+    if (route.steps && route.steps.length > 0) return stepsToArrowSteps(route.steps)
+    return segmentIdsToArrowSteps(route.segments ?? [], coordsOfSegment)
+  }
+  const group = mapRoutes.value.find((g) => g.key === key)
+    ?? mapRoutes.value.find((g) => g.kind === 'arrival')
+  if (!group || group.segments.length === 0) return []
+  // ① 权威 steps：按 request_id 单拉的那份（后端行进序，含 edge_id / trim_*）
+  const authoritative = stepsOfRouteKey(routeStepsSnap.value, group.key ?? '')
+  if (authoritative) return stepsToArrowSteps(authoritative)
+  // ② 老产物里主推荐自带 steps（接口层升级后 `/route/recommend` 也可能带）
+  if (group.kind === 'arrival') {
+    const steps = recommend.value?.arrival_route.steps
+    if (steps && steps.length > 0) return stepsToArrowSteps(steps)
+  }
+  // ③ 兜底：链式连通性定向 —— 必须留痕，业主问"这条线方向怎么来的"要能一句话答。
+  //    但只在**确认拿不到**权威 steps 时才喊；还在路上（loading）用的是临时兜底值，不告警。
+  if (routeStepsState.value === 'missing') warnFallbackOnce(routeRequestId.value)
+  return segmentIdsToArrowSteps(group.segments, coordsOfSegment)
+})
+
+/**
+ * 后端起点的**真实落点**（方案 §2 契约字段 `start_point`）：有就直接用，
+ * 不在前端按 `offset_m` 反算 reverse 段（那正是起点被镜像到段另一头的根因）。
+ */
+function startPointOf(segmentId: string): RouteStartPoint | null {
+  // 取用顺序（都是"后端权威坐标"，谁有先用谁；全没有才退回 pointAtOffset 反算）：
+  //   ① `/route/plan` 的 `start_point`（自定义起终点这条路）
+  //   ② `/route/recommend` 的 `arrival_route.start_point`（契约字段，大屏现网恒为 null）
+  //   ③ `GET /route/{request_id}/steps` 里 `arrival_route.start_point`（2026-10-29 接口层补充，
+  //      与 /route/plan 同构含 lon/lat）。**只认 arrival_route 的**：departure/pickup 的
+  //      start_point 是另一段行程的起点，拿来画"车辆当前位置"会画错地方。
+  const sp =
+    odPlan.value?.start_point ??
+    recommend.value?.arrival_route.start_point ??
+    routeStepsSnap.value?.routes?.arrival_route?.start_point ??
+    routeStepsSnap.value?.start_point ??
+    null
+  if (!sp || sp.segment_id !== segmentId) return null
+  if (!Number.isFinite(sp.lon) || !Number.isFinite(sp.lat)) return null
+  return sp
+}
+
+/**
+ * 后端终点的**真实落点**（`/route/plan` 的 `destination_point`，2026-10-29 接口层补充；
+ * 与 `start_point` 逐字同构，含 `lon/lat`）。有就直用，不按 `offset_m` 折。
+ */
+function destinationPointOf(): RouteStartPoint | null {
+  const dp = odPlan.value?.destination_point ?? null
+  if (!dp) return null
+  if (!Number.isFinite(dp.lon) || !Number.isFinite(dp.lat)) return null
+  return dp
+}
+
 const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
   // 应急态：起点标记属于引导，一并收起
   if (emergencyActive.value) return null
@@ -1794,7 +1954,31 @@ const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
   if (!s) return null
   const seg = demoSegment(s.segment_id)
   if (!seg || seg.coords.length === 0) return null
-  const p = pointAtOffset(seg.coords, s.offset_m ?? 0)
+  // ① 后端 `start_point`（方案 §2 契约）：经纬度已算好，直接用，前端不再反算；
+  // ② 缺省时按 `offset_m` 反算，**一律 coords 序**：`work/twin/sumonet.py:344-355` 建 SUMO 边时
+  //    `shape` 就是 `coords` 顺序、from/to 也是几何 from/to（不看 oneway，SZ-004 这类
+  //    oneway=reverse 的段照样按 coords 顺序建边），`work/twin/loop.py:1066-1071` 的 `_rev` 补边
+  //    又用 `length_m - getLanePosition()` 换算回"原段起点起算" —— 所以 `offset_m` 从 `coords[0]`
+  //    量起，`/locate`、点位注册表、这里三者同口径。（曾经误当"行进口径"做过镜像换算，那是错的：
+  //    reverse 段起点错位的真因在引擎 `_start_from`，不在前端。）
+  // ⚠️ 曾经的常态：`routes.json` 里 `arrival_route.start_point` 恒为 null、`/route/recommend`
+  //    也不给，所以业主最常看的视图走的就是这一级兜底。2026-10-29 起 `/route/plan` 给
+  //    `start_point`、`/route/{id}/steps` 给 `routes.arrival_route.start_point`，兜底已退为
+  //    **异常路径**（命中会 console.warn，见下）。五级顺序与命中场景见
+  //    `work/verify/路线箭头联调-报告.md` §14。
+  // ⚠️ 第 5 级（最后一级）兜底：前端按 `offset_m` 复刻后端口径。
+  //    这条路径**理论上是兜底**（后端给了权威坐标就不该走到），但只要它被静默命中，
+  //    就是下一次"起点错位"事故的入口 —— 所以命中时必须能在 devtools 里一眼看见。
+  const sp = startPointOf(s.segment_id)
+  if (!sp) {
+    console.warn(
+      `[route-start] 起点落到 pointAtOffset 兜底：request=${routeRequestId.value ?? 'unknown'} ` +
+        `segment=${s.segment_id} offset_m=${Math.max(0, s.offset_m ?? 0)}`,
+    )
+  }
+  const p: [number, number] = sp
+    ? [sp.lon, sp.lat]
+    : pointAtOffset(seg.coords, Math.max(0, s.offset_m ?? 0))
   return {
     kind: 'start',
     label: '起点',
@@ -1822,6 +2006,22 @@ const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
       lon: picked.lon,
       lat: picked.lat,
       note: `点图吸附 · 距路段 ${fmtMeters(picked.distance_m)}`,
+    }
+  }
+  // ② 自定义起终点这路：后端已给出终点真实落点（`/route/plan` 的 `destination_point`，
+  //    2026-10-29 补充）。有就直用 —— 不再按 `offset_m` + 末段 `coords` 自己折，
+  //    避免和 `offset_travel_m`（行进序里程）串成两套口径。
+  const planDest = odPlan.value?.reachable ? destinationPointOf() : null
+  if (planDest) {
+    const destSeg = demoSegment(planDest.segment_id)
+    return {
+      kind: 'end',
+      label: '终点',
+      segment_id: planDest.segment_id,
+      name: destSeg?.name ?? '终点段',
+      lon: planDest.lon,
+      lat: planDest.lat,
+      note: `后端终点落点（destination_point · ${planDest.direction} · offset_m=${fmtMeters(planDest.offset_m)}）`,
     }
   }
   const r = recommend.value
@@ -1975,6 +2175,17 @@ const pickedRouteKey = ref<string | null>('arrival')
 
 function pickRoute(key: string): void {
   pickedRouteKey.value = pickedRouteKey.value === key ? null : key
+}
+
+// ── 验收专用旁路（2026-10-29，lead 批准）：`?view=departure` 把默认分组落到「离站回程」──
+// 用途：给验收报告截图存档 —— 双向段（SZ-036 / SZ-023 / SZ-035）上"路线箭头是否与静态箭头一致"，
+// 默认视图（arrival）里看不到这条线。**只读一次 URLSearchParams、只初始化两个默认值**，
+// 不参与任何计算、不写 localStorage；参数不存在时行为与原先**逐字一致**。
+// 如不需要可整段删除（含 `acceptView` 常量那三行）。
+const acceptView = new URLSearchParams(window.location.search).get('view')
+if (acceptView === 'departure') {
+  routeView.value = 'departure'
+  pickedRouteKey.value = 'departure'
 }
 
 /** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
@@ -3025,6 +3236,7 @@ function onCommandChanged(): void {
                   :vehicles="vehicles"
                   :selected-id="selectedId"
                   :routes="mapRoutes"
+                  :route-steps="mapRouteSteps"
                   :picked-route-key="pickedRouteKey"
                   :route-start="routeStartMarker"
                   :route-end="routeEndMarker"

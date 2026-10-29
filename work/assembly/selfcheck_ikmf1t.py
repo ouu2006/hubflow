@@ -8,11 +8,13 @@
 
 它做六件事，并把**真实输出**写进 `work/assembly/自检记录.md`：
 
-1. **端点全绿**：起 traffic.py（:8000），逐条请求契约 §七 / mock 路由表里的 GET / POST / SSE 端点；
+1. **端点全绿**：起 traffic.py（默认端口 **8001** = 本工作树；`--api-base` / `HUBFLOW_API_BASE`
+   可覆盖。**别指 8000** —— 那是主工作树 D:/hubflow/hubflow 的旧实例，新端点会 404），
+   逐条请求契约 §七 / mock 路由表里的 GET / POST / SSE 端点；
 2. **三层回落**：把 `work/*/out/` 临时挪开 → 端点仍 200 且回落站点包静态基线（不 500、不空指针）→ 还原；
 3. **段号写死扫描**：正则扫 `traffic.py`，`SZ-数字` / `SEG-数字` 必须 0 命中；
 4. **可复现**：同一请求两次，除时间戳外响应逐字段一致；
-5. **与 mock 形状对照**：同一路径分别打 vite mock（:5173）与 traffic.py（:8000），
+5. **与 mock 形状对照**：同一路径分别打 vite mock（:5173）与 traffic.py（同 1 的端口），
    比对顶格键与嵌套键集；结果写 `work/assembly/对照快照.json` + `对照快照.md`；
    mock 不可达时如实注明「未做实时对照」及静态提取方法；
 6. **仓库门禁**：`python scripts/doc_gate.py`（8 组）真实跑一遍并记录输出。
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import shutil
@@ -45,8 +48,36 @@ ASSEMBLY = ROOT / "work" / "assembly"
 TRAFFIC = ASSEMBLY / "traffic.py"
 OUT_DIR = ASSEMBLY / "out"  # gitignore 的 out/，放日志与回落备份
 BACKUP_DIR = OUT_DIR / "fallback_backup"
-SERVER_PORT = 8000
-SERVER_URL = f"http://127.0.0.1:{SERVER_PORT}"
+# 后端地址：默认钉在**本工作树**的 8001（2026-10-29 队长要求）。
+# 8000 常被主工作树（D:/hubflow/hubflow）的旧实例占着，而本脚本发现地址可达就会**复用**已有服务 ——
+# 复用到旧进程会让本轮改动（如 /route/{id}/steps、destination_point）被误判为缺失（实测 404 就是这么来的）。
+# 覆盖优先级：`--api-base` > 环境变量 `HUBFLOW_API_BASE` > 默认 http://127.0.0.1:8001。
+# 兼容旧用法：环境变量 `TRAFFIC_PORT` 仍可只改端口（早先的联调脚本就是这么调的）。
+DEFAULT_API_BASE = "http://127.0.0.1:8001"
+API_BASE_ENV = "HUBFLOW_API_BASE"
+
+
+def _initial_api_base() -> str:
+    base = (os.environ.get(API_BASE_ENV) or "").strip()
+    if base:
+        return base.rstrip("/")
+    port = (os.environ.get("TRAFFIC_PORT") or "").strip()
+    if port:
+        return f"http://127.0.0.1:{port}"
+    return DEFAULT_API_BASE
+
+
+def _port_of(base: str) -> int:
+    tail = base.rsplit("/", 1)[-1]
+    port = tail.rsplit(":", 1)[-1]
+    try:
+        return int(port)
+    except ValueError:
+        return 8001
+
+
+SERVER_URL = _initial_api_base()
+SERVER_PORT = _port_of(SERVER_URL)
 MOCK_URL = "http://127.0.0.1:5173"
 
 DROP_ENDPOINTS = ["work/perception/out", "work/twin/out", "work/engine/out"]
@@ -526,6 +557,283 @@ def check_repeatability() -> list[dict]:
 # ---------------------------------------------------------------- 5) doc_gate
 
 
+def _project_polyline_m(lon: float, lat: float, geometry: list) -> tuple[float, float]:
+    """点到折线的（最短距离 m, 投影处弧长 m）；等距圆柱近似，与前端 `pointAtOffset` 同一套。
+
+    只用于断言「标记点确实落在自己那条 `steps[].geometry` 的正确里程上」：
+    只比距离不够 —— 整段几何只有两个端点时，**错的那一端距离也是 0**（镜像 bug 就这么漏过去），
+    所以必须再比弧长（`trim_head_m` / `length_m - trim_tail_m`）。
+    """
+    if not geometry:
+        return float("inf"), float("nan")
+    lon = float(lon)
+    lat = float(lat)
+    kx = 111320.0 * math.cos(math.radians(lat))
+    ky = 110540.0
+    points = [
+        ((float(point[0]) - lon) * kx, (float(point[1]) - lat) * ky)
+        for point in geometry
+        if len(point) >= 2
+    ]
+    if not points:
+        return float("inf"), float("nan")
+    if len(points) == 1:
+        return math.hypot(points[0][0], points[0][1]), 0.0
+    best_dist = float("inf")
+    best_arc = 0.0
+    walked = 0.0
+    for (x1, y1), (x2, y2) in zip(points, points[1:]):
+        dx, dy = x2 - x1, y2 - y1
+        span = math.hypot(dx, dy)
+        ratio = 0.0 if span == 0 else max(0.0, min(1.0, -(x1 * dx + y1 * dy) / (span * span)))
+        dist = math.hypot(x1 + ratio * dx, y1 + ratio * dy)
+        if dist < best_dist:
+            best_dist = dist
+            best_arc = walked + ratio * span
+        walked += span
+    return best_dist, best_arc
+
+
+def _point_to_polyline_m(lon: float, lat: float, geometry: list) -> float:
+    """点到折线的最短距离（米），只取 `_project_polyline_m` 的距离分量（报告展示用）。"""
+    return _project_polyline_m(lon, lat, geometry)[0]
+
+
+def check_route_contract_shape() -> dict:
+    """箭头方向专项硬断言：**契约 `/route/recommend` 的响应里不得出现 `steps` / `start_point`**。
+
+    为什么要有这条闸门（方案 §2 补充 / IKNAUI 箭头方向）：
+    引擎产物 `work/engine/out/real/routes.json` 的每条路线都带 `steps[]`（逐段行进几何）与
+    `arrival_route.start_point`，用于前端画箭头、标起点；但**契约 §七 的路线对象是白名单形状**
+    （`path_id` / `segments` / `eta_min` / `length_m` / `dropoff_point` / `walk_min`）。
+    `/route/recommend` 的实现是 `_decorate_route_response()` 整包透传引擎请求，
+    只要有人把 `_route_body_without_steps()` 那一步删了/绕过，产物里的几何就会瞬间漏进契约响应 ——
+    所以这里实调一次端点，按字段集合比对，发现即判失败（与「段号无写死」同等重要的防回归闸门）。
+    权威几何的正路是非契约只读端点 `GET /api/traffic/route/{request_id}/steps`，在这里顺带做正向验证。
+    """
+    forbidden = ("steps", "start_point")
+    route_keys = ("arrival_route", "departure_route", "pickup_route")
+    result: dict = {
+        "passed": True,
+        "forbidden_fields": list(forbidden),
+        "findings": [],
+        "options_status": None,
+        "recommend_status": None,
+        "steps_endpoint": None,
+        "steps_routes": [],
+        "contract_trim": {},
+        "plan_markers": None,
+        "request_id": None,
+        "skipped": None,
+    }
+    status, options, _ = http_call("GET", SERVER_URL + "/api/traffic/route/options")
+    result["options_status"] = status
+    if status != 200 or not isinstance(options, dict) or not options.get("options"):
+        result["skipped"] = f"路线产物缺失（/route/options → {status}），无法实调 recommend"
+        return result
+    first = options["options"][0]
+    result["request_id"] = first.get("request_id")
+    body = {
+        "session_id": first.get("session_id"),
+        "od_id": first.get("od_id"),
+        "driver_type": first.get("driver_type"),
+    }
+    status, recommend, _ = http_call("POST", SERVER_URL + "/api/traffic/route/recommend", body)
+    result["recommend_status"] = status
+    if status != 200 or not isinstance(recommend, dict):
+        result["passed"] = False
+        result["findings"].append(f"/route/recommend 未 200（{status}），无法验证契约形状")
+        return result
+    containers = [("arrival_route", recommend.get("arrival_route")),
+                  ("departure_route", recommend.get("departure_route")),
+                  ("pickup_route", recommend.get("pickup_route"))]
+    containers += [(f"alternatives[{index}]", item)
+                   for index, item in enumerate(recommend.get("alternatives") or [])]
+    checked = 0
+    for name, route in containers:
+        if not isinstance(route, dict):
+            continue
+        checked += 1
+        leaked = [key for key in forbidden if key in route]
+        if leaked:
+            result["findings"].append(f"/route/recommend 的 {name} 出现了契约外字段：{'、'.join(leaked)}")
+    result["routes_checked"] = checked
+    if not checked:
+        result["findings"].append("/route/recommend 没端出任何路线对象，断言空转")
+    # 断言 2（2026-10-29 队长收口要求）：**剥字段不能剥多了** ——
+    # 大屏裁剪箭头靠的就是契约 `arrival_route.trim_head_m / trim_tail_m`（它们和 `steps` 同在
+    # 一份引擎路线上，被 `_route_body_without_steps()` 一起剥掉的风险是真实存在的）。
+    # 剥多了前端不报错，只会把箭头画进被裁掉的区段 —— 典型静默劣化，必须由后端门禁守住。
+    trim_info: dict = {"present": None, "trim_head_m": None, "trim_tail_m": None, "length_m": None}
+    arrival_contract = recommend.get("arrival_route")
+    if isinstance(arrival_contract, dict):
+        trim_head = arrival_contract.get("trim_head_m")
+        trim_tail = arrival_contract.get("trim_tail_m")
+        length_m = arrival_contract.get("length_m")
+        trim_info.update(
+            present=[key for key in ("trim_head_m", "trim_tail_m") if key in arrival_contract] or None,
+            trim_head_m=trim_head,
+            trim_tail_m=trim_tail,
+            length_m=length_m,
+        )
+        missing = [key for key in ("trim_head_m", "trim_tail_m") if key not in arrival_contract]
+        if missing:
+            result["findings"].append(
+                f"契约 arrival_route 缺 {'、'.join(missing)}（剥 steps 时剥多了：大屏裁剪箭头靠这两个值）"
+            )
+        elif trim_head is None or trim_tail is None:
+            result["findings"].append(
+                f"契约 arrival_route 的 trim_head_m / trim_tail_m 是 null（{trim_head} / {trim_tail}）"
+            )
+        elif isinstance(length_m, (int, float)):
+            summed = float(trim_head) + float(trim_tail)
+            trim_info["trim_sum_m"] = round(summed, 3)
+            if not summed < float(length_m):
+                result["findings"].append(
+                    f"契约 arrival_route 的 trim_head_m + trim_tail_m = {summed:.1f} m 不小于 "
+                    f"length_m = {float(length_m):.1f} m（箭头会被裁进无路段区）"
+                )
+    result["contract_trim"] = trim_info
+    # 正向对照：权威几何必须能从非契约端点拿到（否则前端又得自己猜方向）
+    if result["request_id"]:
+        status, steps_payload, _ = http_call(
+            "GET", f"{SERVER_URL}/api/traffic/route/{result['request_id']}/steps"
+        )
+        steps_info = {"status": status}
+        if status == 200 and isinstance(steps_payload, dict):
+            arrival = (steps_payload.get("routes") or {}).get("arrival_route") or {}
+            steps_info["arrival_step_count"] = arrival.get("step_count") or len(arrival.get("steps") or [])
+            steps_info["has_geometry"] = bool((arrival.get("steps") or [{}])[0].get("geometry"))
+        result["steps_endpoint"] = steps_info
+        if steps_info.get("status") != 200 or not steps_info.get("arrival_step_count"):
+            result["findings"].append(
+                f"/route/{{request_id}}/steps 拿不到权威几何（status={steps_info.get('status')}）"
+            )
+        # 正向对照 2（2026-10-29 队长补的两个口子，一起进闸门）：
+        # ① `/route/plan` 的 `destination_point` 与 `start_point` 字段逐字同构（终点标记有权威坐标，
+        #   前端不必自己折 `offset_m`）；② `routes[].trim_head_m` / `trim_tail_m` 不是 null。
+        arrival_steps = (steps_payload.get("routes") or {}).get("arrival_route", {}).get("steps") or []
+        if len(arrival_steps) >= 2:
+            head = arrival_steps[0]
+            tail = arrival_steps[-1]
+            origin_spec = {
+                "segment_id": head.get("segment_id"),
+                "offset_m": round(float(head.get("length_m") or 0.0) * 0.4, 1),
+            }
+            destination_spec = {
+                "segment_id": tail.get("segment_id"),
+                "offset_m": round(float(tail.get("length_m") or 0.0) * 0.4, 1),
+            }
+            status, plan, _ = http_call(
+                "POST",
+                SERVER_URL + "/api/traffic/route/plan",
+                {"origin": origin_spec, "destination": destination_spec},
+            )
+            markers = {"status": status, "origin": origin_spec, "destination": destination_spec}
+            if status == 200 and isinstance(plan, dict) and plan.get("routes"):
+                first_plan = plan.get("routes")[0]
+                start_marker = plan.get("start_point") or {}
+                dest_marker = plan.get("destination_point") or {}
+                markers["destination_point_keys"] = sorted(dest_marker)
+                markers["symmetric"] = (set(start_marker) - {"note"}) == (set(dest_marker) - {"note"})
+                markers["destination_lonlat"] = [dest_marker.get("lon"), dest_marker.get("lat")]
+                markers["route_trim"] = [first_plan.get("trim_head_m"), first_plan.get("trim_tail_m")]
+                if not markers["symmetric"]:
+                    result["findings"].append(
+                        "/route/plan 的 destination_point 与 start_point 字段不同构："
+                        f"{markers['destination_point_keys']}"
+                    )
+                if dest_marker.get("lon") is None or dest_marker.get("lat") is None:
+                    result["findings"].append("/route/plan 的 destination_point 缺 lon/lat")
+                if markers["route_trim"] == [None, None]:
+                    result["findings"].append("/route/plan 的 routes[].trim_head_m / trim_tail_m 是 null")
+            else:
+                markers["skipped"] = f"/route/plan → {status}（本条不阻断，形状闸门以 recommend 为准）"
+            result["plan_markers"] = markers
+        # 断言 3（2026-10-29 队长最后一轮）：steps 端点**每条 route** 的 `start_point` /
+        # `destination_point` 必须非空，且 `lon/lat` 落在 `steps[0]` / `steps[-1]` 的 geometry 折线上
+        # （偏差 < 1 m）。理由：这两个字段是「前端不必再按 offset_m 折 coords」的唯一正路，
+        # 一旦哪天被悄悄置回 null，镜像画法就会复发 —— 所以必须有人守着。
+        routes_map = (steps_payload.get("routes") if isinstance(steps_payload, dict) else None) or {}
+        steps_routes: list[dict] = []
+        route_entries: list[tuple[str, Any]] = []
+        for key_name, value in routes_map.items():
+            if isinstance(value, list):  # alternatives[]：每条备选路也要有两端标记
+                route_entries.extend(
+                    (f"{key_name}[{index}]", item) for index, item in enumerate(value)
+                )
+            else:
+                route_entries.append((str(key_name), value))
+        for route_name, route_obj in route_entries:
+            if not isinstance(route_obj, dict):
+                continue
+            route_steps = route_obj.get("steps") or []
+            start_marker = route_obj.get("start_point") or {}
+            dest_marker = route_obj.get("destination_point") or {}
+            item = {
+                "route": route_name,
+                "step_count": len(route_steps),
+                "start_lonlat": [start_marker.get("lon"), start_marker.get("lat")],
+                "destination_lonlat": [dest_marker.get("lon"), dest_marker.get("lat")],
+                "start_dev_m": None,
+                "destination_dev_m": None,
+                "start_arc_m": None,
+                "destination_arc_m": None,
+            }
+            if not route_steps:
+                item["note"] = "无 steps（该 route 未算，不判）"
+                steps_routes.append(item)
+                continue
+            if start_marker.get("lon") is None or start_marker.get("lat") is None:
+                result["findings"].append(f"steps 端点 {route_name} 的 start_point 缺 lon/lat（被悄悄置空）")
+                steps_routes.append(item)
+                continue
+            head_step = route_steps[0]
+            start_dev, start_arc = _project_polyline_m(
+                start_marker["lon"], start_marker["lat"], head_step.get("geometry") or []
+            )
+            item["start_dev_m"] = round(start_dev, 3)
+            item["start_arc_m"] = round(start_arc, 3)
+            expect_start_arc = float(head_step.get("trim_head_m") or 0.0)
+            if item["start_dev_m"] > 1.0:
+                result["findings"].append(
+                    f"steps 端点 {route_name} 的 start_point 偏离 steps[0] 折线 {item['start_dev_m']} m（> 1 m）"
+                )
+            elif abs(start_arc - expect_start_arc) > 1.0:
+                result["findings"].append(
+                    f"steps 端点 {route_name} 的 start_point 落在 steps[0] 折线弧长 {start_arc:.1f} m 处，"
+                    f"应为 {expect_start_arc:.1f} m（≈ trim_head_m）—— 位置镜像了"
+                )
+            if dest_marker.get("lon") is None or dest_marker.get("lat") is None:
+                result["findings"].append(f"steps 端点 {route_name} 的 destination_point 缺 lon/lat（被悄悄置空）")
+            else:
+                tail_step = route_steps[-1]
+                dest_dev, dest_arc = _project_polyline_m(
+                    dest_marker["lon"], dest_marker["lat"], tail_step.get("geometry") or []
+                )
+                item["destination_dev_m"] = round(dest_dev, 3)
+                item["destination_arc_m"] = round(dest_arc, 3)
+                expect_dest_arc = float(tail_step.get("length_m") or 0.0) - float(
+                    tail_step.get("trim_tail_m") or 0.0
+                )
+                if item["destination_dev_m"] > 1.0:
+                    result["findings"].append(
+                        f"steps 端点 {route_name} 的 destination_point 偏离 steps[-1] 折线 "
+                        f"{item['destination_dev_m']} m（> 1 m）"
+                    )
+                elif abs(dest_arc - expect_dest_arc) > 1.0:
+                    result["findings"].append(
+                        f"steps 端点 {route_name} 的 destination_point 落在 steps[-1] 折线弧长 {dest_arc:.1f} m 处，"
+                        f"应为 {expect_dest_arc:.1f} m（≈ length_m - trim_tail_m）—— 位置镜像了"
+                    )
+            steps_routes.append(item)
+        result["steps_routes"] = steps_routes
+        if not steps_routes:
+            result["findings"].append("steps 端点没端出任何 route（两端标记断言空转）")
+    result["passed"] = not result["findings"]
+    return result
+
+
 def run_doc_gate() -> dict:
     environment = dict(os.environ)
     environment["PYTHONIOENCODING"] = "utf-8"
@@ -607,7 +915,7 @@ def write_snapshot_report(mock_reachable: bool, comparisons: list[dict],
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "method": (
             "实跑对照：同一路径分别请求 vite mock（http://127.0.0.1:5173）与接口层 traffic.py"
-            "（http://127.0.0.1:8000），比对顶格键与嵌套键集；取值不参与比对（数据源不同）。"
+            f"（{SERVER_URL}），比对顶格键与嵌套键集；取值不参与比对（数据源不同）。"
         ),
         "mock_reachable": mock_reachable,
         "required_three_top_level_equal": three_ok,
@@ -711,7 +1019,8 @@ def write_snapshot_report(mock_reachable: bool, comparisons: list[dict],
 def write_check_log(server: dict, results: list[dict], sse: dict, fallback: list[dict],
                     hardcoded: dict, repeatability: list[dict], doc_gate: dict,
                     mock_reachable: bool, cleanup_actions: list[str],
-                    doc_gate_recheck: dict | None = None) -> None:
+                    doc_gate_recheck: dict | None = None,
+                    contract_shape: dict | None = None) -> None:
     required = [result for result in results if result["category"] in ("required-get", "required-post")]
     ok = [result for result in required if result["status"] == 200]
     unimplemented = [result for result in results if result["category"] == "unimplemented"]
@@ -724,6 +1033,35 @@ def write_check_log(server: dict, results: list[dict], sse: dict, fallback: list
     lines.append(f"- Python：{sys.version.split()[0]}")
     lines.append(f"- 服务：{server['mode']}（{SERVER_URL}）")
     lines.append(f"- 形状对照：[对照快照.md](对照快照.md) / [对照快照.json](对照快照.json)")
+    lines.append("")
+    lines.append("## 〇、交接信息：本工作树后端启动命令与端口（2026-10-29）\n")
+    lines.append(
+        "- **本工作树（D:/hubflow/_arrows）后端端口固定 8001**，启动命令：\n"
+        f"  `python work/assembly/traffic.py --port {SERVER_PORT}`"
+        "（工作目录必须是本工作树根，traffic.py 按相对路径读 `work/*/out/` 产物）"
+    )
+    lines.append(
+        "- 自检/联调一律用 `python work/assembly/selfcheck_ikmf1t.py`（默认就是 8001），"
+        "或显式 `--api-base http://127.0.0.1:8001` / `HUBFLOW_API_BASE=http://127.0.0.1:8001`。"
+    )
+    lines.append(
+        "- **别指 8000**：那是主工作树（D:/hubflow/hubflow）的实例，代码是旧的 —— "
+        "新端点（`/route/{request_id}/steps`、`/route/plan` 的 `destination_point`）会在那里 404，"
+        "本轮 dev-B / dev-C 都因此误判过「实现缺失」。"
+    )
+    lines.append(
+        "- 复现旧坑的判断方法：`/api/traffic/route/REQ-REAL-0001/steps` 应返回 200（8000 上是 404）。"
+    )
+    lines.append(
+        "- **重启机器后 8001 不会自己起来**：先按上面的命令手动拉起，再跑自检"
+        "（脚本发现端口可达会复用，不可达才自己起）。"
+    )
+    lines.append(
+        "- 路段方向口径自检（与接口层无关，可单独跑）："
+        "`python work/engine/tools/audit_segment_direction.py --site zhaoqingdong`、"
+        "`--site guangzhounan`；默认报告名带站点（`work/engine/tools/out/segment_direction_audit_<site>.json`），"
+        "两个站各跑一次**不会互相覆盖**。注意参数是 `--site`，没有 `--station`。"
+    )
     lines.append("")
     lines.append("## 一、端点全绿\n")
     lines.append(f"- 必需端点（契约 §七 + mock 路由表）：**{len(ok)}/{len(required)} 状态 200**"
@@ -772,6 +1110,54 @@ def write_check_log(server: dict, results: list[dict], sse: dict, fallback: list
         for hit in hardcoded["hits"]:
             lines.append(f"  - 第 {hit['line']} 行：`{hit['text']}`")
     lines.append("")
+    lines.append("## 三点五、契约响应不得出现 `steps` / `start_point`（箭头方向专项）\n")
+    if contract_shape is None:
+        lines.append("- （本次运行未采集该断言）")
+    elif contract_shape.get("skipped"):
+        lines.append(f"- 跳过：{contract_shape['skipped']}")
+    else:
+        verdict = "✅ 通过" if contract_shape["passed"] else "❌ 失败"
+        lines.append(
+            f"- 断言：`POST /route/recommend`（status={contract_shape['recommend_status']}，"
+            f"实检 {contract_shape.get('routes_checked', 0)} 条路线对象）的响应里**不得**出现 "
+            f"`{'` / `'.join(contract_shape['forbidden_fields'])}` —— {verdict}"
+        )
+        steps_info = contract_shape.get("steps_endpoint") or {}
+        lines.append(
+            f"- 正向对照：`GET /api/traffic/route/{contract_shape.get('request_id')}/steps` → "
+            f"status={steps_info.get('status')}，arrival_route 段数={steps_info.get('arrival_step_count')}，"
+            f"首段带几何={steps_info.get('has_geometry')}"
+        )
+        if contract_shape["findings"]:
+            for finding in contract_shape["findings"]:
+                lines.append(f"  - ❌ {finding}")
+        else:
+            lines.append(
+                "- 理由：契约 §七 的路线对象是白名单形状，几何只能走非契约只读端点；"
+                "`_decorate_route_response()` 整包透传引擎请求，一旦有人删掉剥字段那一步就会漏。"
+            )
+        trim_info = contract_shape.get("contract_trim") or {}
+        if trim_info.get("present") is not None:
+            lines.append(
+                f"- 契约裁切字段断言（`arrival_route` 必须含 `trim_head_m`/`trim_tail_m` 且非 null，"
+                f"且两者之和 < `length_m`）：trim_head_m={trim_info.get('trim_head_m')} + "
+                f"trim_tail_m={trim_info.get('trim_tail_m')} = {trim_info.get('trim_sum_m')} m "
+                f"< length_m={trim_info.get('length_m')} m"
+            )
+        steps_routes = contract_shape.get("steps_routes") or []
+        if steps_routes:
+            described = "；".join(
+                f"{item['route']}: steps={item['step_count']}, "
+                f"start={item['start_lonlat']}→折线偏差 {item['start_dev_m']} m / 弧长 {item['start_arc_m']} m, "
+                f"destination={item['destination_lonlat']}→折线偏差 {item['destination_dev_m']} m / "
+                f"弧长 {item['destination_arc_m']} m"
+                for item in steps_routes
+            )
+            lines.append(
+                f"- 两端标记断言（每条 route 的 `start_point`/`destination_point` 非空、落在"
+                f"`steps` 首末折线上且弧长等于 `trim_head_m` / `length_m - trim_tail_m`，阈值 1 m）：{described}"
+            )
+    lines.append("")
     lines.append("## 四、可复现（同一请求两次，除时间戳外一致）\n")
     for item in repeatability:
         lines.append(f"- `{item['path']}`：{'✅ 一致' if item['identical_except_ts'] else '❌ 不一致'}")
@@ -817,12 +1203,33 @@ def write_check_log(server: dict, results: list[dict], sse: dict, fallback: list
 def main() -> int:
     parser = argparse.ArgumentParser(description="IKMF1T 自检 + mock 形状对照")
     parser.add_argument("--skip-fallback", action="store_true", help="跳落三层回落实测")
+    parser.add_argument(
+        "--api-base",
+        default=None,
+        help=(
+            "接口层地址（默认 http://127.0.0.1:8001 = 本工作树；也可用环境变量 HUBFLOW_API_BASE）。"
+            "主工作树（D:/hubflow/hubflow）的实例在 8000 —— 指错端口就会复用到旧进程，"
+            "把新端点误判成 404。"
+        ),
+    )
     args = parser.parse_args()
+    if args.api_base:
+        global SERVER_URL, SERVER_PORT
+        SERVER_URL = args.api_base.rstrip("/")
+        SERVER_PORT = _port_of(SERVER_URL)
+    print(f"     接口层地址：{SERVER_URL}")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     print("[1/6] 启动 / 复用接口层服务 ...")
     process, reused = start_server()
-    server = {"mode": "复用已在跑的 :8000 服务" if reused else "本脚本拉起 traffic.py :8000"}
+    server = {
+        "mode": (
+            f"复用已在跑的 {SERVER_URL} 服务"
+            if reused
+            else f"本脚本拉起 traffic.py（端口 {SERVER_PORT}）"
+        ),
+        "api_base": SERVER_URL,
+    }
     try:
         mock_reachable = mock_server_reachable()
         print(f"     mock(vite) 可达：{mock_reachable}")
@@ -847,21 +1254,23 @@ def main() -> int:
         sse = check_sse()
         print("[4/6] 三层回落实测 ...")
         fallback = [] if args.skip_fallback else check_fallback(our_segment_id)
-        print("[5/6] 段号写死扫描 + 可复现 ...")
+        print("[5/6] 段号写死扫描 + 可复现 + 契约形状 ...")
         hardcoded = check_no_hardcoded_segment_ids()
         repeatability = check_repeatability()
+        contract_shape = check_route_contract_shape()
         print("[6/6] 生成报告 + 仓库门禁 doc_gate ...")
         write_snapshot_report(mock_reachable, comparisons, sse, results)
         # 先把报告写出来（doc_gate 要扫这些交付文件），再跑门禁；拿到真实输出后把自检记录写全再复检一次
         write_check_log(server, results, sse, fallback, hardcoded, repeatability,
                         {"exit_code": -1, "stdout": "（首次运行结果见下方复检）", "stderr": ""},
-                        mock_reachable, cleanup_actions)
+                        mock_reachable, cleanup_actions, contract_shape=contract_shape)
         doc_gate = run_doc_gate()
         write_check_log(server, results, sse, fallback, hardcoded, repeatability,
-                        doc_gate, mock_reachable, cleanup_actions)
+                        doc_gate, mock_reachable, cleanup_actions, contract_shape=contract_shape)
         doc_gate_recheck = run_doc_gate()
         write_check_log(server, results, sse, fallback, hardcoded, repeatability,
-                        doc_gate, mock_reachable, cleanup_actions, doc_gate_recheck)
+                        doc_gate, mock_reachable, cleanup_actions, doc_gate_recheck,
+                        contract_shape=contract_shape)
 
         required = [result for result in results if result["category"] in ("required-get", "required-post")]
         non_200 = [result for result in required if result["status"] != 200]
@@ -873,6 +1282,7 @@ def main() -> int:
             "三层回落": fallback_ok if fallback else True,
             "段号无写死": hardcoded["passed"],
             "可复现": all(item["identical_except_ts"] for item in repeatability),
+            "契约响应不透传 steps（防整包回退）": bool(contract_shape.get("passed", True)),
             "doc_gate": doc_gate_recheck["exit_code"] == 0,
         }
         print()
@@ -882,6 +1292,12 @@ def main() -> int:
               f"{CHECKLOG_MD.relative_to(ROOT)}")
         if non_200:
             print("未 200 的必需端点：" + "、".join(f"{item['name']}({item['status']})" for item in non_200))
+        if contract_shape.get("findings"):
+            print("契约形状问题：" + "；".join(contract_shape["findings"]))
+        if contract_shape.get("plan_markers"):
+            print("两端标记 / 路线级裁切：" + json.dumps(
+                contract_shape["plan_markers"], ensure_ascii=False
+            ))
         return 0 if all(checks.values()) else 1
     finally:
         stop_server(process)

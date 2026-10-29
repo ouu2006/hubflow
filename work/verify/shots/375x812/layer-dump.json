@@ -1,0 +1,682 @@
+{
+  "viewport": {
+    "inner": [
+      375,
+      812
+    ],
+    "dpr": 1
+  },
+  "containerRect": {
+    "x": 9,
+    "y": 1080.375,
+    "w": 357,
+    "h": 243
+  },
+  "canvas": {
+    "attr": [
+      357,
+      243
+    ],
+    "css": [
+      357,
+      243
+    ]
+  },
+  "cam": {
+    "center": [
+      112.6579271,
+      23.214862
+    ],
+    "zoom": 16.2,
+    "bearing": 0,
+    "pitch": 0
+  },
+  "layers": [
+    {
+      "id": "hubflow-route-casing",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#FFFFFF",
+        "line-width": [
+          "case",
+          [
+            "==",
+            [
+              "get",
+              "emphasis_gray"
+            ],
+            true
+          ],
+          3.5,
+          [
+            "*",
+            [
+              "case",
+              [
+                "==",
+                [
+                  "get",
+                  "kind"
+                ],
+                "main"
+              ],
+              11,
+              9
+            ],
+            [
+              "case",
+              [
+                "==",
+                [
+                  "get",
+                  "covered"
+                ],
+                false
+              ],
+              0.55,
+              1
+            ]
+          ]
+        ]
+      }
+    },
+    {
+      "id": "hubflow-route-heat",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": [
+          "get",
+          "color"
+        ],
+        "line-width": [
+          "*",
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "kind"
+              ],
+              "main"
+            ],
+            26,
+            22
+          ],
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "covered"
+              ],
+              false
+            ],
+            0.55,
+            1
+          ]
+        ],
+        "line-opacity": [
+          "*",
+          [
+            "get",
+            "heat"
+          ],
+          1
+        ]
+      }
+    },
+    {
+      "id": "hubflow-route-line",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": [
+          "case",
+          [
+            "==",
+            [
+              "get",
+              "emphasis_gray"
+            ],
+            true
+          ],
+          "#C9CDD4",
+          [
+            "get",
+            "color"
+          ]
+        ],
+        "line-width": [
+          "case",
+          [
+            "==",
+            [
+              "get",
+              "emphasis_gray"
+            ],
+            true
+          ],
+          2,
+          [
+            "*",
+            [
+              "case",
+              [
+                "==",
+                [
+                  "get",
+                  "kind"
+                ],
+                "main"
+              ],
+              5.5,
+              4.5
+            ],
+            [
+              "case",
+              [
+                "==",
+                [
+                  "get",
+                  "covered"
+                ],
+                false
+              ],
+              0.55,
+              1
+            ]
+          ]
+        ],
+        "line-opacity": [
+          "case",
+          [
+            "==",
+            [
+              "get",
+              "emphasis_gray"
+            ],
+            true
+          ],
+          0.55,
+          [
+            "case",
+            [
+              "==",
+              [
+                "get",
+                "covered"
+              ],
+              false
+            ],
+            0.4,
+            1
+          ]
+        ]
+      }
+    },
+    {
+      "id": "hubflow-direction-marker",
+      "type": "symbol",
+      "source": "hubflow-direction",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "icon-image": [
+          "get",
+          "icon"
+        ],
+        "icon-size": [
+          "interpolate",
+          [
+            "exponential",
+            2
+          ],
+          [
+            "zoom"
+          ],
+          14.5,
+          0.265625,
+          15.5,
+          0.53125,
+          22,
+          0.53125
+        ],
+        "icon-rotate": [
+          "get",
+          "rotate"
+        ],
+        "icon-rotation-alignment": "map",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "visibility": "visible"
+      },
+      "paint": {
+        "icon-opacity": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          15,
+          0,
+          15.5,
+          1
+        ]
+      }
+    },
+    {
+      "id": "hubflow-route-route-alt1-halo",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#FFFFFF",
+        "line-width": 9,
+        "line-offset": -2,
+        "line-opacity": 0.35
+      }
+    },
+    {
+      "id": "hubflow-route-route-alt1",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "butt",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#2563EB",
+        "line-width": 3,
+        "line-offset": -2,
+        "line-dasharray": [
+          12,
+          6
+        ],
+        "line-opacity": 0.95
+      }
+    },
+    {
+      "id": "hubflow-route-route-alt2-halo",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#FFFFFF",
+        "line-width": 9,
+        "line-offset": 2,
+        "line-opacity": 0.35
+      }
+    },
+    {
+      "id": "hubflow-route-route-alt2",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "butt",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#2563EB",
+        "line-width": 3,
+        "line-offset": 2,
+        "line-dasharray": [
+          2.5,
+          4.5
+        ],
+        "line-opacity": 0.95
+      }
+    },
+    {
+      "id": "hubflow-route-route-dep-halo",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#FFFFFF",
+        "line-width": 11,
+        "line-opacity": 0.7
+      }
+    },
+    {
+      "id": "hubflow-route-route-dep",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#7B61FF",
+        "line-width": 3,
+        "line-opacity": 0.92
+      }
+    },
+    {
+      "id": "hubflow-route-route-halo",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#0052D9",
+        "line-width": 17,
+        "line-opacity": 0.16
+      }
+    },
+    {
+      "id": "hubflow-route-route",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#0052D9",
+        "line-width": 3.4,
+        "line-opacity": 0.95
+      }
+    },
+    {
+      "id": "hubflow-route-route-pick-halo",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#38BDF8",
+        "line-width": 13,
+        "line-opacity": 0.22
+      }
+    },
+    {
+      "id": "hubflow-route-route-pick",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#38BDF8",
+        "line-width": 4.2,
+        "line-opacity": 1
+      }
+    },
+    {
+      "id": "hubflow-route-selected",
+      "type": "line",
+      "source": "hubflow-route",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "line-cap": "round",
+        "line-join": "round",
+        "visibility": "visible"
+      },
+      "paint": {
+        "line-color": "#0052D9",
+        "line-width": 2.4,
+        "line-dasharray": [
+          4,
+          6
+        ],
+        "line-opacity": 0.9
+      }
+    },
+    {
+      "id": "hubflow-route-arrow-marker",
+      "type": "symbol",
+      "source": "hubflow-route-arrow",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "icon-image": "hubflow-route-arrow",
+        "icon-size": 0.4583333333333333,
+        "icon-rotate": [
+          "get",
+          "rotate"
+        ],
+        "icon-rotation-alignment": "map",
+        "icon-allow-overlap": true,
+        "icon-ignore-placement": true,
+        "visibility": "visible"
+      },
+      "paint": {
+        "icon-opacity": 0.95
+      }
+    },
+    {
+      "id": "hubflow-station-hit",
+      "type": "circle",
+      "source": "hubflow-station",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-radius": 15,
+        "circle-color": "#000000",
+        "circle-opacity": 0
+      }
+    },
+    {
+      "id": "hubflow-station-dot",
+      "type": "circle",
+      "source": "hubflow-station",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "circle-radius": [
+          "case",
+          [
+            "boolean",
+            [
+              "feature-state",
+              "selected"
+            ],
+            false
+          ],
+          9,
+          [
+            "case",
+            [
+              "boolean",
+              [
+                "feature-state",
+                "hover"
+              ],
+              false
+            ],
+            7.5,
+            6
+          ]
+        ],
+        "circle-color": [
+          "case",
+          [
+            "boolean",
+            [
+              "feature-state",
+              "selected"
+            ],
+            false
+          ],
+          "#0052D9",
+          "#475569"
+        ],
+        "circle-stroke-width": [
+          "case",
+          [
+            "boolean",
+            [
+              "feature-state",
+              "selected"
+            ],
+            false
+          ],
+          3,
+          1.5
+        ],
+        "circle-stroke-color": "#FFFFFF",
+        "circle-stroke-opacity": 0.95
+      }
+    },
+    {
+      "id": "hubflow-station-label",
+      "type": "symbol",
+      "source": "hubflow-station",
+      "sourceLayer": null,
+      "minzoom": null,
+      "maxzoom": null,
+      "layout": {
+        "icon-image": [
+          "get",
+          "label_icon"
+        ],
+        "icon-anchor": "bottom",
+        "icon-offset": [
+          0,
+          -10
+        ],
+        "icon-size": [
+          "interpolate",
+          [
+            "linear"
+          ],
+          [
+            "zoom"
+          ],
+          3,
+          0.5,
+          6,
+          0.62
+        ],
+        "icon-allow-overlap": false,
+        "icon-ignore-placement": false,
+        "visibility": "none"
+      },
+      "paint": {}
+    }
+  ],
+  "sources": {
+    "hubflow-direction": 0,
+    "hubflow-route-arrow": 0,
+    "hubflow-station": 0
+  },
+  "dom": {
+    "canvas": {
+      "x": 9,
+      "y": 284.38,
+      "w": 357,
+      "h": 243
+    },
+    "mapContainer": {
+      "x": 9,
+      "y": 284.38,
+      "w": 357,
+      "h": 243
+    },
+    "directionLegend": {
+      "x": 0,
+      "y": 0,
+      "w": 0,
+      "h": 0
+    }
+  },
+  "renderedCounts": {
+    "direction": 43
+  }
+}

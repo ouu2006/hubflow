@@ -36,6 +36,7 @@ import network
 import realnet
 import reserve
 import reroute
+import route_service
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_SAMPLES_DIR = HERE / "samples"
@@ -397,6 +398,56 @@ def _load_dataset(cfg: dict[str, Any]) -> dict[str, Any]:
 def _segments_of(graph: network.Graph, path: list[str]) -> list[str]:
     """把边 id 序列折成 segment_id 序列(契约第二节 arrival_route.segments 是路段号)。"""
     return [str(graph.edge(eid).get("section")) for eid in path]
+
+
+def attach_route_steps(graph: network.Graph, routes: dict[str, Any]) -> int:
+    """给产物里每条路线补 `steps`（逐段**行进顺序**几何）与 `arrival_route.start_point`。
+
+    只用 `route_service.route_steps()` / `start_point_for_location()` 这两个生成器，与
+    `/api/traffic/route/plan` 同源同口径：`geometry` 首点 == `from_node` 坐标、末点 ==
+    `to_node` 坐标，相邻 `steps[i].to_node == steps[i+1].from_node`；`direction` 是相对
+    `coords` 顺序的确定值（`forward` / `reverse`），`direction=="reverse"` 的段几何已倒序 ——
+    前端不必再猜方向。
+
+    `start_point` 由请求的 `location`（`segment_id` + `offset_m`，coords 顺序）折算，
+    同一份数据同时挂在请求级与 `arrival_route` 上：大屏走 `/route/recommend` 拿不到几何，
+    走非契约端点 `GET /api/traffic/route/{request_id}/steps` 就能连 `start_point` 一起拿到。
+
+    **只增字段，不动契约必填字段**（`edges` / `segments` / `length_m` / `eta_min` 一律原样）；
+    接口层 `_route_body_without_steps()` 会把 `steps` / `start_point` 从契约响应里剥掉。
+    边 id 不在图里（历史产物对不上当前网）就跳过该条路线，不编几何、不编坐标。
+    """
+    known = {str(edge_id) for edge_id in graph._edges}  # noqa: SLF001 - 只读成员判断
+    attached = 0
+
+    def one(route: Any) -> None:
+        nonlocal attached
+        if not isinstance(route, dict) or route.get("steps"):
+            return
+        edges = [str(edge_id) for edge_id in (route.get("edges") or [])]
+        if not edges or any(edge_id not in known for edge_id in edges):
+            return
+        route["steps"] = route_service.route_steps(graph, edges)
+        # 产物里的路线是从节点到节点整条走（不扣任何一截），路线级裁切量如实给 0，
+        # 形状与 `/route/plan` 的 `routes[].trim_head_m` / `trim_tail_m` 对齐（前端/验收不用分支判断）。
+        route["trim_head_m"] = 0.0
+        route["trim_tail_m"] = 0.0
+        attached += 1
+
+    for request in routes.get("requests") or []:
+        if not isinstance(request, dict):
+            continue
+        for key in ("pickup_route", "arrival_route", "departure_route"):
+            one(request.get(key))
+        for alternative in request.get("alternatives") or []:
+            one(alternative)
+        start_point = route_service.start_point_for_location(graph, request.get("location") or {})
+        if start_point:
+            request["start_point"] = start_point
+            arrival = request.get("arrival_route")
+            if isinstance(arrival, dict):
+                arrival["start_point"] = start_point
+    return attached
 
 
 def _factors_note(
@@ -883,9 +934,12 @@ def run_sample(cfg: dict[str, Any]) -> int:
         "schema_note": dataset["schema_note"],
         "requests": requests,
     }
+    # 逐段几何（页面画路线箭头用）：只**增** `steps`，不改契约必填字段
+    steps_attached = attach_route_steps(graph, routes)
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
     network.assert_artifact(out_dir / "routes.json")
+    print(f"     routes.json 已补 steps：{steps_attached} 条路线（与 /route/plan 同一生成器）")
 
     log = {
         "ts": now_ts,
@@ -1042,9 +1096,12 @@ def run_real(cfg: dict[str, Any]) -> int:
         "schema_note": dataset["schema_note"],
         "requests": requests,
     }
+    # 逐段几何（页面画路线箭头用）：只**增** `steps`，不改契约必填字段
+    steps_attached = attach_route_steps(graph, routes)
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
     network.assert_artifact(out_dir / "routes.json")
+    print(f"     routes.json 已补 steps：{steps_attached} 条路线（与 /route/plan 同一生成器）")
 
     log = {
         "ts": now_ts,
@@ -2545,9 +2602,12 @@ def run_compare(cfg: dict[str, Any]) -> int:
             "lease_release_evidence": lease_release_evidence,
             "requests_without_reservation": requests_without_reservation,
     }
+    # 逐段几何（页面画路线箭头用）：只**增** `steps`，不改契约必填字段
+    steps_attached = attach_route_steps(graph, routes)
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
     network.assert_artifact(out_dir / "routes.json")
+    print(f"     routes.json 已补 steps：{steps_attached} 条路线（与 /route/plan 同一生成器）")
 
     log = {
         "ts": base_ts,

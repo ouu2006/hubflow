@@ -1,0 +1,445 @@
+{
+  "ok": true,
+  "error": null,
+  "value": {
+    "ok": true,
+    "criterion": "dist(后端 start_point.lonlat, 页面 pointAt(coords, offset_m)) < 2 m",
+    "canvas": [
+      1886,
+      708
+    ],
+    "counts": {
+      "cases": 28,
+      "measurable": 28,
+      "max_dist_m": 0.55
+    },
+    "rows": [
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 0,
+        "direction": "reverse",
+        "offset_travel_m": 120.7,
+        "backend_lonlat": [
+          112.6580882,
+          23.2135346
+        ],
+        "frontend_pointAt": [
+          112.6580882,
+          23.2135346
+        ],
+        "dist_m": 0
+      },
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 10,
+        "direction": "reverse",
+        "offset_travel_m": 110.7,
+        "backend_lonlat": [
+          112.6581729,
+          23.2134896
+        ],
+        "frontend_pointAt": [
+          112.65817280200258,
+          23.213489609674486
+        ],
+        "dist_m": 0.01
+      },
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 20,
+        "direction": "reverse",
+        "offset_travel_m": 100.7,
+        "backend_lonlat": [
+          112.6582576,
+          23.2134445
+        ],
+        "frontend_pointAt": [
+          112.65825740400517,
+          23.213444619348973
+        ],
+        "dist_m": 0.02
+      },
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 30.2,
+        "direction": "reverse",
+        "offset_travel_m": 90.5,
+        "backend_lonlat": [
+          112.658344,
+          23.2133986
+        ],
+        "frontend_pointAt": [
+          112.6583436980478,
+          23.213398729216948
+        ],
+        "dist_m": 0.03
+      },
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 60.4,
+        "direction": "reverse",
+        "offset_travel_m": 60.3,
+        "backend_lonlat": [
+          112.6585998,
+          23.2132625
+        ],
+        "frontend_pointAt": [
+          112.65859919609561,
+          23.213262858433897
+        ],
+        "dist_m": 0.07
+      },
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 90.6,
+        "direction": "reverse",
+        "offset_travel_m": 30.1,
+        "backend_lonlat": [
+          112.6588556,
+          23.2131265
+        ],
+        "frontend_pointAt": [
+          112.65885469414343,
+          23.213126987650845
+        ],
+        "dist_m": 0.11
+      },
+      {
+        "segment_id": "SZ-004",
+        "offset_m": 115.8,
+        "direction": "reverse",
+        "offset_travel_m": 4.9,
+        "backend_lonlat": [
+          112.6590691,
+          23.213013
+        ],
+        "frontend_pointAt": [
+          112.65906789118993,
+          23.21301361203055
+        ],
+        "dist_m": 0.14
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 0,
+        "direction": "reverse",
+        "offset_travel_m": 461.1,
+        "backend_lonlat": [
+          112.6589963,
+          23.2128139
+        ],
+        "frontend_pointAt": [
+          112.6589963,
+          23.2128139
+        ],
+        "dist_m": 0
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 10,
+        "direction": "reverse",
+        "offset_travel_m": 451.1,
+        "backend_lonlat": [
+          112.6589109,
+          23.2128578
+        ],
+        "frontend_pointAt": [
+          112.6589109902531,
+          23.212857746229346
+        ],
+        "dist_m": 0.01
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 20,
+        "direction": "reverse",
+        "offset_travel_m": 441.1,
+        "backend_lonlat": [
+          112.6588255,
+          23.2129017
+        ],
+        "frontend_pointAt": [
+          112.65882568050623,
+          23.21290159245869
+        ],
+        "dist_m": 0.02
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 115.4,
+        "direction": "reverse",
+        "offset_travel_m": 345.7,
+        "backend_lonlat": [
+          112.6580106,
+          23.2133205
+        ],
+        "frontend_pointAt": [
+          112.65801182552092,
+          23.213319885486637
+        ],
+        "dist_m": 0.14
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 230.8,
+        "direction": "reverse",
+        "offset_travel_m": 230.3,
+        "backend_lonlat": [
+          112.657025,
+          23.2138271
+        ],
+        "frontend_pointAt": [
+          112.65702735104182,
+          23.213825870973277
+        ],
+        "dist_m": 0.28
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 346.2,
+        "direction": "reverse",
+        "offset_travel_m": 114.9,
+        "backend_lonlat": [
+          112.6560393,
+          23.2143337
+        ],
+        "frontend_pointAt": [
+          112.65604287656274,
+          23.214331856459914
+        ],
+        "dist_m": 0.42
+      },
+      {
+        "segment_id": "SZ-001",
+        "offset_m": 456.7,
+        "direction": "reverse",
+        "offset_travel_m": 4.4,
+        "backend_lonlat": [
+          112.6550955,
+          23.2148188
+        ],
+        "frontend_pointAt": [
+          112.65510020385962,
+          23.214816357294175
+        ],
+        "dist_m": 0.55
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 0,
+        "direction": "forward",
+        "offset_travel_m": 0,
+        "backend_lonlat": [
+          112.6583799,
+          23.2140079
+        ],
+        "frontend_pointAt": [
+          112.6583799,
+          23.2140079
+        ],
+        "dist_m": 0
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 10,
+        "direction": "forward",
+        "offset_travel_m": 10,
+        "backend_lonlat": [
+          112.6582956,
+          23.2140535
+        ],
+        "frontend_pointAt": [
+          112.65829566536647,
+          23.21405346929744
+        ],
+        "dist_m": 0.01
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 20,
+        "direction": "forward",
+        "offset_travel_m": 20,
+        "backend_lonlat": [
+          112.6582113,
+          23.2140991
+        ],
+        "frontend_pointAt": [
+          112.65821143073295,
+          23.21409903859488
+        ],
+        "dist_m": 0.02
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 15.9,
+        "direction": "forward",
+        "offset_travel_m": 15.9,
+        "backend_lonlat": [
+          112.6582459,
+          23.2140804
+        ],
+        "frontend_pointAt": [
+          112.6582459669327,
+          23.21408035518293
+        ],
+        "dist_m": 0.01
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 31.7,
+        "direction": "forward",
+        "offset_travel_m": 31.7,
+        "backend_lonlat": [
+          112.6581127,
+          23.2141525
+        ],
+        "frontend_pointAt": [
+          112.65811287621172,
+          23.214152354672887
+        ],
+        "dist_m": 0.02
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 47.6,
+        "direction": "forward",
+        "offset_travel_m": 47.6,
+        "backend_lonlat": [
+          112.6579787,
+          23.214225
+        ],
+        "frontend_pointAt": [
+          112.65797894314441,
+          23.214224809855818
+        ],
+        "dist_m": 0.03
+      },
+      {
+        "segment_id": "SZ-023",
+        "offset_m": 58.4,
+        "direction": "forward",
+        "offset_travel_m": 58.4,
+        "backend_lonlat": [
+          112.6578876,
+          23.2142742
+        ],
+        "frontend_pointAt": [
+          112.6578879697402,
+          23.214274024697055
+        ],
+        "dist_m": 0.04
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 0,
+        "direction": "forward",
+        "offset_travel_m": 0,
+        "backend_lonlat": [
+          112.6581817,
+          23.214862
+        ],
+        "frontend_pointAt": [
+          112.6581817,
+          23.214862
+        ],
+        "dist_m": 0
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 10,
+        "direction": "forward",
+        "offset_travel_m": 10,
+        "backend_lonlat": [
+          112.6582287,
+          23.214941
+        ],
+        "frontend_pointAt": [
+          112.65822861856657,
+          23.214940805581634
+        ],
+        "dist_m": 0.02
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 20,
+        "direction": "forward",
+        "offset_travel_m": 20,
+        "backend_lonlat": [
+          112.6582757,
+          23.2150199
+        ],
+        "frontend_pointAt": [
+          112.65827551869631,
+          23.215019620428695
+        ],
+        "dist_m": 0.04
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 8.8,
+        "direction": "forward",
+        "offset_travel_m": 8.8,
+        "backend_lonlat": [
+          112.6582231,
+          23.2149315
+        ],
+        "frontend_pointAt": [
+          112.65822298833858,
+          23.214931348911836
+        ],
+        "dist_m": 0.02
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 17.6,
+        "direction": "forward",
+        "offset_travel_m": 17.6,
+        "backend_lonlat": [
+          112.6582644,
+          23.215001
+        ],
+        "frontend_pointAt": [
+          112.65826426903233,
+          23.215000701665584
+        ],
+        "dist_m": 0.04
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 26.5,
+        "direction": "forward",
+        "offset_travel_m": 26.5,
+        "backend_lonlat": [
+          112.6583062,
+          23.2150713
+        ],
+        "frontend_pointAt": [
+          112.65830598653626,
+          23.215070858745456
+        ],
+        "dist_m": 0.05
+      },
+      {
+        "segment_id": "SZ-036",
+        "offset_m": 30.3,
+        "direction": "forward",
+        "offset_travel_m": 30.3,
+        "backend_lonlat": [
+          112.6583241,
+          23.2151013
+        ],
+        "frontend_pointAt": [
+          112.65832379850424,
+          23.215100813453716
+        ],
+        "dist_m": 0.06
+      }
+    ]
+  },
+  "console": [
+    "[debug] [vite] connecting...",
+    "[debug] [vite] connected.",
+    "[warning] Image \"hubflow-station-label-Z\" could not be loaded. Please make sure you have added the image before it is needed with map.addImage(), resolved it with map.setMissingStyleImageResolver(), or included it in a \"sprite\" property in your style.",
+    "[warning] Image \"hubflow-station-label-GZ\" could not be loaded. Please make sure you have added the image before it is needed with map.addImage(), resolved it with map.setMissingStyleImageResolver(), or included it in a \"sprite\" property in your style."
+  ]
+}

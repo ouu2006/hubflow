@@ -1,0 +1,1477 @@
+{
+  "_meta": {
+    "purpose": "L2 数值快照：路段 → 行进标向。diff 为空即方向未被改错。",
+    "generated_by": "scripts/verify_arrow_direction.py",
+    "source": "work/twin/netpack/network_junction.enriched.json",
+    "source_sha256": "647d6deb91736da68e50226c9146f432653097eefe9227c9a899ef7cdccf410a",
+    "source_generated_by": "work/twin/netpack/build_junction_pack.py",
+    "crs": "WGS-84",
+    "site": "肇庆东站",
+    "segments": 61,
+    "counts": {
+      "bidirectional": 33,
+      "forward": 14,
+      "reverse": 14
+    },
+    "reverse_segments": [
+      "SZ-001",
+      "SZ-002",
+      "SZ-003",
+      "SZ-004",
+      "SZ-005",
+      "SZ-006",
+      "SZ-007",
+      "SZ-008",
+      "SZ-009",
+      "SZ-010",
+      "SZ-011",
+      "SZ-012",
+      "SZ-013",
+      "SZ-061"
+    ],
+    "coincident_opposite_pairs": [
+      [
+        "SZ-013",
+        "SZ-060"
+      ]
+    ],
+    "reverse_subgraph": {
+      "components": 1,
+      "component_nodes": [
+        15
+      ],
+      "nodes": [
+        "N-001",
+        "N-002",
+        "N-004",
+        "N-005",
+        "N-007",
+        "N-008",
+        "N-009",
+        "N-010",
+        "N-011",
+        "N-012",
+        "N-014",
+        "N-015",
+        "N-022",
+        "N-038",
+        "N-040"
+      ],
+      "reverse_total_m": 1468.6,
+      "network_total_m": 4593.6,
+      "share_of_network": 0.3197,
+      "longest_consecutive_block": [
+        "SZ-001",
+        "SZ-002",
+        "SZ-003",
+        "SZ-004",
+        "SZ-005",
+        "SZ-006",
+        "SZ-007",
+        "SZ-008",
+        "SZ-009",
+        "SZ-010",
+        "SZ-011",
+        "SZ-012",
+        "SZ-013"
+      ]
+    },
+    "reverse_count_note": "enriched 产物里 direction=reverse 共 14 条 = SZ-001~SZ-013 连续 13 条 + SZ-061（SZ-014 不在其中，它是 forward）。这 14 条的端点在「只由它们构成」的图上连成 1 个连通分量（15 个节点），即一整片对向单行路网、合计 1468.6 m（占全站 4593.6 m 的 32.0%）—— 不是散布的孤例；这正是业主「箭头很乱」的由来：一整片道路的箭头同时朝反方向。方案 §1.1 已同步为 14 条。备注：SZ-013 与 SZ-060（forward）几何重合、opposite_segment_id 相互指认，若适配层把这对合并成一条双向边，reverse 会记 13 条；验收按 14 条全量核对。",
+    "bidirectional_segments": [
+      "SZ-018",
+      "SZ-019",
+      "SZ-021",
+      "SZ-022",
+      "SZ-023",
+      "SZ-024",
+      "SZ-025",
+      "SZ-026",
+      "SZ-027",
+      "SZ-028",
+      "SZ-029",
+      "SZ-030",
+      "SZ-031",
+      "SZ-032",
+      "SZ-033",
+      "SZ-034",
+      "SZ-035",
+      "SZ-036",
+      "SZ-037",
+      "SZ-038",
+      "SZ-039",
+      "SZ-040",
+      "SZ-041",
+      "SZ-042",
+      "SZ-043",
+      "SZ-044",
+      "SZ-049",
+      "SZ-050",
+      "SZ-051",
+      "SZ-052",
+      "SZ-053",
+      "SZ-056",
+      "SZ-057"
+    ],
+    "definitions": {
+      "from/to": "netpack 产物里的节点；coords[0] 恒等于 from 的坐标、coords[-1] 恒等于 to（脚本断言）",
+      "travel_from/travel_to": "行进口径的端点：direction=reverse 时与 from/to 互换（适配层重建边用的就是这一口径）",
+      "bearing_coords_order": "50% 弧长点处、沿 coords 顺序的局部切线方位角（度，正北 0 顺时针）；窗口 = min(15 m, 1/4 段长)",
+      "bearing_travel": "同一 50% 弧长点处、沿行进顺序的局部切线方位角；reverse 段应等于 bearing_coords_order + 180°",
+      "bidirectional": "行进方向不唯一，bearing_travel 按 coords 顺序那一支给出；路线里必须落到确定的 forward/reverse"
+    },
+    "tolerances": {
+      "endpoint_deg": 1e-06,
+      "length_m": 0.5,
+      "bearing_deg_selfcheck": 1.0,
+      "decimals": {
+        "bearing": 1,
+        "length": 1,
+        "lonlat": 7
+      }
+    }
+  },
+  "segments": {
+    "SZ-001": {
+      "from": "N-038",
+      "to": "N-011",
+      "travel_from": "N-011",
+      "travel_to": "N-038",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": true,
+      "length_m": 461.1,
+      "length_m_calc": 461.1,
+      "bearing_coords_order": 299.2,
+      "bearing_travel": 119.2,
+      "midpoint_coords_order": [
+        112.6570271,
+        23.213826
+      ],
+      "midpoint_travel": [
+        112.6570271,
+        23.213826
+      ]
+    },
+    "SZ-002": {
+      "from": "N-012",
+      "to": "N-014",
+      "travel_from": "N-014",
+      "travel_to": "N-012",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 222.6,
+      "length_m_calc": 222.6,
+      "bearing_coords_order": 118.3,
+      "bearing_travel": 298.3,
+      "midpoint_coords_order": [
+        112.6561064,
+        23.2145299
+      ],
+      "midpoint_travel": [
+        112.6561064,
+        23.2145299
+      ]
+    },
+    "SZ-003": {
+      "from": "N-001",
+      "to": "N-005",
+      "travel_from": "N-005",
+      "travel_to": "N-001",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": true,
+      "length_m": 183.7,
+      "length_m_calc": 183.7,
+      "bearing_coords_order": 119.5,
+      "bearing_travel": 299.5,
+      "midpoint_coords_order": [
+        112.6531889,
+        23.2160677
+      ],
+      "midpoint_travel": [
+        112.6531889,
+        23.2160677
+      ]
+    },
+    "SZ-004": {
+      "from": "N-022",
+      "to": "N-040",
+      "travel_from": "N-040",
+      "travel_to": "N-022",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": true,
+      "length_m": 120.7,
+      "length_m_calc": 120.7,
+      "bearing_coords_order": 120.1,
+      "bearing_travel": 300.1,
+      "midpoint_coords_order": [
+        112.6585994,
+        23.2132627
+      ],
+      "midpoint_travel": [
+        112.6585994,
+        23.2132627
+      ]
+    },
+    "SZ-005": {
+      "from": "N-015",
+      "to": "N-022",
+      "travel_from": "N-022",
+      "travel_to": "N-015",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 83.1,
+      "length_m_calc": 83.1,
+      "bearing_coords_order": 119.3,
+      "bearing_travel": 299.3,
+      "midpoint_coords_order": [
+        112.6577336,
+        23.2137174
+      ],
+      "midpoint_travel": [
+        112.6577336,
+        23.2137174
+      ]
+    },
+    "SZ-006": {
+      "from": "N-007",
+      "to": "N-004",
+      "travel_from": "N-004",
+      "travel_to": "N-007",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 58.5,
+      "length_m_calc": 58.5,
+      "bearing_coords_order": 299.0,
+      "bearing_travel": 119.0,
+      "midpoint_coords_order": [
+        112.6540912,
+        23.2153277
+      ],
+      "midpoint_travel": [
+        112.6540912,
+        23.2153277
+      ]
+    },
+    "SZ-007": {
+      "from": "N-005",
+      "to": "N-008",
+      "travel_from": "N-008",
+      "travel_to": "N-005",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 57.3,
+      "length_m_calc": 57.3,
+      "bearing_coords_order": 120.5,
+      "bearing_travel": 300.5,
+      "midpoint_coords_order": [
+        112.6542119,
+        23.2155285
+      ],
+      "midpoint_travel": [
+        112.6542119,
+        23.2155285
+      ]
+    },
+    "SZ-008": {
+      "from": "N-009",
+      "to": "N-007",
+      "travel_from": "N-007",
+      "travel_to": "N-009",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 55.9,
+      "length_m_calc": 55.9,
+      "bearing_coords_order": 298.9,
+      "bearing_travel": 118.9,
+      "midpoint_coords_order": [
+        112.6545811,
+        23.2150785
+      ],
+      "midpoint_travel": [
+        112.6545811,
+        23.2150785
+      ]
+    },
+    "SZ-009": {
+      "from": "N-004",
+      "to": "N-002",
+      "travel_from": "N-002",
+      "travel_to": "N-004",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": true,
+      "length_m": 55.7,
+      "length_m_calc": 55.7,
+      "bearing_coords_order": 298.9,
+      "bearing_travel": 118.9,
+      "midpoint_coords_order": [
+        112.6536017,
+        23.2155761
+      ],
+      "midpoint_travel": [
+        112.6536017,
+        23.2155761
+      ]
+    },
+    "SZ-010": {
+      "from": "N-008",
+      "to": "N-010",
+      "travel_from": "N-010",
+      "travel_to": "N-008",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 49.6,
+      "length_m_calc": 49.6,
+      "bearing_coords_order": 120.1,
+      "bearing_travel": 300.1,
+      "midpoint_coords_order": [
+        112.6546634,
+        23.2152854
+      ],
+      "midpoint_travel": [
+        112.6546634,
+        23.2152854
+      ]
+    },
+    "SZ-011": {
+      "from": "N-014",
+      "to": "N-015",
+      "travel_from": "N-015",
+      "travel_to": "N-014",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 36.4,
+      "length_m_calc": 36.4,
+      "bearing_coords_order": 118.2,
+      "bearing_travel": 298.2,
+      "midpoint_coords_order": [
+        112.6572221,
+        23.2139776
+      ],
+      "midpoint_travel": [
+        112.6572221,
+        23.2139776
+      ]
+    },
+    "SZ-012": {
+      "from": "N-010",
+      "to": "N-012",
+      "travel_from": "N-012",
+      "travel_to": "N-010",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 33.6,
+      "length_m_calc": 33.6,
+      "bearing_coords_order": 120.1,
+      "bearing_travel": 300.1,
+      "midpoint_coords_order": [
+        112.6550155,
+        23.2150975
+      ],
+      "midpoint_travel": [
+        112.6550155,
+        23.2150975
+      ]
+    },
+    "SZ-013": {
+      "from": "N-011",
+      "to": "N-009",
+      "travel_from": "N-009",
+      "travel_to": "N-011",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 27.6,
+      "length_m_calc": 27.6,
+      "bearing_coords_order": 298.6,
+      "bearing_travel": 118.6,
+      "midpoint_coords_order": [
+        112.6549392,
+        23.2148975
+      ],
+      "midpoint_travel": [
+        112.6549392,
+        23.2148975
+      ]
+    },
+    "SZ-014": {
+      "from": "N-006",
+      "to": "N-007",
+      "travel_from": "N-006",
+      "travel_to": "N-007",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 57.2,
+      "length_m_calc": 57.2,
+      "bearing_coords_order": 27.9,
+      "bearing_travel": 27.9,
+      "midpoint_coords_order": [
+        112.6542112,
+        23.2149727
+      ],
+      "midpoint_travel": [
+        112.6542112,
+        23.2149727
+      ]
+    },
+    "SZ-015": {
+      "from": "N-004",
+      "to": "N-003",
+      "travel_from": "N-004",
+      "travel_to": "N-003",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "main",
+      "boundary": true,
+      "length_m": 54.3,
+      "length_m_calc": 54.3,
+      "bearing_coords_order": 210.3,
+      "bearing_travel": 210.3,
+      "midpoint_coords_order": [
+        112.6537068,
+        23.2152444
+      ],
+      "midpoint_travel": [
+        112.6537068,
+        23.2152444
+      ]
+    },
+    "SZ-016": {
+      "from": "N-005",
+      "to": "N-004",
+      "travel_from": "N-005",
+      "travel_to": "N-004",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 26.3,
+      "length_m_calc": 26.3,
+      "bearing_coords_order": 210.3,
+      "bearing_travel": 210.3,
+      "midpoint_coords_order": [
+        112.6539055,
+        23.2155574
+      ],
+      "midpoint_travel": [
+        112.6539055,
+        23.2155574
+      ]
+    },
+    "SZ-017": {
+      "from": "N-007",
+      "to": "N-008",
+      "travel_from": "N-007",
+      "travel_to": "N-008",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "main",
+      "boundary": false,
+      "length_m": 24.7,
+      "length_m_calc": 24.7,
+      "bearing_coords_order": 27.5,
+      "bearing_travel": 27.5,
+      "midpoint_coords_order": [
+        112.6543976,
+        23.2152988
+      ],
+      "midpoint_travel": [
+        112.6543976,
+        23.2152988
+      ]
+    },
+    "SZ-018": {
+      "from": "N-014",
+      "to": "N-016",
+      "travel_from": "N-014",
+      "travel_to": "N-016",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": true,
+      "length_m": 242.8,
+      "length_m_calc": 242.8,
+      "bearing_coords_order": 27.2,
+      "bearing_travel": 27.2,
+      "midpoint_coords_order": [
+        112.6578107,
+        23.2148253
+      ],
+      "midpoint_travel": [
+        112.6578107,
+        23.2148253
+      ]
+    },
+    "SZ-019": {
+      "from": "N-015",
+      "to": "N-018",
+      "travel_from": "N-015",
+      "travel_to": "N-018",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": true,
+      "length_m": 238.8,
+      "length_m_calc": 238.8,
+      "bearing_coords_order": 28.4,
+      "bearing_travel": 28.4,
+      "midpoint_coords_order": [
+        112.6579344,
+        23.2148452
+      ],
+      "midpoint_travel": [
+        112.6579344,
+        23.2148452
+      ]
+    },
+    "SZ-020": {
+      "from": "N-034",
+      "to": "N-032",
+      "travel_from": "N-034",
+      "travel_to": "N-032",
+      "direction": "forward",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 89.3,
+      "length_m_calc": 89.3,
+      "bearing_coords_order": 299.0,
+      "bearing_travel": 299.0,
+      "midpoint_coords_order": [
+        112.6588432,
+        23.2156723
+      ],
+      "midpoint_travel": [
+        112.6588432,
+        23.2156723
+      ]
+    },
+    "SZ-021": {
+      "from": "N-039",
+      "to": "N-031",
+      "travel_from": "N-039",
+      "travel_to": "N-031",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 72.5,
+      "length_m_calc": 72.5,
+      "bearing_coords_order": 298.5,
+      "bearing_travel": 298.5,
+      "midpoint_coords_order": [
+        112.6588657,
+        23.214145
+      ],
+      "midpoint_travel": [
+        112.6588657,
+        23.214145
+      ]
+    },
+    "SZ-022": {
+      "from": "N-024",
+      "to": "N-017",
+      "travel_from": "N-024",
+      "travel_to": "N-017",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": true,
+      "length_m": 67.9,
+      "length_m_calc": 67.9,
+      "bearing_coords_order": 299.4,
+      "bearing_travel": 299.4,
+      "midpoint_coords_order": [
+        112.6578346,
+        23.2139527
+      ],
+      "midpoint_travel": [
+        112.6578346,
+        23.2139527
+      ]
+    },
+    "SZ-023": {
+      "from": "N-029",
+      "to": "N-019",
+      "travel_from": "N-029",
+      "travel_to": "N-019",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.4,
+      "length_m_calc": 63.4,
+      "bearing_coords_order": 300.5,
+      "bearing_travel": 300.5,
+      "midpoint_coords_order": [
+        112.6581127,
+        23.2141525
+      ],
+      "midpoint_travel": [
+        112.6581127,
+        23.2141525
+      ]
+    },
+    "SZ-024": {
+      "from": "N-028",
+      "to": "N-037",
+      "travel_from": "N-028",
+      "travel_to": "N-037",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.4,
+      "length_m_calc": 63.4,
+      "bearing_coords_order": 118.9,
+      "bearing_travel": 118.9,
+      "midpoint_coords_order": [
+        112.6586184,
+        23.2150022
+      ],
+      "midpoint_travel": [
+        112.6586184,
+        23.2150022
+      ]
+    },
+    "SZ-025": {
+      "from": "N-035",
+      "to": "N-025",
+      "travel_from": "N-035",
+      "travel_to": "N-025",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.4,
+      "length_m_calc": 63.4,
+      "bearing_coords_order": 298.5,
+      "bearing_travel": 298.5,
+      "midpoint_coords_order": [
+        112.658454,
+        23.2147259
+      ],
+      "midpoint_travel": [
+        112.658454,
+        23.2147259
+      ]
+    },
+    "SZ-026": {
+      "from": "N-036",
+      "to": "N-026",
+      "travel_from": "N-036",
+      "travel_to": "N-026",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": true,
+      "length_m": 63.4,
+      "length_m_calc": 63.4,
+      "bearing_coords_order": 298.2,
+      "bearing_travel": 298.2,
+      "midpoint_coords_order": [
+        112.6585295,
+        23.2148527
+      ],
+      "midpoint_travel": [
+        112.6585295,
+        23.2148527
+      ]
+    },
+    "SZ-027": {
+      "from": "N-031",
+      "to": "N-021",
+      "travel_from": "N-031",
+      "travel_to": "N-021",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.3,
+      "length_m_calc": 63.3,
+      "bearing_coords_order": 298.5,
+      "bearing_travel": 298.5,
+      "midpoint_coords_order": [
+        112.6582817,
+        23.2144364
+      ],
+      "midpoint_travel": [
+        112.6582817,
+        23.2144364
+      ]
+    },
+    "SZ-028": {
+      "from": "N-023",
+      "to": "N-033",
+      "travel_from": "N-023",
+      "travel_to": "N-033",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.3,
+      "length_m_calc": 63.3,
+      "bearing_coords_order": 118.6,
+      "bearing_travel": 118.6,
+      "midpoint_coords_order": [
+        112.6583713,
+        23.214587
+      ],
+      "midpoint_travel": [
+        112.6583713,
+        23.214587
+      ]
+    },
+    "SZ-029": {
+      "from": "N-020",
+      "to": "N-030",
+      "travel_from": "N-020",
+      "travel_to": "N-030",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.3,
+      "length_m_calc": 63.3,
+      "bearing_coords_order": 118.9,
+      "bearing_travel": 118.9,
+      "midpoint_coords_order": [
+        112.6581985,
+        23.2142967
+      ],
+      "midpoint_travel": [
+        112.6581985,
+        23.2142967
+      ]
+    },
+    "SZ-030": {
+      "from": "N-017",
+      "to": "N-027",
+      "travel_from": "N-017",
+      "travel_to": "N-027",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 63.3,
+      "length_m_calc": 63.3,
+      "bearing_coords_order": 119.5,
+      "bearing_travel": 119.5,
+      "midpoint_coords_order": [
+        112.6580336,
+        23.2140197
+      ],
+      "midpoint_travel": [
+        112.6580336,
+        23.2140197
+      ]
+    },
+    "SZ-031": {
+      "from": "N-033",
+      "to": "N-039",
+      "travel_from": "N-033",
+      "travel_to": "N-039",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 53.4,
+      "length_m_calc": 53.4,
+      "bearing_coords_order": 118.6,
+      "bearing_travel": 118.6,
+      "midpoint_coords_order": [
+        112.6588729,
+        23.2143358
+      ],
+      "midpoint_travel": [
+        112.6588729,
+        23.2143358
+      ]
+    },
+    "SZ-032": {
+      "from": "N-041",
+      "to": "N-035",
+      "travel_from": "N-041",
+      "travel_to": "N-035",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 53.3,
+      "length_m_calc": 53.3,
+      "bearing_coords_order": 298.5,
+      "bearing_travel": 298.5,
+      "midpoint_coords_order": [
+        112.6589554,
+        23.2144751
+      ],
+      "midpoint_travel": [
+        112.6589554,
+        23.2144751
+      ]
+    },
+    "SZ-033": {
+      "from": "N-042",
+      "to": "N-036",
+      "travel_from": "N-042",
+      "travel_to": "N-036",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 53.2,
+      "length_m_calc": 53.2,
+      "bearing_coords_order": 298.2,
+      "bearing_travel": 298.2,
+      "midpoint_coords_order": [
+        112.6590322,
+        23.2146051
+      ],
+      "midpoint_travel": [
+        112.6590322,
+        23.2146051
+      ]
+    },
+    "SZ-034": {
+      "from": "N-037",
+      "to": "N-043",
+      "travel_from": "N-037",
+      "travel_to": "N-043",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 53.1,
+      "length_m_calc": 53.1,
+      "bearing_coords_order": 118.9,
+      "bearing_travel": 118.9,
+      "midpoint_coords_order": [
+        112.659117,
+        23.2147487
+      ],
+      "midpoint_travel": [
+        112.659117,
+        23.2147487
+      ]
+    },
+    "SZ-035": {
+      "from": "N-022",
+      "to": "N-027",
+      "travel_from": "N-022",
+      "travel_to": "N-027",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 44.2,
+      "length_m_calc": 44.2,
+      "bearing_coords_order": 29.8,
+      "bearing_travel": 29.8,
+      "midpoint_coords_order": [
+        112.6581958,
+        23.2137069
+      ],
+      "midpoint_travel": [
+        112.6581958,
+        23.2137069
+      ]
+    },
+    "SZ-036": {
+      "from": "N-025",
+      "to": "N-028",
+      "travel_from": "N-025",
+      "travel_to": "N-028",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 35.2,
+      "length_m_calc": 35.2,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6582644,
+        23.215001
+      ],
+      "midpoint_travel": [
+        112.6582644,
+        23.215001
+      ]
+    },
+    "SZ-037": {
+      "from": "N-029",
+      "to": "N-030",
+      "travel_from": "N-029",
+      "travel_to": "N-030",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 19.2,
+      "length_m_calc": 19.2,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6584249,
+        23.2140835
+      ],
+      "midpoint_travel": [
+        112.6584249,
+        23.2140835
+      ]
+    },
+    "SZ-038": {
+      "from": "N-021",
+      "to": "N-023",
+      "travel_from": "N-021",
+      "travel_to": "N-023",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 19.1,
+      "length_m_calc": 19.1,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6580542,
+        23.2146478
+      ],
+      "midpoint_travel": [
+        112.6580542,
+        23.2146478
+      ]
+    },
+    "SZ-039": {
+      "from": "N-031",
+      "to": "N-033",
+      "travel_from": "N-031",
+      "travel_to": "N-033",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 19.0,
+      "length_m_calc": 19.0,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6585988,
+        23.2143756
+      ],
+      "midpoint_travel": [
+        112.6585988,
+        23.2143756
+      ]
+    },
+    "SZ-040": {
+      "from": "N-036",
+      "to": "N-037",
+      "travel_from": "N-036",
+      "travel_to": "N-037",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 18.5,
+      "length_m_calc": 18.5,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6588462,
+        23.2147912
+      ],
+      "midpoint_travel": [
+        112.6588462,
+        23.2147912
+      ]
+    },
+    "SZ-041": {
+      "from": "N-030",
+      "to": "N-031",
+      "travel_from": "N-030",
+      "travel_to": "N-031",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.9,
+      "length_m_calc": 17.9,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.658512,
+        23.2142298
+      ],
+      "midpoint_travel": [
+        112.658512,
+        23.2142298
+      ]
+    },
+    "SZ-042": {
+      "from": "N-043",
+      "to": "N-042",
+      "travel_from": "N-043",
+      "travel_to": "N-042",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.8,
+      "length_m_calc": 17.8,
+      "bearing_coords_order": 208.3,
+      "bearing_travel": 208.3,
+      "midpoint_coords_order": [
+        112.659303,
+        23.2145627
+      ],
+      "midpoint_travel": [
+        112.659303,
+        23.2145627
+      ]
+    },
+    "SZ-043": {
+      "from": "N-041",
+      "to": "N-039",
+      "travel_from": "N-041",
+      "travel_to": "N-039",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.7,
+      "length_m_calc": 17.7,
+      "bearing_coords_order": 208.4,
+      "bearing_travel": 208.4,
+      "midpoint_coords_order": [
+        112.6591434,
+        23.2142907
+      ],
+      "midpoint_travel": [
+        112.6591434,
+        23.2142907
+      ]
+    },
+    "SZ-044": {
+      "from": "N-033",
+      "to": "N-035",
+      "travel_from": "N-033",
+      "travel_to": "N-035",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.6,
+      "length_m_calc": 17.6,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6586849,
+        23.2145202
+      ],
+      "midpoint_travel": [
+        112.6586849,
+        23.2145202
+      ]
+    },
+    "SZ-045": {
+      "from": "N-023",
+      "to": "N-025",
+      "travel_from": "N-023",
+      "travel_to": "N-025",
+      "direction": "forward",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.6,
+      "length_m_calc": 17.6,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6581404,
+        23.2147926
+      ],
+      "midpoint_travel": [
+        112.6581404,
+        23.2147926
+      ]
+    },
+    "SZ-046": {
+      "from": "N-025",
+      "to": "N-023",
+      "travel_from": "N-025",
+      "travel_to": "N-023",
+      "direction": "forward",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.6,
+      "length_m_calc": 17.6,
+      "bearing_coords_order": 208.7,
+      "bearing_travel": 208.7,
+      "midpoint_coords_order": [
+        112.6581404,
+        23.2147926
+      ],
+      "midpoint_travel": [
+        112.6581404,
+        23.2147926
+      ]
+    },
+    "SZ-047": {
+      "from": "N-020",
+      "to": "N-021",
+      "travel_from": "N-020",
+      "travel_to": "N-021",
+      "direction": "forward",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.5,
+      "length_m_calc": 17.5,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6579682,
+        23.2145032
+      ],
+      "midpoint_travel": [
+        112.6579682,
+        23.2145032
+      ]
+    },
+    "SZ-048": {
+      "from": "N-021",
+      "to": "N-020",
+      "travel_from": "N-021",
+      "travel_to": "N-020",
+      "direction": "forward",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.5,
+      "length_m_calc": 17.5,
+      "bearing_coords_order": 208.7,
+      "bearing_travel": 208.7,
+      "midpoint_coords_order": [
+        112.6579682,
+        23.2145032
+      ],
+      "midpoint_travel": [
+        112.6579682,
+        23.2145032
+      ]
+    },
+    "SZ-049": {
+      "from": "N-019",
+      "to": "N-020",
+      "travel_from": "N-019",
+      "travel_to": "N-020",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.4,
+      "length_m_calc": 17.4,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6578863,
+        23.2143656
+      ],
+      "midpoint_travel": [
+        112.6578863,
+        23.2143656
+      ]
+    },
+    "SZ-050": {
+      "from": "N-017",
+      "to": "N-019",
+      "travel_from": "N-017",
+      "travel_to": "N-019",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 17.4,
+      "length_m_calc": 17.4,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6578047,
+        23.2142286
+      ],
+      "midpoint_travel": [
+        112.6578047,
+        23.2142286
+      ]
+    },
+    "SZ-051": {
+      "from": "N-042",
+      "to": "N-041",
+      "travel_from": "N-042",
+      "travel_to": "N-041",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 16.6,
+      "length_m_calc": 16.6,
+      "bearing_coords_order": 208.3,
+      "bearing_travel": 208.3,
+      "midpoint_coords_order": [
+        112.659223,
+        23.2144264
+      ],
+      "midpoint_travel": [
+        112.659223,
+        23.2144264
+      ]
+    },
+    "SZ-052": {
+      "from": "N-027",
+      "to": "N-029",
+      "travel_from": "N-027",
+      "travel_to": "N-029",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 16.3,
+      "length_m_calc": 16.3,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6583416,
+        23.2139436
+      ],
+      "midpoint_travel": [
+        112.6583416,
+        23.2139436
+      ]
+    },
+    "SZ-053": {
+      "from": "N-035",
+      "to": "N-036",
+      "travel_from": "N-035",
+      "travel_to": "N-036",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 16.3,
+      "length_m_calc": 16.3,
+      "bearing_coords_order": 28.7,
+      "bearing_travel": 28.7,
+      "midpoint_coords_order": [
+        112.6587645,
+        23.2146539
+      ],
+      "midpoint_travel": [
+        112.6587645,
+        23.2146539
+      ]
+    },
+    "SZ-054": {
+      "from": "N-010",
+      "to": "N-014",
+      "travel_from": "N-010",
+      "travel_to": "N-014",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 544.7,
+      "length_m_calc": 544.7,
+      "bearing_coords_order": 207.4,
+      "bearing_travel": 207.4,
+      "midpoint_coords_order": [
+        112.6559637,
+        23.2154624
+      ],
+      "midpoint_travel": [
+        112.6559637,
+        23.2154624
+      ]
+    },
+    "SZ-055": {
+      "from": "N-013",
+      "to": "N-010",
+      "travel_from": "N-013",
+      "travel_to": "N-010",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "ramp",
+      "boundary": true,
+      "length_m": 200.8,
+      "length_m_calc": 200.8,
+      "bearing_coords_order": 330.2,
+      "bearing_travel": 330.2,
+      "midpoint_coords_order": [
+        112.6556939,
+        23.2152142
+      ],
+      "midpoint_travel": [
+        112.6556939,
+        23.2152142
+      ]
+    },
+    "SZ-056": {
+      "from": "N-034",
+      "to": "N-044",
+      "travel_from": "N-034",
+      "travel_to": "N-044",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": true,
+      "length_m": 235.3,
+      "length_m_calc": 235.3,
+      "bearing_coords_order": 119.5,
+      "bearing_travel": 119.5,
+      "midpoint_coords_order": [
+        112.6597175,
+        23.2149372
+      ],
+      "midpoint_travel": [
+        112.6597175,
+        23.2149372
+      ]
+    },
+    "SZ-057": {
+      "from": "N-028",
+      "to": "N-032",
+      "travel_from": "N-028",
+      "travel_to": "N-032",
+      "direction": "bidirectional",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 50.0,
+      "length_m_calc": 50.0,
+      "bearing_coords_order": 26.1,
+      "bearing_travel": 26.1,
+      "midpoint_coords_order": [
+        112.6584526,
+        23.2153428
+      ],
+      "midpoint_travel": [
+        112.6584526,
+        23.2153428
+      ]
+    },
+    "SZ-058": {
+      "from": "N-032",
+      "to": "N-034",
+      "travel_from": "N-032",
+      "travel_to": "N-034",
+      "direction": "forward",
+      "oneway": null,
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 11.0,
+      "length_m_calc": 11.0,
+      "bearing_coords_order": 119.0,
+      "bearing_travel": 119.0,
+      "midpoint_coords_order": [
+        112.6586607,
+        23.2153628
+      ],
+      "midpoint_travel": [
+        112.6586607,
+        23.2153628
+      ]
+    },
+    "SZ-059": {
+      "from": "N-006",
+      "to": "N-009",
+      "travel_from": "N-006",
+      "travel_to": "N-009",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 81.6,
+      "length_m_calc": 81.6,
+      "bearing_coords_order": 72.8,
+      "bearing_travel": 72.8,
+      "midpoint_coords_order": [
+        112.6544242,
+        23.2149281
+      ],
+      "midpoint_travel": [
+        112.6544242,
+        23.2149281
+      ]
+    },
+    "SZ-060": {
+      "from": "N-009",
+      "to": "N-011",
+      "travel_from": "N-009",
+      "travel_to": "N-011",
+      "direction": "forward",
+      "oneway": "yes",
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 27.6,
+      "length_m_calc": 27.6,
+      "bearing_coords_order": 118.6,
+      "bearing_travel": 118.6,
+      "midpoint_coords_order": [
+        112.6549392,
+        23.2148975
+      ],
+      "midpoint_travel": [
+        112.6549392,
+        23.2148975
+      ]
+    },
+    "SZ-061": {
+      "from": "N-011",
+      "to": "N-012",
+      "travel_from": "N-012",
+      "travel_to": "N-011",
+      "direction": "reverse",
+      "oneway": "-1",
+      "kind": "ramp",
+      "boundary": false,
+      "length_m": 22.8,
+      "length_m_calc": 22.8,
+      "bearing_coords_order": 26.6,
+      "bearing_travel": 206.6,
+      "midpoint_coords_order": [
+        112.6551078,
+        23.2149299
+      ],
+      "midpoint_travel": [
+        112.6551078,
+        23.2149299
+      ]
+    }
+  }
+}
