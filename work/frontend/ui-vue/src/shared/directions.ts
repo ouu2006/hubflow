@@ -202,3 +202,121 @@ export function pointAtFraction(
   }
   return coords[coords.length - 1]!
 }
+
+/**
+ * 折线累计长度（米；与 `pointAtFraction` 同一套平面近似：经度按 cos(lat0) 压缩）
+ */
+export function polylineLengthM(coords: [number, number][]): number {
+  if (!Array.isArray(coords) || coords.length < 2) return 0
+  const lonScale = 111_320 * Math.cos((coords[0]![1] * Math.PI) / 180)
+  let total = 0
+  for (let i = 1; i < coords.length; i++) {
+    const dx = (coords[i]![0] - coords[i - 1]![0]) * lonScale
+    const dy = (coords[i]![1] - coords[i - 1]![1]) * 111_320
+    total += Math.hypot(dx, dy)
+  }
+  return total
+}
+
+/**
+ * 按弧长裁掉折线**首 / 尾**各若干米，返回剩下的折线（米；与 `polylineLengthM` 同一套平面近似）。
+ *
+ * 为什么需要：后端 `/route/plan` 的 `steps[].geometry` 是**整段**几何，起点落在段中时首段
+ * `trim_head_m > 0`、终点落在段中时末段 `trim_tail_m > 0`（见方案 §2 附加字段）。
+ * 不裁的话"箭头取 50% 弧长点"会落到不在本次行程里的那半截上 —— SZ-004 那种整段不进路线
+ * 的情况更是直接把箭头画到镜像的尾巴上。`trim_head_m` / `trim_tail_m` 是可选附加字段，
+ * 缺省按 0 处理（旧响应 / 别的算路口径照样能画）。
+ */
+export function trimPolylineM(
+  coords: [number, number][],
+  headM = 0,
+  tailM = 0,
+): [number, number][] {
+  if (!Array.isArray(coords) || coords.length < 2) return []
+  const total = polylineLengthM(coords)
+  const from = Math.max(0, Math.min(headM || 0, total))
+  const to = Math.max(from, total - Math.max(0, Math.min(tailM || 0, total - from)))
+  if (from <= 0 && to >= total) return coords
+  const lonScale = 111_320 * Math.cos((coords[0]![1] * Math.PI) / 180)
+  const lerp = (a: [number, number], b: [number, number], t: number): [number, number] => [
+    a[0] + (b[0] - a[0]) * t,
+    a[1] + (b[1] - a[1]) * t,
+  ]
+  const out: [number, number][] = []
+  let acc = 0
+  for (let i = 1; i < coords.length; i++) {
+    const a = coords[i - 1]!
+    const b = coords[i]!
+    const dx = (b[0] - a[0]) * lonScale
+    const dy = (b[1] - a[1]) * 111_320
+    const segLen = Math.hypot(dx, dy)
+    const segStart = acc
+    const segEnd = acc + segLen
+    acc = segEnd
+    if (segEnd <= from || segStart >= to) continue
+    if (out.length === 0 && segStart < from) {
+      out.push(lerp(a, b, segLen === 0 ? 0 : (from - segStart) / segLen))
+    } else if (out.length === 0 || out[out.length - 1]![0] !== a[0] || out[out.length - 1]![1] !== a[1]) {
+      out.push(a)
+    }
+    if (segEnd > to) {
+      out.push(lerp(a, b, segLen === 0 ? 0 : (to - segStart) / segLen))
+      return out
+    }
+    out.push(b)
+  }
+  return out.length >= 2 ? out : []
+}
+
+/**
+ * 折线上「弧长比例 `fraction` 处」的**局部切线方位角**（度；0 = 北，顺时针）。
+ *
+ * 为什么不能再用 `bearingDeg()`（首点 → 末点的整体弦向）：弯道上整体弦向与路面走向能差几十度，
+ * 箭头会斜着插进路边 —— 业主 2026-10-29「路段箭头方向」点出的根因之一。
+ *
+ * 取法：以该点为中心、**前后各 `spanM` 米**取一条弦（半跨 = `min(spanM, 段长/4)`，
+ * 段首 / 段尾自动夹紧），返回这条弦的方位角。度量口径与 `pointAtFraction` 同源（平面近似）。
+ */
+export function tangentBearingAt(
+  coords: [number, number][],
+  fraction: number,
+  spanM = 15,
+): number {
+  if (!Array.isArray(coords) || coords.length < 2) return 0
+  const lonScale = 111_320 * Math.cos((coords[0]![1] * Math.PI) / 180)
+  const lens: number[] = []
+  let total = 0
+  for (let i = 1; i < coords.length; i++) {
+    const dx = (coords[i]![0] - coords[i - 1]![0]) * lonScale
+    const dy = (coords[i]![1] - coords[i - 1]![1]) * 111_320
+    const len = Math.hypot(dx, dy)
+    lens.push(len)
+    total += len
+  }
+  if (total <= 0) return bearingDeg(coords)
+  const f = Math.min(1, Math.max(0, fraction))
+  const half = Math.min(spanM, total / 4)
+  /** 按弧长（米）取点：夹紧到 [0, total]，不做外插 */
+  const at = (s: number): [number, number] => {
+    let remain = Math.min(total, Math.max(0, s))
+    for (let i = 0; i < lens.length; i++) {
+      const len = lens[i]!
+      if (remain <= len || i === lens.length - 1) {
+        const t = len <= 0 ? 0 : Math.min(1, remain / len)
+        const [lonA, latA] = coords[i]!
+        const [lonB, latB] = coords[i + 1]!
+        return [lonA + (lonB - lonA) * t, latA + (latB - latA) * t]
+      }
+      remain -= len
+    }
+    return coords[coords.length - 1]!
+  }
+  const p1 = at(total * f - half)
+  const p2 = at(total * f + half)
+  const east = (p2[0] - p1[0]) * lonScale
+  const north = (p2[1] - p1[1]) * 111_320
+  // 退化（点重合，例如极短段）：退回整体弦向，不编一个 0° 的"正北"
+  if (east === 0 && north === 0) return bearingDeg(coords)
+  const deg = (Math.atan2(east, north) * 180) / Math.PI
+  return (deg + 360) % 360
+}

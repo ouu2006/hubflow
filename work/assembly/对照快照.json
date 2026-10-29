@@ -1,10 +1,10 @@
 {
   "issue": "IKMF1T",
-  "generated_at": "2026-10-17T23:36:20+0800",
-  "method": "实跑对照：同一路径分别请求 vite mock（http://127.0.0.1:5173）与接口层 traffic.py（http://127.0.0.1:8000），比对顶格键与嵌套键集；取值不参与比对（数据源不同）。",
+  "generated_at": "2026-10-29T12:56:21+0800",
+  "method": "实跑对照：同一路径分别请求 vite mock（http://127.0.0.1:5173）与接口层 traffic.py（http://127.0.0.1:8001），比对顶格键与嵌套键集；取值不参与比对（数据源不同）。",
   "mock_reachable": true,
-  "required_three_top_level_equal": true,
-  "comparable_endpoint_count": 21,
+  "required_three_top_level_equal": false,
+  "comparable_endpoint_count": 23,
   "all_comparable_top_level_equal": false,
   "endpoints": [
     {
@@ -13,8 +13,9 @@
       "path": "meta",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": true,
+      "top_keys_equal": false,
       "mock_top_keys": [
+        "data_sources",
         "demo_badge",
         "is_simulated",
         "sources",
@@ -23,14 +24,24 @@
         "ts"
       ],
       "ours_top_keys": [
+        "data_sources",
         "demo_badge",
         "is_simulated",
+        "note",
         "sources",
         "station",
         "tabs",
         "ts"
       ],
-      "key_diffs": []
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
     },
     {
       "name": "overview",
@@ -38,7 +49,7 @@
       "path": "overview",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": true,
+      "top_keys_equal": false,
       "mock_top_keys": [
         "active_factors",
         "avg_speed_delta_kmh",
@@ -61,6 +72,7 @@
         "guided_rate",
         "is_simulated",
         "level_distribution",
+        "note",
         "segment_total",
         "ts",
         "unavailable_count",
@@ -69,7 +81,15 @@
         "window_sec",
         "worst_segment"
       ],
-      "key_diffs": []
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
     },
     {
       "name": "segments",
@@ -77,25 +97,28 @@
       "path": "segments",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": true,
+      "top_keys_equal": false,
       "mock_top_keys": [
+        "emergency",
         "is_simulated",
         "segments",
         "ts",
         "window_sec"
       ],
       "ours_top_keys": [
+        "emergency",
         "is_simulated",
+        "note",
         "segments",
         "ts",
         "window_sec"
       ],
       "key_diffs": [
         {
-          "path": "$.segments[]",
+          "path": "$",
           "only_mock": [],
           "only_ours": [
-            "level_source"
+            "note"
           ]
         }
       ]
@@ -182,7 +205,7 @@
       "path": "vehicles",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": true,
+      "top_keys_equal": false,
       "mock_top_keys": [
         "is_simulated",
         "ts",
@@ -190,10 +213,19 @@
       ],
       "ours_top_keys": [
         "is_simulated",
+        "note",
         "ts",
         "vehicles"
       ],
-      "key_diffs": []
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
     },
     {
       "name": "network",
@@ -259,12 +291,16 @@
       "ours_status": 200,
       "top_keys_equal": true,
       "mock_top_keys": [
+        "counts",
         "factors",
+        "injected",
         "is_simulated",
         "ts"
       ],
       "ours_top_keys": [
+        "counts",
         "factors",
+        "injected",
         "is_simulated",
         "ts"
       ],
@@ -276,7 +312,7 @@
       "path": "assimilation",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": true,
+      "top_keys_equal": false,
       "mock_top_keys": [
         "counts",
         "gate",
@@ -288,10 +324,19 @@
         "counts",
         "gate",
         "is_simulated",
+        "note",
         "records",
         "ts"
       ],
-      "key_diffs": []
+      "key_diffs": [
+        {
+          "path": "$",
+          "only_mock": [],
+          "only_ours": [
+            "note"
+          ]
+        }
+      ]
     },
     {
       "name": "alerts",
@@ -303,24 +348,16 @@
       "mock_top_keys": [
         "alerts",
         "is_simulated",
+        "note",
         "ts"
       ],
       "ours_top_keys": [
         "alerts",
         "is_simulated",
+        "note",
         "ts"
       ],
-      "key_diffs": [
-        {
-          "path": "$.alerts[]",
-          "only_mock": [
-            "channels",
-            "dispatch_at",
-            "dispatch_ratio_pct"
-          ],
-          "only_ours": []
-        }
-      ]
+      "key_diffs": []
     },
     {
       "name": "predict",
@@ -328,10 +365,11 @@
       "path": "predict",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": false,
+      "top_keys_equal": true,
       "mock_top_keys": [
         "is_simulated",
         "model",
+        "note",
         "points",
         "segment_id",
         "ts"
@@ -344,15 +382,7 @@
         "segment_id",
         "ts"
       ],
-      "key_diffs": [
-        {
-          "path": "$",
-          "only_mock": [],
-          "only_ours": [
-            "note"
-          ]
-        }
-      ]
+      "key_diffs": []
     },
     {
       "name": "heat-matrix",
@@ -360,12 +390,13 @@
       "path": "heat-matrix",
       "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": false,
+      "top_keys_equal": true,
       "mock_top_keys": [
         "bucket_sec",
         "buckets",
         "is_simulated",
         "labels",
+        "note",
         "rows",
         "ts"
       ],
@@ -374,105 +405,6 @@
         "buckets",
         "is_simulated",
         "labels",
-        "note",
-        "rows",
-        "ts"
-      ],
-      "key_diffs": [
-        {
-          "path": "$",
-          "only_mock": [],
-          "only_ours": [
-            "note"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "ci-history",
-      "method": "GET",
-      "path": "ci-history",
-      "mock_status": 200,
-      "ours_status": 200,
-      "top_keys_equal": false,
-      "mock_top_keys": [
-        "is_simulated",
-        "max",
-        "min",
-        "points",
-        "segment_id"
-      ],
-      "ours_top_keys": [
-        "is_simulated",
-        "max",
-        "min",
-        "note",
-        "points",
-        "segment_id"
-      ],
-      "key_diffs": [
-        {
-          "path": "$",
-          "only_mock": [],
-          "only_ours": [
-            "note"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "context",
-      "method": "GET",
-      "path": "context",
-      "mock_status": 200,
-      "ours_status": 200,
-      "top_keys_equal": false,
-      "mock_top_keys": [
-        "derived_factors",
-        "injected",
-        "is_simulated",
-        "source",
-        "station_id",
-        "summary",
-        "time",
-        "ts",
-        "weather"
-      ],
-      "ours_top_keys": [
-        "derived_factors",
-        "injected",
-        "is_simulated",
-        "note",
-        "source",
-        "station_id",
-        "summary",
-        "time",
-        "ts",
-        "weather"
-      ],
-      "key_diffs": [
-        {
-          "path": "$",
-          "only_mock": [],
-          "only_ours": [
-            "note"
-          ]
-        }
-      ]
-    },
-    {
-      "name": "report/compare",
-      "method": "GET",
-      "path": "report/compare",
-      "mock_status": 404,
-      "ours_status": 200,
-      "top_keys_equal": null,
-      "mock_top_keys": [
-        "code",
-        "message"
-      ],
-      "ours_top_keys": [
-        "is_simulated",
         "note",
         "rows",
         "ts"
@@ -480,74 +412,203 @@
       "key_diffs": []
     },
     {
-      "name": "route/recommend",
-      "method": "POST",
-      "path": "route/recommend",
+      "name": "ci-history",
+      "method": "GET",
+      "path": "ci-history",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "is_simulated",
+        "max",
+        "min",
+        "note",
+        "points",
+        "segment_id"
+      ],
+      "ours_top_keys": [
+        "is_simulated",
+        "max",
+        "min",
+        "note",
+        "points",
+        "segment_id"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "context",
+      "method": "GET",
+      "path": "context",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "derived_factors",
+        "emergency",
+        "injected",
+        "is_simulated",
+        "note",
+        "scenario",
+        "source",
+        "station_active_factors",
+        "station_id",
+        "summary",
+        "time",
+        "ts",
+        "weather"
+      ],
+      "ours_top_keys": [
+        "derived_factors",
+        "emergency",
+        "injected",
+        "is_simulated",
+        "note",
+        "scenario",
+        "source",
+        "station_active_factors",
+        "station_id",
+        "summary",
+        "time",
+        "ts",
+        "weather"
+      ],
+      "key_diffs": []
+    },
+    {
+      "name": "report/compare",
+      "method": "GET",
+      "path": "report/compare",
       "mock_status": 200,
       "ours_status": 200,
       "top_keys_equal": false,
       "mock_top_keys": [
-        "alternatives",
-        "arrival_route",
-        "departure_route",
-        "driver_type",
         "is_simulated",
-        "location",
-        "parking_mode",
-        "pickup_route",
-        "request_id",
-        "reservation",
-        "session_id",
-        "why"
+        "note",
+        "rows",
+        "treatment",
+        "ts"
       ],
       "ours_top_keys": [
-        "alternatives",
-        "arrival_route",
-        "departure_route",
-        "driver_type",
-        "factors_note",
         "is_simulated",
-        "location",
-        "od_id",
-        "parking_mode",
-        "pickup_route",
-        "quota",
-        "request_id",
-        "reroute",
-        "reservation",
-        "session_id",
-        "why"
+        "note",
+        "rows",
+        "source",
+        "source_note",
+        "tc17",
+        "treatment",
+        "ts",
+        "window"
       ],
       "key_diffs": [
         {
           "path": "$",
           "only_mock": [],
           "only_ours": [
-            "factors_note",
-            "od_id",
-            "quota",
-            "reroute"
+            "source",
+            "source_note",
+            "tc17",
+            "window"
           ]
-        },
+        }
+      ]
+    },
+    {
+      "name": "route/recommend",
+      "method": "POST",
+      "path": "route/recommend",
+      "mock_status": 200,
+      "ours_status": 200,
+      "top_keys_equal": true,
+      "mock_top_keys": [
+        "alternatives",
+        "arrival_route",
+        "data_source",
+        "data_source_note",
+        "departure_route",
+        "driver_type",
+        "factors_note",
+        "is_simulated",
+        "location",
+        "note",
+        "od_id",
+        "parking_mode",
+        "pickup_route",
+        "quota",
+        "request_id",
+        "requested_session_id",
+        "reroute",
+        "reservation",
+        "segment_namespaces",
+        "segments_in_snapshot",
+        "segments_not_in_snapshot",
+        "session_id",
+        "session_matched",
+        "ts",
+        "why"
+      ],
+      "ours_top_keys": [
+        "alternatives",
+        "arrival_route",
+        "data_source",
+        "data_source_note",
+        "departure_route",
+        "driver_type",
+        "factors_note",
+        "is_simulated",
+        "location",
+        "note",
+        "od_id",
+        "parking_mode",
+        "pickup_route",
+        "quota",
+        "request_id",
+        "requested_session_id",
+        "reroute",
+        "reservation",
+        "segment_namespaces",
+        "segments_in_snapshot",
+        "segments_not_in_snapshot",
+        "session_id",
+        "session_matched",
+        "ts",
+        "why"
+      ],
+      "key_diffs": [
         {
           "path": "$.alternatives[]",
-          "only_mock": [],
+          "only_mock": [
+            "direction_counts",
+            "legs",
+            "length_m"
+          ],
           "only_ours": [
-            "edges"
+            "trim_head_m",
+            "trim_tail_m"
           ]
         },
         {
           "path": "$.arrival_route",
-          "only_mock": [],
+          "only_mock": [
+            "direction_counts",
+            "legs",
+            "length_m"
+          ],
           "only_ours": [
-            "edges"
+            "trim_head_m",
+            "trim_tail_m"
           ]
         },
         {
           "path": "$.departure_route",
-          "only_mock": [],
+          "only_mock": [
+            "direction_counts",
+            "legs",
+            "length_m"
+          ],
           "only_ours": [
-            "edges"
+            "trim_head_m",
+            "trim_tail_m"
           ]
         }
       ]
@@ -556,87 +617,32 @@
       "name": "locate",
       "method": "POST",
       "path": "locate",
-      "mock_status": 404,
+      "mock_status": 200,
       "ours_status": 200,
-      "top_keys_equal": null,
+      "top_keys_equal": true,
       "mock_top_keys": [
-        "code",
-        "message"
-      ],
-      "ours_top_keys": [
+        "data_source",
+        "data_source_note",
         "is_simulated",
         "match_confidence",
         "note",
         "offset_m",
+        "requested_session_id",
         "segment_id",
+        "session_matched",
         "source"
       ],
-      "key_diffs": []
-    },
-    {
-      "name": "plan/dispatch",
-      "method": "POST",
-      "path": "plan/dispatch",
-      "mock_status": 200,
-      "ours_status": 200,
-      "top_keys_equal": true,
-      "mock_top_keys": [
-        "alert_id",
-        "at",
-        "channel",
-        "is_simulated",
-        "ratio_pct",
-        "receipt"
-      ],
       "ours_top_keys": [
-        "alert_id",
-        "at",
-        "channel",
+        "data_source",
+        "data_source_note",
         "is_simulated",
-        "ratio_pct",
-        "receipt"
-      ],
-      "key_diffs": []
-    },
-    {
-      "name": "plan/ack",
-      "method": "POST",
-      "path": "plan/ack",
-      "mock_status": 200,
-      "ours_status": 200,
-      "top_keys_equal": true,
-      "mock_top_keys": [
-        "alert_id",
-        "at",
-        "is_simulated",
-        "result",
-        "status"
-      ],
-      "ours_top_keys": [
-        "alert_id",
-        "at",
-        "is_simulated",
-        "result",
-        "status"
-      ],
-      "key_diffs": []
-    },
-    {
-      "name": "alerts(下发后)",
-      "method": "GET",
-      "path": "alerts(下发后)",
-      "mock_status": 200,
-      "ours_status": 200,
-      "top_keys_equal": true,
-      "mock_top_keys": [
-        "alerts",
-        "is_simulated",
-        "ts"
-      ],
-      "ours_top_keys": [
-        "alerts",
-        "is_simulated",
-        "ts"
+        "match_confidence",
+        "note",
+        "offset_m",
+        "requested_session_id",
+        "segment_id",
+        "session_matched",
+        "source"
       ],
       "key_diffs": []
     },
@@ -648,12 +654,26 @@
       "ours_status": 200,
       "top_keys_equal": true,
       "mock_top_keys": [
+        "audit_seq",
+        "cleared_alerts",
         "is_simulated",
-        "reset"
+        "note",
+        "persisted",
+        "reset",
+        "reset_count",
+        "seed_alerts",
+        "store_path"
       ],
       "ours_top_keys": [
+        "audit_seq",
+        "cleared_alerts",
         "is_simulated",
-        "reset"
+        "note",
+        "persisted",
+        "reset",
+        "reset_count",
+        "seed_alerts",
+        "store_path"
       ],
       "key_diffs": []
     },
@@ -665,11 +685,15 @@
       "ours_status": 200,
       "top_keys_equal": true,
       "mock_top_keys": [
+        "cleared",
         "is_simulated",
+        "note",
         "reset"
       ],
       "ours_top_keys": [
+        "cleared",
         "is_simulated",
+        "note",
         "reset"
       ],
       "key_diffs": []
@@ -679,21 +703,41 @@
       "method": "POST",
       "path": "factors(POST)",
       "mock_status": 200,
-      "ours_status": 404,
-      "top_keys_equal": null,
+      "ours_status": 200,
+      "top_keys_equal": true,
       "mock_top_keys": [
         "applied",
+        "emergency",
+        "factor_id",
         "factors_applied",
+        "injected_factors",
         "is_simulated",
         "level",
         "level_name",
-        "segment_id"
+        "level_recomputed",
+        "multiplier",
+        "name",
+        "note",
+        "segment_id",
+        "target",
+        "until"
       ],
       "ours_top_keys": [
-        "code",
+        "applied",
+        "emergency",
+        "factor_id",
+        "factors_applied",
+        "injected_factors",
         "is_simulated",
-        "message",
-        "note"
+        "level",
+        "level_name",
+        "level_recomputed",
+        "multiplier",
+        "name",
+        "note",
+        "segment_id",
+        "target",
+        "until"
       ],
       "key_diffs": []
     },
@@ -702,22 +746,31 @@
       "method": "POST",
       "path": "scenario",
       "mock_status": 200,
-      "ours_status": 404,
-      "top_keys_equal": null,
+      "ours_status": 200,
+      "top_keys_equal": true,
       "mock_top_keys": [
         "applied",
         "effects",
+        "effects_note",
         "factors",
         "is_simulated",
         "note",
+        "recomputed",
+        "scenario",
         "segment_ids",
         "ts"
       ],
       "ours_top_keys": [
-        "code",
+        "applied",
+        "effects",
+        "effects_note",
+        "factors",
         "is_simulated",
-        "message",
-        "note"
+        "note",
+        "recomputed",
+        "scenario",
+        "segment_ids",
+        "ts"
       ],
       "key_diffs": []
     },
@@ -726,17 +779,19 @@
       "method": "POST",
       "path": "scenario/reset",
       "mock_status": 200,
-      "ours_status": 404,
-      "top_keys_equal": null,
+      "ours_status": 200,
+      "top_keys_equal": true,
       "mock_top_keys": [
         "is_simulated",
-        "reset"
+        "note",
+        "reset",
+        "was_injected"
       ],
       "ours_top_keys": [
-        "code",
         "is_simulated",
-        "message",
-        "note"
+        "note",
+        "reset",
+        "was_injected"
       ],
       "key_diffs": []
     }
@@ -928,24 +983,6 @@
       "status": 200
     },
     {
-      "name": "plan/dispatch",
-      "method": "POST",
-      "category": "required-post",
-      "status": 200
-    },
-    {
-      "name": "plan/ack",
-      "method": "POST",
-      "category": "required-post",
-      "status": 200
-    },
-    {
-      "name": "alerts(下发后)",
-      "method": "GET",
-      "category": "required-get",
-      "status": 200
-    },
-    {
       "name": "alerts/reset",
       "method": "POST",
       "category": "required-post",
@@ -961,19 +998,19 @@
       "name": "factors(POST)",
       "method": "POST",
       "category": "unimplemented",
-      "status": 404
+      "status": 200
     },
     {
       "name": "scenario",
       "method": "POST",
       "category": "unimplemented",
-      "status": 404
+      "status": 200
     },
     {
       "name": "scenario/reset",
       "method": "POST",
       "category": "unimplemented",
-      "status": 404
+      "status": 200
     }
   ]
 }
