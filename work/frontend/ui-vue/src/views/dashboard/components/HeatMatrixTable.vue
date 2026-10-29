@@ -1,15 +1,22 @@
 <script setup lang="ts">
 // 路段 × 时间热力矩阵:每行 = 一个路段,每列 = 一个时间桶(labels),
-// 格子色 = ciColor(v)（拥堵版）/ 流量档位色（流量版, Issue IKNB9G）;
+// 格子色 = ciColor(v)（拥堵版）/ 流量档位色（流量版, Issue IKNB9G）/ 压灰（③④ 档, IKRK8B）;
 // null(该桶数据不可用 / 流量版只给当前快照)= 灰 #8B8B8B(绝不用 0 冒充)。
+//
+// ③④ 档（自定义路线版 / 灰底版）口径：**数值照留、一律不上色**——格子压灰 #C9CDD4；
+// 那与「数据不可用」灰 #8B8B8B 是两件事（后者永远表示"没有数据"），不复用同一个色。
 import { ciColor, UNAVAILABLE, type HeatMatrix } from '../../../shared/traffic'
-import { flowBandOfQ } from '../../../shared/flow'
+import { flowBandOfQ, MODE_DIM_GRAY, MODE_NO_TRAFFIC_NOTE } from '../../../shared/flow'
 
 const props = withDefaults(
   defineProps<{
     matrix: HeatMatrix | null
-    /** ci = 决策拥堵版（CI 色阶）；flow = 纯车流量版（q_vph 四档蓝阶） */
-    mode?: 'ci' | 'flow'
+    /**
+     * ci    = 决策拥堵版（CI 色阶）；
+     * flow  = 纯车流量版（q_vph 四档蓝阶）；
+     * gray  = ③④ 档（自定义路线版 / 灰底版）：数值照留、全部压灰，本档不表示路况。
+     */
+    mode?: 'ci' | 'flow' | 'gray'
   }>(),
   { mode: 'ci' },
 )
@@ -17,12 +24,16 @@ const props = withDefaults(
 function cellColor(v: number | null): string {
   if (v === null) return UNAVAILABLE.color
   if (props.mode === 'flow') return flowBandOfQ(v)?.color ?? UNAVAILABLE.color
+  // ③④ 档：有值也不上色（#C9CDD4），看数值请切回决策拥堵版 / 纯车流量版
+  if (props.mode === 'gray') return MODE_DIM_GRAY
   return ciColor(v)
 }
 
 function cellTitle(label: string, v: number | null): string {
   if (v === null) return `${label} · ${props.mode === 'flow' ? '无流量数据（该桶未提供 q）' : '数据不可用'}`
-  return props.mode === 'flow' ? `${label} · q ${v.toFixed(0)} 辆/h` : `${label} · CI ${v.toFixed(1)}`
+  if (props.mode === 'flow') return `${label} · q ${v.toFixed(0)} 辆/h`
+  if (props.mode === 'gray') return `${label} · CI ${v.toFixed(1)}（${MODE_NO_TRAFFIC_NOTE}：压灰不上色）`
+  return `${label} · CI ${v.toFixed(1)}`
 }
 </script>
 

@@ -244,6 +244,13 @@ const ROADS_C_EDGE = { arterial: '#BEB3A5', link: '#C3B9AC', local: '#CCC3B6', a
  * 会跟背景糊成一片（第一版就是这样，等于白画），只有比背景深的路面才看得出"这里有一条路"。
  */
 const ROADS_C_ROAD = { arterial: '#F1EBE2', link: '#F3EEE6', local: '#F6F1EA', aisle: '#F8F4EE' } as const
+/**
+ * 灰底版（`colorMode='gray'`，业主 2026-10-29）的底衬色：**只保留按 `cls` 的明度差**
+ * （干道最深 → 场内通道最浅），路网结构仍可读；不表示任何路况。
+ * 与彩色档的米色底衬**同结构、同宽度**，只换色相 —— 换档时底衬不会忽粗忽细。
+ */
+const ROADS_C_EDGE_GRAY = { arterial: '#A8AEB8', link: '#AFB5BF', local: '#B6BCC5', aisle: '#BDC3CB' } as const
+const ROADS_C_ROAD_GRAY = { arterial: '#E3E6EA', link: '#E7EAEE', local: '#EBEDF0', aisle: '#EFF1F3' } as const
 
 /** 按底衬分类取宽度/颜色（`cls` 由生成脚本打，取值见 `PackRoadClass`） */
 function roadsByClass(
@@ -273,6 +280,18 @@ function roadsColorByClass(
     'aisle', table.aisle,
     table.arterial,
   ] as ExpressionSpecification
+}
+
+/**
+ * 底衬色表按**颜色模式**切换（业主 2026-10-29）：
+ *   彩色三档（congestion / flow / custom）用米色底衬，灰底版用去饱和的冷灰底衬。
+ * 结构 / 宽度两套完全一致，只换色相 —— 所以换档时路网不会忽粗忽细（`ROADS_W_*` 只有一份）。
+ */
+function roadsEdgeColors(): Record<'arterial' | 'link' | 'local' | 'aisle', string> {
+  return isGrayMode.value ? ROADS_C_EDGE_GRAY : ROADS_C_EDGE
+}
+function roadsRoadColors(): Record<'arterial' | 'link' | 'local' | 'aisle', string> {
+  return isGrayMode.value ? ROADS_C_ROAD_GRAY : ROADS_C_ROAD
 }
 // IKOQEJ · 方向标记：独立 GeoJSON 点源 + canvas 生成的图标（不依赖字体 glyph ——
 // 底图挂掉走本地兜底样式时也能画，不会只剩一根无方向的线）
@@ -311,7 +330,8 @@ const LAYER_ROUTE = `${SRC}-route`
  * 备选 1 / 备选 2（Issue IKP5CK）：两条备选必须**互相可区分**（原来一起画灰虚线）。
  * 分两个图层而不是一个「按属性取色」的图层：两者的**虚线节律 + 平行偏移**也不同，
  * 叠在同一段路时靠「节律 + ±2px 平行线」区分。
- * 2026-10-28 业主统一蓝色系后，两条备选同色（中蓝），区分只靠节律与偏置；共用段只由备选 1 画，避免两条虚线夹出脏色。
+ * 2026-10-29 业主反转配色后，两条备选与主推荐**同色**（浅蓝 #38BDF8）、同宽（3 px），
+ * 区分只靠节律与偏置；共用段只由备选 1 画，避免两条虚线夹出脏色。
  */
 const LAYER_ROUTE_ALT1_HALO = `${SRC}-route-alt1-halo`
 const LAYER_ROUTE_ALT1 = `${SRC}-route-alt1`
@@ -321,18 +341,57 @@ const LAYER_ROUTE_ALT2 = `${SRC}-route-alt2`
 const LAYER_ROUTE_DEP_HALO = `${SRC}-route-dep-halo`
 const LAYER_ROUTE_DEP = `${SRC}-route-dep`
 /**
- * 被选中的那条路线（业主 2026-10-28）：天蓝，压在规划 / 备选之上。
- * 底层各路线图层会把「被选中路线的段号」从 filter 里剔除，避免备选中蓝粗线盖住天蓝。
+ * 被选中的那条路线（业主 2026-10-29 口径**反转**后）：品牌蓝实线、压在所有其它路线之上。
+ * 底层各路线图层会把「被选中路线的段号」从 filter 里剔除，避免弱色粗线盖住高光蓝线。
  */
 const LAYER_ROUTE_PICK_HALO = `${SRC}-route-pick-halo`
 const LAYER_ROUTE_PICK = `${SRC}-route-pick`
 /**
- * 选中路线的**天蓝**（业主 2026-10-28）：与「规划蓝 #0052D9 / 备选中蓝 #2563EB」同族，
- * 明度最高 → 缩到 200 m 档也是一眼能挑出来的那条。
- * 定义在图层常量旁，方便和 `LAYER_ROUTE_PICK*` 一起改。
+ * 路线高光**反转**（业主 2026-10-29，IKRK8B）—— 方向与 2026-10-28 那版正好相反：
+ *   · **选中**（`pickedRouteKey` 那条）= 品牌蓝 `#0052D9`、实线 4.2 px（强）；
+ *   · **未选中**（主推荐 + 两条备用**同待遇**）= 浅蓝 `#38BDF8`、3 px（弱）；
+ *   · 离站仍紫 `#7B61FF`（不在「规划 / 备用 / 选中」这条层级里）。
+ *
+ * 即：`#38BDF8` 原来表示「选中」，现在表示「未选中 / 非高光」；`#0052D9` 从「主推荐」
+ * 搬去「选中」。**只对调语义、不新增色值**（业主原话「自定义路线的颜色复用」）。
+ *
+ * 三条可辨（IKP5CK 判定）**不许退**：三条同为浅蓝后，只靠线型 + 平行偏置区分 ——
+ * 主推荐实线、备选 1 长虚线左偏 2 px、备选 2 短虚线右偏 2 px。
  */
-const ROUTE_PICKED_COLOR = '#38BDF8'
+const ROUTE_IDLE_COLOR = '#38BDF8'
+/** 高光（选中）路线色 = 品牌蓝。单独起名，是为了「品牌蓝一色两用」的场合能指针到语义 */
+const ROUTE_PICKED_COLOR = BRAND
+/**
+ * 路线下方的**浅色底衬**（半透明白，压在 LAYER_LINE 之上、所有路线之下）。
+ * 解决业主截图里「路线压住判级色、两边只露 1 px」的脏边：底衬比路线宽一圈，
+ * 把判级色在路线两侧的碎片整段盖掉，路线读起来是"压在干净路面上的一条线"。
+ */
+const LAYER_ROUTE_BED = `${SRC}-route-bed`
+/**
+ * 选中**路段**描边色：中性深灰（IKRK8B C 节）。
+ * 原来是品牌蓝 `#0052D9` —— 和「主推荐路线 / 选中的路线」同一个蓝，一色两义，
+ * 业主「分不清这种带颜色的路线」的根因就在这。改中性色后，「虚线 = 当前路段」只表示选中。
+ */
+const SEGMENT_SELECTED_STROKE = '#1F2430'
 const LAYER_SELECTED = `${SRC}-selected`
+/**
+ * 「路线」这一族图层的 id（底衬 + 主推荐 + 两条备选 + 离站 + 选中路线，含各自的 halo）。
+ * 灰底版（`colorMode='gray'`）要把它们**整族**藏掉 —— 见 `isGrayMode` 与 `applyModeLayers()`。
+ * 集中成一张表，是为了加新路线图层时不会漏藏（漏藏 = 灰底版里冒出一条蓝线）。
+ */
+const ROUTE_LAYER_IDS: readonly string[] = [
+  LAYER_ROUTE_BED,
+  LAYER_ROUTE_HALO,
+  LAYER_ROUTE,
+  LAYER_ROUTE_ALT1_HALO,
+  LAYER_ROUTE_ALT1,
+  LAYER_ROUTE_ALT2_HALO,
+  LAYER_ROUTE_ALT2,
+  LAYER_ROUTE_DEP_HALO,
+  LAYER_ROUTE_DEP,
+  LAYER_ROUTE_PICK_HALO,
+  LAYER_ROUTE_PICK,
+]
 
 // ---- IKPFVN · 全国视角的两个图层族（站点 pin / 底图兜底轮廓）----
 //
@@ -370,37 +429,38 @@ const DZ_HL_OPACITY = 0.26
 const EMPTY_FC: FeatureCollection = { type: 'FeatureCollection', features: [] }
 
 /**
- * 路线三档蓝（业主 2026-10-28 口径，替换掉原来的「青 / 琥珀 / 紫」三色）：
- *   · 规划路线（推荐，未被选中）= 蓝 `#0052D9`（品牌蓝）
- *   · 未选中的备用路线      = 中蓝 `#2563EB`
- *   · 被选中的路线（推荐或备选都算）= 天蓝 `#38BDF8`
+ * 路线配色（业主 2026-10-29 复核版，IKRK8B）：
+ *   · **未选中**的路线（主推荐 + 备选 1 + 备选 2，同待遇）= 浅蓝 `#38BDF8`、3 px（弱）；
+ *   · **选中**的那条 = 品牌蓝 `#0052D9`、4.2 px 实线（强），见 `ROUTE_PICKED_COLOR`；
+ *   · 离站 = 紫 `#7B61FF`（另一段行程，不在这条层级里）。
  *
- * 为什么必须同一色系分三档：业主原话「都要用蓝色道路来显示规划路线和备用路线，
- * 选中的路线为天蓝色，备用路线如果被选中就变成选择的路线，备用路线用暗蓝色」（业主 2026-10-28 复核后改为中蓝 `#2563EB`，见下）——
- * 他要的是「蓝色系 + 一条亮起来」的层级，不是三种不同色相。
- *
- * ⚠️ 2026-10-28 晚业主复核：原来的**暗蓝 `#1E3A8A`（现已弃用）压在一级判级绿 `#2BA471` 上会发脏发紫**，
- *    改用中蓝 `#2563EB`（比规划蓝亮一档、比天蓝暗一档），三档按**明度**排开：
- *    天蓝 #38BDF8（选中）> 中蓝 #2563EB（备选）> 品牌蓝 #0052D9（规划）。
- *    中蓝与绿/黄/橙/红判级色的色相夹角都≥60°，不再与任何一级路面撞色。
+ * ⚠️ 2026-10-28 那版把三档按**明度**排开（天蓝选中 > 中蓝备选 > 品牌蓝规划），
+ *    业主 2026-10-29 明确要求**反过来**：选中的才是深蓝、其余压成浅蓝。
+ *    所以三条路线现在**同色同宽**，可辨性全部押在「线型 + 平行偏置」上（IKP5CK 判定）：
+ *    主推荐实线（无偏置）· 备选 1 长虚 12/6 左偏 2 px · 备选 2 短虚 2.5/4.5 右偏 2 px。
  *
  * 与既有颜色的边界（保持不撞）：
- *   · 四级判级色 #2BA471 / #E9B32E / #E37318 / #D54941 —— 三档蓝都不含绿 / 黄 / 红；
- *   · 数据不可用灰 #8B8B8B；
- *   · 天蓝 #38BDF8 与中蓝 #2563EB 明度差极大，缩到 100 m 档也分得开；
- *   · 线宽 / 虚线节律继续分层级：规划 3.4 px 实线、备选 3 px 虚线（长虚 / 短虚）、选中 4.2 px 实线。
+ *   · 四级判级色 #2BA471 / #E9B32E / #E37318 / #D54941 —— 浅蓝 / 品牌蓝都不含绿 / 黄 / 红；
+ *   · 数据不可用灰 #8B8B8B、凸显压灰 #C9CDD4、灰底版路网灰 #6E7681 —— 三者语义各不相同；
+ *   · 离站紫 #7B61FF 与品牌蓝的色相夹角足够大，叠在同一条路上也分得开。
  */
-const ROUTE_ALT1_COLOR = '#2563EB'
-const ROUTE_ALT2_COLOR = '#2563EB'
+const ROUTE_ALT1_COLOR = ROUTE_IDLE_COLOR
+const ROUTE_ALT2_COLOR = ROUTE_IDLE_COLOR
 /** 离站路线色：仍用紫色（它不在「规划 / 备用 / 选中」这条层级里，是另一段行程） */
 const ROUTE_DEPART_COLOR = '#7B61FF'
-/** 被选中的路线色（天蓝）见上方 `LAYER_ROUTE_PICK*` 旁的 `ROUTE_PICKED_COLOR` */
 /**
  * 「凸显路线」时非路线段的中性灰（Issue IKP5CK）。
  * 必须与「数据不可用灰」#8B8B8B 视觉可区分：更浅（#C9CDD4）、更细（2 px vs 5.5 px）、
- * 透明度更低（0.55）、**不加虚线**；且只有路线存在、开关打开时才生效。
+ * 透明度更低（0.55）、**不加虚线**；且只在 `colorMode='custom'` 这一档才生效
+ * （2026-10-29 收紧：其余三档它是空操作，见 `routeEmphasisOn`）。
  */
 const ROUTE_EMPHASIS_GRAY = '#C9CDD4'
+/**
+ * 灰底版（`colorMode='gray'`）的**路网线色**。
+ * ⚠️ **不许**用 `#8B8B8B` —— 那是「有摄像头但数据不可用 / 陈旧」的语义色，灰底版不得挪用；
+ * 这里取更深的冷灰，让「路网本体」在灰底衬上读得出来，同时一眼看出它不是等级色。
+ */
+const GRAY_MODE_LINE = '#6E7681'
 
 /** 悬停浮牌尺寸（只用于翻面判断，与 CSS 里的 min/max-width 对应） */
 const CHIP_W = 210
@@ -630,28 +690,60 @@ const dzSwatchBg = 'rgba(15, 118, 110, 0.18)'
 
 const segById = computed(() => new Map(props.segments.map((s) => [s.segment_id, s])))
 const isIndex = computed(() => props.mode === 'index')
+/**
+ * 颜色模式的**值**（4 档：`congestion` / `flow` / `custom` / `gray`），一律按 string 收口。
+ *
+ * ⚠️ 为什么不当面写 `props.colorMode === 'custom'`：`ColorMode` 的类型在 `shared/flow.ts`，
+ *    本轮由另一路同步把它从 2 值扩成 4 值；若对端还没合进来，直接拿 4 值和 2 值联合类型比较
+ *    会被 vue-tsc 判成「不可能相等」而报错（TS2367），把本文件拖进无法收敛的类型问题。
+ *    收成 string 之后，本组件对「2 值定义」和「4 值定义」都成立，类型永远不会成为阻塞项。
+ */
+const colorModeKey = computed<string>(() => String(props.colorMode ?? 'congestion'))
 /** 纯车流量版（Issue IKNB9G）：颜色只看 q_vph 分档，忽略 level / CI / 摄像头覆盖策略 */
-const isFlow = computed(() => props.colorMode === 'flow')
+const isFlow = computed(() => colorModeKey.value === 'flow')
+/**
+ * 自定义路线档（业主 2026-10-29，IKRK8B）：**进入即全网灰**。
+ * 非路线段一律中性灰细线（沿用「凸显路线」那套 2 px / 0.55），heat 归一化到 0，
+ * 不按 level / ci / q 上色 —— 这一档的图面上除了路线**没有任何路况信息**。
+ */
+const isCustomMode = computed(() => colorModeKey.value === 'custom')
+/**
+ * 灰底版（业主 2026-10-29，IKRK8B）：**全部线段（含路线本身）一律灰**，
+ * 不画热力晕染、不画路线；只保留 roads 底衬按 `cls` 的明度差，让路网结构仍可读。
+ * 与 `custom` 档的差别只有一处：custom 档**画路线**、灰底版**一条路线都不画**。
+ */
+const isGrayMode = computed(() => colorModeKey.value === 'gray')
 
 /**
  * 该段是否"有可展示的数据"（决定线宽 / 透明度）。
  *   · 拥堵版：沿用「只摄像头段上色」策略（业主 2026-10-15）；色块按 level / CI；
- *   · 流量版：**有 q 且不陈旧**即可上色（流量是全网口径，不受摄像头覆盖限制），缺 q 灰档。
+ *   · 流量版：**有 q 且不陈旧**即可上色（流量是全网口径，不受摄像头覆盖限制），缺 q 灰档；
+ *   · custom / gray 档：恒 true —— 这两档**没有"数据可得性"这件事**（全网同一档灰），
+ *     线宽交给 `emphasis_gray`（custom 的非路线段）或基准宽度（gray 档）决定。
  */
 function coveredOf(seg: DemoSegment): boolean {
+  if (isCustomMode.value || isGrayMode.value) return true
   if (isFlow.value) return flowBandOf(segById.value.get(seg.segment_id)) !== null
   return isCameraCovered(seg.segment_id)
 }
 
 /**
- * 路段色。四档，别混：
+ * 路段色。**六档，别混**（前四档是拥堵版的四种情况，后两档是 2026-10-29 新增的颜色模式）：
  *   ① 流量版：q 四档蓝阶（缺 q / 陈旧 → 灰）；
  *   ② 拥堵版有监控且数据可用 → 等级色 / ci 色阶；
  *   ③ 拥堵版有监控但数据不可用 → 灰（粗，`UNAVAILABLE`）；
- *   ④ 拥堵版**没监控** → 灰（细、淡）——"这段没摄像头"本身是个信息，不能与 ③ 长得一样。
+ *   ④ 拥堵版**没监控** → 灰（细、淡）——"这段没摄像头"本身是个信息，不能与 ③ 长得一样；
+ *   ⑤ custom 档 → 中性浅灰 `ROUTE_EMPHASIS_GRAY`（**含路线段**：路线色的那点在路线图层上，
+ *      底下的路段必须是灰的，否则等级色会从路线两侧漏出来 → 违反"全网无等级色像素"）；
+ *   ⑥ gray 档 → 冷灰 `GRAY_MODE_LINE`（全网一色，不按 `cls`/level 分，路网结构靠底衬读）。
+ *
+ * ⚠️ ③ 的 `#8B8B8B` 语义**只属于拥堵版**（"有摄像头但数据不可用/陈旧"），
+ *    灰底版 ⑥ 不得挪用（业主明确要求图例把两者写清）。
  */
 function colorOf(seg: DemoSegment): string {
   const rec = segById.value.get(seg.segment_id)
+  if (isGrayMode.value) return GRAY_MODE_LINE
+  if (isCustomMode.value) return ROUTE_EMPHASIS_GRAY
   if (isFlow.value) {
     return flowBandOf(rec)?.color ?? UNAVAILABLE.color
   }
@@ -660,11 +752,14 @@ function colorOf(seg: DemoSegment): string {
   return isIndex.value ? ciStyleColor(rec) : levelStyle(rec).color
 }
 
-/** 热力晕染强度（**仅拥堵版指数视图**且 ci 可用；流量版、四级视图一律 0 = 不画）。
+/** 热力晕染强度（**仅拥堵版指数视图**且 ci 可用；流量版、四级视图、custom、gray 一律 0 = 不画）。
  *
  * ⚠️ 四级视图必须返 0（业主 2026-10-20 口径：「每个道路都要颜色，然后周围还有往外衍生的一圈
  * 淡淡的颜色，把那个去掉」）。四级色本身已经把等级说清楚了，26 px 的半透明同色宽带只是往两边
  * 漫出去的雾。
+ *
+ * ⚠️ custom / gray 档也必须返 0（2026-10-29）：这两档图面上只有灰线 / 路线，
+ * 一旦按 ci 漫出等级色，就等于把"不表示路况"的承诺破掉了。
  *
  * ⚠️ 影响面如实记（独立审查 P2 实测）：heat 只在**摄像头覆盖段**上非零，量级是
  * GZ 708 段里 6 段（6 路摄像头）、Z 61 段里 6 段 —— 不是「每段都给 0.1–0.6」，
@@ -676,6 +771,7 @@ function colorOf(seg: DemoSegment): string {
 function heatOf(seg: DemoSegment): number {
   if (!isIndex.value) return 0
   if (isFlow.value) return 0
+  if (isCustomMode.value || isGrayMode.value) return 0
   if (!isCameraCovered(seg.segment_id)) return 0
   const rec = segById.value.get(seg.segment_id)
   if (!rec || !ciAvailable(rec)) return 0
@@ -1106,11 +1202,17 @@ function ensureRouteArrowSource(map: MapLibreMap): void {
 }
 
 /**
- * 当前是否处于「凸显路线」：开关开 **且** 真有路线可凸显。
- * 没路线时不能把整张图压灰——那会让人读成"全网数据不可用"。
+ * 当前是否处于「凸显路线」：开关开 **且** 在**自定义路线档**（`colorMode='custom'`）
+ * **且**真有路线可凸显。
+ *
+ * ⚠️ 2026-10-29 收紧（IKRK8B D 节）：原来判据只有「开关开 && 有路线」——
+ *    于是拥堵 / 流量档下，只要页面里还留着上一次算出来的路线，一按「凸显路线」整张图就压灰，
+ *    业主读成"全网数据不可用"。现在它**只对自定义路线档有意义**，其余三档一律空操作：
+ *    `congestion` / `flow` 本来就该满图等级色 / 流量色，`gray` 档自己就是灰底，都不需要再压。
+ *    没路线时同样不能压灰（否则又变成"全网数据不可用"）。
  */
 const routeEmphasisOn = computed<boolean>(
-  () => routeEmphasisEnabled.value && hasRoutes.value,
+  () => routeEmphasisEnabled.value && isCustomMode.value && hasRoutes.value,
 )
 /** 任一语义组里的段号（判断"这段是否在路线上"用；同段重复只算一次） */
 function routeSegmentIds(): Set<string> {
@@ -1141,13 +1243,13 @@ function roadsGeoJson(): FeatureCollection {
 /** 站点包坐标是 WGS-84，**直接喂给 MapLibre** —— 不做任何坐标转换 */
 function routeGeoJson(): FeatureCollection {
   const routed = routeSegmentIds()
-  const emphasize = routeEmphasisOn.value
+  // ⚠️ 压灰在 custom 档是**结构性的**（进入即全网灰），不再依赖「凸显路线」开关：
+  //    开关只决定"非路线段压到最淡还是略实"，颜色永远是灰、永远不按 level/ci/q 上色。
+  const custom = isCustomMode.value
   return {
     type: 'FeatureCollection',
     features: net.value.map((seg) => {
-      // 非路线段统一压灰（Issue IKP5CK）：不再按 level 上色，改用中性浅灰细线。
-      // heat 一并归零——否则指数视图还会在灰线外圈漫出一层等级色，等于没压。
-      const emphasisGray = emphasize && !routed.has(seg.segment_id)
+      const emphasisGray = custom && !routed.has(seg.segment_id)
       return {
         type: 'Feature' as const,
         properties: {
@@ -1159,7 +1261,10 @@ function routeGeoJson(): FeatureCollection {
           covered: coveredOf(seg),
           /** 热力晕染强度（0 = 不画） */
           heat: emphasisGray ? 0 : heatOf(seg),
-          /** 凸显路线时该段不在任何路线上 → 用中性灰细线画（paint 直接读这个属性） */
+          /**
+           * custom 档的「非路线段」标记：paint 直接读它决定细线 / 淡透明度。
+           * congestion / flow / gray 三档恒 false ⇒ `applyLineScale()` 里那两处特判自然成为空操作。
+           */
           emphasis_gray: emphasisGray,
         },
         geometry: { type: 'LineString' as const, coordinates: seg.coords },
@@ -1322,6 +1427,15 @@ function routeFilterOf(...kinds: RouteHighlight['kind'][]): FilterSpecification 
   return ['in', ['get', 'segment_id'], ['literal', routeIdsOf(...kinds)]]
 }
 
+/**
+ * 路线底衬层用：**所有**语义组（规划 / 离站 / 备选）的段号并集，与具体语义无关。
+ * 底衬只看"这段在不在任意一条路线上"，不看它属于哪一组 —— 三条同色之后，
+ * 底衬也必须同样同色，否则会在路线上画出语义边。
+ */
+function routeAllFilter(): FilterSpecification {
+  return routeFilterOf('arrival', 'departure', 'alternative')
+}
+
 /** 备选分组序号（兼容旧调用：没有 `index` 时按备选 1） */
 function altIndex(g: RouteHighlight): number {
   return typeof g.index === 'number' && g.index >= 1 ? g.index : 1
@@ -1427,9 +1541,13 @@ const altRouteCount = computed(
 )
 
 /**
- * 本组件自有的图层（按绘制顺序：底衬 → 热力 → 色线 → 路线 → 选中）。
+ * 本组件自有的图层（按绘制顺序：底衬 → 热力 → 色线 → 路线浅色底衬 → 路线 → 选中路段描边）。
  * 同一份规格用在两处：建图时按顺序 `addLayer`；底图样式合进来时作为 `layers` 尾部一起挂载
  * —— **两处只有一份定义**，不会出现"底图在/不在时路网长得不一样"。
+ *
+ * 颜色模式的差异**不进这张表**：它只改 `paint` / `visibility` / 源数据
+ * （`colorOf()` / `coveredOf()` / `heatOf()` + `applyModeLayers()`），
+ * 不产生第二套图层规格 —— 否则两套 specs 迟早不同步。
  */
 function lineLayerSpecs(): LineLayerSpecification[] {
   return [
@@ -1440,7 +1558,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       source: ROADS_SRC,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': roadsColorByClass(ROADS_C_EDGE),
+        'line-color': roadsColorByClass(roadsEdgeColors()),
         // 场内小路压在建筑面上时容易显得"多了一层厚边"，按分类压一档透明度退回背景；
         // 干道保持实色 —— 它是业主看"线是不是长在路上"的第一参照物，不能虚。
         'line-opacity': [
@@ -1457,7 +1575,7 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       source: ROADS_SRC,
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: {
-        'line-color': roadsColorByClass(ROADS_C_ROAD),
+        'line-color': roadsColorByClass(roadsRoadColors()),
         'line-opacity': [
           'match', ['get', 'cls'],
           'arterial', 1, 'link', 1, 'local', 0.9, 'aisle', 0.85,
@@ -1522,8 +1640,22 @@ function lineLayerSpecs(): LineLayerSpecification[] {
         ],
       },
     },
-    // 备选 1 / 备选 2：同为**中蓝**，靠虚线节律（长虚 12/6、短虚 2.5/4.5）+ ±2 px 平行偏置区分
-    // （业主 2026-10-28：规划蓝 / 备选中蓝 / 选中天蓝，同色系按明度分档）。
+    // ---- 路线浅色底衬（IKRK8B）：比路线宽一圈的半透明白，压在 LAYER_LINE 之上、所有路线之下 ----
+    // 业主截图里的真问题：一条路上叠了三层（判级色 → 离站紫 halo → 路线色），路线压住判级色后
+    // 两侧只露出 1 px 的绿 / 橙碎片，颜色读起来是脏的。底衬把这圈碎片整段盖掉 —— 路线不再是
+    // "挤在彩色路面里的一条线"，而是"压在干净浅色路面上的一条线"。
+    // 为什么是**半透明白**而不是实白：路网底衬与判级色边缘还应透出来一点，否则路线走位会和
+    // 真实道路脱离；0.82 是"碎片看不见、路面仍在"的折中（业主看截图后认可的一档）。
+    {
+      id: LAYER_ROUTE_BED,
+      type: 'line',
+      source: SRC,
+      filter: routeAllFilter(),
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: { 'line-color': '#FFFFFF', 'line-width': 8, 'line-opacity': 0.82 },
+    },
+    // 备选 1 / 备选 2：**同为浅蓝**、同宽，靠虚线节律（长虚 12/6、短虚 2.5/4.5）+ ±2 px 平行偏置
+    // 区分（业主 2026-10-29 反转后：选中 = 品牌蓝强，其余一律浅蓝弱，三条不用色相区分）。
     // 白边（halo）透明度 0.35：原来的 0.65 会把中间夹的判级绿漂成灰紫（业主反馈「看着像紫色」）。
     {
       id: LAYER_ROUTE_ALT1_HALO,
@@ -1596,28 +1728,28 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': ROUTE_DEPART_COLOR, 'line-width': 3, 'line-opacity': 0.92 },
     },
-    // 规划路线：蓝（「推荐」语义）——实线
+    // 规划路线（主推荐，**未被选中时**）：浅蓝实线 —— 「弱」那一档
     {
       id: LAYER_ROUTE_HALO,
       type: 'line',
       source: SRC,
       filter: routeFilter(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': BRAND, 'line-width': 17, 'line-opacity': 0.16 },
+      paint: { 'line-color': ROUTE_IDLE_COLOR, 'line-width': 13, 'line-opacity': 0.22 },
     },
     {
       // ⚠️ 实线与旧版虚线的差别：IKMF1W 起推荐路线用**实线**（"当前 / 已选"语义），
-      //    备选是另一种虚线；2026-10-28 业主统一成蓝色系后，推荐与备选只靠
-      //    明度（品牌蓝 vs 中蓝）+ 线型（实线 vs 虚线）区分，不再用不同色相。
+      //    备选是虚线。2026-10-29 业主反转配色后：推荐与备选**同色同宽**（浅蓝 3 px），
+      //    只靠线型（实线 vs 虚线）+ 平行偏置区分；"选中"才升级为品牌蓝 4.2 px。
       id: LAYER_ROUTE,
       type: 'line',
       source: SRC,
       filter: routeFilterExcludingPicked(routeFilter()),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': BRAND, 'line-width': 3.4, 'line-opacity': 0.95 },
+      paint: { 'line-color': ROUTE_IDLE_COLOR, 'line-width': 3, 'line-opacity': 0.95 },
     },
-    // 被选中的那条路线（天蓝，压在规划 / 备选之上）：底色图层已把它的段号剔除，
-    // 所以这里不会出现「中蓝粗线把天蓝细线盖住」。
+    // 被选中的那条路线（品牌蓝 4.2 px，压在规划 / 备选之上）：底色图层已把它的段号剔除，
+    // 所以这里不会出现「浅蓝细线把品牌蓝粗线盖住」。
     {
       id: LAYER_ROUTE_PICK_HALO,
       type: 'line',
@@ -1634,14 +1766,22 @@ function lineLayerSpecs(): LineLayerSpecification[] {
       layout: { 'line-cap': 'round', 'line-join': 'round' },
       paint: { 'line-color': ROUTE_PICKED_COLOR, 'line-width': 4.2, 'line-opacity': 1 },
     },
-    // 选中路段描边：品牌蓝（「当前 / 已选」语义），虚线，不覆盖判级色
+    // 选中**路段**描边：中性深灰虚线（IKRK8B C 节）。
+    // ⚠️ 原来是品牌蓝 `#0052D9` —— 和「选中的路线」共用同一支蓝，一色两义，
+    //    业主「分不清这种带颜色的路线」的根因就在这：他以为那条蓝虚线是路线，其实是路段选中描边。
+    //    改中性色后，「虚线 = 当前选中的那一段」只表示选中，不与任何路线语义抢颜色。
     {
       id: LAYER_SELECTED,
       type: 'line',
       source: SRC,
       filter: selectedFilter(),
       layout: { 'line-cap': 'round', 'line-join': 'round' },
-      paint: { 'line-color': BRAND, 'line-width': 2.4, 'line-dasharray': [4, 6], 'line-opacity': 0.9 },
+      paint: {
+        'line-color': SEGMENT_SELECTED_STROKE,
+        'line-width': 2.4,
+        'line-dasharray': [4, 6],
+        'line-opacity': 0.9,
+      },
     },
   ]
 }
@@ -1980,6 +2120,12 @@ function setLayerVisible(map: MapLibreMap, id: string, visible: boolean): void {
 function applyModeLayers(map: MapLibreMap): void {
   const atStation = motionPhase.value === 'station'
   for (const spec of lineLayerSpecs()) setLayerVisible(map, spec.id, atStation)
+  // 灰底版（`colorMode='gray'`）：**一条路线都不画**（业主 2026-10-29）。
+  // 这一档的承诺是"只留路网结构"，任何路线色（连底衬的白）都不属于这一档 —— 所以整族藏掉。
+  // ⚠️ 与 `custom` 档的分界就在这一句：custom 档**画路线**（路线是它的全部内容），
+  //    gray 档**不画**。两档都灰、但一个带路线一个不带，这是它们唯一且必须成立的区别。
+  const routesVisible = atStation && !isGrayMode.value
+  for (const id of ROUTE_LAYER_IDS) setLayerVisible(map, id, routesVisible)
   // 底图道路与自绘真值路网是**互斥的一对**：站区有底衬就让底图道路退出，其余场合放回来
   applyBasemapRoadMask(map, atStation)
   setLayerVisible(map, LAYER_DIRECTION, atStation && directionDrawable.value)
@@ -2872,6 +3018,7 @@ function applyViewState(map: MapLibreMap): void {
     map.setFilter(LAYER_DZ_HL, dropZoneHighlightFilter())
   }
   if (map.getLayer(LAYER_SELECTED)) map.setFilter(LAYER_SELECTED, selectedFilter())
+  if (map.getLayer(LAYER_ROUTE_BED)) map.setFilter(LAYER_ROUTE_BED, routeAllFilter())
   if (map.getLayer(LAYER_ROUTE)) map.setFilter(LAYER_ROUTE, routeFilterExcludingPicked(routeFilter()))
   if (map.getLayer(LAYER_ROUTE_HALO)) map.setFilter(LAYER_ROUTE_HALO, routeFilter())
   if (map.getLayer(LAYER_ROUTE_ALT1)) map.setFilter(LAYER_ROUTE_ALT1, routeFilterExcludingPicked(altFilterExclusive(1)))
@@ -2881,6 +3028,14 @@ function applyViewState(map: MapLibreMap): void {
   if (map.getLayer(LAYER_ROUTE_DEP)) map.setFilter(LAYER_ROUTE_DEP, routeFilterExcludingPicked(routeFilterOf('departure')))
   if (map.getLayer(LAYER_ROUTE_PICK)) map.setFilter(LAYER_ROUTE_PICK, pickedRouteFilter())
   if (map.getLayer(LAYER_ROUTE_PICK_HALO)) map.setFilter(LAYER_ROUTE_PICK_HALO, pickedRouteFilter())
+  // 底衬色调按颜色模式重贴：灰底版换成去饱和冷灰底衬（`ROADS_C_*_GRAY`）。
+  // spec 里只给了初值，切到 / 切回 gray 档必须重贴，否则底衬还停在上一档的米色。
+  if (map.getLayer(LAYER_ROADS_CASING)) {
+    map.setPaintProperty(LAYER_ROADS_CASING, 'line-color', roadsColorByClass(roadsEdgeColors()))
+  }
+  if (map.getLayer(LAYER_ROADS_LINE)) {
+    map.setPaintProperty(LAYER_ROADS_LINE, 'line-color', roadsColorByClass(roadsRoadColors()))
+  }
   // 三态图层显隐也重贴一次：换样式会把 `visibility` 回到默认的 visible
   applyModeLayers(map)
   // 换样式后 paint 全部回到 `lineLayerSpecs()` 的基准值 —— 必须强制重贴，
@@ -3201,7 +3356,7 @@ watch(routeArrowKey, () => {
   applyRouteArrowVisibility(map)
 })
 
-// 选中整条路线（业主 2026-10-28）：被选中那条画天蓝、其余仍按规划蓝 / 备选中蓝。
+// 选中整条路线（业主 2026-10-29 反转后）：被选中那条画品牌蓝 4.2 px，其余（规划 + 备选）仍是浅蓝 3 px。
 // 只换 filter（不动源数据）——`applyViewState` 会顺带重贴一次，这里直连更省一次重算。
 watch(
   () => props.pickedRouteKey ?? null,
@@ -3507,7 +3662,48 @@ onUnmounted(() => {
         <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。150 m 及以内箭头为醒目尺寸，更远等比缩小；150→200 m 渐隐，200 m 以远不画。</div>
       </template>
       <div class="lg-sep" />
-      <template v-if="isFlow">
+      <!-- ③ 自定义路线档（colorMode='custom'）：全网中性灰 + 只画路线。
+           这一档的承诺是「图面上除了路线，没有任何路况信息」——所以没有色阶、没有热力、
+           非路线段一律中性浅灰；路线仍是「选中品牌蓝 / 其余浅蓝 / 离站紫」那一套。
+           与灰底版的最大差别就写在最上面一行：**本档画路线**。 -->
+      <template v-if="isCustomMode">
+        <div class="lg-title">自定义路线档（全网中性灰 · 只画路线）</div>
+        <div class="lg-row"><span class="lg-line idle-gray" />非路线段：中性浅灰 {{ ROUTE_EMPHASIS_GRAY }} · 2 px · 不按等级 / 流量上色</div>
+        <div class="lg-row">本档无色阶、无热力晕染 —— 灰线只表示「这段不是路线」，不表示路况</div>
+        <template v-if="hasRoutes">
+          <div class="lg-sep" />
+          <div class="lg-row"><span class="lg-line recommended" />规划路线 · 未选中（浅蓝 {{ ROUTE_IDLE_COLOR }} · 实线 3 px）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1 · 未选中（浅蓝 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2 · 未选中（浅蓝 · 短虚线）</div>
+          <div class="lg-row"><span class="lg-line departure" />离站路线（紫 {{ ROUTE_DEPART_COLOR }} · 实线）</div>
+          <div v-if="pickedRouteName" class="lg-row">
+            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（品牌蓝 {{ ROUTE_PICKED_COLOR }} · 4.2 px 实线，压在其它路线之上）
+          </div>
+          <div class="lg-row"><span class="lg-line sel-stroke" />当前选中路段（中性深灰 {{ SEGMENT_SELECTED_STROKE }} 虚线 · 不是路线）</div>
+          <div v-if="routeStart" class="lg-row">
+            <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（{{ routeStart.note || '起点' }}）
+          </div>
+          <div v-if="routeEnd" class="lg-row">
+            <span class="rt-dot end">终</span>{{ routeEnd.label }} · {{ routeEnd.segment_id }}（{{ routeEnd.note || '终点' }}）
+          </div>
+          <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
+        </template>
+        <div class="lg-note">与灰底版的区别：本档**灰底 + 画路线**；灰底版全灰且一条路线都不画</div>
+        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
+      </template>
+      <!-- ④ 灰底版（colorMode='gray'）：全部线段一律灰，**不画任何路线**。
+           这一档只回答「路网在哪」，不回答「路况如何」，也不回答「路线怎么走」——
+           所以连路线都藏掉（`applyModeLayers()` 里整族隐藏），图例必须这么写。 -->
+      <template v-else-if="isGrayMode">
+        <div class="lg-title">灰底版（全网灰 · 不画路线）</div>
+        <div class="lg-row"><span class="lg-line gray-net" />路网：冷灰 {{ GRAY_MODE_LINE }}（按道路分类只留明度差）</div>
+        <div class="lg-row">本档不表示路况：无色阶、无热力晕染、不按等级 / 流量上色</div>
+        <div class="lg-row">本档不画路线：规划 / 备选 / 离站 / 选中路线一律隐藏（含路线浅色底衬）</div>
+        <div class="lg-note">灰 {{ UNAVAILABLE.color }} 属于拥堵版的「有摄像头但数据不可用 / 陈旧」语义，灰底版不挪用，避免两义。</div>
+        <div class="lg-note">与自定义路线档的区别：自定义档灰底 + 画路线；本档全灰、一条路线都不画。</div>
+        <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
+      </template>
+      <template v-else-if="isFlow">
         <div class="lg-title">纯车流量色阶（q_vph · 4 档）</div>
         <div v-for="band in FLOW_BANDS" :key="band.band" class="lg-row">
           <span class="dot" :style="{ background: band.color }" />
@@ -3523,13 +3719,14 @@ onUnmounted(() => {
         <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
         <template v-if="hasRoutes">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="lg-line recommended" />规划路线（蓝 · 实线）</div>
-          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（中蓝 · 长虚线）</div>
-          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（中蓝 · 短虚线）</div>
-          <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div class="lg-row"><span class="lg-line recommended" />规划路线 · 未选中（浅蓝 {{ ROUTE_IDLE_COLOR }} · 实线 3 px）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1 · 未选中（浅蓝 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2 · 未选中（浅蓝 · 短虚线）</div>
+          <div class="lg-row"><span class="lg-line departure" />离站路线（紫 {{ ROUTE_DEPART_COLOR }} · 实线）</div>
           <div v-if="pickedRouteName" class="lg-row">
-            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（天蓝 · 实线，压在其它路线之上）
+            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（品牌蓝 {{ ROUTE_PICKED_COLOR }} · 4.2 px 实线，压在其它路线之上）
           </div>
+          <div class="lg-row"><span class="lg-line sel-stroke" />当前选中路段（中性深灰 {{ SEGMENT_SELECTED_STROKE }} 虚线 · 不是路线）</div>
           <div v-if="routeStart" class="lg-row">
             <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（{{ routeStart.note || '起点' }}）
           </div>
@@ -3538,7 +3735,7 @@ onUnmounted(() => {
           </div>
           <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
           <div class="lg-note">
-            凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关 — 满图等级色，路线叠加' }}
+            凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关（本档无效：凸显只在自定义路线档生效）' }}
           </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
@@ -3586,13 +3783,14 @@ onUnmounted(() => {
         <!-- IKMF1W：路线三种语义的图例（有路线时才出现） -->
         <template v-if="hasRoutes">
           <div class="lg-sep" />
-          <div class="lg-row"><span class="lg-line recommended" />规划路线（蓝 · 实线）</div>
-          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1（中蓝 · 长虚线）</div>
-          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2（中蓝 · 短虚线）</div>
-          <div class="lg-row"><span class="lg-line departure" />离站路线（紫色实线）</div>
+          <div class="lg-row"><span class="lg-line recommended" />规划路线 · 未选中（浅蓝 {{ ROUTE_IDLE_COLOR }} · 实线 3 px）</div>
+          <div v-if="altRouteCount >= 1" class="lg-row"><span class="lg-line alt1" />备选 1 · 未选中（浅蓝 · 长虚线）</div>
+          <div v-if="altRouteCount >= 2" class="lg-row"><span class="lg-line alt2" />备选 2 · 未选中（浅蓝 · 短虚线）</div>
+          <div class="lg-row"><span class="lg-line departure" />离站路线（紫 {{ ROUTE_DEPART_COLOR }} · 实线）</div>
           <div v-if="pickedRouteName" class="lg-row">
-            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（天蓝 · 实线，压在其它路线之上）
+            <span class="lg-line picked" />已选中：{{ pickedRouteName }}（品牌蓝 {{ ROUTE_PICKED_COLOR }} · 4.2 px 实线，压在其它路线之上）
           </div>
+          <div class="lg-row"><span class="lg-line sel-stroke" />当前选中路段（中性深灰 {{ SEGMENT_SELECTED_STROKE }} 虚线 · 不是路线）</div>
           <div v-if="routeStart" class="lg-row">
             <span class="rt-dot start">起</span>{{ routeStart.label }} · {{ routeStart.segment_id }}（{{ routeStart.note || '起点' }}）
           </div>
@@ -3601,7 +3799,7 @@ onUnmounted(() => {
           </div>
           <div class="lg-note">备选 {{ altRouteCount }} 条（契约要求 ≥2；不足如实少画，不凑等价路线）</div>
           <div class="lg-note">
-            凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关 — 满图等级色，路线叠加' }}
+            凸显路线：{{ routeEmphasisOn ? '开 — 非路线段中性灰细线，不按等级上色' : '关（本档无效：凸显只在自定义路线档生效）' }}
           </div>
           <div class="lg-note">路线由接口端出（真网产物优先 / 样例回退 / mock 演示骨架），原样描线、不随时间重算</div>
         </template>
@@ -3897,31 +4095,48 @@ onUnmounted(() => {
 .dot.flow {
   background: linear-gradient(90deg, transparent 40%, #0052d9 40%);
 }
-/* 路线图例：用短线段示意线型（实线 / 虚线 / 第三种颜色） */
+/* 路线图例：用短线段示意线型（实线 / 虚线 / 颜色档）。
+   2026-10-29 配色反转后：**未选中 = 浅蓝 #38BDF8 · 3 px（弱）**，与地图弱档同色同宽。 */
 .lg-line {
   width: 22px;
   height: 0;
   margin-right: 7px;
   display: inline-block;
-  border-top: 3px solid #0052d9;
+  border-top: 3px solid #38bdf8;
 }
-/* 备选 1 / 2 的图例线段：同为中蓝 #2563EB，靠虚线节律区分（长虚 12/6 vs 短虚 2.5/4.5） */
+/* 备选 1 / 2 的图例线段：同为浅蓝 #38BDF8（与主推荐同色同宽），
+   靠虚线节律区分（长虚 12/6 vs 短虚 2.5/4.5）—— 与地图上那两层同源。 */
 .lg-line.alt1 {
   height: 3px;
   border-top: 0;
-  background: repeating-linear-gradient(90deg, #2563eb 0 7px, transparent 7px 10px);
+  background: repeating-linear-gradient(90deg, #38bdf8 0 7px, transparent 7px 10px);
 }
 .lg-line.alt2 {
   height: 3px;
   border-top: 0;
-  background: repeating-linear-gradient(90deg, #2563eb 0 3px, transparent 3px 6px);
+  background: repeating-linear-gradient(90deg, #38bdf8 0 3px, transparent 3px 6px);
 }
 .lg-line.departure {
   border-top: 3px solid #7b61ff;
 }
-/* 已选中：天蓝（与地图选中的那条同色） */
+/* 已选中：**品牌蓝 #0052D9 · 4 px**（比未选中那档粗一档、深一档，对应 LAYER_ROUTE_PICK） */
 .lg-line.picked {
-  border-top: 3px solid #38bdf8;
+  border-top: 4px solid #0052d9;
+}
+/* 当前选中**路段**的描边：中性深灰虚线（对应 LAYER_SELECTED 的 2.4 px / 4-6 虚线）。
+   单列一档，是为了让图例自己把「这条虚线 ≠ 路线」说清楚（业主分不清的正是它）。 */
+.lg-line.sel-stroke {
+  height: 2px;
+  border-top: 0;
+  background: repeating-linear-gradient(90deg, #1f2430 0 4px, transparent 4px 8px);
+}
+/* 自定义路线档的「非路线段」灰线：中性浅灰 2 px（对应 LAYER_LINE 的 emphasis_gray 分支） */
+.lg-line.idle-gray {
+  border-top: 2px solid #c9cdd4;
+}
+/* 灰底版的路网线：冷灰 #6E7681，比「数据不可用灰 #8B8B8B」更深一档，两者在图例上必须分得开 */
+.lg-line.gray-net {
+  border-top: 3px solid #6e7681;
 }
 /* 图例里的摄像头小圆点：与外圈同款（实心 = 有视频源、空心 = 未接入） */
 .dot.cam-dot {

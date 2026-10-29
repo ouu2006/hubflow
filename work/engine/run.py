@@ -450,6 +450,23 @@ def attach_route_steps(graph: network.Graph, routes: dict[str, Any]) -> int:
     return attached
 
 
+def stamp_weight_source(
+    routes: dict[str, Any],
+    segments_state: dict[str, dict[str, Any]] | None,
+) -> str:
+    """给产物里**每条 request** 盖上算路权重口径（`bpr` / `free_flow`），返回盖上的标签。
+
+    为什么在产物侧盖：`/api/traffic/route/recommend`、`/route/options`、`/route/{id}/steps`
+    **只读产物、不代算**（接口层口径红线），所以它们要透传的 `weight_source` 只能由批处理写进
+    `routes.json`。口径取 `network.weight_source_of()` —— 与算路时的判定同一个函数，不另立规则。
+    """
+    label = network.weight_source_of(segments_state)
+    for request in routes.get("requests") or []:
+        if isinstance(request, dict):
+            request["weight_source"] = label
+    return label
+
+
 def _factors_note(
     graph: network.Graph,
     path: list[str],
@@ -936,10 +953,12 @@ def run_sample(cfg: dict[str, Any]) -> int:
     }
     # 逐段几何（页面画路线箭头用）：只**增** `steps`，不改契约必填字段
     steps_attached = attach_route_steps(graph, routes)
+    weight_source = stamp_weight_source(routes, segments_state)
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
     network.assert_artifact(out_dir / "routes.json")
     print(f"     routes.json 已补 steps：{steps_attached} 条路线（与 /route/plan 同一生成器）")
+    print(f"     routes.json 每条 request 已标 weight_source={weight_source}")
 
     log = {
         "ts": now_ts,
@@ -1098,10 +1117,12 @@ def run_real(cfg: dict[str, Any]) -> int:
     }
     # 逐段几何（页面画路线箭头用）：只**增** `steps`，不改契约必填字段
     steps_attached = attach_route_steps(graph, routes)
+    weight_source = stamp_weight_source(routes, segments_state)
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
     network.assert_artifact(out_dir / "routes.json")
     print(f"     routes.json 已补 steps：{steps_attached} 条路线（与 /route/plan 同一生成器）")
+    print(f"     routes.json 每条 request 已标 weight_source={weight_source}")
 
     log = {
         "ts": now_ts,
@@ -1310,18 +1331,19 @@ def _habitual_path(
     od: dict[str, Any],
     params: dict[str, Any],
 ) -> list[str] | None:
-    """① 不推荐:车辆按自由流最短路走(没有推荐时的"习惯路线")。"""
+    """① 不推荐:车辆按自由流最短路走(没有推荐时的"习惯路线")。
 
-    def free_flow_weight(edge_id: str) -> float:
-        return network.free_flow_time_s(graph.edge(edge_id))
-
+    **业务语义不变**:这条分支就是"没有推荐时按自由流走",所以 `states` 传 `None` ——
+    权重实现仍只有 `network.weight_fn` 一份,不许在这里另写一份 free-flow 公式。
+    要不要吃拥堵是**分支语义**,不是实现细节:别把它改成 `states=segments_state`。
+    """
     picked = candidates.select_candidates(
         graph,
         str(od["from_node"]),
         str(od["to_node"]),
         k=1,
         max_overlap=float(params.get("max_path_overlap", 0.7)),
-        weight=free_flow_weight,
+        weight=network.weight_fn(graph, None, params),
     )
     return list(picked[0]) if picked else None
 
@@ -2604,10 +2626,12 @@ def run_compare(cfg: dict[str, Any]) -> int:
     }
     # 逐段几何（页面画路线箭头用）：只**增** `steps`，不改契约必填字段
     steps_attached = attach_route_steps(graph, routes)
+    weight_source = stamp_weight_source(routes, segments_state)
     written: dict[str, int] = {}
     written["routes.json"] = network.write_json(out_dir / "routes.json", routes)
     network.assert_artifact(out_dir / "routes.json")
     print(f"     routes.json 已补 steps：{steps_attached} 条路线（与 /route/plan 同一生成器）")
+    print(f"     routes.json 每条 request 已标 weight_source={weight_source}")
 
     log = {
         "ts": base_ts,

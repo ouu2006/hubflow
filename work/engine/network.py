@@ -121,6 +121,14 @@ class Graph:
         """从某个节点出发的边 id 列表。"""
         return list(self._out.get(str(node_id), ()))
 
+    def edge_ids(self) -> list[str]:
+        """所有边的 id（建图顺序）。给上层做覆盖度核对用（如"路段状态是否落在这张图上"）。"""
+        return list(self._edges)
+
+    def section_ids(self) -> set[str]:
+        """这张图里出现过的路段号集合（边的 `section`，与 segments 快照的 key 同一命名空间）。"""
+        return {str(edge.get("section")) for edge in self._edges.values() if edge.get("section")}
+
 
 def load_graph(path: Path) -> Graph:
     """读统一图结构并校验(缺字段即报错,不静默补空)。"""
@@ -231,3 +239,50 @@ def make_weight_fn(
         return travel_time_s(edge, segment, params, extra_vph)
 
     return weight
+
+
+#: 算路权重口径的两个取值(接口层 / 产物都按这两个字符串透传,别另造词)
+WEIGHT_BPR = "bpr"
+WEIGHT_FREE_FLOW = "free_flow"
+
+
+def weight_source_of(states: dict[str, dict[str, Any]] | None) -> str:
+    """这次算路实际吃的是哪套权重:`bpr`(状态里有真流量) / `free_flow`(没状态或状态全零)。
+
+    为什么"有记录"不够、还要看 `q_vph`(2026-10-29 lead 定)：
+      BPR 是 `t0·(1+α·x^β)`,而 `x = q_vph / c_vph`。记录齐全但 `q_vph` 全是 0 时
+      **数值上就等于自由流**——这种时候再标 `bpr` 就是"标着吃了拥堵、其实一个车都没算",
+      业主拿它去对路段热力只会对不上。所以只要没有任何一条记录的 `q_vph > 0`,
+      一律如实降级成 `free_flow`(页面据此提示"按自由流计算",不装)。
+      `c_vph`/`q_vph` 非数值的脏记录**跳过不抛**：标签的目的是如实描述,不是校验数据。
+    """
+    if not states:
+        return WEIGHT_FREE_FLOW
+    for record in states.values():
+        if not isinstance(record, dict):
+            continue
+        try:
+            if float(record.get("q_vph") or 0.0) > 0.0:
+                return WEIGHT_BPR
+        except (TypeError, ValueError):
+            continue
+    return WEIGHT_FREE_FLOW
+
+
+def weight_fn(
+    graph: Graph,
+    states: dict[str, dict[str, Any]] | None,
+    params: dict[str, Any],
+    extra_vph: float = 0.0,
+) -> Callable[[str], float]:
+    """**算路唯一入口**的边权重(秒):`states` 为空 → 自由流;有 `states` → BPR。
+
+    口径:
+      - `states` 按 **`segment_id`** 建索引(引擎按边的 `edges[].section` 对齐),record 里只需
+        `q_vph` / `c_vph` —— `x` 一律由 `travel_time_s` **现算**
+        (`x = (q_vph + extra_vph) / c_vph`),不吃上游预先算好的 `x`,免得同一条路出现两套 x 口径;
+      - 参数键与 `travel_time_s` 同源:`alpha` / `beta`(缺省 0.15 / 4.0),
+        **不再有 `bpr_alpha` / `bpr_beta` 这种第二套命名**;
+      - 内部就是 `make_weight_fn` —— 本文件是全仓唯一的 BPR 实现,别的模块一律调这里,不复制公式。
+    """
+    return make_weight_fn(graph, states or {}, params, extra_vph)
