@@ -118,6 +118,23 @@ ENGINE_ROUTES_SAMPLE = ROOT / "work" / "engine" / "out" / "routes.json"
 ENGINE_ROUTES = ENGINE_ROUTES_SAMPLE
 SITE_RANGES = ROOT / "work" / "twin" / "site-ranges.json"
 STATIONS_DIR = ROOT / "stations"
+#: 容量模型：孪生侧演示标定参数，与 `work/twin/capacity.py` 同目录（**不在 stations/**：
+#: 那里是表格转换产物，段号 / 中文阶段名当键过不了 doc_gate 第 6 组命名门禁）。
+CAPACITY_MODEL = ROOT / "work" / "twin" / "capacity-model.json"
+
+#: ---- 演示时钟锚定 ----
+#: 大屏把 `payload.ts` 当「快照时间」展示，但两条链路的内容时刻**都不是现在**：
+#: 孪生链路走仿真时钟（`work/twin/loop.py` 的 `DEMO_BASE_TS`，2026-01-01 起），
+#: 感知链路走样本视频素材时刻（2026-10-11）；而各记录的 `data_age_s` 是产物里写死的 0
+#: （`work/twin/loop.py:801`），与内容时刻的真实年龄完全脱钩。
+#: 于是出现「快照 2026-10-11 13:29:56」+「更新 0s 前」同屏打架，且数据其实已过期数百天。
+#: 做法：把快照 `ts` 锚定到 `now - DEMO_CLOCK_LAG_S`（演示时钟），但**把两个时刻分开写清**：
+#: `content_ts` = 上游真实内容时刻；`content_age_s` = 内容时刻距真实现在的秒数（**真实数据年龄**，
+#: 对外口径看这个）；`demo_clock_offset_s` = 演示时钟相对内容时刻的偏移；`time_basis` = 口径标记。
+#: 记录级 `data_age_s` 在演示时钟内是 `DEMO_CLOCK_LAG_S`（契约 v2.5：`is_simulated` 快照里
+#: `data_age_s` 指「相对快照时钟的年龄」，真实年龄看顶层 `content_age_s`，不许混说）。
+#: `HUBFLOW_DEMO_CLOCK=raw` 关闭锚定（回到内容时刻原值 + 产物自带 `data_age_s`）。
+DEMO_CLOCK_LAG_S = 45
 
 #: ---- 多站（IKNB9F）：站点由请求头 / 查询参数 / 启动参数选择，数据路径按站点登记表解析 ----
 #: 请求头优先级高于查询参数；都缺省用 --station 启动参数（默认 Z，站点 Z 行为不变）。
@@ -348,6 +365,44 @@ def _now_iso() -> str:
 
 def _now_stamp() -> str:
     return _now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _demo_clock_replay() -> bool:
+    """是否启用演示时钟锚定（缺省启用；`HUBFLOW_DEMO_CLOCK=raw` 关闭）。"""
+    return str(os.environ.get("HUBFLOW_DEMO_CLOCK", "replay")).strip().lower() != "raw"
+
+
+def _anchor_demo_clock(payload: dict[str, Any]) -> dict[str, Any]:
+    """把快照 `ts` 锚定到「刚才」（演示时钟），并把演示时钟与真实内容时刻**分开写清**。
+
+    - `ts`：演示时钟下的快照时刻 = `now - DEMO_CLOCK_LAG_S`（页面按它显示"现在"）；
+    - `content_ts`：上游产物里的**真实内容时刻**（样本视频 / 仿真起点，可能是数百天前），原样保留；
+    - `content_age_s`：内容时刻距**真实现在**的秒数 —— 这才是「数据有多旧」的真相，
+      对外口径一律看它，别看 `data_age_s`；
+    - `demo_clock_offset_s`：演示时钟相对内容时刻的偏移秒数（`ts - content_ts`）；
+    - `time_basis`：`demo_clock` / `content`，标出 `ts` 是哪一种口径；
+    - 记录级 `data_age_s`：**演示时钟内**的年龄（= `DEMO_CLOCK_LAG_S`），不碰任何指标 / 判级数值。
+
+    只改时间口径，不碰任何指标 / 判级数值（口径见 `DEMO_CLOCK_LAG_S`）。
+    """
+    content_ts = _parse_iso(payload.get("content_ts"))
+    now = _now()
+    content_age = round((now - content_ts).total_seconds(), 1) if content_ts else None
+    payload["content_age_s"] = content_age
+    if not _demo_clock_replay():
+        payload["time_basis"] = "content"
+        payload["demo_clock_offset_s"] = 0.0
+        return payload
+    anchored = now - timedelta(seconds=DEMO_CLOCK_LAG_S)
+    payload["ts"] = anchored.isoformat(timespec="seconds")
+    payload["time_basis"] = "demo_clock"
+    payload["demo_clock_offset_s"] = (
+        round((anchored - content_ts).total_seconds(), 1) if content_ts else None
+    )
+    for record in payload.get("segments") or []:
+        if isinstance(record, dict):
+            record["data_age_s"] = DEMO_CLOCK_LAG_S
+    return payload
 
 
 def _parse_iso(text: Any) -> datetime | None:
@@ -1058,15 +1113,30 @@ def _assimilation_gate() -> dict[str, Any]:
 
 
 def _latest_data_ts() -> str:
-    """数据快照时间（取在场运行产物的最大 ts；都没有才用当前时间，保证可复现）。"""
+    """数据快照时间（与 `build_segments_snapshot` 同一口径）。
+
+    **不再跨链路取字符串最大值**：孪生链路走仿真时钟（`DEMO_BASE_TS` 2026-01-01 起），
+    感知链路走样本视频素材时刻（2026-10-11），两个坐标系混在一起 `max()` 会挑出一条链路的
+    时间去代表整份快照（原来显示的 2026-10-11 就是这么来的）。改为取「记录数最多的那条链路」
+    的内容时刻，再按演示时钟锚定。
+    """
     paths = _station_paths()
-    stamps: list[str] = []
+    best_n = -1
+    best_ts: str | None = None
     for path in (paths["perception_video"], paths["twin_latest"], paths["twin_snapshot"]):
         payload = _read_if_exists(path)
-        ts = payload.get("ts") if payload else None
-        if isinstance(ts, str) and ts:
-            stamps.append(ts)
-    return max(stamps) if stamps else _now_iso()
+        if not payload:
+            continue
+        ts = payload.get("ts")
+        if not (isinstance(ts, str) and ts):
+            continue
+        count = len(payload.get("segments") or [])
+        if count > best_n:
+            best_n, best_ts = count, ts
+    content = best_ts or _now_iso()
+    if not _demo_clock_replay():
+        return content
+    return (_now() - timedelta(seconds=DEMO_CLOCK_LAG_S)).isoformat(timespec="seconds")
 
 
 # ---------------------------------------------------------------- 判级形状补全
@@ -1166,11 +1236,58 @@ def _normalize_segment(raw: dict[str, Any], grading: dict[str, Any],
         record["triggered_by"] = []
         record["level_source"] = "upstream_missing"
 
+    # 容量阶段溯源：由孪生侧 work/twin/capacity.py 按 work/twin/capacity-model.json 标定，
+    # 上游给了就透传（接口层不重算容量）；缺字段不写键，前端按"未标定"处理。
+    for field in ("capacity_class", "capacity_kind", "capacity_phase", "capacity_phase_source"):
+        if raw.get(field) is not None:
+            record[field] = raw[field]
+    for field in ("capacity_phase_factor", "capacity_lanes_per_direction", "capacity_lane_saturation_vph"):
+        if raw.get(field) is not None:
+            record[field] = _num(raw.get(field))
+
     record["is_simulated"] = True
     # pred 是可选字段：上游没有就不写这个键（契约 §1.1）
     if isinstance(raw.get("pred"), dict):
         record["pred"] = raw["pred"]
     return record
+
+
+def _capacity_summary(records: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    """容量阶段摘要：接口层只聚合孪生侧 capacity.py 的标定结果，绝不重算容量。"""
+    model = read_json_cached(CAPACITY_MODEL) or {}
+    factor_table = model.get("phase_capacity_factor") or {}
+    phases: dict[str, int] = {}
+    classes: dict[str, int] = {}
+    phase_factor: float | None = None
+    phase_source: Any = None
+    for record in records.values():
+        phase = record.get("capacity_phase")
+        if isinstance(phase, str) and phase:
+            phases[phase] = phases.get(phase, 0) + 1
+            if phase_factor is None:
+                phase_factor = _num(record.get("capacity_phase_factor"))
+            if phase_source is None:
+                phase_source = record.get("capacity_phase_source")
+        cls = record.get("capacity_class")
+        if isinstance(cls, str) and cls:
+            classes[cls] = classes.get(cls, 0) + 1
+    if not phases:
+        return None
+    phase = max(phases.items(), key=lambda item: item[1])[0]
+    return {
+        "phase": phase,
+        "phase_factor": phase_factor if phase_factor is not None else _num(factor_table.get(phase)),
+        "phase_source": phase_source,
+        "phase_capacity_factor": factor_table,
+        "phase_mode": model.get("demo_phase_mode"),
+        "phase_cycle_s": model.get("demo_phase_cycle_s"),
+        "class_by_segment_count": classes,
+        "segments_by_phase": phases,
+        "note": (
+            "c_vph = c_base_vph × 阶段容量系数（早高峰 / 平峰 / 晚高峰 / 夜间）；"
+            "c_base_vph 由路型基数与每方向车道数上限标定，阶段系数是演示标定、不是实测标定。"
+        ),
+    }
 
 
 def _raw_segment_layers() -> list[tuple[str, str, dict[str, Any]]]:
@@ -1243,11 +1360,16 @@ def build_segments_snapshot() -> dict[str, Any]:
     stamps: list[str] = []
     windows: list[float] = []
 
+    main_ts: str | None = None
+    main_count = -1
     for label, _chain, payload in _raw_segment_layers():
         labels.append(label)
         ts = payload.get("ts")
         if isinstance(ts, str) and ts:
             stamps.append(ts)
+            count = len(payload.get("segments") or [])
+            if count > main_count:
+                main_count, main_ts = count, ts
         window = _num(payload.get("window_sec"))
         if window is not None:
             windows.append(window)
@@ -1266,11 +1388,14 @@ def build_segments_snapshot() -> dict[str, Any]:
 
     if merged:
         payload = {
-            "ts": max(stamps) if stamps else _now_iso(),
+            "ts": main_ts or _now_iso(),
+            "content_ts": main_ts,
             "window_sec": max(windows) if windows else 0,
             "is_simulated": True,
+            "capacity": _capacity_summary(merged),
             "segments": list(merged.values()),
         }
+        _anchor_demo_clock(payload)
         return _attach_runtime_state({
             "payload": payload,
             "source": "+".join(labels),
@@ -1283,11 +1408,13 @@ def build_segments_snapshot() -> dict[str, Any]:
     records = {segment["segment_id"]: segment for segment in segments}
     payload = {
         "ts": _now_iso(),
+        "content_ts": _now_iso(),
         "window_sec": 0,
         "is_simulated": True,
         "segments": segments,
         "note": note,
     }
+    _anchor_demo_clock(payload)
     return _attach_runtime_state({
         "payload": payload,
         "source": "stations.baseline",

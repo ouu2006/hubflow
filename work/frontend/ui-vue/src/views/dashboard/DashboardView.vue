@@ -82,6 +82,7 @@ import {
   CI_BANDS,
   CI_DISCLAIMER,
   formatClock,
+  formatAgeText,
   formatStamp,
   isStale,
   LEVELS,
@@ -104,6 +105,7 @@ import {
   type RoutePlanRoute,
   type RoutePlanRole,
   type RouteSnapResult,
+  type CapacityPhaseSummary,
   type RouteStartPoint,
   type RouteStep,
   type RouteStepsSnapshot,
@@ -811,6 +813,14 @@ function setColorMode(mode: ColorMode): void {
 /** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
 const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
+/**
+ * 时间口径三件套（契约 v2.5）：`ts` 可能是**演示时钟**锚定过的时刻，逐条 `data_age_s`
+ * 只表示「相对快照时钟的年龄」。真实数据有多旧看 `contentAgeS`（内容时刻距真实现在）。
+ * 页面必须把两者同时写出来，否则就是「把过期数据说成 45 s 前更新」的对外口径问题。
+ */
+const timeBasis = ref<'demo_clock' | 'content' | ''>('')
+const contentTs = ref('')
+const contentAgeS = ref<number | null>(null)
 
 // ---------- 中栏地图 · 单渲染器(Issue IKM5T1) ----------
 // 只留**一个**地图组件(MapLibre:矢量底图 + 描出的路网)。原先"示例路网 / 矢量地图"两个模式已删:
@@ -1010,6 +1020,8 @@ async function refresh(): Promise<void> {
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
+    applyTimeBasis(seg.value)
+    capacityInfo.value = seg.value.capacity ?? null
     // 应急态(TC-10)：接口层已在快照顶层派生好，这里**原样消费**，不自己判等级
     emergency.value = seg.value.emergency ?? null
     if (selectedId.value === null) selectedId.value = pickDefaultId(seg.value.segments)
@@ -1111,6 +1123,9 @@ function resetStationState(): void {
   metaInfo.value = null
   metaStationName.value = null
   snapshotTs.value = ''
+  timeBasis.value = ''
+  contentTs.value = ''
+  contentAgeS.value = null
   failedPanels.value = []
   servedFromCache.value = false
   cacheStamp.value = 0
@@ -1155,6 +1170,8 @@ function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
   if (snapshot.segments) {
     segments.value = snapshot.segments.segments
     snapshotTs.value = snapshot.segments.ts
+    applyTimeBasis(snapshot.segments)
+    capacityInfo.value = snapshot.segments.capacity ?? null
     // 应急态(TC-10)：缓存里带着当时的派生结果，恢复时一并还原（不重算）
     emergency.value = snapshot.segments.emergency ?? null
   }
@@ -1220,6 +1237,45 @@ const recommendError = ref('')
  *      地图、KPI、路段信息、车辆等正文一律照常显示。
  */
 const emergency = ref<EmergencyState | null>(null)
+/**
+ * 容量阶段摘要（接口层聚合孪生侧 work/twin/capacity-model.json 的标定结果）。
+ * 用途：页脚让"容量随运营阶段变化"在演示时可被看见；取不到就不显示这一项。
+ */
+const capacityInfo = ref<CapacityPhaseSummary | null>(null)
+/** 读快照顶层的时间口径三件套：`ts` 是哪种时钟 / 真实内容时刻 / 真实数据年龄 */
+function applyTimeBasis(snap: {
+  time_basis?: 'demo_clock' | 'content'
+  content_ts?: string | null
+  content_age_s?: number | null
+}): void {
+  timeBasis.value = snap.time_basis ?? ''
+  contentTs.value = snap.content_ts ?? ''
+  contentAgeS.value = typeof snap.content_age_s === 'number' ? snap.content_age_s : null
+}
+/**
+ * 时间口径一行：演示时钟锚定时，把「快照时刻」与「真实内容时刻 / 真实数据年龄」写在一起。
+ * 口径红线（契约 v2.5）：`data_age_s` 只在演示时钟内成立，**不得**用它宣称数据是刚刚实测的。
+ */
+const timeBasisLine = computed<string>(() => {
+  if (!contentTs.value) return ''
+  const age = formatAgeText(contentAgeS.value)
+  const ageText = contentAgeS.value === null ? '' : `，距真实现在 ${age}`
+  if (timeBasis.value === 'demo_clock') {
+    return `内容时刻 ${formatStamp(contentTs.value)}（演示时钟锚定${ageText}）`
+  }
+  return `内容时刻 ${formatStamp(contentTs.value)}${ageText}`
+})
+/** 页脚容量阶段一行：阶段 · 系数 · 全站基线→有效容量区间 */
+const capacityLine = computed<string>(() => {
+  const info = capacityInfo.value
+  if (!info?.phase) return ''
+  const factor = typeof info.phase_factor === 'number' ? ` ×${info.phase_factor.toFixed(2)}` : ''
+  const table = info.phase_capacity_factor ?? {}
+  const tableText = Object.entries(table)
+    .map(([phase, value]) => `${phase} ${Number(value).toFixed(2)}`)
+    .join(' / ')
+  return `容量阶段:${info.phase}${factor}${tableText ? `（${tableText}）` : ''}`
+})
 /** 应急是否生效（接口未给/读不到 → false，宁可不误停） */
 const emergencyActive = computed(() => emergency.value?.active === true)
 /** 应急影响路段的可读文案（超过 3 段只列前 3 段 + 省略，不糊满整行） */
@@ -2281,6 +2337,38 @@ const avgDeltaText = computed(() => {
   return `较上一版${d > 0 ? '快' : '慢'} ${Math.abs(d).toFixed(1)} km/h`
 })
 
+/**
+ * 顶栏「最堵路段」副行用的路段名
+ * 口径:overview.worst_segment.name 上游只回段号(实测 "SZ-035"),而 kpi-value 已经单独显示了段号,
+ * 直接拼会出现「SZ-035 · SZ-035」。所以按 segment_id 回 segments 列表取真实路段名,
+ * 并去掉尾部节点括注(「(N-022→N-027)」会把名称挤掉)。
+ */
+const worstNameClean = computed(() => {
+  const w = overview.value?.worst_segment
+  if (!w) return '—'
+  const n = nameOf(w.segment_id) || w.name || ''
+  const clean = n
+    .replace(/^[A-Z]{2}-\d+\s*/, '')
+    .replace(/（[^）]*）\s*$/, '')
+    .trim()
+  return clean || n || '—'
+})
+
+/**
+ * 顶栏「最堵路段」副行右侧的判级依据文案
+ * 口径:四级判级取「饱和度 x / 车速 v / 排队长度 L_q / 消散时间 T_d」四项最高(见 work/perception/level.py),
+ * 本站真实触发项几乎都是车速,所以显示车速而不是饱和度 —— 否则「饱和度 0.14 + 严重拥堵」同屏自相矛盾。
+ */
+const worstReasonText = computed(() => {
+  const w = overview.value?.worst_segment
+  if (!w) return ''
+  const seg = segments.value.find((s) => s.segment_id === w.segment_id)
+  const declared = seg?.triggered_by
+  const hitSpeed = Array.isArray(declared) ? declared.includes('v') : false
+  if (hitSpeed && typeof seg?.v_kmh === 'number') return `车速 ${seg.v_kmh.toFixed(1)} km/h`
+  return `饱和度 ${fmt(w.x)}`
+})
+
 /** 采纳率:guided_rate(0~1) → 百分数保留一位 */
 const adoptText = computed(() => {
   const o = overview.value
@@ -2508,7 +2596,7 @@ const detailSummary = computed<string>(() => {
   const s = selected.value
   if (!s) return ''
   const parts = [`${s.level >= 1 ? CN_NUM[s.level as CongestionLevel] : '不可用'}级`, levelName(s)]
-  parts.push(`更新 ${s.data_age_s ?? '—'}s 前`)
+  parts.push(`更新 ${s.data_age_s ?? '—'}s 前${timeBasis.value === 'demo_clock' ? '(演示时钟)' : ''}`)
   parts.push(`饱和度 ${fmt(s.x)}`)
   if (s.triggered_by && s.triggered_by.length > 0) parts.push(`触发 ${s.triggered_by.join(' / ')}`)
   return parts.join(' · ')
@@ -2770,8 +2858,8 @@ function onCommandChanged(): void {
         <div class="kpi-sub">
           <template v-if="overview?.worst_segment">
             <LevelBadge :level="overview.worst_segment.level" />
-            <span class="kpi-sep">·</span>{{ overview.worst_segment.name }}
-            <span class="kpi-sep">·</span>x {{ fmt(overview.worst_segment.x) }}
+            <span class="kpi-sep">·</span>{{ worstNameClean }}
+            <span class="kpi-sep">·</span>{{ worstReasonText }}
           </template>
           <template v-else>—</template>
         </div>
@@ -3856,7 +3944,7 @@ function onCommandChanged(): void {
 
       <section class="td-card band-card">
         <div class="td-card-head">
-          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}</span>
+          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}{{ timeBasis === 'demo_clock' ? '（演示时钟）' : '' }}</span>
         </div>
         <div class="td-card-body">
           <CiScale />
@@ -3894,12 +3982,15 @@ function onCommandChanged(): void {
     </div>
 
     <template #foot>
-      <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <span>快照时间 {{ formatStamp(snapshotTs) }}{{ timeBasis === 'demo_clock' ? '（演示时钟）' : '' }}</span>
+      <!-- 契约 v2.5：演示时钟锚定 ≠ 数据新鲜。真实内容时刻与真实年龄必须同屏写出，不许只说"45s 前更新" -->
+      <span v-if="timeBasisLine">{{ timeBasisLine }}</span>
       <!-- 切站缓存标识（IKPFR4）：页脚也要能看出"这不是刚拉到的" -->
       <span v-if="servedFromCache">数据标识:内存缓存快照 · 后台刷新中</span>
       <span>{{ footStationLine }}</span>
       <span>数据来源:{{ footDataSource }} · 底图:{{ sourceLabel }}</span>
       <span>{{ packLine }}</span>
+      <span v-if="capacityLine">{{ capacityLine }}</span>
       <span>
         颜色模式:{{ isFlow ? '纯车流量（q 四档，仅展示，不代表拥堵结论）' : '决策拥堵（接口 level）' }}
       </span>

@@ -12,6 +12,8 @@
 
 import { STATION_GZ_SEGMENTS } from './stationGZ.network.ts'
 import { STATION_GZ_DIRECTIONS } from './stationGZ.directions.generated.ts'
+// 2026-10-29 演示验收：真值路网底衬（脚本 work/frontend/scripts/gen_station_roads.py 生成）
+import { STATION_GZ_ROADS } from './stationGZ.roads.ts'
 import { DEMO_CAMERA_CHANNELS } from './demoCameraChannels.generated.ts'
 import type { PackAlertBase, PackDiversion, PackRecommend, PackSection, PackSegmentBase, StationPack } from './types.ts'
 
@@ -1233,6 +1235,8 @@ export const STATION_GZ: StationPack = {
     segment_count: 708,
   },
   segments: STATION_GZ_SEGMENTS,
+  // 真值路网底衬（2026-10-29 演示验收）：与 Z 站同一口径，见 stationZ.ts 里的长注释
+  roads: STATION_GZ_ROADS,
   segmentDirections: STATION_GZ_DIRECTIONS,
   source: {
     osm: true,
