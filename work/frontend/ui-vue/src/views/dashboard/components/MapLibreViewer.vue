@@ -3662,7 +3662,7 @@ onUnmounted(() => {
         <div class="lg-note">方向来自 OSM oneway + 只读 enriched（演示标注，不是真实方向数据）；车道 / 对向段 / 贯通性见右栏路段详情。150 m 及以内箭头为醒目尺寸，更远等比缩小；150→200 m 渐隐，200 m 以远不画。</div>
       </template>
       <div class="lg-sep" />
-      <!-- ④ 自定义路线档（colorMode='custom'）：全网中性灰 + 只画路线。
+      <!-- ③ 自定义路线档（colorMode='custom'）：全网中性灰 + 只画路线。
            这一档的承诺是「图面上除了路线，没有任何路况信息」——所以没有色阶、没有热力、
            非路线段一律中性浅灰；路线仍是「选中品牌蓝 / 其余浅蓝 / 离站紫」那一套。
            与灰底版的最大差别就写在最上面一行：**本档画路线**。 -->
@@ -3691,7 +3691,7 @@ onUnmounted(() => {
         <div class="lg-note">与灰底版的区别：本档**灰底 + 画路线**；灰底版全灰且一条路线都不画</div>
         <div class="lg-row ts">更新 {{ props.ts || '—' }}</div>
       </template>
-      <!-- ③ 灰底版（colorMode='gray'）：全部线段一律灰，**不画任何路线**。
+      <!-- ④ 灰底版（colorMode='gray'）：全部线段一律灰，**不画任何路线**。
            这一档只回答「路网在哪」，不回答「路况如何」，也不回答「路线怎么走」——
            所以连路线都藏掉（`applyModeLayers()` 里整族隐藏），图例必须这么写。 -->
       <template v-else-if="isGrayMode">

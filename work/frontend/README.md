@@ -1011,7 +1011,11 @@ cd work/frontend/ui-vue && npm run dev:remote
 # mock 兼容：npm run dev（无 /route/options，回退演示会话路线 + 如实提示）
 ```
 
-## 十八、大屏双色模式：决策拥堵版 ↔ 纯车流量版（Issue IKNB9G，2026-10-18）
+## 十八、大屏颜色模式（Issue IKNB9G 两档，2026-10-18 → IKRK8B 扩成 4 档，2026-10-29）
+
+> **本节写于 IKNB9G 两档时代**，18.1~18.5 的表格与实测记录保留原样（历史归档）。
+> 现行已扩成 **4 档：决策拥堵版 / 纯车流量版 / 自定义路线版 / 灰底版**，以 **18.6** 为准；
+> 凡本节旧文写「两档 / 决策拥堵版 | 纯车流量版」的地方，都按 18.6 的 4 档理解。
 
 > 业主 2026-10-18：路段颜色要两个版本，大屏加切换按钮：
 > ① **纯车流量版本**（直接取（演示）识别出的 q_vph，按流量分档，**不得用 level**）；
@@ -1022,7 +1026,8 @@ cd work/frontend/ui-vue && npm run dev:remote
 
 ### 18.1 交互与覆盖范围
 
-- 大屏 KPI 条下方新增「**颜色模式**：决策拥堵版 | 纯车流量版」切换按钮（`role=group`，即时重绘）：
+- 大屏 KPI 条下方新增「**颜色模式**：决策拥堵版 | 纯车流量版」切换按钮（`role=group`，即时重绘；
+  **IKRK8B 起已扩成 4 键：+ 自定义路线版 / 灰底版，见 18.6**）：
   | 项 | 决策拥堵版（默认） | 纯车流量版 |
   |---|---|---|
   | 地图 | 按接口 `level` 四级配色（沿用「只摄像头段上色」策略，C-2 不改） | 按 `q_vph` 四档蓝阶；**有 q 的段都上色**（不受摄像头覆盖限制），缺 q / 陈旧灰档 |
@@ -1059,8 +1064,10 @@ P50 = 120 / P75 = 540 / P90 = 780 辆/h（范围 60~1320），站区默认通行
 
 ### 18.3 持久化
 
-- **localStorage**：键 `hubflow.dashboard.colorMode`（`flow` / `congestion`），切换即写、刷新后保持；
-- **query 深链覆盖一次**：`#/dashboard?color=flow` / `?color=congestion`（可和 `?segment=SZ-005` 同用），
+- **localStorage**：键 `hubflow.dashboard.colorMode`（IKNB9G 时只有 `flow` / `congestion`；**IKRK8B 起 4 值
+  `congestion` / `flow` / `custom` / `gray`，见 18.6**），切换即写、刷新后保持；
+- **query 深链覆盖一次**：`#/dashboard?color=flow` / `?color=congestion`（IKRK8B 起另认 `custom` / `gray`；
+  可和 `?segment=SZ-005` 同用），
   读到后同时写回 localStorage；README 采用「localStorage 持久 + query 覆盖」这一种组合（二选一已写清）。
 
 ### 18.4 mock / remote 与降级
@@ -1077,6 +1084,7 @@ remote（Tabbit/Chromium，1590 宽；`#/dashboard?segment=SZ-005`，同一段�
 - 纯车流量版：图例「纯车流量色阶（q_vph · 4 档）」；列表 `660 辆/h · 中高流量`（流量角标）；
   地图有 q 段全部按蓝阶上色；档位分布 4/9/8/39/1；热力矩阵切流量色阶；页脚「纯车流量（演示识别…）」；
 - 持久化：切 flow 后 `localStorage=flow`，刷新仍为 flow；`?color=congestion` 覆盖为拥堵版并写回 storage；
+  （以上为两档时代记录；4 档的持久化与 `?color=` 深链见 18.6）
 - 缺 q 降级（浏览器路由拦截 `/segments` 删 SZ-005.q_vph）：该行「无流量数据」、分布灰档 +1、无控制台错误；
   陈旧（`data_age_s=999`）同样灰档；
 - mock 模式：6 段列表/图例/分布均按流量四档显示，0 pageerror。
@@ -1091,6 +1099,44 @@ cd work/frontend/ui-vue && npm run dev:remote
 # 浏览器打开 http://localhost:5173/#/dashboard?segment=SZ-005
 # 点「纯车流量版」→ 地图/列表/图例/分布/热力切流量四档；再点「决策拥堵版」回到 level 配色
 cd work/frontend/ui-vue && npm run build   # exit 0
+```
+
+### 18.6 颜色模式 4 档（IKRK8B，2026-10-29 现行口径）
+
+> 业主 2026-10-29：颜色模式从两档扩成 **4 档**，并且**默认不出路线**上大屏。
+
+切换条 4 个按钮（`role=group` + 每键 `aria-pressed`），默认档 = **决策拥堵版**：
+
+| 档位 | 值 | 表示什么 | 不表示什么 |
+|---|---|---|---|
+| ① 决策拥堵版（默认） | `congestion` | 接口 `level` 四级判级配色（只摄像头段上色）、CI 视图 | 不表示实测流量，不画路线 |
+| ② 纯车流量版 | `flow` | `q_vph` 四挡蓝阶（有 q 段上色），流量档位角标 | 不表示拥堵判级 / CI，不画路线 |
+| ③ 自定义路线版 | `custom` | 业主自选的 OD 规划路线（3+1 条高亮） | 不表示路况判级（底图不上等级色） |
+| ④ 灰底版 | `gray` | 只给几何与编号，**不做任何路况着色** | 不表示路况，不画路线 |
+
+- **两条灰必须分清**：`#C9CDD4`（压灰）= 该档主动去色（③④ 档的段列表/分布/热力矩阵都压到这个灰度）；
+  `#8B8B8B`「无流量数据」= 接口缺 q 或 `data_age_s > 120s` 的**数据不可用**灰 —— 别把「本档不表示」读成「这段没数据」。
+- ③④ 档的面板（档位分布 / 列表 / 分档表 / 热力矩阵 / CI 视图）保留数值，但一律压灰并标 **「本档不表示路况」**；
+  页脚与色阶文案按档切换（4 套，不再二分）。
+- **路线默认不出**：进站（onMounted）与切换车站**不再**自动取 OD / 推荐；只有 ③ 档且开关为真时才按需
+  `loadRouteOptions()` + `loadRecommend()`；①②④ 档传给地图的 `routes` / `routeSteps` 恒为空数组，起终点标记也不给。
+- **③ 档开关联动**：复用既有「自定义路线」开关（localStorage 键 `hubflow.dashboard.customRoute`）：
+  点 ③ 档 → 自动把开关打开；关掉开关 → 自动回落 ① 档（判据只写在 `setColorMode` / `setCustomRouteEnabled` 一处，工具条不重复）。
+- **mock 也不再造假路线**：`src/mock/traffic.ts` 的 `buildRecommend()` 不再返回站点包写死的推荐/备选/离站，
+  一律返回空 routes —— 路线只由 ③ 档触发，与引擎口径一致（路线算法只有一套）。
+- **持久化（4 值）**：localStorage 键 `hubflow.dashboard.colorMode`，取值 `congestion` / `flow` / `custom` / `gray`，
+  切换即写、刷新后保持；清空 localStorage = 回到默认 ①。
+- **深链**：`#/dashboard?color=gray`（4 值都认），读到后写回 localStorage；坏值 / 旧值**静默回落 `congestion`**，
+  不报错、不白屏。
+
+```bash
+# 4 档自检（仓库根）
+cd work/frontend/ui-vue && npm run dev        # 或 dev:remote
+# 浏览器：http://localhost:5173/#/dashboard?segment=SZ-001
+# 1) 4 个档位按钮逐个点 → 地图/列表/图例/分布/热力同步；①②④ 地图上一条规划路线都没有
+# 2) 点③自定义路线版 → 开关自动开、出现规划路线；再关开关 → 自动回①决策拥堵版
+# 3) 刷新 → 停在刚才那档；?color=gray 直达灰底版；清 localStorage → 回①
+python scripts/check_color_mode.py    # 4 档静态门禁
 ```
 
 ## 十九、2026-10-18 口径纠正：N 段 = N 摄像头 = N 视频（IKNBT2）

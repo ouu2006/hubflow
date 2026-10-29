@@ -17,8 +17,71 @@
 
 import { isStale, UNAVAILABLE, type SegmentRecord } from './traffic.ts'
 
-/** 大屏颜色模式：congestion = 决策拥堵（level 四级）；flow = 纯车流量（q_vph 四档，仅展示） */
-export type ColorMode = 'congestion' | 'flow'
+/**
+ * 大屏颜色模式**4 档**（IKRK8B，2026-10-29 由 2 档扩为 4 档；业主口径）：
+ *   · `congestion` 决策拥堵版：按接口 `level` 四级判级配色（默认档，C-2 既有行为）；
+ *   · `flow`       纯车流量版：按 `q_vph` 四档蓝阶，**仅展示、不参与判级**；
+ *   · `custom`     自定义路线版：只表示「起终点规划出的路线 + 行进方向」，底图分档**不表示路况**；
+ *   · `gray`       灰底版：全部路段压灰（`MODE_DIM_GRAY`），只看路网几何 / 路线是否存在。
+ *
+ * 与地图组件的契约：`MapLibreViewer` 的 `color-mode` prop 就是这 4 个值（着色由地图负责），
+ * 页面侧只负责把值传对 + 面板 / 图例 / 档位 UI 的口径文案。
+ */
+export type ColorMode = 'congestion' | 'flow' | 'custom' | 'gray'
+
+/** 4 档的固定顺序（切换条按这个顺序渲染，不要在模板里另写一遍数组） */
+export const COLOR_MODES: readonly ColorMode[] = ['congestion', 'flow', 'custom', 'gray']
+
+/** 缺省档 = 决策拥堵版（清 localStorage / 坏值 / 旧值一律回落它） */
+export const DEFAULT_COLOR_MODE: ColorMode = 'congestion'
+
+/**
+ * 压灰（`#C9CDD4`）与「数据不可用」灰（`UNAVAILABLE.color` = `#8B8B8B`）**是两件事**，别混：
+ *   · `#C9CDD4` = **本档不着色**（③④ 档底图压灰，数值照留/照常判级，只是不落进等级色）；
+ *   · `#8B8B8B` = **数据不可用**（缺值 / 数据陈旧，任何档位都表示「没有数据」）。
+ * 地图侧同名常量见 `components/MapLibreViewer.vue`（着色由地图负责，这里给页面/热力/图例用）。
+ */
+export const MODE_DIM_GRAY = '#C9CDD4'
+
+/** ③④ 档的统一口径标语（面板 / 图例 / 页脚同一句，别各写一份） */
+export const MODE_NO_TRAFFIC_NOTE = '本档不表示路况'
+
+export interface ColorModeMeta {
+  mode: ColorMode
+  /** 切换条上的档位名 */
+  name: string
+  /** 这一档**表示什么** */
+  shows: string
+  /** 这一档**不表示什么**（必须与 shows 成对出现，避免把配色读成结论） */
+  notShows: string
+}
+
+export const COLOR_MODE_META: Record<ColorMode, ColorModeMeta> = {
+  congestion: {
+    mode: 'congestion',
+    name: '决策拥堵版',
+    shows: '按接口 level 四级判级配色（判级来自感知层，前端不重算）',
+    notShows: '不表示车流量大小；要看流量大小切「纯车流量版」',
+  },
+  flow: {
+    mode: 'flow',
+    name: '纯车流量版',
+    shows: '按 q_vph 四档蓝阶（仅展示，阈值见本文件）',
+    notShows: '不代表拥堵结论（拥堵结论只看决策拥堵版的 level）',
+  },
+  custom: {
+    mode: 'custom',
+    name: '自定义路线版',
+    shows: '起终点规划出的路线（主推荐 / 备用 / 离站）及行进方向',
+    notShows: `${MODE_NO_TRAFFIC_NOTE}、也不表示车流量；非路线段压灰只表示「本条不是路线」`,
+  },
+  gray: {
+    mode: 'gray',
+    name: '灰底版',
+    shows: '路网几何与路线是否存在（全部路段压灰，最省漆的一块底图）',
+    notShows: `${MODE_NO_TRAFFIC_NOTE}、也不表示车流量（灰 ≠ 数据不可用，见 MODE_DIM_GRAY 说明）`,
+  },
+}
 
 export interface FlowBand {
   band: 1 | 2 | 3 | 4
@@ -45,12 +108,20 @@ export const FLOW_MODE_NOTE = '仅按 q 分档，不代表拥堵结论'
 export const FLOW_COLOR_NOTE =
   '流量色阶（蓝）与拥堵等级色（绿/黄/橙/红）语义不同：颜色只表示车流量大小，不表示拥堵等级'
 
-/** 颜色模式持久化键（localStorage；`?color=flow|congestion` 深链可覆盖一次） */
+/** 颜色模式持久化键（localStorage；`?color=congestion|flow|custom|gray` 深链可覆盖一次） */
 export const COLOR_MODE_STORAGE_KEY = 'hubflow.dashboard.colorMode'
 export const COLOR_MODE_QUERY_KEY = 'color'
 
+/** 白名单解析：4 值之外（含 2 档时代的旧值之外的任何脏数据）一律返回 null，由调用方回落 */
 export function parseColorMode(value: unknown): ColorMode | null {
-  return value === 'flow' || value === 'congestion' ? value : null
+  return typeof value === 'string' && (COLOR_MODES as readonly string[]).includes(value)
+    ? (value as ColorMode)
+    : null
+}
+
+/** 解析 + 静默回落：坏值 / 旧值 / 缺省一律回 `DEFAULT_COLOR_MODE`（决策拥堵版），绝不报错弹窗 */
+export function resolveColorMode(value: unknown): ColorMode {
+  return parseColorMode(value) ?? DEFAULT_COLOR_MODE
 }
 
 export function readStoredColorMode(): ColorMode | null {

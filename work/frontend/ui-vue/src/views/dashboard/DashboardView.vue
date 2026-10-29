@@ -118,16 +118,22 @@ import {
   type VehicleRecord,
 } from '../../shared/traffic'
 import {
+  COLOR_MODES,
+  COLOR_MODE_META,
   COLOR_MODE_QUERY_KEY,
   COLOR_MODE_STORAGE_KEY,
+  DEFAULT_COLOR_MODE,
   FLOW_BANDS,
   FLOW_COLOR_NOTE,
   FLOW_MODE_LABEL,
   FLOW_MODE_NOTE,
   FLOW_UNAVAILABLE_LABEL,
+  MODE_DIM_GRAY,
+  MODE_NO_TRAFFIC_NOTE,
   flowBandOf,
   flowRangeLabel,
   parseColorMode,
+  resolveColorMode,
   storeColorMode,
   type ColorMode,
   type FlowBand,
@@ -550,11 +556,13 @@ const basemapTag = computed(() =>
 )
 
 /** 图下注脚:底图关掉时**不许**再写"底图来源:OpenFreeMap" —— 页面不撒谎 */
-const mapCaption = computed(() =>
-  basemapEnabled.value
+const mapCaption = computed(() => {
+  const base = basemapEnabled.value
     ? `底图来源:OpenFreeMap(OpenStreetMap 数据,ODbL)· 署名见地图内 · 不缓存瓦片 · 路网:${geometryNote.value}`
-    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote.value} · OSM 署名见地图内`,
-)
+    : `底图已在顶栏「设置」里关闭 · 只画路网 · 路网:${geometryNote.value} · OSM 署名见地图内`
+  // ③④ 档在注脚上再点一句口径，避免「压灰」被读成「没有数据 / 已经没事了」
+  return isMuted.value ? `${base} · ${colorModeMeta.value.name}：${MODE_NO_TRAFFIC_NOTE}` : base
+})
 /**
  * 站点名(顶栏 chip):默认取当前站点包,拿到 meta 后由 meta.station.name 覆盖 —— 三页同一口径。
  *
@@ -775,29 +783,47 @@ const selectedId = ref<string | null>(null)
 const sourceMode = ref<SourceMode>('both')
 /** 视图模式:四级视图(判级产出)/ 拥挤指数视图(展示量,原 /heat 页头切换) */
 const viewMode = ref<CongestionViewMode>('level')
-// ---------- 颜色模式（Issue IKNB9G，业主 2026-10-18）----------
-// 两套颜色，二选一，切换即时重绘（地图 / 列表 / 图例 / 热力 / 排序）：
+// ---------- 颜色模式（Issue IKNB9G 两档 → IKRK8B 四档，业主 2026-10-29）----------
+// 四档颜色，切换即时重绘（地图 / 列表 / 图例 / 热力 / 排序）：
 //   · congestion（默认）= 决策拥堵版：按接口 level 四级判级配色（C-2 既有行为，不改判级）；
-//   · flow = 纯车流量版：按 q_vph 分四档（阈值集中在 shared/flow.ts），**仅展示、不参与判级**。
-// 持久化：localStorage 键 `hubflow.dashboard.colorMode`；`?color=flow|congestion` 深链可覆盖一次。
-// 口径：flow 只用 q，不读 level / CI；缺 q 或数据陈旧 → 灰档「无流量数据」；不宣称 YOLO 已实装。
+//   · flow = 纯车流量版：按 q_vph 分四档（阈值集中在 shared/flow.ts），**仅展示、不参与判级**；
+//   · custom = 自定义路线版：只表示规划出的路线与方向，底图分档**不表示路况**（③ 档 = 自定义路线开）；
+//   · gray = 灰底版：全部路段压灰 MODE_DIM_GRAY，本档不表示路况。
+// 持久化：localStorage 键 `hubflow.dashboard.colorMode`；`?color=<4 值之一>` 深链可覆盖一次；
+// 坏值 / 旧值一律静默回落 DEFAULT_COLOR_MODE（决策拥堵版），不弹窗不报错。
 function initialColorMode(): ColorMode {
   const fromQuery = parseColorMode(route.query[COLOR_MODE_QUERY_KEY])
   if (fromQuery) return fromQuery
   try {
-    return parseColorMode(localStorage.getItem(COLOR_MODE_STORAGE_KEY)) ?? 'congestion'
+    // 读盘也走白名单：2 档时代的旧值 / 手改的脏值 → 回决策拥堵版
+    return resolveColorMode(localStorage.getItem(COLOR_MODE_STORAGE_KEY))
   } catch {
-    return 'congestion'
+    return DEFAULT_COLOR_MODE
   }
 }
 const colorMode = ref<ColorMode>(initialColorMode())
 const isFlow = computed<boolean>(() => colorMode.value === 'flow')
+const isCustom = computed<boolean>(() => colorMode.value === 'custom')
+const isGray = computed<boolean>(() => colorMode.value === 'gray')
+/**
+ * ③④ 档 = **本档不表示路况**（`MODE_NO_TRAFFIC_NOTE`）：面板数值照留（判级来自感知层，不因为换配色就算没了），
+ * 但颜色一律压灰 `MODE_DIM_GRAY`，不落进等级色 / 流量色。①② 档为 false（原行为）。
+ */
+const isMuted = computed<boolean>(() => isCustom.value || isGray.value)
+/** 当前档的一句口径（切换条 .cm-note 用；shows / notShows 成对出现，别在模板里另写一遍） */
+const colorModeMeta = computed(() => COLOR_MODE_META[colorMode.value])
+/** 页脚「颜色模式:…」那一行（4 档各自的展示口径；不在这里重写一整套判据，只拼一句话） */
+const colorModeLabel = computed<string>(() => {
+  const m = colorModeMeta.value
+  return `${m.name}（${m.shows}）`
+})
 storeColorMode(colorMode.value)
 watch(
   () => route.query[COLOR_MODE_QUERY_KEY],
   (raw) => {
     const mode = parseColorMode(raw)
-    if (mode && mode !== colorMode.value) applyColorMode(mode)
+    // 深链也走 setColorMode：③ 档要连带把自定义路线开关打开（判据不在这里另写一份）
+    if (mode && mode !== colorMode.value) setColorMode(mode)
   },
 )
 /** 切模式：写 localStorage；flow 下不提供 CI 视图（CI 是决策口径），自动回四级视图 */
@@ -806,9 +832,23 @@ function applyColorMode(mode: ColorMode): void {
   storeColorMode(mode)
   if (mode === 'flow' && viewMode.value === 'index') viewMode.value = 'level'
 }
+/**
+ * 颜色模式切换的**唯一入口**（切换条 4 个按钮 / `?color=` 深链都走它）。
+ *
+ * 第③档「自定义路线版」与「自定义路线总开关」是**同一个事实**，联动只写在这里：
+ *   · 切到 custom → 自动开自定义路线（并按需取一次 OD / 推荐；默认仍不出路线，出线要用户点图 + 「开始」）；
+ *   · 切走 custom → 自动关掉开关，并把已出的路线一并收起（不留「档位不是③、路线还挂着」的半截状态）。
+ * 工具条（右栏 cod-toggle）与大屏切换条都只调 setColorMode / setCustomRouteEnabled，判据不写第二遍。
+ */
 function setColorMode(mode: ColorMode): void {
   if (colorMode.value === mode) return
+  if (mode === 'custom') {
+    setCustomRouteEnabled(true) // 内部会 applyColorMode('custom')
+    applyColorMode('custom') // 幂等兜底：开关本来就是开的也能切档
+    return
+  }
   applyColorMode(mode)
+  if (customRouteEnabled.value) setCustomRouteEnabled(false) // 已不是③档，不会再回改档位
 }
 /** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
 const scope = ref<CongestionLevel | 0 | null>(null)
@@ -1192,8 +1232,9 @@ const unbindStationSwitch = bindStationSwitch({
   refresh: () => {
     void refresh()
     // 路线产物是**按站**出的（引擎每个站一份 routes.json）：切站后重新取一次 OD 选项，
-    // 别让右栏停在上一站的 session 上（这是"站内状态一律重置"里"路线 session"那一条）
-    void loadRouteOptions()
+    // 别让右栏停在上一站的 session 上（这是"站内状态一律重置"里"路线 session"那一条）。
+    // IKRK8B：只有③档（自定义路线版）才取 —— ①②④ 档一条路线都不读、不画。
+    if (customActive.value) void loadRouteOptions()
   },
 })
 onUnmounted(() => {
@@ -1518,9 +1559,11 @@ const odPlanError = ref('')
 
 /**
  * 自定义路线**总开关**（业主 2026-10-28 当面要求：「弄个开关，启用自定义路线时才开启这个东西」）。
- * 默认关闭：关闭时右栏不出现「自定义起终点」面板、地图点图**不进入拾取态**（点图仍按原来的「选路段」走），
- * 也不会去发 `/route/snap`、`/route/plan`。打开后才点图选起点/终点、点「开始」出三条。
- * 状态落 localStorage（键 `hubflow.dashboard.customRoute`），演示时不必每次开一遍。
+ * 2026-10-29（IKRK8B）起它同时是**颜色模式第③档「自定义路线版」的入口**：
+ *   · 开 = 进第③档，右栏出现「自定义起终点」、地图点图进入拾取态、才允许去取 OD / 推荐；
+ *   · 关 = 出第③档，颜色模式自动回「决策拥堵版」（第③档没有自定义路线就不成立）。
+ * 默认关闭：关闭时右栏不出现自定义起终点面板、地图点图按原来的「选路段」走，也不会发 `/route/snap`、`/route/plan`。
+ * 状态落 localStorage（键 `hubflow.dashboard.customRoute`，与 `colorMode` 成对写入、成对读取）。
  */
 const CUSTOM_ROUTE_STORAGE_KEY = 'hubflow.dashboard.customRoute'
 
@@ -1533,7 +1576,19 @@ function readCustomRouteEnabled(): boolean {
   }
 }
 
-const customRouteEnabled = ref<boolean>(readCustomRouteEnabled())
+/** 开关初值 = 档位是③且落盘是开（两个键读盘后可能对不上，见下面的对齐） */
+const customRouteEnabled = ref<boolean>(colorMode.value === 'custom' && readCustomRouteEnabled())
+
+/** 读盘对齐（唯一一处）：③ 档却关着开关 = 自相矛盾 → 一律回决策拥堵版，不让「第③档却一条线都没有」存在 */
+if (colorMode.value === 'custom' && !customRouteEnabled.value) applyColorMode('congestion')
+
+/**
+ * **路线出不出、押灰算不算**的唯一判据：档位是第③档且自定义路线开关开着。
+ *   · `routes` prop / 路线箭头 / 起终点标记 / 右栏路线面板都认它（①②④ 档一律空）；
+ *   · 「凸显路线」的押灰也认它（没有路线可凸显时压灰等于把整张图抹灰，那就不压）。
+ * 地图组件内部的着色判据由 `MapLibreViewer.vue` 自己决定（对方负责），这里只传值 + 决定传不传路线。
+ */
+const customActive = computed<boolean>(() => colorMode.value === 'custom' && customRouteEnabled.value)
 
 function setCustomRouteEnabled(next: boolean): void {
   customRouteEnabled.value = next
@@ -1542,8 +1597,23 @@ function setCustomRouteEnabled(next: boolean): void {
   } catch {
     /* 写不进去就只在本次会话生效，不弹错 */
   }
-  // 关掉就把已选起终点与三条结果一起清掉：不留「开关关着、路线还挂着」的半截状态
-  if (!next) clearOd()
+  if (next) {
+    // 开 → 进第③档（颜色模式与开关联动只在这两行里，工具条不另写判据）
+    applyColorMode('custom')
+    // 进③档才恢复「默认选中推荐路线」那条天蓝态（关掉时置 null，见下面关的分支）
+    pickedRouteKey.value = 'arrival'
+    // 按需取一次 OD 选项 / 推荐：**只有进了第③档才发请求**（①②④ 档一条路线都不取、不画）
+    void loadRouteOptions()
+    return
+  }
+  // 关 → 已选起终点 + 三条结果 + 老推荐快照一并清掉：
+  // 不留「开关关着、路线还挂着」的半截状态，也不留天蓝选中态（pickedRouteKey）
+  clearOd()
+  pickedRouteKey.value = null
+  recommend.value = null
+  recommendError.value = ''
+  routeOptions.value = null
+  if (colorMode.value === 'custom') applyColorMode('congestion')
 }
 
 /**
@@ -1687,6 +1757,21 @@ async function startOdPlan(): Promise<void> {
   }
 }
 
+/**
+ * 自定义起终点这次算路「吃没吃拥堵」（IKRK8B，口径统一后新增）。
+ *
+ * 引擎在 `/route/plan` 响应顶层给 `weight_source`：`bpr` = 用了本次请求的路段快照
+ * （`q_vph` / `c_vph` 走 BPR，和前四档路况是同一套数字）；`free_flow` = 快照不可用 /
+ * 与本站点段号命名空间对不上而降级。**只在降级时提示**：正常吃拥堵时不打扰业主。
+ * 不做任何前端推断 —— `weight_source` 缺省（老接口）就当没说，不猜成 bpr。
+ */
+const odWeightNote = computed<string>(() => {
+  const plan = odPlan.value
+  if (!plan || plan.weight_source !== 'free_flow') return ''
+  return plan.weight_source_note
+    || '本次算路没有可用路段状态，按自由流计算：ETA 是「不堵车」口径，与路段热力不是同一套数字。'
+})
+
 const OD_ROLE_NAME: Record<RoutePlanRole, string> = {
   primary: '主推荐',
   alt1: '备用1',
@@ -1777,10 +1862,16 @@ const customRouteHighlights = computed<RouteHighlight[]>(() => {
   return groups
 })
 
-/** 地图实际要画哪一套：有自定义结果就画自定义的，没有就退回原来的三态路线 */
-const mapRoutes = computed<RouteHighlight[]>(() =>
-  odPlan.value ? customRouteHighlights.value : routeHighlights.value,
-)
+/**
+ * 地图实际要画哪一套：**只有颜色模式第③档「自定义路线版」且开关开着才画**（`customActive`，IKRK8B）。
+ * 档位不是③ → 一律空数组：①②④ 档地图上不许出现任何路线（含引擎产物三态路线 / 站点包骨架），
+ * 与「路线只由自定义路线档触发」同一条口径（mock 侧同改，见 `src/mock/traffic.ts` 的 buildRecommend）。
+ * 有自定义结果就画自定义的，没有就退回原来的三态路线（仍在③档内）。
+ */
+const mapRoutes = computed<RouteHighlight[]>(() => {
+  if (!customActive.value) return []
+  return odPlan.value ? customRouteHighlights.value : routeHighlights.value
+})
 
 /** 段号 → 当前包里的折线（拿不到就不画那一段的箭头，也不猜方向） */
 function coordsOfSegment(segmentId: string): [number, number][] | null {
@@ -1874,6 +1965,8 @@ function warnFallbackOnce(id: string | null): void {
 }
 
 const mapRouteSteps = computed<RouteArrowStep[]>(() => {
+  // 非③档（①②④）没有路线要画，箭头自然一支不画（与 mapRoutes 同一判据 customActive）
+  if (!customActive.value) return []
   if (emergencyActive.value) return []
   const key = pickedRouteKey.value
   const plan = odPlan.value
@@ -1935,6 +2028,8 @@ function destinationPointOf(): RouteStartPoint | null {
 }
 
 const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
+  // ①②④ 档不画路线，起终点标记一并收起（customActive 是路线出不出 / 标记画不画的唯一判据）
+  if (!customActive.value) return null
   // 应急态：起点标记属于引导，一并收起
   if (emergencyActive.value) return null
   // 自定义起点（业主 2026-10-28）：直接用接口吸附回来的落点坐标，不按站点包折线重算
@@ -1993,6 +2088,8 @@ const routeStartMarker = computed<RouteEndpointMarker | null>(() => {
 })
 
 const routeEndMarker = computed<RouteEndpointMarker | null>(() => {
+  // ①②④ 档不画路线，终点标记一并收起（与 routeStartMarker 同一判据）
+  if (!customActive.value) return null
   // 应急态：终点标记属于引导，一并收起
   if (emergencyActive.value) return null
   // 自定义终点（业主 2026-10-28）：同起点口径，坐标与吸附距离都取接口回显值
@@ -2109,7 +2206,10 @@ function applyManualStart(): void {
 
 
 
-/** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组） */
+/** 地图要高亮的路线分组（按 routeView 过滤；无数据时为空数组）。
+ *  ⚠️ 只吃**接口 / 引擎产物**（`recommend` 快照）里的段号；站点包里写死的推荐骨架
+ *  （`station-packs/stationZ.ts` 的 `recommend`、`stationGZ.ts` 的 `RECOMMEND`）**不参与画线**，
+ *  只允许拿它的 location 字段拼请求体。是否真的画，还要过 `mapRoutes` 的 `customActive` 那道闸。 */
 const routeHighlights = computed<RouteHighlight[]>(() => {
   // 应急态（TC-10）：路线引导已停下 → 地图上不再画任何推荐/备选/离站路线。
   // 这是「停下路线引导」的落地：只停引导，不隐藏车流与路况本身（那些是态势，不是引导）。
@@ -2170,8 +2270,11 @@ interface RouteCard {
  *
  * 默认选中推荐路线：业主那次的原话是「选中的路线为天蓝色」——第一次进站就有一条亮着的，
  * 才叫「选中的规划路线」；点别的高亮条就换过去，再点同一条则取消（回到「只有规划蓝」）。
+ *
+ * IKRK8B：**只有③档（自定义路线版）且开关开着**才有默认选中态；①②④ 档没有路线，
+ * 初值给 null，免得地图上一条线都没有、却留着一个「已选中」的天蓝 key（半截状态）。
  */
-const pickedRouteKey = ref<string | null>('arrival')
+const pickedRouteKey = ref<string | null>(customActive.value ? 'arrival' : null)
 
 function pickRoute(key: string): void {
   pickedRouteKey.value = pickedRouteKey.value === key ? null : key
@@ -2188,8 +2291,11 @@ if (acceptView === 'departure') {
   pickedRouteKey.value = 'departure'
 }
 
-/** 右栏路线卡片（与地图用同一份 recommend 数据，不另算） */
+/** 右栏路线卡片（与地图用同一份 recommend 数据，不另算）
+ *  ⚠️ 只有自定义路线档（③，customActive）才出卡片：①②④ 档连卡片都不出，
+ *  否则会出现「地图上一条线都没有、右栏却在列三条路线」的自相矛盾（IKRK8B 收口）。 */
 const routeCards = computed<RouteCard[]>(() => {
+  if (!customActive.value) return []
   const r = recommend.value
   if (!r) return []
   const cards: RouteCard[] = []
@@ -2284,8 +2390,10 @@ const routeDegradedNote = computed<string>(() => {
 
 onMounted(() => {
   void refresh()
-  // Issue IKNAUI：先载入引擎 OD 选项（有则默认画第一条完整路线；无则回退演示会话）
-  void loadRouteOptions()
+  // Issue IKNAUI：先载入引擎 OD 选项（有则默认画第一条完整路线；无则回退演示会话）。
+  // IKRK8B：**只有上次落盘就是③档（自定义路线版）才首屏取路线**；默认档（①②④）
+  // 首屏不取、不画任何路线 —— 路线只由自定义路线档触发（业主口径「不要一进来就有线」）。
+  if (customActive.value) void loadRouteOptions()
   unsubscribe = subscribeTrafficSnapshot(
     () => {
       void refresh()
@@ -2418,12 +2526,15 @@ const dist = computed<DistRow[]>(() => {
     ]
   }
   // 决策拥堵版：沿用接口 level_distribution（C-2 既有口径，不重算）
-  return (overview.value?.level_distribution ?? []).map((r) => ({
+  const rows = (overview.value?.level_distribution ?? []).map((r) => ({
     level: r.level,
     name: r.name,
     count: r.count,
     color: r.level === 0 ? UNAVAILABLE.color : LEVELS[r.level].color,
   }))
+  // ③④ 档（自定义路线版 / 灰底版）：**数值照留、一律压灰**（MODE_DIM_GRAY），
+  // 不落进等级色；「数据不可用」灰 UNAVAILABLE.color 不动（那是"没有数据"，两件事）。
+  return isMuted.value ? rows.map((r) => ({ ...r, color: MODE_DIM_GRAY })) : rows
 })
 
 const distTotal = computed(() => {
@@ -2514,8 +2625,9 @@ const segRows = computed<SegRow[]>(() => {
     const st = levelStyle(seg)
     return {
       seg,
-      color: st.color,
-      text: st.text,
+      // ③④ 档：行色压灰（数值 / 角标照留，只是不落进等级色）—— 与流量版的"缺 q 灰"区分
+      color: isMuted.value ? MODE_DIM_GRAY : st.color,
+      text: isMuted.value ? UNAVAILABLE.text : st.text,
       stale: isStale(seg),
       name: nameOf(seg.segment_id),
       flowBand: null,
@@ -2880,33 +2992,33 @@ function onCommandChanged(): void {
       </template>
     </div>
 
-    <!-- 颜色模式切换（Issue IKNB9G，业主 2026-10-18）：决策拥堵版 ↔ 纯车流量版 -->
+    <!-- 颜色模式切换 4 档（IKRK8B，业主 2026-10-29 由 2 档扩为 4 档）：
+         决策拥堵版 / 纯车流量版 / 自定义路线版 / 灰底版。
+         档名与口径一律取自 shared/flow.ts 的 COLOR_MODES / COLOR_MODE_META，模板里不另写一份数组或文案。 -->
     <div class="color-mode-bar" role="group" aria-label="颜色模式切换">
       <span class="cm-title">颜色模式</span>
       <button
+        v-for="m in COLOR_MODES"
+        :key="m"
         type="button"
         class="cm-item"
-        :class="{ on: !isFlow }"
-        :aria-pressed="!isFlow"
-        @click="setColorMode('congestion')"
+        :class="{ on: colorMode === m, flow: m === 'flow', muted: m === 'custom' || m === 'gray' }"
+        :aria-pressed="colorMode === m"
+        :title="`${COLOR_MODE_META[m].shows}；${COLOR_MODE_META[m].notShows}`"
+        @click="setColorMode(m)"
       >
-        决策拥堵版
+        {{ COLOR_MODE_META[m].name }}
       </button>
-      <button
-        type="button"
-        class="cm-item flow"
-        :class="{ on: isFlow }"
-        :aria-pressed="isFlow"
-        @click="setColorMode('flow')"
-      >
-        纯车流量版
-      </button>
-      <span v-if="isFlow" class="cm-note">
-        <b>{{ FLOW_MODE_LABEL }}</b> · {{ FLOW_MODE_NOTE }} · {{ FLOW_COLOR_NOTE }}
-        · 仅颜色 / 列表 / 图例 / 热力随模式切换；KPI 与右栏决策信息仍为决策口径
-      </span>
-      <span v-else class="cm-note">
-        决策拥堵版：按接口 level 四级判级配色（判级来自感知层，前端不重算）
+      <span class="cm-note">
+        <template v-if="isFlow">
+          <b>{{ FLOW_MODE_LABEL }}</b> · {{ FLOW_MODE_NOTE }} · {{ FLOW_COLOR_NOTE }}
+          · 仅颜色 / 列表 / 图例 / 热力随模式切换；KPI 与右栏决策信息仍为决策口径
+        </template>
+        <template v-else-if="isMuted">
+          <b>{{ colorModeMeta.name }}</b> · {{ colorModeMeta.shows }} ·
+          <b>{{ MODE_NO_TRAFFIC_NOTE }}</b>（{{ colorModeMeta.notShows }}）
+        </template>
+        <template v-else>{{ colorModeMeta.name }}：{{ colorModeMeta.shows }}</template>
       </span>
     </div>
 
@@ -2973,6 +3085,10 @@ function onCommandChanged(): void {
                   </span>
                 </div>
                 <p v-if="isFlow" class="note">流量版不提供 CI 视图（CI 是决策口径）；切回「决策拥堵版」可用，C-2 既有能力未删。</p>
+                <p v-else-if="isMuted" class="note">
+                  ③④ 档：分布条与列表行一律压灰（{{ MODE_DIM_GRAY }}），
+                  <b>{{ MODE_NO_TRAFFIC_NOTE }}</b>；计数与等级角标照留，切回「决策拥堵版」即恢复等级色。
+                </p>
                 <div class="dist-bar" :style="{ background: TD.bgSecondary }">
                   <span
                     v-for="r in dist"
@@ -3011,7 +3127,7 @@ function onCommandChanged(): void {
             <section class="td-card seg-card">
               <div class="td-card-head">
                 路段监测
-                <span class="td-head-tag">{{ isFlow ? '按车流量降序' : viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
+                <span class="td-head-tag">{{ isFlow ? '按车流量降序' : isMuted ? '压灰不上色 · 排序仍按判级' : viewMode === 'index' ? '按 CI 降序' : '按等级排序' }}</span>
               </div>
               <div class="td-card-body flush seg-body">
                 <div class="td-scroll seg-list">
@@ -3209,22 +3325,28 @@ function onCommandChanged(): void {
                     </button>
                   </span>
                   <!-- 凸显路线开关（Issue IKP5CK）：开 = 非路线段压灰、关 = 满图等级色。
-                       默认开，落 localStorage；状态在图上与图例里都能看到。 -->
+                       默认开，落 localStorage；状态在图上与图例里都能看到。
+                       IKRK8B：**没有路线可凸显时本开关无效**（非③档 / ③档但还没出线）——
+                       否则压灰等于把整张图抹灰，且「凸显的是哪条路线」根本不存在。
+                       判据只在这里用 customActive 关掉入口；图上的压灰判据仍归 MapLibreViewer。 -->
                   <span class="pack-switch" role="group" aria-label="凸显路线">
                     <button
                       type="button"
                       class="pack-switch-item"
-                      :class="{ on: routeEmphasisEnabled }"
+                      :class="{ on: routeEmphasisEnabled && customActive, off: !customActive }"
                       role="switch"
-                      :aria-checked="routeEmphasisEnabled"
+                      :aria-checked="routeEmphasisEnabled && customActive"
+                      :disabled="!customActive"
                       :title="
-                        routeEmphasisEnabled
-                          ? '凸显路线：开（非路线段中性灰细线，不按等级上色）；点击恢复满图等级色'
-                          : '凸显路线：关（满图等级色 + 路线叠加）；点击压灰非路线段'
+                        !customActive
+                          ? '凸显路线：当前没有路线（只有「自定义路线版」出了线才谈得上凸显），开关暂不可用'
+                          : routeEmphasisEnabled
+                            ? '凸显路线：开（非路线段中性灰细线，不按等级上色）；点击恢复满图等级色'
+                            : '凸显路线：关（满图等级色 + 路线叠加）；点击压灰非路线段'
                       "
-                      @click="setRouteEmphasisEnabled(!routeEmphasisEnabled)"
+                      @click="customActive && setRouteEmphasisEnabled(!routeEmphasisEnabled)"
                     >
-                      凸显路线 {{ routeEmphasisEnabled ? '开' : '关' }}
+                      凸显路线 {{ !customActive ? '无路线' : routeEmphasisEnabled ? '开' : '关' }}
                     </button>
                   </span>
                 </div>
@@ -3444,8 +3566,8 @@ function onCommandChanged(): void {
                       :aria-pressed="pickedRouteKey === odRoleKey(r.role)"
                       :title="
                         pickedRouteKey === odRoleKey(r.role)
-                          ? '再点一次取消选中（全部按原配色画）'
-                          : '点为选中路线（地图上画成天蓝，压在其它路线之上）'
+                          ? '再点一次取消选中（全部按浅蓝画）'
+                          : '点为选中路线（地图上画成品牌蓝，压在其它路线之上）'
                       "
                       @click="pickRoute(odRoleKey(r.role))"
                     >
@@ -3463,6 +3585,9 @@ function onCommandChanged(): void {
                     </button>
                   </div>
                   <p v-if="odStatusNote" class="route-hint">{{ odStatusNote }}</p>
+                  <!-- 算路口径（IKRK8B）：引擎给 weight_source，降级成自由流时如实说一句，
+                       免得「页面标着按拥堵算、其实是自由流 ETA」这种两套数字同屏 -->
+                  <p v-if="odWeightNote" class="route-hint warn">{{ odWeightNote }}</p>
 
                   <!-- 离站路线：另外计算，单独一块，不和主推荐混在一起 -->
                   <div class="cod-dep">
@@ -3487,14 +3612,15 @@ function onCommandChanged(): void {
                   </div>
                   <p v-if="odPlan.note" class="route-source">{{ odPlan.note }}</p>
                   <p class="route-source">
-                    段号 / ETA / 里程 / 备选理由全部由接口原样给出，本页不重算；点卡片可在图上高亮那条线（天蓝）。
+                    段号 / ETA / 里程 / 备选理由全部由接口原样给出，本页不重算；点卡片可在图上高亮那条线（选中的画品牌蓝，其余浅蓝）。
                   </p>
                 </template>
               </template>
             </div>
             <!-- 引擎产物那条老路（三态路线 / 全程摘要）保留为**没有自定义结果时**的兜底视图：
-                 自定义起终点一旦算过（`odPlan` 有值），这块就整体让位给上面的三张卡，避免同屏两套结论。 -->
-            <template v-if="!odPlan">
+                 自定义起终点一旦算过（`odPlan` 有值），这块就整体让位给上面的三张卡，避免同屏两套结论。
+                 外层再套 `customActive`：非③档（①②④）连推荐快照都不读、不展示（与地图不画线同口径）。 -->
+            <template v-if="customActive && !odPlan">
             <p v-if="recommendLoading" class="route-hint">正在读取推荐快照…</p>
             <p v-else-if="recommendError" class="route-hint warn">{{ recommendError }}</p>
             <template v-else-if="recommend">
@@ -3640,6 +3766,11 @@ function onCommandChanged(): void {
             </template>
             <p v-else class="route-hint">无推荐数据：保持不画路线（不编造演示路线）</p>
             </template>
+            <!-- 非③档：不取推荐、不画路线（路线只由自定义路线档触发；①②④ 档一条都不出） -->
+            <p v-else class="route-hint">
+              当前颜色模式是「{{ colorModeMeta.name }}」，路线只由「自定义路线版」（第③档）触发：
+              点上面的开关即可切到第③档并按需取一次推荐；其余档位一条路线都不画。
+            </p>
           </div>
         </section>
         <section class="td-card">
@@ -3912,7 +4043,7 @@ function onCommandChanged(): void {
       <section class="td-card band-card">
         <div class="td-card-head">
           档位分布 · 当前时刻<span class="td-head-tag">
-            {{ isFlow ? `流量四档 · ${FLOW_UNAVAILABLE_LABEL} ${unavailableCount}` : `灰档 ${unavailableCount}` }}
+            {{ isFlow ? `流量四档 · ${FLOW_UNAVAILABLE_LABEL} ${unavailableCount}` : isMuted ? `压灰不入档 · 不可用 ${unavailableCount}` : `灰档 ${unavailableCount}` }}
           </span>
         </div>
         <div class="td-card-body">
@@ -3923,7 +4054,7 @@ function onCommandChanged(): void {
           />
           <p class="note">
             共 {{ distTotal }} 个路段 ·
-            {{ isFlow ? `${FLOW_UNAVAILABLE_LABEL}不计入分档,分档阈值见 shared/flow.ts` : '灰档不计入均值,与地图同源' }}
+            {{ isFlow ? `${FLOW_UNAVAILABLE_LABEL}不计入分档,分档阈值见 shared/flow.ts` : isMuted ? `本档不表示路况（${MODE_DIM_GRAY} 压灰只表示"不上色"，数值与判级照留）` : '灰档不计入均值,与地图同源' }}
           </p>
         </div>
       </section>
@@ -3931,13 +4062,20 @@ function onCommandChanged(): void {
       <section class="td-card band-card wide">
         <div class="td-card-head">
           路段 × 时间热力矩阵<span class="td-head-tag">
-            {{ isFlow ? '流量版：仅当前快照桶有 q，历史桶灰' : '最近 12 个快照 · 每 60 s 一档 · 左旧右新' }}
+            {{ isFlow ? '流量版：仅当前快照桶有 q，历史桶灰' : isMuted ? `本档不表示路况 · ${MODE_NO_TRAFFIC_NOTE}` : '最近 12 个快照 · 每 60 s 一档 · 左旧右新' }}
           </span>
         </div>
         <div class="td-card-body flush">
-          <HeatMatrixTable :matrix="isFlow ? flowHeat : heat" :mode="isFlow ? 'flow' : 'ci'" />
+          <HeatMatrixTable
+            :matrix="isFlow ? flowHeat : heat"
+            :mode="isFlow ? 'flow' : isMuted ? 'gray' : 'ci'"
+          />
           <p v-if="isFlow" class="note" style="padding: 4px 10px 0">
             流量版矩阵只展示<b>当前快照</b>的 q（接口没有流量时序）；历史桶如实为空（灰），不用 0 或波形冒充历史。
+          </p>
+          <p v-else-if="isMuted" class="note" style="padding: 4px 10px 0">
+            ③④ 档矩阵<b>数值照留、一律压灰</b>（{{ MODE_DIM_GRAY }}）：{{ MODE_NO_TRAFFIC_NOTE }}；
+            要看等级色请切回「决策拥堵版」。
           </p>
         </div>
       </section>
@@ -3955,6 +4093,10 @@ function onCommandChanged(): void {
           <p class="note">{{ CI_BAND_NOTE }}</p>
           <p v-if="isFlow" class="note">
             CI 色阶为决策口径展示，<b>不参与流量版配色</b>（流量版只用 q 分档；C-2 既有元素保留）。
+          </p>
+          <p v-else-if="isMuted" class="note">
+            CI 色阶是<b>决策口径</b>：③④ 档底图压灰时不参与配色（{{ MODE_NO_TRAFFIC_NOTE }}），
+            色阶本身原样保留，切回「决策拥堵版」即生效。
           </p>
         </div>
       </section>
@@ -3992,13 +4134,17 @@ function onCommandChanged(): void {
       <span>{{ packLine }}</span>
       <span v-if="capacityLine">{{ capacityLine }}</span>
       <span>
-        颜色模式:{{ isFlow ? '纯车流量（q 四档，仅展示，不代表拥堵结论）' : '决策拥堵（接口 level）' }}
+        颜色模式:{{ colorModeLabel }}
       </span>
       <span class="right">
         口径:
         <template v-if="isFlow">
           一期全部示例数据(模拟)· {{ FLOW_MODE_LABEL }} · {{ FLOW_MODE_NOTE }} ·
           数据不可用灰显(TC-11) · {{ FLOW_COLOR_NOTE }}
+        </template>
+        <template v-else-if="isMuted">
+          一期全部示例数据(模拟)· {{ colorModeMeta.name }} · {{ MODE_NO_TRAFFIC_NOTE }} ·
+          压灰 {{ MODE_DIM_GRAY }} ≠ 数据不可用灰 · 等级三重编码仍保留在数值/文案里
         </template>
         <template v-else>
           一期全部示例数据(模拟)· 等级三重编码(颜色 + 竖条 + 文字)· 数据不可用灰显(TC-11)· {{ CI_DISCLAIMER }}
@@ -4086,7 +4232,7 @@ function onCommandChanged(): void {
   color: var(--td-text-color-placeholder);
 }
 
-/* ---------- 颜色模式切换（Issue IKNB9G：决策拥堵版 ↔ 纯车流量版） ---------- */
+/* ---------- 颜色模式切换 4 档（IKNB9G 两档 → IKRK8B 四档） ---------- */
 .color-mode-bar {
   flex: 0 0 auto;
   display: flex;
@@ -4126,6 +4272,11 @@ function onCommandChanged(): void {
 .cm-item.flow.on {
   background: #2f54eb;
   border-color: #2f54eb;
+}
+/* ③④ 档（自定义路线版 / 灰底版）：选中态用中性深灰，与「蓝 = 有数据结论」的观感隔开 */
+.cm-item.muted.on {
+  background: #5c6b7a;
+  border-color: #5c6b7a;
 }
 .cm-note {
   flex: 1;
@@ -4583,6 +4734,12 @@ function onCommandChanged(): void {
 .pack-switch-item.on {
   background: v-bind('TD.brand');
   color: #ffffff;
+}
+/* 没有路线可凸显时（非③档）开关置灰、不可点：避免"按下去像做了什么"的空动作 */
+.pack-switch-item:disabled,
+.pack-switch-item.off {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 .map-title {
   font-size: 13px;

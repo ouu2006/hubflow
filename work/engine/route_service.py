@@ -18,7 +18,9 @@
 
 口径：
 - 不读系统时钟、不用随机数，同一输入结果一致；
-- 权重默认自由流（`length_m / speed`），传 `states` 时用 BPR（与 `run.py` 同一套参数）；
+- 权重默认自由流（`length_m / speed`），传 `states` 时用 BPR —— **公式与参数都只在
+  `network.weight_fn` 里**（`t = t0·(1 + alpha·x^beta)`，`x` 现算自 `q_vph / c_vph`），
+  本模块不复制第二份实现，参数键与站点包 `decision` 组同为 `alpha` / `beta`；
 - 所有输出标 `is_simulated: True`（一期全是演示数据）。
 
 用法：
@@ -32,7 +34,7 @@ from __future__ import annotations
 import json
 import math
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import candidates
 import network
@@ -48,13 +50,14 @@ K_GENERATE = 30
 #: 最多返回的路线数（1 主 + 2 备）
 K_ROUTES = 3
 #: 缺省参数（与 stations/thresholds.json 的 decision 组同口径，读不到就用这组演示值）
+#: BPR 参数键就写 `alpha` / `beta`（与站点包 decision 组、`network.travel_time_s` 完全一致），
+#: 不要再出现 `bpr_alpha` / `bpr_beta`。
 DEFAULT_PARAMS = {
     "k_candidates": K_ROUTES,
     "max_path_overlap": 0.7,
     "eps_harm_s": 30.0,
-    "free_flow_speed_kmh": 40.0,
-    "bpr_alpha": 0.15,
-    "bpr_beta": 4.0,
+    "alpha": 0.15,
+    "beta": 4.0,
 }
 
 STATUS_OK = "ok"
@@ -722,37 +725,28 @@ def _end_at(destination: dict[str, Any]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------- 权重
-def free_flow_weight(graph: network.Graph, params: dict[str, Any]) -> Callable[[str], float]:
-    speed_kmh = float(params.get("free_flow_speed_kmh") or DEFAULT_PARAMS["free_flow_speed_kmh"])
-    speed_ms = max(0.1, speed_kmh / 3.6)
+#: 算路权重**只有一份实现**：`network.weight_fn`（自由流 / BPR 的切换也在里面）。
+#: 本文件不再自己写 t0、不再自己算 x、不再有第二套 alpha 命名 —— 那三样以前在这里各有一份，
+#: 参数键还是 `bpr_alpha`/`bpr_beta`，和 `stations/thresholds.json` 的 `decision.alpha/beta`
+#: 对不上，导致"站点包改 alpha，自定义起终点算路不跟着动"。
 
-    def weight(edge_id: str) -> float:
-        edge = graph.edge(edge_id)
-        limit = edge.get("speed_limit") or speed_kmh
-        return float(edge.get("length_m") or 0.0) / max(0.1, float(limit) / 3.6)
+#: 已废弃的参数键：**只用来报错**，不做别名兼容。
+#: 理由：`bpr_alpha` 这类键静默回落到缺省值，正是这次口径分叉的成因
+#: （站点包 `decision.alpha` 改了、自定义起终点算路纹丝不动，且没人发现）。
+#: 宁可当场报错让调用方改键名，也不要悄悄用 0.15 / 4.0 算出一个看着正常的 ETA。
+_LEGACY_BPR_KEYS = ("bpr_alpha", "bpr_beta")
 
-    return weight
 
-
-def bpr_weight(
-    graph: network.Graph, states: dict[str, dict[str, Any]], params: dict[str, Any]
-) -> Callable[[str], float]:
-    """BPR 权重（与 run.py 同口径）：t = t0 * (1 + α·x^β)，x 取 `section` 对齐的状态。"""
-    alpha = float(params.get("bpr_alpha") or DEFAULT_PARAMS["bpr_alpha"])
-    beta = float(params.get("bpr_beta") or DEFAULT_PARAMS["bpr_beta"])
-    base = free_flow_weight(graph, params)
-
-    def weight(edge_id: str) -> float:
-        edge = graph.edge(edge_id)
-        state = states.get(str(edge.get("section"))) or {}
-        x = state.get("x")
-        try:
-            x = float(x) if x is not None else 0.0
-        except (TypeError, ValueError):
-            x = 0.0
-        return base(edge_id) * (1.0 + alpha * max(0.0, x) ** beta)
-
-    return weight
+def _bpr_params(params: dict[str, Any]) -> dict[str, Any]:
+    """算路参数键统一为 `alpha` / `beta`（与 `network.travel_time_s`、站点包 decision 组同源）。"""
+    merged = dict(params or {})
+    stale = [key for key in _LEGACY_BPR_KEYS if key in merged]
+    if stale:
+        raise ValueError(
+            f"算路参数键已统一为 alpha / beta（与 network.travel_time_s、"
+            f"stations/thresholds.json 的 decision 组一致），不再接受 {stale}"
+        )
+    return merged
 
 
 # ---------------------------------------------------------------- 算路
@@ -822,11 +816,11 @@ def plan_departure(
     同代价时按 `node_id` 排序，保证同一输入结果稳定。
     算不出就返回 `None`（页面如实空窗），**不编造一段假出口**。
     """
-    params = {**DEFAULT_PARAMS, **(params or {})}
+    params = _bpr_params({**DEFAULT_PARAMS, **(params or {})})
     dest_r = resolve_endpoint(graph, destination, points)
     end = _end_at(dest_r)
     src = end["node"]
-    weight = bpr_weight(graph, states, params) if states else free_flow_weight(graph, params)
+    weight = network.weight_fn(graph, states, params)
     forbid_u_turn = bool(graph.attributes.get("forbid_u_turn"))
 
     candidates_out: list[str] = []
@@ -929,12 +923,15 @@ def plan(
     `routes[]` 另带路线级裁切量 `trim_head_m` / `trim_tail_m`（= 首/末段的裁切量，
     `length_m == Σsteps.length_m - trim_head_m - trim_tail_m` 自洽）。
     """
-    params = {**DEFAULT_PARAMS, **(params or {})}
+    params = _bpr_params({**DEFAULT_PARAMS, **(params or {})})
     origin_r = resolve_endpoint(graph, origin, points)
     dest_r = resolve_endpoint(graph, destination, points)
     start = _start_from(origin_r)
     end = _end_at(dest_r)
-    weight = bpr_weight(graph, states, params) if states else free_flow_weight(graph, params)
+    # 决策层状态进算路（2026-10-29 修）：之前这里只按 `states` 是否为空分支到两套本地权重，
+    # 现在统一走 `network.weight_fn` —— 自由流 / BPR 的公式与参数（alpha / beta、x = q/c）全在 network 里。
+    weight = network.weight_fn(graph, states, params)
+    weight_source = network.weight_source_of(states)
     forbid_u_turn = bool(graph.attributes.get("forbid_u_turn"))
 
     if start["node"] == end["node"]:
@@ -1108,7 +1105,12 @@ def plan(
             "max_path_overlap": float(params["max_path_overlap"]),
             # 重叠度按**全长**共线比例（业主 2026-10-28 裁定：不去公共首尾，不绕门槛）
             "overlap_panel": "full_path",
-            "weight": "bpr" if states else "free_flow",
+            # 这次算路实际吃的权重口径（`bpr` = 决策层路段状态进来了 / `free_flow` = 没状态走自由流）。
+            # 2026-10-29 由 `weight` 改名 `weight_source`（全仓无其它消费方，直改）。
+            "weight_source": weight_source,
+            # BPR 参数照站点包 decision 组回显（alpha / beta 与 network.travel_time_s 同一套键名）
+            "alpha": float(params["alpha"]),
+            "beta": float(params["beta"]),
         },
         "note": "演示数据（模拟）：点位与路网来自站点包 / OSM，未现场踏勘；ETA 为模型值，不是实测。",
     }

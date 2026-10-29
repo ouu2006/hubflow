@@ -359,43 +359,39 @@ async function buildVehiclesSnapshotWithTwin(): Promise<VehiclesSnapshot> {
   return buildVehiclesSnapshot()
 }
 
-// ---------- 推荐快照(静态演示:引擎写入 routes.json 后由接口层端出,这里按站点包骨架假造) ----------
-
+// ---------- 推荐快照（mock **不再注入站点包骨架路线**，IKRK8B 2026-10-29）---------
+//
+// 背景：原来这里直接拿 `activePack().recommend`（站点包里写死的推荐 / 备选 / 离站）拼一份
+// 「看起来什么都齐」的 RecommendResult，mock 模式下前端就画出了一整套**假路线**——
+// 与真接口 / 引擎 routes.json 的产物是两套东西，观感全乱，且绕过引擎（盘点里的"假路线"）。
+//
+// 现在口径：**路线只由前端「自定义路线版」（第③档，customRouteEnabled）触发；mock 不再注入站点包骨架。**
+// 因此这里一律返回**空 routes**：各条路线 `segments` 为空、备选为空。
+// 前端拿到空 segments 就不画线、不画箭头，右栏如实显示「无推荐数据」，不再有半真半假的演示路线。
+// 想看线：走真接口（引擎 routes.json）或 `/route/plan` 自定义起终点那条路；这里不再造假。
 function buildRecommend(): RecommendResult {
-  const r = activePack().recommend
   return {
     request_id: rid('REQ'),
     session_id: rid('S'),
     driver_type: 'D1',
     parking_mode: 'S1',
+    // 位置仍给一个可用值（只用于契约完整 / 浮牌展示，**不构成任何路线**）
     location: {
-      segment_id: r.location_segment_id,
-      offset_m: r.location_offset_m,
+      segment_id: activePack().recommend.location_segment_id,
+      offset_m: activePack().recommend.location_offset_m,
       match_confidence: 1.0,
       source: 'twin',
     },
-    arrival_route: {
-      path_id: 'P-2',
-      segments: r.arrival_segments,
-      eta_min: r.arrival_eta_min,
-      dropoff_point: r.arrival_dropoff_point,
-      walk_min: r.arrival_walk_min,
-    },
-    departure_route: { path_id: 'P-2-D', segments: r.departure_segments, eta_min: r.departure_eta_min },
+    arrival_route: { path_id: 'P-2', segments: [], eta_min: 0 },
+    departure_route: { path_id: 'P-2-D', segments: [], eta_min: 0 },
     pickup_route: null,
-    // 契约:备选 ≥2 条(包给的是演示骨架;引擎 routes.json 就绪后由接口层端出真结果)
-    alternatives: r.alternatives.map((a) => ({
-      path_id: a.path_id,
-      eta_min: a.eta_min,
-      reason: a.note,
-      segments: a.segments,
-    })),
+    alternatives: [],
     reservation: {
       slots_reserved: 9,
       lease_expire_s: 90,
       harm_check: { max_eta_increase_s: 12, max_slot_x: 0.81, passed: true },
     },
-    why: r.why,
+    why: 'mock 模式不注入站点包骨架路线：路线只由「自定义路线版」（第③档）触发，此处不返回任何路线段。',
     is_simulated: true,
   }
 }
@@ -1108,8 +1104,10 @@ export async function handleTraffic(path: string, method: string, req: MockReq, 
     return true
   }
 
+  // ⚠️ mock 也**不再**回站点包骨架路线（IKRK8B）：`buildRecommend()` 各条路线 segments 都是空的。
+  // 路线只由自定义路线档触发；这里回空段 = 前端一条线都不画，如实提示「无推荐数据」。
   if (path === '/traffic/route/recommend' && method === 'POST') {
-    await readJson(req) // 请求体形状见契约(session_id / location);mock 不校验,原样回推荐快照
+    await readJson(req) // 请求体形状见契约(session_id / location);mock 不校验
     json(res, 200, buildRecommend())
     return true
   }

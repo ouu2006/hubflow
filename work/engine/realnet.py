@@ -801,13 +801,13 @@ def derive_od_pairs(
         if node_id not in destination_nodes:
             destination_nodes.append(node_id)
 
-    def free_flow_weight(edge_id: str) -> float:
-        return network.free_flow_time_s(graph.edge(edge_id))
-
     def free_flow_eta(path: list[str]) -> float:
         return network.path_travel_time_s(graph, path, {}, params)
 
-    weight = free_flow_weight
+    # 权重只有一份实现：`network.weight_fn`（states 传空 = 自由流）。
+    # 这里**刻意不传路段状态**：OD 推导 / 出口择优走"自由流最快"口径，与 `run.py` 的
+    # `_habitual_path` 一致；要按决策层状态算路的入口是 `route_service.plan`。
+    weight = network.weight_fn(graph, None, params)
     # 搜索深度用代码常量（见 CANDIDATE_SEARCH_K 注释：K 属「做法」不属站点包），
     # 重叠度门槛仍读站点包 decision.max_path_overlap。
     k = max(int(params.get("k_candidates", 3)), CANDIDATE_SEARCH_K)

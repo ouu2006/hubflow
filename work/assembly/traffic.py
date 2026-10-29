@@ -2960,6 +2960,8 @@ def _route_option_summary(request: dict[str, Any]) -> dict[str, Any]:
         "alternatives": alternatives,
         "pickup_route": pickup_summary,
         "departure_route": departure_summary,
+        # 算路权重口径（产物侧盖的 bpr / free_flow），只透传
+        "weight_source": _route_weight_source(request),
         "why": request.get("why") if isinstance(request.get("why"), str) else None,
         "is_simulated": True,
     }
@@ -3110,6 +3112,10 @@ def _decorate_route_response(
     meta = _route_response_meta(layer_key, payload, match_meta)
     note = meta.pop("note", None)
     body.update(meta)
+    # 算路权重口径（`bpr` / `free_flow`）：产物写的时候盖的，这里只透传 ——
+    # 和 /route/plan 的 `weight_source` 是**同一套词**，页面据此判断 ETA 吃没吃拥堵，
+    # 也用来和 /route/{id}/steps 对齐。老产物没这个键就如实 null（不猜）。
+    body["weight_source"] = _route_weight_source(request)
     existing = body.get("note")
     if note:
         body["note"] = (existing + "；" if isinstance(existing, str) and existing else "") + note
@@ -3745,6 +3751,8 @@ def api_route_request_steps(request_id: str) -> JSONResponse:
                     "od_id": request.get("od_id") if isinstance(request.get("od_id"), str) else None,
                     "session_id": request.get("session_id") if isinstance(request.get("session_id"), str) else None,
                     "driver_type": request.get("driver_type") if isinstance(request.get("driver_type"), str) else None,
+                    # 与 /route/plan、/route/recommend 同一个词、同一个来源（产物）
+                    "weight_source": _route_weight_source(request),
                     "segment_namespaces": _routes_namespaces(payload),
                     "start_point": (
                         request.get("start_point")
@@ -3869,13 +3877,71 @@ def _route_graph(site_id: str) -> tuple[Any, Any]:
 
 
 def _route_decision_params() -> dict[str, Any]:
-    """算路参数只认站点包阈值（k_candidates / max_path_overlap），不在这里改门槛。"""
+    """算路参数只认站点包阈值，不在这里改门槛、也不在这里造第二套参数名。
+
+    键名与 `work/engine/network.travel_time_s` 完全一致（`alpha` / `beta`）：站点包
+    `stations/thresholds.json` 的 `decision` 组本来就是 `alpha` / `beta`，改前接口层
+    只透传 k_candidates / max_path_overlap、把 BPR 参数留给 route_service 的
+    `bpr_alpha`/`bpr_beta` 缺省值，于是「站点包调 alpha」对自定义起终点算路完全无效。
+    2026-10-29 统一：这里把 decision 组的 alpha / beta 原样透传下去（键名不改写）。
+    """
     thresholds = read_json_cached(ROOT / "stations" / "thresholds.json") or {}
     decision = thresholds.get("decision") or {}
-    return {
+    params: dict[str, Any] = {
         "k_candidates": decision.get("k_candidates", 3),
         "max_path_overlap": decision.get("max_path_overlap", 0.7),
+        "alpha": decision.get("alpha", 0.15),
+        "beta": decision.get("beta", 4.0),
     }
+    if decision.get("eps_harm_s") is not None:
+        params["eps_harm_s"] = decision.get("eps_harm_s")
+    return params
+
+
+def _route_segments_state(graph: Any) -> dict[str, dict[str, Any]] | None:
+    """把**本请求的路段快照**当决策层状态喂给算路（`/route/plan` 吃拥堵的关键）。
+
+    改前 `/route/plan` 调 `service.plan(...)` 时**没传 `states`** ⇒ 永远走自由流，
+    页面在堵车时段算出的 ETA 和路段热力自相矛盾（同一时刻、同一条路两个口径）。
+
+    口径：
+      · 只有 `records`（按 `segment_id` 建索引，`q_vph` / `c_vph` 齐全）进引擎；
+        `x` 由 `network.travel_time_s` **现算**，不复用快照里预先算好的 `x`；
+      · **按本次建图的段号命名空间过滤**（`graph.section_ids()`）：快照属于"当前站点"，
+        而 `site_id` 允许逐请求指定 —— 跨站时 SZ-### 状态对 GZ-### 边一条也对不上，
+        若照样把 states 传下去，就会出现"标着 bpr、其实每条边都是自由流"的假口径；
+        过滤后一条都对不上就当没有状态（`None` ⇒ `free_flow`）；
+      · 快照拿不到 / 为空 → `None`（引擎退回自由流并在响应里标 `weight_source=free_flow`），
+        **绝不因为快照故障让算路 500**：这是辅助端点，宁可降级成自由流也要给出路线；
+      · 只读：不修改快照对象（`request_snapshot()` 的返回值是全请求共用的只读缓存）。
+    """
+    try:
+        snapshot = request_snapshot()
+        records = snapshot.get("records") if isinstance(snapshot, dict) else None
+    except Exception:  # noqa: BLE001 - 快照装配异常一律降级为「无状态 ⇒ 自由流」
+        return None
+    if not isinstance(records, dict) or not records:
+        return None
+    try:
+        sections = graph.section_ids()
+    except AttributeError:  # 老版本 network.Graph 没有这个访问器：不过滤，按原样喂
+        sections = None
+    states = {
+        str(segment_id): record
+        for segment_id, record in records.items()
+        if isinstance(record, dict) and (sections is None or str(segment_id) in sections)
+    }
+    return states or None
+
+
+def _route_weight_source(request: dict[str, Any]) -> str | None:
+    """产物里那条 request 的算路权重口径（`bpr` / `free_flow`），**只透传不推断**。
+
+    `weight_source` 由批处理 `work/engine/run.py` 写产物时盖上（`network.weight_source_of`
+    判定），接口层只读产物、不代算，所以这里不做任何"猜"：老产物没有这个键就如实 `None`。
+    """
+    value = request.get("weight_source")
+    return value if isinstance(value, str) and value else None
 
 
 def _endpoint_echo(raw: dict[str, Any] | None) -> dict[str, Any]:
@@ -4021,6 +4087,11 @@ async def api_route_plan(request: Request) -> JSONResponse:
       `direction`），页面画起点标记用这个，**不要**用 `coords[0]` 折 `offset_m`（反向段会镜像到段尾）；
     - `origin` / `destination` 回显里的 `offset_m` 仍是 `coords` 顺序（可原样回灌），
       `offset_travel_m` 是行进顺序里程。
+
+    **权重口径（2026-10-29 修）**：算路现在吃**本请求的路段快照**（`q_vph` / `c_vph` → BPR），
+    不再是"自定义起终点永远自由流"。响应顶层 `weight_source` 说明这次实际用了哪套
+    （`bpr` = 有状态 / `free_flow` = 快照不可用而降级，附 `weight_source_note`）；
+    BPR 参数（`alpha` / `beta`）取自 `stations/thresholds.json` 的 `decision` 组，与批量产物同源。
     """
     body = await _read_body(request)
     site_id = _route_site_id(
@@ -4049,6 +4120,7 @@ async def api_route_plan(request: Request) -> JSONResponse:
             destination,
             points=points,
             params=_route_decision_params(),
+            states=_route_segments_state(graph),
             with_departure=with_departure,
             exit_node=str(exit_node) if exit_node else None,
         )
@@ -4077,6 +4149,15 @@ async def api_route_plan(request: Request) -> JSONResponse:
     result["destination"] = _endpoint_echo(result.get("destination"))
     result["reachable"] = True
     result["data_source"] = "engine.route_service.live"
+    # 顶层也给一份算路权重口径（`bpr` / `free_flow`）：页面只想知道"这条路线吃没吃拥堵"，
+    # 不必去翻 params；值与 `params.weight_source` 同源（引擎给的，不由这里判）。
+    _params_block = result.get("params") if isinstance(result.get("params"), dict) else {}
+    result["weight_source"] = _params_block.get("weight_source")
+    if result["weight_source"] == "free_flow":
+        result["weight_source_note"] = (
+            "本次算路没有可用路段状态（快照不可用 / 为空，或与本站点包段号命名空间对不上），"
+            "按自由流计算：ETA 是「不堵车」口径，与路段热力不是同一套数字。"
+        )
     result["note"] = (
         (result.get("note") or "")
         + " 自定义起终点为辅助端点（非契约 §七），算路走 work/engine/route_service.py，"

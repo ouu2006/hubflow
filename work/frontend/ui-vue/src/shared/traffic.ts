@@ -614,6 +614,15 @@ export interface RoutePlanResult {
   code?: string
   /** 算路参数（k_candidates / max_path_overlap / weight 等），只作溯源展示 */
   params?: Record<string, unknown>
+  /**
+   * 算路权重口径（IKRK8B，2026-10-29 统一）：`bpr` = ETA 吃了本请求路段快照的
+   * `q_vph` / `c_vph`（与路段热力同一套数字）；`free_flow` = 快照不可用 / 段号命名空间
+   * 对不上 / 状态里一条 `q_vph > 0` 都没有而降级。**老接口没有这个键**，缺省按「没说」
+   * 处理，前端不推断成 `bpr`（标着吃了拥堵其实没吃，比不标更坏）。
+   */
+  weight_source?: 'bpr' | 'free_flow' | null
+  /** 降级成自由流时引擎给的人话原因（`weight_source === 'free_flow'` 才有） */
+  weight_source_note?: string | null
   note?: string
 }
 
