@@ -90,31 +90,228 @@ const inputRows = computed<InRow[]>(() => {
   ]
 })
 
-// ---------- ② 处理过程:x = q / c 与四档阈值 ----------
-/** 饱和度阈值档(来自 /thresholds;取不到用契约口径的演示值并注明) */
-const xBands = computed(() => {
-  const row = props.thresholds?.rows.find((r) => r.metric.includes('饱和度') || r.metric === 'x')
-  return row?.bands ?? []
+// ---------- ② 处理过程:四项指标并列落档(与 work/perception/level.py 同口径) ----------
+//
+// 为什么要把四项都摆出来,而不是只对比 x:
+//   判级本体 work/perception/level.py 的 four_metrics_level() 口径是「四项各按自己的边界算档,
+//   **取最高档、不做平均**」—— 于是「x 落在 1 档」与「判级 4 档」可以同时成立,顶上去的是别的指标。
+//   原面板只画 x 一条轨迹,屏幕上就出现「落在 1 档」下一行「严重拥堵」的自相矛盾(演示时会被当场追问);
+//   四项并列 + 高亮「判级依据」那一项,这条口径不用解释就自证了。
+//   本块**只做演算展示**:判级结果仍原样取快照的 level 字段,不改判级(接口层也不重算)。
+
+/** 面板固定的四项 = stations/thresholds.json 的 grading.level_bounds(x / v / L_q / T_d) */
+interface MetricSpec {
+  /** 与 level_bounds 的 indicator 同名,便于与阈值表对读 */
+  key: 'x' | 'v' | 'L_q' | 'T_d'
+  /** 面板展示名(带指标符号) */
+  name: string
+  /** 摘要里用的短名(如「x 仅 1 档」) */
+  short: string
+  /** 快照字段名 —— 只作口径标注(格子里 hover 可见),真取值走 valueOf() */
+  field: string
+  /** 阈值行文案关键词:mock 侧与真接口的 metric 文案不同(「速度 v」/「速度比 v/v_f」),
+   *  按关键词认行;认不到就是「未加载」,绝不拿别的指标的边界顶替 */
+  match: string[]
+  digits: number
+}
+
+const METRIC_SPECS: MetricSpec[] = [
+  { key: 'x', name: '饱和度 x', short: 'x', field: 'x', match: ['饱和度'], digits: 2 },
+  { key: 'v', name: '速度 v', short: 'v', field: 'v_kmh', match: ['速度'], digits: 1 },
+  { key: 'L_q', name: '排队长度 L_q', short: 'L_q', field: 'L_q_m', match: ['排队'], digits: 0 },
+  { key: 'T_d', name: '消散时间 T_d', short: 'T_d', field: 'T_d_min', match: ['消散', 'T_d'], digits: 1 },
+]
+
+/** 一条阈值行的可判读形式:接口只给 level + max,档位方向要靠边界之间的大小关系自己认 */
+interface BandInfo {
+  /** 三个真实边界(接口第 4 档是哨兵 999 不是边界,已剔除) */
+  bounds: number[]
+  /** true = 升序(越大越堵:x / L_q / T_d);false = 降序(越小越堵:v 速度) */
+  ascending: boolean
+  unit: string
+  /** true = 该行阈值是比值口径(mock 侧的「速度比 v/v_f」/「排队比 L_q/L_seg」) */
+  ratio: boolean
+}
+
+function bandInfoOf(spec: MetricSpec): BandInfo | null {
+  const rows = props.thresholds?.rows ?? []
+  const row = rows.find((r) => spec.match.some((kw) => r.metric.includes(kw)))
+  if (!row) return null
+  const bounds = row.bands.filter((b) => b.level <= 3).map((b) => b.max)
+  // 边界不足 3 个 = 接口不符合契约(work/assembly/traffic.py 的 build_thresholds 对 len(bounds) < 3 直接跳过),
+  // 前端不补数、不猜,按「未加载」处理
+  if (bounds.length < 3) return null
+  const ratio = row.metric.includes('比')
+  return {
+    bounds,
+    ascending: (bounds[0] as number) < (bounds[bounds.length - 1] as number),
+    unit: ratio ? '' : row.unit,
+    ratio,
+  }
+}
+
+/** 数值除法(取不到 / 除零给 null);ratio() 也走它,保证「—」的口径只有一处 */
+function divOrNull(a?: number, b?: number): number | null {
+  if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b) || b === 0) {
+    return null
+  }
+  return a / b
+}
+
+/**
+ * 该指标的当前值 —— 口径必须与阈值行一致:
+ * 真接口的阈值行是**原始量**(v 为 km/h、L_q 为 m),mock 侧可能有**比值**行(v/v_f、L_q/L_seg),
+ * 拿 km/h 去比无量纲边界会算出一个假档位,所以比值行按比值取值。
+ */
+function valueOf(spec: MetricSpec, band: BandInfo | null): number | null {
+  const r = props.record
+  if (!r) return null
+  if (band?.ratio) {
+    if (spec.key === 'v') return divOrNull(r.v_kmh, r.v_f_kmh)
+    if (spec.key === 'L_q') return divOrNull(r.L_q_m, r.L_seg_m)
+  }
+  switch (spec.key) {
+    case 'x':
+      return typeof r.x === 'number' && Number.isFinite(r.x) ? r.x : null
+    case 'v':
+      return typeof r.v_kmh === 'number' && Number.isFinite(r.v_kmh) ? r.v_kmh : null
+    case 'L_q':
+      return typeof r.L_q_m === 'number' && Number.isFinite(r.L_q_m) ? r.L_q_m : null
+    case 'T_d':
+      return typeof r.T_d_min === 'number' && Number.isFinite(r.T_d_min) ? r.T_d_min : null
+  }
+}
+
+/**
+ * 单项落档:照抄 work/perception/level.py 的 `_indicator_level()`。
+ * 升序边界(越大越堵) → 数「value >= 边界」的个数;降序边界(越小越堵,只有 v 速度) → 数「value < 边界」的个数;
+ * 档位 = 1 + 命中数,封顶 4 档。
+ * ⚠️ 降序必须用 `<` 而不是 `<=`:用反了 v 越小档位反而越低,与判级本体正好相反 —— 演示时一眼能看出算错。
+ */
+function indicatorLevel(value: number, bounds: number[]): CongestionLevel {
+  const ascending = (bounds[0] as number) < (bounds[bounds.length - 1] as number)
+  const hits = bounds.filter((b) => (ascending ? value >= b : value < b)).length
+  return Math.min(4, 1 + hits) as CongestionLevel
+}
+
+/** 四档判定条件的展示文案(顺序即接口的档位顺序;升序档读作"上界",降序档读作"下界") */
+function boundsTextOf(band: BandInfo, digits: number): string {
+  const b = band.bounds
+  const parts = band.ascending
+    ? [`< ${fmt(b[0], digits)}`, `< ${fmt(b[1], digits)}`, `< ${fmt(b[2], digits)}`, `≥ ${fmt(b[2], digits)}`]
+    : [`≥ ${fmt(b[0], digits)}`, `< ${fmt(b[0], digits)}`, `< ${fmt(b[1], digits)}`, `< ${fmt(b[2], digits)}`]
+  const unit = band.unit ? ` ${band.unit}` : ''
+  const note = band.ratio ? '(比值口径)' : ''
+  return `四档边界 ${parts.join(' / ')}${unit}${note}`
+}
+
+/**
+ * 「判级依据」那一项距下一档边界还差多少 —— 升序档越过上界即进下一档,降序档跌破下界才进下一档,
+ * 两种方向的余量算反了会显示成「还差 -0.3」,演示时会被当场抓到;已在 4 档时反过来给"越过开口边界多少"。
+ */
+function marginTextOf(value: number, band: BandInfo, level: CongestionLevel, digits: number): string {
+  const b = band.bounds
+  const last = b[b.length - 1] as number
+  const unit = band.unit ? ` ${band.unit}` : ''
+  if (level >= 4) {
+    const over = band.ascending ? value - last : last - value
+    return `已越过 4 档开口边界 ${fmt(last, digits)}${unit}(${band.ascending ? '高出' : '低于'} ${fmt(over, digits)})`
+  }
+  const bound = b[level - 1] as number
+  const gap = band.ascending ? bound - value : value - bound
+  const next = b[level]
+  const label = band.ascending ? '上界' : '下界'
+  return `距本档${label} ${fmt(bound, digits)} 还差 ${fmt(gap, digits)} · 下一档 ${(level + 1) as CongestionLevel} 档${label} ${fmt(next, digits)}`
+}
+
+interface MetricView {
+  key: string
+  name: string
+  short: string
+  /** 快照字段名(格子上 hover 可查,证明值不是前端编的) */
+  field: string
+  /** 当前值展示文本(带单位;比值口径不带) */
+  valueText: string
+  /** 四档边界文案;阈值未取到 = null(显示「边界未加载」) */
+  boundsText: string | null
+  /** 落档;阈值或当前值缺失 = null */
+  level: CongestionLevel | null
+  /** 是否判级依据(达到最高档的那一项) */
+  focused: boolean
+  /** 只有判级依据那一项给余量文案,其余项不显示(四列都写余量反而看不清哪项是依据) */
+  marginText: string | null
+}
+
+const metricViews = computed<MetricView[]>(() => {
+  const rows = METRIC_SPECS.map((spec) => {
+    const band = bandInfoOf(spec)
+    const value = valueOf(spec, band)
+    return { spec, band, value, level: band && value !== null ? indicatorLevel(value, band.bounds) : null }
+  })
+  // 判级口径 = 四项取最高(不做平均):达到最高档的项都是"判级依据",并列时一并高亮
+  let best: CongestionLevel | null = null
+  for (const row of rows) {
+    if (row.level !== null && (best === null || row.level > best)) best = row.level
+  }
+  return rows.map(({ spec, band, value, level }) => {
+    const focused = best !== null && level === best
+    const unit = band && !band.ratio && band.unit ? ` ${band.unit}` : ''
+    return {
+      key: spec.key,
+      name: spec.name,
+      short: spec.short,
+      field: spec.field,
+      valueText: value === null ? '—' : `${fmt(value, spec.digits)}${unit}`,
+      boundsText: band ? boundsTextOf(band, spec.digits) : null,
+      level,
+      focused,
+      marginText: focused && band && value !== null && level !== null ? marginTextOf(value, band, level, spec.digits) : null,
+    }
+  })
 })
 
-const xValue = computed(() => (typeof props.record?.x === 'number' ? props.record.x : null))
+/** 至少有一项能落档才谈"演算";全取不到就沿用「阈值未取到」空态,不摆四列空壳 */
+const metricsReady = computed<boolean>(() => metricViews.value.some((m) => m.boundsText !== null))
 
-/** 当前 x 落在哪一档 + 离下一档边界多远(展示口径的演算,不是模型) */
-const xAnalysis = computed(() => {
-  const x = xValue.value
-  const bands = xBands.value
-  if (x === null || bands.length === 0) return null
-  const hit = bands.find((b) => x <= b.max) ?? bands[bands.length - 1]!
-  const idx = bands.indexOf(hit)
-  const next = bands[idx + 1]
-  return {
-    level: hit.level as CongestionLevel,
-    upper: hit.max,
-    /** 距本档上界(负数=已接近下一档) */
-    margin: Number.isFinite(hit.max) ? hit.max - x : null,
-    nextLevel: next?.level as CongestionLevel | undefined,
-    nextBound: next?.max,
+/** 四项里最高的那一档(取最差项);阈值未取到 = null */
+const bestLevel = computed<CongestionLevel | null>(() => {
+  let best: CongestionLevel | null = null
+  for (const m of metricViews.value) {
+    if (m.level !== null && (best === null || m.level > best)) best = m.level
   }
+  return best
+})
+
+/** 判级依据(达到最高档的指标短名),并列时一并列出 */
+const focusNames = computed<string>(() => metricViews.value.filter((m) => m.focused).map((m) => m.short).join('、'))
+
+/** 其余各项的一句话摘要,如「x 1 档 · L_q 2 档」 —— 让「x 只 1 档却判 4 档」这个反直觉点自己讲清楚 */
+const othersText = computed<string>(() =>
+  metricViews.value
+    .filter((m) => !m.focused && m.level !== null)
+    .map((m) => `${m.short} ${m.level} 档`)
+    .join(' · '),
+)
+
+/** 判级依据那一项(并列时取第一项显示余量,不把四列都写成"还差多少") */
+const focusMetric = computed<MetricView | null>(() => metricViews.value.find((m) => m.marginText !== null) ?? null)
+
+/** 快照等级是否落在四级内(0 = 上游未判级 / 数据不可用,TC-11 灰档,不参与档位文案) */
+const levelKnown = computed<boolean>(() => {
+  const lv = props.record?.level
+  return typeof lv === 'number' && lv >= 1 && lv <= 4
+})
+
+/**
+ * 四项取最高 ≠ 快照等级时如实说明差在哪:上游判级还可能被①硬触发(F07/F08 直接给 hard_trigger_level)、
+ * ②因素修正后回灌(容量折减 → x 变)、③降档防抖(降档需连续 N 个周期)改写。
+ * 面板只展示演算,不因为对不上就改判级,也不把口径差异藏起来。
+ */
+const mismatchNote = computed<string>(() => {
+  const snap = props.record?.level
+  if (bestLevel.value === null || !levelKnown.value || typeof snap !== 'number') return ''
+  if (snap === bestLevel.value) return ''
+  return `四项取最高 ${bestLevel.value} 档、快照等级 ${snap} 档:上游判级还会被硬触发(F07/F08)、因素修正后回灌、降档防抖(降档需连续 N 个周期)改写,本面板只展示演算过程,不改判级。`
 })
 
 /** 因素对通行能力 / 需求 / 置信度的合成折减(与 mock 同口径:相乘) */
@@ -146,8 +343,8 @@ const ciValue = computed(() => {
 })
 
 function ratio(a?: number, b?: number): string {
-  if (typeof a !== 'number' || typeof b !== 'number' || !Number.isFinite(a) || !Number.isFinite(b) || b === 0) return '—'
-  return (a / b).toFixed(2)
+  const q = divOrNull(a, b)
+  return q === null ? '—' : q.toFixed(2)
 }
 
 function metricValue(key: string): string {
@@ -167,11 +364,6 @@ function metricValue(key: string): string {
   }
 }
 
-/** 档位条上的位置(0~100%) */
-function bandPos(x: number, max: number): string {
-  const top = Number.isFinite(max) && max > 0 ? max : 1
-  return `${Math.min(100, Math.max(0, (x / top) * 100))}%`
-}
 </script>
 
 <template>
@@ -243,39 +435,60 @@ function bandPos(x: number, max: number): string {
             </div>
           </div>
 
-          <!-- 步骤 3:四档阈值对比 -->
+          <!-- 步骤 3:四项指标并列落档 → 取四项最高(不做平均) -->
           <div class="step">
             <span class="step-no">3</span>
             <div class="step-body">
-              <div class="step-title">四档阈值对比 → 判级</div>
-              <template v-if="xAnalysis && xValue !== null">
-                <div class="band-track">
-                  <span
-                    v-for="b in xBands"
-                    :key="b.level"
-                    class="band-seg"
-                    :class="{ hit: b.level === xAnalysis.level }"
+              <div class="step-title">四档阈值比对 → 判级(四项各按自己的边界落档,取最高,不做平均)</div>
+              <template v-if="metricsReady">
+                <!-- 四项并列:判级依据那一项描边高亮,其余压淡 —— 让"x 只 1 档却判 4 档"在第一眼就有解释 -->
+                <div class="band-grid">
+                  <div
+                    v-for="m in metricViews"
+                    :key="m.key"
+                    class="band-cell"
+                    :class="{ focus: m.focused, dim: !m.focused }"
                   >
-                    {{ b.level }} 档 ≤ {{ Number.isFinite(b.max) ? b.max : '∞' }}
-                  </span>
+                    <div class="band-cell-h">
+                      <span class="band-cell-name">{{ m.name }}</span>
+                      <LevelBadge v-if="m.level !== null" :level="m.level" :name="`${m.level} 档`" />
+                      <span v-else class="band-cell-none">未判档</span>
+                    </div>
+                    <div class="band-cell-v td-num" :title="`快照字段 ${m.field}`">{{ m.valueText }}</div>
+                    <div class="band-cell-b td-mono">{{ m.boundsText ?? '边界未加载' }}</div>
+                    <div v-if="m.focused" class="basis-tag">判级依据</div>
+                  </div>
                 </div>
-                <div class="band-cursor" :style="{ left: bandPos(xValue, xAnalysis.upper) }" />
-                <div class="step-line">
-                  当前 x = <b class="td-num">{{ fmt(xValue) }}</b>
-                  落在 <b>{{ xAnalysis.level }} 档</b>
-                  <template v-if="xAnalysis.margin !== null">
-                    <span class="sep">·</span>距本档上界 {{ xAnalysis.upper }} 还差
-                    <b class="td-num">{{ fmt(xAnalysis.margin) }}</b>
-                  </template>
-                  <template v-if="xAnalysis.nextBound !== undefined">
-                    <span class="sep">·</span>下一档 {{ xAnalysis.nextLevel }} 档上界 {{ xAnalysis.nextBound }}
-                  </template>
-                </div>
+
                 <div class="step-line">
                   判级结果:
                   <LevelBadge :level="record.level" />
+                  <template v-if="levelKnown">({{ record.level }} 档)</template>
+                  <template v-if="bestLevel !== null">
+                    <span class="sep">·</span>取四项最高:
+                    <b>{{ focusNames }} → {{ bestLevel }} 档</b>
+                    <template v-if="othersText">
+                      <span class="sep">·</span>{{ othersText }}
+                    </template>
+                  </template>
                   <span class="sep">·</span>接口快照给的等级为 {{ record.level
                   }}{{ USE_MOCK ? '(站点包预置,判级模型未落地)' : '(判级来自上游链路 level 字段,接口层不重算)' }}
+                </div>
+
+                <!-- 原有信息量不丢:判级依据那一项距下一档边界还差多少(只对它显示) -->
+                <div v-if="focusMetric" class="step-line">
+                  判级依据 <b>{{ focusMetric.name }}</b>:
+                  <span class="td-num">{{ focusMetric.valueText }}</span>
+                  <span class="sep">·</span>{{ focusMetric.marginText }}
+                </div>
+
+                <div v-if="mismatchNote" class="step-line note-warn">{{ mismatchNote }}</div>
+
+                <div class="step-note">
+                  口径:边界取自接口 /thresholds 的 grading.level_bounds(不写死);升序档(饱和度 x / 排队长度 L_q /
+                  消散时间 T_d,越大越堵)按「值 ≥ 边界」计数,降序档(速度 v,越小越堵)按「值 &lt; 边界」计数,
+                  档位 = 1 + 命中数(封顶 4 档),与 level.py 的 four_metrics_level / _indicator_level 一致;
+                  四项各算各的档再取最高,不做平均(取最差项)。
                 </div>
               </template>
               <p v-else class="empty sm">阈值档位未取到(/thresholds 未起),不做档位演算</p>
@@ -452,38 +665,77 @@ function bandPos(x: number, max: number): string {
   line-height: 1.5;
   color: var(--td-text-color-placeholder);
 }
-/* 四档阈值条 */
-.band-track {
-  position: relative;
-  display: flex;
-  gap: 2px;
+/* 四档阈值格(四项并列):档位色由 LevelBadge 承担,这里只做布局 + 「判级依据」的描边高亮 */
+.band-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
   margin-bottom: 6px;
 }
-.band-seg {
-  flex: 1;
-  padding: 3px 0;
-  text-align: center;
-  font-size: 10px;
-  color: var(--td-text-color-secondary);
-  background: var(--td-bg-color-secondarycontainer);
+.band-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--td-component-stroke);
   border-radius: var(--td-radius-sm);
+  background: var(--td-bg-color-secondarycontainer);
 }
-.band-seg.hit {
+/* 判级依据:品牌色描边 + 品牌色浅底(与步骤序号的色轴一致,不引入第二套强调色) */
+.band-cell.focus {
+  border-color: var(--td-brand-color);
   background: var(--td-brand-color-1);
-  color: var(--td-brand-color);
+}
+/* 非依据项压淡:一眼看上去就知道等级是被哪一项顶上去的 */
+.band-cell.dim {
+  opacity: 0.62;
+}
+.band-cell-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+.band-cell-name {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  color: var(--td-text-color-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.band-cell-v {
+  font-size: 14px;
   font-weight: 600;
+  line-height: 1.2;
+  color: var(--td-text-color-primary);
 }
-.band-cursor {
-  position: relative;
-  height: 0;
+.band-cell-b {
+  font-size: 10px;
+  line-height: 1.5;
+  color: var(--td-text-color-placeholder);
+  word-break: break-word;
 }
-.band-cursor::before {
-  content: '▲';
-  position: absolute;
-  top: -8px;
-  transform: translateX(-50%);
-  font-size: 9px;
-  color: var(--td-brand-color);
+.band-cell-none {
+  font-size: 10px;
+  color: var(--td-text-color-placeholder);
+  white-space: nowrap;
+}
+.basis-tag {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding: 0 4px;
+  border-radius: var(--td-radius-sm);
+  background: var(--td-brand-color);
+  color: var(--td-text-color-anti);
+  font-size: 10px;
+  line-height: 15px;
+}
+/* 口径差异如实提示:沿用决策页既有的警告色,不新造色值 */
+.note-warn {
+  color: #a06a00;
 }
 /* CI */
 .ci-line {
@@ -564,8 +816,8 @@ function bandPos(x: number, max: number): string {
 
 /* ---------- 响应式（Issue IKP3EV） ---------- */
 /* ≤1180:单列时面板占满整宽,卡片之间保持 8px 间距(与页内其它卡片一致);
-   四档阈值游标的内部盒子(.band-cursor 的 left 百分比偏移)会超出步骤行,
-   单列后列内不再裁剪 → 在步骤体上裁掉横向溢出,避免整页出现横向滚动条(游标本身仍在栏内)。 */
+   步骤体上裁掉横向溢出:四项格子的边界文案在窄栏里可能顶到边,
+   单列后列内不再裁剪 → 保留这道裁切,避免整页出现横向滚动条(格子本身仍在栏内)。 */
 @media (max-width: 1180px) {
   .flow {
     gap: 8px;
@@ -600,11 +852,12 @@ function bandPos(x: number, max: number): string {
   .pred-grid {
     gap: 6px;
   }
-  .band-track {
-    gap: 2px;
+  /* 四项阈值格子 4 列 → 2 列:窄屏一列放四个会把边界文案压成两三个字一行 */
+  .band-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
-/* ≤560:单列输入网格;阈值档位条 / CI 公式按窄屏折行,不撑破页面 */
+/* ≤560:单列输入网格;四项阈值格子保持 2 列并压缩内边距 / CI 公式折行,不撑破页面 */
 @media (max-width: 560px) {
   .in-grid {
     grid-template-columns: 1fr;
@@ -617,9 +870,11 @@ function bandPos(x: number, max: number): string {
   .ci-big {
     font-size: 20px;
   }
-  .band-seg {
-    padding: 3px 1px;
-    font-size: 9px;
+  .band-cell {
+    padding: 4px 5px;
+  }
+  .band-cell-v {
+    font-size: 13px;
   }
   .step-no {
     flex: 0 0 18px;

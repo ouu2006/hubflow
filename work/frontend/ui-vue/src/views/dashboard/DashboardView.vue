@@ -1928,6 +1928,38 @@ const avgDeltaText = computed(() => {
   return `较上一版${d > 0 ? '快' : '慢'} ${Math.abs(d).toFixed(1)} km/h`
 })
 
+/**
+ * 顶栏「最堵路段」副行用的路段名
+ * 口径:overview.worst_segment.name 上游只回段号(实测 "SZ-035"),而 kpi-value 已经单独显示了段号,
+ * 直接拼会出现「SZ-035 · SZ-035」。所以按 segment_id 回 segments 列表取真实路段名,
+ * 并去掉尾部节点括注(「(N-022→N-027)」会把名称挤掉)。
+ */
+const worstNameClean = computed(() => {
+  const w = overview.value?.worst_segment
+  if (!w) return '—'
+  const n = nameOf(w.segment_id) || w.name || ''
+  const clean = n
+    .replace(/^[A-Z]{2}-\d+\s*/, '')
+    .replace(/（[^）]*）\s*$/, '')
+    .trim()
+  return clean || n || '—'
+})
+
+/**
+ * 顶栏「最堵路段」副行右侧的判级依据文案
+ * 口径:四级判级取「饱和度 x / 车速 v / 排队长度 L_q / 消散时间 T_d」四项最高(见 work/perception/level.py),
+ * 本站真实触发项几乎都是车速,所以显示车速而不是饱和度 —— 否则「饱和度 0.14 + 严重拥堵」同屏自相矛盾。
+ */
+const worstReasonText = computed(() => {
+  const w = overview.value?.worst_segment
+  if (!w) return ''
+  const seg = segments.value.find((s) => s.segment_id === w.segment_id)
+  const declared = seg?.triggered_by
+  const hitSpeed = Array.isArray(declared) ? declared.includes('v') : false
+  if (hitSpeed && typeof seg?.v_kmh === 'number') return `车速 ${seg.v_kmh.toFixed(1)} km/h`
+  return `饱和度 ${fmt(w.x)}`
+})
+
 /** 采纳率:guided_rate(0~1) → 百分数保留一位 */
 const adoptText = computed(() => {
   const o = overview.value
@@ -2393,8 +2425,8 @@ function onCommandChanged(): void {
         <div class="kpi-sub">
           <template v-if="overview?.worst_segment">
             <LevelBadge :level="overview.worst_segment.level" />
-            <span class="kpi-sep">·</span>{{ overview.worst_segment.name }}
-            <span class="kpi-sep">·</span>x {{ fmt(overview.worst_segment.x) }}
+            <span class="kpi-sep">·</span>{{ worstNameClean }}
+            <span class="kpi-sep">·</span>{{ worstReasonText }}
           </template>
           <template v-else>—</template>
         </div>
