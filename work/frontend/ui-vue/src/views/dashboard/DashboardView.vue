@@ -78,6 +78,7 @@ import {
   CI_BANDS,
   CI_DISCLAIMER,
   formatClock,
+  formatAgeText,
   formatStamp,
   isStale,
   LEVELS,
@@ -662,6 +663,14 @@ function setColorMode(mode: ColorMode): void {
 /** 监控范围筛选(左栏「选择监控」):null = 全部;0 = 数据不可用档 */
 const scope = ref<CongestionLevel | 0 | null>(null)
 const snapshotTs = ref('')
+/**
+ * 时间口径三件套（契约 v2.5）：`ts` 可能是**演示时钟**锚定过的时刻，逐条 `data_age_s`
+ * 只表示「相对快照时钟的年龄」。真实数据有多旧看 `contentAgeS`（内容时刻距真实现在）。
+ * 页面必须把两者同时写出来，否则就是「把过期数据说成 45 s 前更新」的对外口径问题。
+ */
+const timeBasis = ref<'demo_clock' | 'content' | ''>('')
+const contentTs = ref('')
+const contentAgeS = ref<number | null>(null)
 
 // ---------- 中栏地图 · 单渲染器(Issue IKM5T1) ----------
 // 只留**一个**地图组件(MapLibre:矢量底图 + 描出的路网)。原先"示例路网 / 矢量地图"两个模式已删:
@@ -861,6 +870,7 @@ async function refresh(): Promise<void> {
   if (seg.status === 'fulfilled') {
     segments.value = seg.value.segments
     snapshotTs.value = seg.value.ts
+    applyTimeBasis(seg.value)
     capacityInfo.value = seg.value.capacity ?? null
     // 应急态(TC-10)：接口层已在快照顶层派生好，这里**原样消费**，不自己判等级
     emergency.value = seg.value.emergency ?? null
@@ -963,6 +973,9 @@ function resetStationState(): void {
   metaInfo.value = null
   metaStationName.value = null
   snapshotTs.value = ''
+  timeBasis.value = ''
+  contentTs.value = ''
+  contentAgeS.value = null
   failedPanels.value = []
   servedFromCache.value = false
   cacheStamp.value = 0
@@ -1007,6 +1020,7 @@ function commitCachedSnapshot(snapshot: StationSnapshotCache | null): void {
   if (snapshot.segments) {
     segments.value = snapshot.segments.segments
     snapshotTs.value = snapshot.segments.ts
+    applyTimeBasis(snapshot.segments)
     capacityInfo.value = snapshot.segments.capacity ?? null
     // 应急态(TC-10)：缓存里带着当时的派生结果，恢复时一并还原（不重算）
     emergency.value = snapshot.segments.emergency ?? null
@@ -1074,10 +1088,33 @@ const recommendError = ref('')
  */
 const emergency = ref<EmergencyState | null>(null)
 /**
- * 容量阶段摘要（接口层聚合孪生侧 stations/capacity-model.json 的标定结果）。
+ * 容量阶段摘要（接口层聚合孪生侧 work/twin/capacity-model.json 的标定结果）。
  * 用途：页脚让"容量随运营阶段变化"在演示时可被看见；取不到就不显示这一项。
  */
 const capacityInfo = ref<CapacityPhaseSummary | null>(null)
+/** 读快照顶层的时间口径三件套：`ts` 是哪种时钟 / 真实内容时刻 / 真实数据年龄 */
+function applyTimeBasis(snap: {
+  time_basis?: 'demo_clock' | 'content'
+  content_ts?: string | null
+  content_age_s?: number | null
+}): void {
+  timeBasis.value = snap.time_basis ?? ''
+  contentTs.value = snap.content_ts ?? ''
+  contentAgeS.value = typeof snap.content_age_s === 'number' ? snap.content_age_s : null
+}
+/**
+ * 时间口径一行：演示时钟锚定时，把「快照时刻」与「真实内容时刻 / 真实数据年龄」写在一起。
+ * 口径红线（契约 v2.5）：`data_age_s` 只在演示时钟内成立，**不得**用它宣称数据是刚刚实测的。
+ */
+const timeBasisLine = computed<string>(() => {
+  if (!contentTs.value) return ''
+  const age = formatAgeText(contentAgeS.value)
+  const ageText = contentAgeS.value === null ? '' : `，距真实现在 ${age}`
+  if (timeBasis.value === 'demo_clock') {
+    return `内容时刻 ${formatStamp(contentTs.value)}（演示时钟锚定${ageText}）`
+  }
+  return `内容时刻 ${formatStamp(contentTs.value)}${ageText}`
+})
 /** 页脚容量阶段一行：阶段 · 系数 · 全站基线→有效容量区间 */
 const capacityLine = computed<string>(() => {
   const info = capacityInfo.value
@@ -2206,7 +2243,7 @@ const detailSummary = computed<string>(() => {
   const s = selected.value
   if (!s) return ''
   const parts = [`${s.level >= 1 ? CN_NUM[s.level as CongestionLevel] : '不可用'}级`, levelName(s)]
-  parts.push(`更新 ${s.data_age_s ?? '—'}s 前`)
+  parts.push(`更新 ${s.data_age_s ?? '—'}s 前${timeBasis.value === 'demo_clock' ? '(演示时钟)' : ''}`)
   parts.push(`饱和度 ${fmt(s.x)}`)
   if (s.triggered_by && s.triggered_by.length > 0) parts.push(`触发 ${s.triggered_by.join(' / ')}`)
   return parts.join(' · ')
@@ -3494,7 +3531,7 @@ function onCommandChanged(): void {
 
       <section class="td-card band-card">
         <div class="td-card-head">
-          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}</span>
+          CI 色阶 · 展示档位<span class="td-head-tag td-mono">更新 {{ formatStamp(snapshotTs) }}{{ timeBasis === 'demo_clock' ? '（演示时钟）' : '' }}</span>
         </div>
         <div class="td-card-body">
           <CiScale />
@@ -3532,7 +3569,9 @@ function onCommandChanged(): void {
     </div>
 
     <template #foot>
-      <span>快照时间 {{ formatStamp(snapshotTs) }}</span>
+      <span>快照时间 {{ formatStamp(snapshotTs) }}{{ timeBasis === 'demo_clock' ? '（演示时钟）' : '' }}</span>
+      <!-- 契约 v2.5：演示时钟锚定 ≠ 数据新鲜。真实内容时刻与真实年龄必须同屏写出，不许只说"45s 前更新" -->
+      <span v-if="timeBasisLine">{{ timeBasisLine }}</span>
       <!-- 切站缓存标识（IKPFR4）：页脚也要能看出"这不是刚拉到的" -->
       <span v-if="servedFromCache">数据标识:内存缓存快照 · 后台刷新中</span>
       <span>{{ footStationLine }}</span>
