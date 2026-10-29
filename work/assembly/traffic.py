@@ -2079,12 +2079,25 @@ def build_ci_history(
     return payload
 
 
-def _phase_timeline(stamps: list[str], window_sec: float) -> list[str]:
+def _phase_timeline(
+    stamps: list[str],
+    window_sec: float,
+    offset: int = 0,
+    base_ts: Any = None,
+) -> list[str]:
     """按孪生侧同一口径给每个时序点打运营阶段标签（cycle 优先，否则按钟点）。
 
     为什么接口层也算一遍：`twin_timeseries.json` 只存数值列，阶段名是标定表的派生量；
     前端要画阶段色带，但**不希望前端自己实现一遍阶段算法**（两处口径必然漂移）。
     顺序从 `phase_capacity_factor` 的键序取，不在这里硬编码阶段名。
+
+    仿真秒数必须与 `work/twin/capacity.py` 的 `phase_at()` 对齐：孪生侧打标用的是
+    **该点自己的仿真秒数**（`loop.py` 里 `phase_at(base_ts, step_no)`，而 `point_ts[i]`
+    正是 `_sim_iso(base_ts, step_no)`）。所以这里按 `点时刻 − base_ts` 折算，而不是
+    `序号 × 窗口长`：序号从 0 起、step 从 60 起，差一个窗口，按序号推会让阶段色带在
+    每个切换点多错一拍 —— 同一张图上就会出现「c_vph 已按平峰涨到 3600、色带还说早高峰」。
+    `offset` 只在拿不到 `base_ts` 时兜底：`limit` 截断后序号不再从 0 起，
+    不把截掉的点数加回去，整条色带会跟着 limit 平移。
     """
     model = read_json_cached(STATIONS_DIR / "capacity-model.json") or {}
     factors = model.get("phase_capacity_factor") or {}
@@ -2092,12 +2105,16 @@ def _phase_timeline(stamps: list[str], window_sec: float) -> list[str]:
     if not order:
         return []
     windows = model.get("phase_clock_windows") or {}
-    if str(model.get("demo_phase_mode") or "") == "cycle":
-        cycle_s = float(model.get("demo_phase_cycle_s") or 900)
+    mode = str(model.get("demo_phase_mode") or "")
+    cycle_s = float(model.get("demo_phase_cycle_s") or 0)
+    if mode == "cycle" and cycle_s > 0:
+        anchor = _parse_iso(base_ts)
         labels: list[str] = []
-        for index in range(len(stamps)):
-            elapsed = index * window_sec
-            labels.append(order[int(elapsed // cycle_s) % len(order)])
+        for index, stamp in enumerate(stamps):
+            elapsed = _elapsed_since(anchor, stamp)
+            if elapsed is None:
+                elapsed = float(offset + index) * window_sec
+            labels.append(order[int(max(0.0, elapsed) // cycle_s) % len(order)])
         return labels
     # clock 口径：按每个点的钟点落窗口（夜间跨零点由 windows 里的区间自行表达）
     labels = []
@@ -2132,6 +2149,25 @@ def _clock_minutes(text: Any) -> int | None:
     try:
         return int(hour) * 60 + int(minute)
     except ValueError:
+        return None
+
+
+def _elapsed_since(anchor: Any, stamp: Any) -> float | None:
+    """`点时刻 − 锚点(base_ts)` 的秒数；任一侧不可解析 / 时区口径不一致时返回 None。
+
+    为什么单独一函数：`twin_timeseries.json` 的 `point_ts` 与 `base_ts` 是孪生侧同一个
+    时钟（`_sim_iso`）写出来的，直接相减就是 `loop.py` 打阶段用的 `step_no`；
+    但产物若被别的工具改写、或一侧丢了时区，相减会抛 TypeError —— 那种情况必须**返回
+    None 让调用方按序号兜底**，而不是让整个端点 500。
+    `anchor` 收 datetime 或 ISO 串两种形态：调用方按需先解析一次，避免逐点重复解析。
+    """
+    start = anchor if isinstance(anchor, datetime) else _parse_iso(anchor)
+    moment = _parse_iso(stamp)
+    if start is None or moment is None:
+        return None
+    try:
+        return (moment - start).total_seconds()
+    except TypeError:  # 一侧带时区、一侧不带：不同坐标系，不能相减
         return None
 
 
@@ -2177,7 +2213,7 @@ def build_segment_series(segment_id: str | None, limit: int | None = None) -> di
             source_index = offset + index
             point[field] = _num(column[source_index]) if isinstance(column, list) and source_index < len(column) else None
         points.append(point)
-    labels = _phase_timeline(stamps, window_sec)
+    labels = _phase_timeline(stamps, window_sec, offset=offset, base_ts=payload.get("base_ts"))
     for index, point in enumerate(points):
         if index < len(labels):
             point["phase"] = labels[index]
