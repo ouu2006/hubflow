@@ -102,6 +102,47 @@ export interface EmergencyState {
   note: string
 }
 
+/** 段级时序的单个采样点（GET /api/traffic/segment-series，孪生每 60 s 一个快照） */
+export interface SegmentSeriesPoint {
+  ts: string
+  q_vph: number | null
+  v_kmh: number | null
+  k_vpk: number | null
+  L_q_m: number | null
+  T_d_min: number | null
+  x: number | null
+  c_vph: number | null
+  level: number | null
+  /**
+   * 该点所属运营阶段（接口层按 `work/twin/capacity-model.json` 与孪生侧
+   * `capacity.phase_at()` 同一口径打标，不在这里再加一套前端算法）。
+   * 标定表读不到时接口**不写这个键**（不是写空串）—— 前端按「无阶段」降级。
+   */
+  phase?: string
+}
+
+/**
+ * 段级真时序响应。口径：接口层只回孪生产物里真实存在的点，
+ * 缺产物 / 段不在产物内如实 404，页面按「无时序」降级，不画假曲线。
+ */
+export interface SegmentSeries {
+  segment_id: string
+  is_simulated: true
+  window_sec: number
+  points: number
+  series: SegmentSeriesPoint[]
+  range: Record<string, { min: number | null; max: number | null }>
+  capacity: {
+    phase_capacity_factor: Record<string, number>
+    phase_order: string[]
+    phase_mode?: string
+    phase_cycle_s?: number
+    class_by_kind?: Record<string, string>
+    lane_saturation_vph_by_class?: Record<string, number>
+  }
+  note?: string
+}
+
 /** 容量阶段摘要（接口层只聚合孪生侧标定结果，不重算容量） */
 export interface CapacityPhaseSummary {
   phase: string

@@ -41,6 +41,7 @@ import EffectCompare from './components/EffectCompare.vue'
 import FactorsPanel from './components/FactorsPanel.vue'
 import PredictPanel from './components/PredictPanel.vue'
 import RoutePlanView from './components/RoutePlanView.vue'
+import TrendChartsPanel from './components/TrendChartsPanel.vue'
 import {
   getTrafficAlerts,
   getTrafficContext,
@@ -578,16 +579,30 @@ function onFlowChanged(): void {
     <div class="td-body">
       <!-- 决策可视化视图(本单新增):全部输入 + 处理过程 + 可调控 + 输出 -->
       <div v-if="view === 'flow'" class="td-col flow-col td-scroll">
-        <DecisionFlowPanel
-          :record="flowRecord"
-          :name="flowName"
-          :factors="flowFactors"
-          :ctx="ctx"
-          :thresholds="thresholds"
-          :suggestion="flowSuggestion"
-          :presets="scenarioPresets"
-          @changed="onFlowChanged"
-        />
+        <!-- 宽屏两栏：左=四段式演算，右=变化图表（图表常驻右侧，不用滚到底才看见） -->
+        <div class="flow-grid">
+          <div class="flow-cell">
+            <DecisionFlowPanel
+              :record="flowRecord"
+              :name="flowName"
+              :factors="flowFactors"
+              :ctx="ctx"
+              :thresholds="thresholds"
+              :suggestion="flowSuggestion"
+              :presets="scenarioPresets"
+              @changed="onFlowChanged"
+            />
+          </div>
+          <div class="flow-cell">
+            <!-- 变化图表(业主 2026-10-29 当面要求):曲线 / 竖状 / 点线三张,带时间轴播放器 -->
+            <TrendChartsPanel
+              :segment-id="flowRecord?.segment_id ?? selectedId ?? ''"
+              :segment-name="flowName"
+              :record="flowRecord"
+              :thresholds="thresholds"
+            />
+          </div>
+        </div>
       </div>
 
       <template v-else-if="view === 'queue'">
@@ -813,6 +828,21 @@ function onFlowChanged(): void {
 .flow-col {
   flex: 1 1 auto;
   min-width: 0;
+}
+/* 决策可视化：宽屏两栏（左演算 / 右图表），窄屏回落单列 */
+.flow-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.32fr) minmax(0, 1fr);
+  gap: 8px 18px;
+  align-items: start;
+}
+.flow-cell {
+  min-width: 0;
+}
+@media (max-width: 1180px) {
+  .flow-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 .snapshot {
   font-size: 11px;
