@@ -266,7 +266,8 @@ onBeforeUnmount(() => {
               <span class="td-set-main">
                 <span class="td-set-name">方向标记</span>
                 <span class="td-set-note">
-                  开：路段上画方向箭头（双向段中点前后各一支）<br>
+                  开：路段上画方向箭头（双向段中点画一支双头箭头；短于 25 m 的双向段改画中性圆点，
+                  因为这么短的段上双头箭头挤成一团、朝向也无意义）<br>
                   关：一支都不画，图例标注「已隐藏方向标记」
                 </span>
               </span>

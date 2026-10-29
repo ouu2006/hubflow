@@ -22,6 +22,7 @@ import type {
   RoutePlanResult,
   RoutePointsSnapshot,
   RouteSnapResult,
+  RouteStepsSnapshot,
   ScenarioInput,
   ScenarioResult,
   SegmentRecord,
@@ -126,6 +127,23 @@ export function postRoutePlan(body: {
 export function getRoutePoints(site?: string): Promise<RoutePointsSnapshot> {
   const q = site ? `?site=${encodeURIComponent(site)}` : ''
   return request<RoutePointsSnapshot>('GET', `/api/traffic/route/points${q}`)
+}
+
+/**
+ * GET /api/traffic/route/{request_id}/steps → 该请求下各条路线的 `steps[]`（**非契约辅助端点**）。
+ *
+ * 为什么单开一条（lead 2026-10-29 拍板）：`/route/options`、`/route/recommend` 的 `arrival_route`
+ * 不带 `steps` / `start_point`，而契约字段集不动（改一次要业主侧全量回归）。大屏因此改为
+ * 「按 request_id 单拉一份」，一次拿全 arrival / departure / pickup / alternatives 的 steps，
+ * 浏览器侧按 request_id 缓存 —— 这样路线箭头拿到的是**后端权威行进序**，不是前端启发式。
+ *
+ * 超时压到 4 s：这条挂了不能拖着整屏等；拿不到就由调用方退回链式定向并**打日志**（不许静默降级）。
+ */
+export function getRouteSteps(requestId: string, opts: { timeoutMs?: number; signal?: AbortSignal } = {}): Promise<RouteStepsSnapshot> {
+  return request<RouteStepsSnapshot>('GET', `/api/traffic/route/${encodeURIComponent(requestId)}/steps`, {
+    timeoutMs: 4000,
+    ...opts,
+  })
 }
 
 // POST /api/traffic/locate → 一期定位结果（Issue IKP5C6；非契约辅助端点，真接口才有）

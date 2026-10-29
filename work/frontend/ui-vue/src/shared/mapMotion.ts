@@ -26,6 +26,8 @@
 
 import type { Map as MapLibreMap } from 'maplibre-gl'
 import { PACKS, STATIONS } from '../station-packs/index'
+// 箭头完全不透明的那一档 = 进站取景的缩放下限（见下方 `fitBoxCamera` 的注释）
+import { DIR_ZOOM_FULL } from './directionZoom'
 
 /**
  * 两段动作的时长（ms）——**集中在这里调**，不要在调用方再写魔法数字。
@@ -200,6 +202,151 @@ export function stationCamera(key: string): StationCamera | null {
     ? [entry.lon, entry.lat]
     : [(bounds.sw[0] + bounds.ne[0]) / 2, (bounds.sw[1] + bounds.ne[1]) / 2]
   return { key, bounds, center, maxZoom: MOTION.fitMaxZoom }
+}
+
+// ---------------------------------------------------------------- 取景（唯一实现）
+
+/**
+ * 包围盒可用性：四值都是有限数，且 `ne` 严格在 `sw` 的东/北侧。
+ *
+ * 为什么必须有这道闸（2026-10-29 实测）：1280×720 容器下取景抛
+ * `Error: Invalid LngLat (NaN,-90)` —— 侧栏/图例把可用宽度挤到接近 0 时，
+ * 留白吃掉了整个可视框，`cameraForBounds` 的中心经纬度退化成 NaN。
+ * 宁可「这一档不取景、停在原相机」，也不能让 NaN 泄进渲染器（一抛就是整图黑掉）。
+ */
+export function isUsableBounds(bounds: Bounds | null | undefined): bounds is Bounds {
+  if (!bounds || !bounds.sw || !bounds.ne) return false
+  const { sw, ne } = bounds
+  if (![sw[0], sw[1], ne[0], ne[1]].every((v) => typeof v === 'number' && Number.isFinite(v))) {
+    return false
+  }
+  return ne[0] > sw[0] && ne[1] > sw[1]
+}
+
+/**
+ * 留白归一化：每一边不超过容器对应边长的 35%。
+ * 留白大于可视区时会算出**负的**取景框（NaN 的直接来源，见 `isUsableBounds` 的注释），这里先夹住。
+ */
+function normalizePadding(map: MapLibreMap, padding: CameraPadding): CameraPadding {
+  const canvas = map.getCanvas()
+  const w = canvas.clientWidth || canvas.width || 0
+  const h = canvas.clientHeight || canvas.height || 0
+  const cap = (v: number, dim: number): number => {
+    const n = Number.isFinite(v) ? v : 0
+    return Math.max(0, Math.min(n, dim * 0.35))
+  }
+  return {
+    top: cap(padding.top, h),
+    right: cap(padding.right, w),
+    bottom: cap(padding.bottom, h),
+    left: cap(padding.left, w),
+  }
+}
+
+/** `cameraForBounds` 的结果能不能用（失败时它返回 undefined，退化时会给出 NaN） */
+function isUsableCamera(fit: ReturnType<MapLibreMap['cameraForBounds']>): boolean {
+  if (!fit) return false
+  const center = fit.center as { lng?: number; lat?: number } | undefined
+  if (!center) return false
+  if (typeof center.lng !== 'number' || typeof center.lat !== 'number') return false
+  return Number.isFinite(center.lng) && Number.isFinite(center.lat) && Number.isFinite(fit.zoom as number)
+}
+
+/**
+ * 取景（**唯一实现**：动画进站、无动画补算、`prefers-reduced-motion`、框住一批段的都走它）。
+ *
+ * ① 缩放下限 `opts.minZoom`（进站传 `DIR_ZOOM_FULL`）。
+ *    实测各视口「进站」实际落点（2026-10-29，dev-C 四档截图）：1440×900 → **13.02**、
+ *    375×812 → **13.49**、1920×1080 → 15.76、2560×1440 → 16.73。
+ *    方向层在 `DIR_ZOOM_FADE(15) → DIR_ZOOM_FULL(15.5)` 之间淡出，所以**小屏 / 窗口化进站时
+ *    箭头全透明、根本看不见**（业主「箭头很乱 / 看不懂」的体感里，有一份就是这个「看不见」）。
+ *    给进站取景加下限 = 让四档视口落进同一个 zoom 区间，正是「不因分辨率不同而不同」。
+ *    为什么不改成下调淡出阈值：那会让 61 段在全览 zoom 13 处同时变实，比淡出乱得多 ——
+ *    淡出是**正确的降级设计**（全览时密密麻麻没有意义），错的只是「默认进站视图落进淡出区」。
+ *    副作用（设计如此，不是 bug）：小容器下站内不再一屏全览；要全览得手动缩小，箭头随即淡出。
+ * ② 显式把 `zoom` 交给 `fitBounds`：MapLibre 的 `FitBoundsOptions` 会以调用方 options 覆盖它
+ *    自己算出的相机（`node_modules/maplibre-gl/src/ui/camera.ts:730` 的 `_fitInternal` 里
+ *    `extend(calculatedOptions, options)`），所以 `center` 仍取按留白算好的值、`zoom` 用我们夹过的
+ *    值 —— 比只给 `minZoom` 可靠（`minZoom` 在 `flyTo` 里只约束「弧线收敛时的临时缩远」，
+ *    见 `geo/projection/mercator_camera_helper.ts:174-178`，不保证终点档位）。
+ * ③ 一切无效输入（包围盒 / 留白 / 相机）都**跳过而不抛**，见 `isUsableBounds`。
+ */
+export function fitBoxCamera(
+  map: MapLibreMap,
+  bounds: Bounds,
+  opts: {
+    padding: CameraPadding
+    duration: number
+    essential?: boolean
+    /** 缩放下限（进站传 `DIR_ZOOM_FULL`；全国视角不传） */
+    minZoom?: number
+    maxZoom?: number
+    /** 仅用于日志：这次取景是给谁算的 */
+    label?: string
+  },
+): boolean {
+  if (!isUsableBounds(bounds)) {
+    console.warn('[mapMotion] 包围盒无效，跳过取景：', opts.label ?? '', bounds)
+    return false
+  }
+  const padding = normalizePadding(map, opts.padding)
+  // ⚠️ `maxZoom` **不能显式传 undefined**：MapLibre 的 `_cameraForBoxAndBearing` 用
+  // `extend({maxZoom: transform.maxZoom}, options)` 合并，显式的 `undefined` 会覆盖掉默认值，
+  // 于是 `Math.min(算出档位, undefined) = NaN` → 抛 `Invalid LngLat object: (NaN, NaN)`。
+  // 另一个坑：maplibre 6.x 的 `cameraForBounds` 在退化输入下是**抛异常**而不是返回 undefined，
+  // 所以这里必须 try/catch —— 宁可这一档不取景，也不能让异常冒到渲染循环里（一抛就是黑图）。
+  const boxOptions: { padding: CameraPadding; maxZoom?: number } = { padding }
+  if (typeof opts.maxZoom === 'number' && Number.isFinite(opts.maxZoom)) boxOptions.maxZoom = opts.maxZoom
+  let fit: ReturnType<MapLibreMap['cameraForBounds']>
+  try {
+    fit = map.cameraForBounds([bounds.sw, bounds.ne], boxOptions)
+  } catch (err) {
+    console.warn('[mapMotion] cameraForBounds 抛错，跳过取景：', opts.label ?? '', err)
+    return false
+  }
+  if (!fit || !isUsableCamera(fit)) {
+    console.warn('[mapMotion] cameraForBounds 失败（容器过小 / 留白过大），跳过取景：', opts.label ?? '', padding)
+    return false
+  }
+  const fitted = fit.zoom as number
+  const lower = opts.minZoom ?? -Infinity
+  const upper = opts.maxZoom ?? Infinity
+  const zoom = Math.min(upper, Math.max(fitted, lower))
+  const fitBoundsOptions: {
+    padding: CameraPadding
+    duration: number
+    essential: boolean
+    zoom: number
+    maxZoom?: number
+    minZoom?: number
+  } = { padding, duration: opts.duration, essential: opts.essential ?? true, zoom }
+  if (boxOptions.maxZoom !== undefined) fitBoundsOptions.maxZoom = boxOptions.maxZoom
+  if (typeof opts.minZoom === 'number' && Number.isFinite(opts.minZoom)) fitBoundsOptions.minZoom = opts.minZoom
+  map.fitBounds([bounds.sw, bounds.ne], fitBoundsOptions)
+  return true
+}
+
+/** 站区取景：`fitBoxCamera` + 缩放下限 = 箭头完全不透明那一档 */
+export function fitStationCamera(
+  map: MapLibreMap,
+  cam: StationCamera,
+  opts: { padding: CameraPadding; duration: number; essential?: boolean },
+): boolean {
+  return fitBoxCamera(map, cam.bounds, {
+    ...opts,
+    minZoom: DIR_ZOOM_FULL,
+    maxZoom: cam.maxZoom,
+    label: `station:${cam.key}`,
+  })
+}
+
+/** 全国视角取景：同一套有效性闸，但**不加缩放下限**（全国本来就该小，箭头在此淡出是设计） */
+export function fitOverviewCamera(
+  map: MapLibreMap,
+  cam: { bounds: Bounds },
+  opts: { padding: CameraPadding; duration: number; essential?: boolean },
+): boolean {
+  return fitBoxCamera(map, cam.bounds, { ...opts, label: 'overview' })
 }
 
 // ---------------------------------------------------------------- 留白
@@ -382,13 +529,11 @@ export async function flyToStation(
     opts.onPhase?.('entering')
     await opts.beforeFit?.()
     if (run !== runSeq) return cancelled(key, 'entering')
-    map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
+    const fitted = fitStationCamera(map, cam, {
       padding: resolvePadding(opts.padding),
-      maxZoom: cam.maxZoom,
       duration: MOTION.reducedMs,
-      essential: true,
     })
-    await waitMoveEnd(map, MOTION.reducedMs, run)
+    if (fitted) await waitMoveEnd(map, MOTION.reducedMs, run)
     return run === runSeq ? { key, phase: 'station', cancelled: false } : cancelled(key, 'station')
   }
 
@@ -418,13 +563,8 @@ export async function flyToStation(
   opts.onPhase?.('entering')
   await opts.beforeFit?.()
   if (run !== runSeq) return cancelled(key, 'entering')
-  map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
-    padding,
-    maxZoom: cam.maxZoom,
-    duration,
-    essential: true,
-  })
-  if (!(await waitMoveEnd(map, duration, run))) return cancelled(key, 'entering')
+  const fitted = fitStationCamera(map, cam, { padding, duration })
+  if (fitted && !(await waitMoveEnd(map, duration, run))) return cancelled(key, 'entering')
   return { key, phase: 'station', cancelled: false }
 }
 
@@ -445,12 +585,11 @@ export async function flyToOverview(map: MapLibreMap, opts: MotionOptions): Prom
     opts.onPhase?.('entering')
     await opts.beforeFit?.()
     if (run !== runSeq) return cancelled(null, 'entering')
-    map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
+    const fitted = fitOverviewCamera(map, cam, {
       padding: resolvePadding(opts.padding),
       duration: MOTION.reducedMs,
-      essential: true,
     })
-    await waitMoveEnd(map, MOTION.reducedMs, run)
+    if (fitted) await waitMoveEnd(map, MOTION.reducedMs, run)
     if (run !== runSeq) return cancelled(null, 'national')
     clampOverviewZoom(map)
     return { key: null, phase: 'national', cancelled: false }
@@ -459,12 +598,11 @@ export async function flyToOverview(map: MapLibreMap, opts: MotionOptions): Prom
   opts.onPhase?.('entering')
   await opts.beforeFit?.()
   if (run !== runSeq) return cancelled(null, 'entering')
-  map.fitBounds([cam.bounds.sw, cam.bounds.ne], {
+  const fitted = fitOverviewCamera(map, cam, {
     padding: resolvePadding(opts.padding),
     duration: MOTION.overviewMs,
-    essential: true,
   })
-  if (!(await waitMoveEnd(map, MOTION.overviewMs, run))) return cancelled(null, 'entering')
+  if (fitted && !(await waitMoveEnd(map, MOTION.overviewMs, run))) return cancelled(null, 'entering')
   clampOverviewZoom(map)
   return { key: null, phase: 'national', cancelled: false }
 }

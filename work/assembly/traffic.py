@@ -3061,14 +3061,52 @@ def _route_response_meta(
     }
 
 
+_ROUTE_KEYS_WITH_STEPS = ("arrival_route", "departure_route", "pickup_route")
+
+#: 引擎产物里给前端画箭头/标起点用的字段：**只活在产物与非契约端点里，契约响应一律剥掉**。
+#: `steps` = 逐段行进几何；`start_point` = 起点真值坐标（请求级 + `arrival_route` 各一份）。
+_ROUTE_ONLY_FIELDS = ("steps", "start_point")
+
+
+def _strip_route_steps(route: Any) -> Any:
+    """复制一条路线对象并去掉 `steps` / `start_point`（**不原地改**：产物是进程内缓存，改了会串味）。"""
+    if not isinstance(route, dict):
+        return route
+    if not any(key in route for key in _ROUTE_ONLY_FIELDS):
+        return route
+    return {key: value for key, value in route.items() if key not in _ROUTE_ONLY_FIELDS}
+
+
+def _route_body_without_steps(request: dict[str, Any]) -> dict[str, Any]:
+    """契约响应体的浅拷贝 + 各路线/请求级去掉 `steps` / `start_point`（口径见 `_decorate_route_response`）。"""
+    body = dict(request)
+    for key in _ROUTE_KEYS_WITH_STEPS:
+        if key in body:
+            body[key] = _strip_route_steps(body[key])
+    alternatives = body.get("alternatives")
+    if isinstance(alternatives, list):
+        body["alternatives"] = [_strip_route_steps(item) for item in alternatives]
+    for key in _ROUTE_ONLY_FIELDS:
+        body.pop(key, None)
+    return body
+
+
 def _decorate_route_response(
     request: dict[str, Any],
     layer_key: str,
     payload: dict[str, Any],
     match_meta: dict[str, Any],
 ) -> dict[str, Any]:
-    """契约请求体 + 来源/口径附加字段；note 与引擎自带 note 合并（不覆盖）。"""
-    body = dict(request)
+    """契约请求体 + 来源/口径附加字段；note 与引擎自带 note 合并（不覆盖）。
+
+    `steps[]`（逐段行进几何）与 `start_point`（起点真值坐标，2026-10-29 起引擎产物里带）
+    **都不进契约响应**：契约 §七 的路线对象是白名单形状（`path_id` / `segments` / `eta_min` /
+    `length_m` / `dropoff_point` / `walk_min`），多出几何/坐标字段会让读端误以为契约扩张。
+    前端要权威几何与起点走非契约只读端点 `GET /api/traffic/route/{request_id}/steps`
+    （同一份产物、同一批 `steps` + `start_point`）。防回归断言见
+    `work/assembly/selfcheck_ikmf1t.py` 的 `check_route_contract_shape()`。
+    """
+    body = _route_body_without_steps(request)
     meta = _route_response_meta(layer_key, payload, match_meta)
     note = meta.pop("note", None)
     body.update(meta)
@@ -3589,6 +3627,186 @@ def api_route_options() -> JSONResponse:
     )
 
 
+_SEGMENT_GRAPH_CACHE: dict[str, Any] = {}
+
+
+def _graph_for_segment(segment_id: Any) -> Any | None:
+    """按段号前缀（`seg_prefix`）找到站点 → 取/建真网图；拿不到就 `None`（不编坐标）。
+
+    只在非契约只读端点上用：给 `steps` 端点的每条 route 折 `start_point` / `destination_point`。
+    真网站点登记表里 `seg_prefix` 是 `SZ` / `GZ`；样例网的 `SEG-###` 找不到站点 ⇒ 如实返回 `None`。
+    """
+    match = _SEGMENT_NAMESPACE_PATTERN.match(str(segment_id or ""))
+    if not match:
+        return None
+    prefix = match.group(1)
+    if prefix in _SEGMENT_GRAPH_CACHE:
+        return _SEGMENT_GRAPH_CACHE[prefix]
+    graph: Any | None = None
+    for site in _site_ranges().get("sites") or []:
+        if not isinstance(site, dict) or str(site.get("seg_prefix")) != prefix:
+            continue
+        try:
+            graph, _service = _route_graph(str(site.get("site_id")))
+        except Exception:  # noqa: BLE001 - 建图/读包失败一律按「拿不到坐标」处理
+            graph = None
+        break
+    _SEGMENT_GRAPH_CACHE[prefix] = graph
+    return graph
+
+
+def _route_steps_payload(route: Any) -> dict[str, Any] | None:
+    """单条路线的 `steps[]` 摘要（给非契约端点用，字段与 `/route/plan` 的 `routes[].steps[]` 同构）。
+
+    另带 `start_point` / `destination_point`（与 `/route/plan` **逐字同构**）：
+    大屏画起点/终点标记直接用 `lon/lat`，不必再按 `offset_m` 折 `coords` ——
+    那正是本次镜像 bug 的结构成因。折算一律走 `route_service.route_endpoint_points()`，
+    与 `/route/plan` 的 `start_point_of()` 同一生成器；拿不到坐标就如实 `null`。
+    """
+    if not isinstance(route, dict) or not route.get("edges"):
+        return None
+    steps = route.get("steps") or []
+    points: dict[str, Any] = {"start_point": None, "destination_point": None}
+    if steps:
+        graph = _graph_for_segment((steps[0] or {}).get("segment_id"))
+        if graph is not None:
+            try:
+                _modules, route_service = _engine_modules()
+                points = route_service.route_endpoint_points(graph, steps)
+            except Exception:  # noqa: BLE001 - 折算失败不阻断几何，两端标记如实 null
+                points = {"start_point": None, "destination_point": None}
+    return {
+        "path_id": route.get("path_id") if isinstance(route.get("path_id"), str) else None,
+        "role": route.get("role") if isinstance(route.get("role"), str) else None,
+        "length_m": _num(route.get("length_m")),
+        "eta_min": _num(route.get("eta_min")),
+        "segment_count": len([item for item in (route.get("segments") or []) if isinstance(item, str)]),
+        "step_count": len(steps),
+        "start_point": points["start_point"],
+        "destination_point": points["destination_point"],
+        "steps": steps,
+    }
+
+
+@app.get("/api/traffic/route/{request_id}/steps")
+def api_route_request_steps(request_id: str) -> JSONResponse:
+    """**只读辅助端点（非契约 §七）**：某条引擎 OD 请求的逐段权威几何（箭头方向专项）。
+
+    背景：契约 §七 的路线对象是白名单形状，`/route/recommend` 的响应里**不含** `steps`
+    （引擎产物 routes.json 每条路线都产出 `steps[]`，生成器见
+    `work/engine/route_service.py` 的 `route_steps`）。前端要画"后端说往哪走"的箭头，就从这里取
+    同一份产物的 `steps[]`，不必再从 `segments` 的链式连通性自己猜方向。
+
+    口径（与 `/route/plan` 逐字一致）：
+      · `steps[].geometry` 已按**行进顺序**排列（首点 == `from_node` 坐标、末点 == `to_node` 坐标）；
+      · `steps[].direction` 是轴向语义（`forward` / `reverse`），`reverse` 表示该段行进方向与几何
+        `coords` 相反 —— 但 `geometry` 已翻好，前端照 `geometry` 画即可（不要再用 `direction` 翻）；
+      · `steps[].edge_id`：双向段的另一条遍历边是 `{segment_id}_rev`，用它分辨"同一条路的两个方向"；
+        `segment_id` 仍是同一个（契约 `segments[]` 口径不变）；
+      · `trim_head_m` / `trim_tail_m`：起终点落在段中间时的截断量（首/末段不画满整段）。
+
+    参数 `request_id` 取 `/route/options` 返回的那批；缺产物或找不到该 id 一律如实 404 + note。
+    """
+    layers = _routes_layers()
+    if not layers:
+        return _error(
+            404,
+            CODE_ROUTE_UNAVAILABLE,
+            "逐段几何不可用：work/engine/out/real/routes.json 与 work/engine/out/routes.json 均缺失或无 requests",
+            note=(
+                "该端点是只读辅助端点（非契约 §七），只端引擎产物；缺产物时如实 404，不代算路线几何。"
+            ),
+            source="engine.routes.none",
+        )
+    wanted = (request_id or "").strip()
+    for layer_key, payload in layers:
+        for request in payload.get("requests") or []:
+            if not isinstance(request, dict):
+                continue
+            if str(request.get("request_id") or "") != wanted:
+                continue
+            routes = {
+                "pickup_route": _route_steps_payload(request.get("pickup_route")),
+                "arrival_route": _route_steps_payload(request.get("arrival_route")),
+                "departure_route": _route_steps_payload(request.get("departure_route")),
+                "alternatives": [
+                    _route_steps_payload(item)
+                    for item in (request.get("alternatives") or [])
+                    if isinstance(item, dict)
+                ],
+            }
+            return _json(
+                {
+                    "ts": payload.get("ts") if isinstance(payload.get("ts"), str) else _latest_data_ts(),
+                    "is_simulated": True,
+                    "data_source": f"engine.routes.{layer_key}",
+                    "data_source_note": _route_layer_note(layer_key),
+                    "request_id": wanted,
+                    "od_id": request.get("od_id") if isinstance(request.get("od_id"), str) else None,
+                    "session_id": request.get("session_id") if isinstance(request.get("session_id"), str) else None,
+                    "driver_type": request.get("driver_type") if isinstance(request.get("driver_type"), str) else None,
+                    "segment_namespaces": _routes_namespaces(payload),
+                    "start_point": (
+                        request.get("start_point")
+                        if isinstance(request.get("start_point"), dict)
+                        else (
+                            (request.get("arrival_route") or {}).get("start_point")
+                            if isinstance(request.get("arrival_route"), dict)
+                            else None
+                        )
+                    ),
+                    "routes": routes,
+                    "caliber": {
+                        "geometry_order": "travel",
+                        "geometry_note": (
+                            "steps[].geometry 已按行进顺序排列：首点 == from_node 坐标、末点 == to_node 坐标。"
+                        ),
+                        "direction_note": (
+                            "direction=reverse 表示该段行进方向与几何 coords 相反；geometry 已翻转，"
+                            "前端照 geometry 画即可，不要再用 direction 翻一次。"
+                        ),
+                        "edge_id_note": (
+                            "双向段的另一条遍历边为 {segment_id}_rev；segment_id 与契约 segments[] 同口径。"
+                        ),
+                        "start_point_note": (
+                            "start_point 与 /route/plan 的 start_point 同源（offset_m 为 coords 顺序、"
+                            "offset_travel_m 为行进顺序）；前端画起点标记直接用 start_point.lon/lat。"
+                        ),
+                        "route_points_note": (
+                            "每条 route 的 start_point / destination_point 与 /route/plan 同源同口径"
+                            "（route_service.route_endpoint_points → start_point_of），字段逐字同构；"
+                            "画两端标记直接用 lon/lat，不要再按 offset_m 折 coords；拿不到坐标时为 null。"
+                        ),
+                    },
+                    "note": (
+                        "只读辅助端点（非契约 §七）：端出引擎产物里该 request_id 的逐段几何与起点真值，"
+                        "供前端画路线箭头/起点标记；与 /route/plan 的 steps[]、start_point 同一生成器"
+                        "（work/engine/route_service.py 的 route_steps / start_point_for_location）。"
+                        "契约 /route/recommend 响应里不含这两个字段。"
+                    ),
+                },
+                source=f"engine.routes.{layer_key}",
+            )
+    available = sorted(
+        {
+            str(request.get("request_id"))
+            for _, layer_payload in layers
+            for request in (layer_payload.get("requests") or [])
+            if isinstance(request, dict) and request.get("request_id")
+        }
+    )
+    return _error(
+        404,
+        CODE_ROUTE_UNAVAILABLE,
+        f"找不到 request_id={wanted!r} 的引擎路线（产物里没有这条请求）",
+        note=(
+            "可用 request_id：" + ("、".join(available) if available else "（无）") + "；"
+            "该端点是只读辅助端点（非契约 §七），只端引擎产物已算好的请求。"
+        ),
+        source="engine.routes.none",
+    )
+
+
 # ---------------------------------------------------------------- 自定义起终点（IKVQX6）
 # 辅助端点（非契约 §七）：页面在地图上点起终点 → 吸附最近路段 → 算 1 主 + ≤2 备选 + 离站单算。
 # 接口层只调用 work/engine/route_service.py，**不复制**算路算法；不可达如实说、不编造路线。
@@ -3661,7 +3879,14 @@ def _route_decision_params() -> dict[str, Any]:
 
 
 def _endpoint_echo(raw: dict[str, Any] | None) -> dict[str, Any]:
-    """把引擎端点结构摊平成页面契约形状（吸附距离 / 吸附点直接给字段，不用再挖 snap）。"""
+    """把引擎端点结构摊平成页面契约形状（吸附距离 / 吸附点直接给字段，不用再挖 snap）。
+
+    **里程口径（2026-10-29 统一）**：`offset_m` 一律按 `coords` 顺序（从段的首个顶点量起，
+    与 `/api/traffic/locate`、点位注册表、前端 `pointAtOffset(coords, offset)` 同口径，可原样回灌）；
+    `offset_travel_m` 是同一位置在**行进顺序**上的里程，`direction=="reverse"` 的段两者互补
+    （`offset_travel_m = length_m - offset_m`）。页面画线用 `routes[].steps[].geometry`（已按行进顺序），
+    画起点标记用 `start_point.lon/lat`，不要自己拿 `offset_m` 折 `coords` 去猜方向。
+    """
     raw = raw or {}
     snap = raw.get("snap") or {}
     return {
@@ -3669,6 +3894,7 @@ def _endpoint_echo(raw: dict[str, Any] | None) -> dict[str, Any]:
         "node_id": raw.get("node_id"),
         "segment_id": raw.get("segment_id"),
         "offset_m": raw.get("offset_m"),
+        "offset_travel_m": raw.get("offset_travel_m"),
         "direction": raw.get("direction"),
         "distance_m": snap.get("distance_m"),
         "lon": snap.get("lon"),
@@ -3686,6 +3912,7 @@ def _route_error_body(
         "reachable": False,
         "alternatives_status": "unreachable",
         "routes": [],
+        "start_point": None,
         "departure": None,
         "code": code,
         "reason": message,
@@ -3743,6 +3970,14 @@ async def api_route_snap(request: Request) -> JSONResponse:
 
     吸附半径 60 m（`route_service.snap_to_segment`）；超出半径 `matched=false`，
     如实告诉页面「点得离线太远」，**不硬吸到几百米外的路段**。
+
+    返回（**2026-10-29 起为方向口径统一后的形状**）：
+    - `offset_m`：**按该段 `coords` 顺序**从首个顶点量起的米数（与 `/api/traffic/locate`
+      的 `location.offset_m`、点位注册表同口径，可直接回灌 `/route/plan` 的 `{segment_id, offset_m}`）；
+    - `offset_travel_m`：同一位置在**行进顺序**上的米数；`direction=="reverse"` 的段
+      `offset_travel_m = length_m - offset_m`（`coords` 与行车方向相反）；
+    - `direction`：归一后的行进方向（`forward` / `reverse`，相对 `coords` 顺序）；
+      `direction_raw` 是边上原始取值；`length_m` 是段长。
     """
     body = await _read_body(request)
     site_id = _route_site_id(
@@ -3776,6 +4011,16 @@ async def api_route_plan(request: Request) -> JSONResponse:
     请求体：`{"site_id"?, "origin", "destination", "with_departure"?}`；
     端点形态：`{lon,lat}`（点图选的任意坐标，先吸附） / `{point_id}` / `{segment_id, offset_m}` / `{node_id}`。
     不可达 → **200 + reachable=false**（页面如实提示、不画假线）；参数不合法 → 400。
+
+    **方向口径（2026-10-29 统一，见 docs/方案-路段箭头方向-20261029.md §2）**：
+    - `routes[].steps[]`：逐段几何，`geometry` **已按行进顺序**（首点 == `from_node` 坐标、
+      末点 == `to_node` 坐标），并给 `direction`（`forward` / `reverse`，相对 `coords` 顺序）
+      与 `edge_id`（双向段的 `_rev` 反向遍历边靠它分辨，页面不需要）；`trim_head_m` / `trim_tail_m`
+      表示首末段各有多少米**不在本次行程内**（起终点落在段中），页面画线时要裁掉；
+    - `start_point`：起点真实位置（`lon` / `lat` / `segment_id` / `offset_m` / `offset_travel_m` /
+      `direction`），页面画起点标记用这个，**不要**用 `coords[0]` 折 `offset_m`（反向段会镜像到段尾）；
+    - `origin` / `destination` 回显里的 `offset_m` 仍是 `coords` 顺序（可原样回灌），
+      `offset_travel_m` 是行进顺序里程。
     """
     body = await _read_body(request)
     site_id = _route_site_id(

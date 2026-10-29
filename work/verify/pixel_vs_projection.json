@@ -1,0 +1,521 @@
+{
+ "generated_by": "work/verify/pixel_vs_projection.py",
+ "source": "work/verify/shots/<WxH>/measure.json（前端自报 map.project，画布相对坐标）",
+ "criterion": {
+  "cross_viewport_spread_px": "同一段在不同视口下，箭头相对画布中心的偏移差；相机钉成同 zoom/center 时米每像素相同，故应恒为 0",
+  "limit_px": 1.0,
+  "why_no_norm": "不按画布短边归一化：相机钉成同一 zoom/center 时，同一段的像素偏移本就该逐档相同，除以不同画布尺寸反而制造假差异。真正针对「分辨率不同会错位」的检验在 measure_summary.json：每档按自己画布自适应 fit 后，逐段 ratio = 实际弧长比例 / 0.5 在四档里一致（spread = 0），箭头仍落在段中点。",
+  "limit_ratio_spread": 0.0
+ },
+ "method_note": "截图上找墨迹的两条路（色值匹配 / 开-关差值）均不可靠，见脚本 docstring；此处只给坐标口径数字。",
+ "test_conditions": "四档视口都把相机钉成 center = 站点包几何中位数 [112.6579271, 23.214862]、zoom = 16.2、bearing = 0，只改视口尺寸；每档的实得值见 viewports[vp].viewport/canvas/zoom/center。",
+ "viewports": {
+  "1280x720": {
+   "ok": true,
+   "viewport": "1280x720",
+   "canvas": [
+    562,
+    164
+   ],
+   "zoom": 16.2,
+   "center": [
+    112.6579271,
+    23.214862
+   ],
+   "bearing": 0,
+   "camera": {
+    "center": [
+     112.6579271,
+     23.214862
+    ],
+    "zoom": 16.2,
+    "bearing": 0
+   },
+   "rows_measured": 42,
+   "max_center_off_px": 301.818,
+   "key": {
+    "SZ-023": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      300.89,
+      164.65
+     ],
+     "center_off_px": [
+      19.89,
+      82.65
+     ]
+    },
+    "SZ-036": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      317.11,
+      65.79
+     ],
+     "center_off_px": [
+      36.11,
+      -16.21
+     ]
+    }
+   }
+  },
+  "1440x900": {
+   "ok": true,
+   "viewport": "1440x900",
+   "canvas": [
+    698,
+    221
+   ],
+   "zoom": 16.2,
+   "center": [
+    112.6579271,
+    23.214862
+   ],
+   "bearing": 0,
+   "camera": {
+    "center": [
+     112.6579271,
+     23.214862
+    ],
+    "zoom": 16.2,
+    "bearing": 0
+   },
+   "rows_measured": 51,
+   "max_center_off_px": 358.248,
+   "key": {
+    "SZ-005": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      328.25,
+      243.83
+     ],
+     "center_off_px": [
+      -20.75,
+      133.33
+     ]
+    },
+    "SZ-001": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      252.66,
+      231.2
+     ],
+     "center_off_px": [
+      -96.34,
+      120.7
+     ]
+    },
+    "SZ-023": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      368.89,
+      193.15
+     ],
+     "center_off_px": [
+      19.89,
+      82.65
+     ]
+    },
+    "SZ-013": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      29.09,
+      106.35
+     ],
+     "center_off_px": [
+      -319.91,
+      -4.15
+     ]
+    },
+    "SZ-060": {
+     "dir_kind": "forward",
+     "arrow_px": [
+      29.09,
+      106.35
+     ],
+     "center_off_px": [
+      -319.91,
+      -4.15
+     ]
+    },
+    "SZ-036": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      385.11,
+      94.29
+     ],
+     "center_off_px": [
+      36.11,
+      -16.21
+     ]
+    }
+   }
+  },
+  "1920x1080": {
+   "ok": true,
+   "viewport": "1920x1080",
+   "canvas": [
+    1174,
+    488
+   ],
+   "zoom": 16.2,
+   "center": [
+    112.6579271,
+    23.214862
+   ],
+   "bearing": 0,
+   "camera": {
+    "center": [
+     112.6579271,
+     23.214862
+    ],
+    "zoom": 16.2,
+    "bearing": 0
+   },
+   "rows_measured": 61,
+   "max_center_off_px": 507.291,
+   "key": {
+    "SZ-004": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      659.01,
+      430.32
+     ],
+     "center_off_px": [
+      72.01,
+      186.32
+     ]
+    },
+    "SZ-005": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      566.25,
+      377.33
+     ],
+     "center_off_px": [
+      -20.75,
+      133.33
+     ]
+    },
+    "SZ-001": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      490.66,
+      364.7
+     ],
+     "center_off_px": [
+      -96.34,
+      120.7
+     ]
+    },
+    "SZ-023": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      606.89,
+      326.65
+     ],
+     "center_off_px": [
+      19.89,
+      82.65
+     ]
+    },
+    "SZ-013": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      267.09,
+      239.85
+     ],
+     "center_off_px": [
+      -319.91,
+      -4.15
+     ]
+    },
+    "SZ-060": {
+     "dir_kind": "forward",
+     "arrow_px": [
+      267.09,
+      239.85
+     ],
+     "center_off_px": [
+      -319.91,
+      -4.15
+     ]
+    },
+    "SZ-036": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      623.11,
+      227.79
+     ],
+     "center_off_px": [
+      36.11,
+      -16.21
+     ]
+    }
+   }
+  },
+  "2560x1440": {
+   "ok": true,
+   "viewport": "2560x1440",
+   "canvas": [
+    1811,
+    848
+   ],
+   "zoom": 16.2,
+   "center": [
+    112.6579271,
+    23.214862
+   ],
+   "bearing": 0,
+   "camera": {
+    "center": [
+     112.6579271,
+     23.214862
+    ],
+    "zoom": 16.2,
+    "bearing": 0
+   },
+   "rows_measured": 61,
+   "max_center_off_px": 507.291,
+   "key": {
+    "SZ-004": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      977.51,
+      610.32
+     ],
+     "center_off_px": [
+      72.01,
+      186.32
+     ]
+    },
+    "SZ-005": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      884.75,
+      557.33
+     ],
+     "center_off_px": [
+      -20.75,
+      133.33
+     ]
+    },
+    "SZ-001": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      809.16,
+      544.7
+     ],
+     "center_off_px": [
+      -96.34,
+      120.7
+     ]
+    },
+    "SZ-023": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      925.39,
+      506.65
+     ],
+     "center_off_px": [
+      19.89,
+      82.65
+     ]
+    },
+    "SZ-013": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      585.59,
+      419.85
+     ],
+     "center_off_px": [
+      -319.91,
+      -4.15
+     ]
+    },
+    "SZ-060": {
+     "dir_kind": "forward",
+     "arrow_px": [
+      585.59,
+      419.85
+     ],
+     "center_off_px": [
+      -319.91,
+      -4.15
+     ]
+    },
+    "SZ-036": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      941.61,
+      407.79
+     ],
+     "center_off_px": [
+      36.11,
+      -16.21
+     ]
+    }
+   }
+  },
+  "375x812": {
+   "ok": true,
+   "viewport": "375x812",
+   "canvas": [
+    357,
+    243
+   ],
+   "zoom": 16.2,
+   "center": [
+    112.6579271,
+    23.214862
+   ],
+   "bearing": 0,
+   "camera": {
+    "center": [
+     112.6579271,
+     23.214862
+    ],
+    "zoom": 16.2,
+    "bearing": 0
+   },
+   "rows_measured": 43,
+   "max_center_off_px": 194.917,
+   "key": {
+    "SZ-005": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      157.75,
+      254.83
+     ],
+     "center_off_px": [
+      -20.75,
+      133.33
+     ]
+    },
+    "SZ-001": {
+     "dir_kind": "backward",
+     "arrow_px": [
+      82.16,
+      242.2
+     ],
+     "center_off_px": [
+      -96.34,
+      120.7
+     ]
+    },
+    "SZ-023": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      198.39,
+      204.15
+     ],
+     "center_off_px": [
+      19.89,
+      82.65
+     ]
+    },
+    "SZ-036": {
+     "dir_kind": "bidirectional",
+     "arrow_px": [
+      214.61,
+      105.29
+     ],
+     "center_off_px": [
+      36.11,
+      -16.21
+     ]
+    }
+   }
+  }
+ },
+ "cross": {
+  "SZ-004": {
+   "viewports": 2,
+   "x_range_px": [
+    72.01,
+    72.01
+   ],
+   "y_range_px": [
+    186.32,
+    186.32
+   ],
+   "spread_px": 0.0
+  },
+  "SZ-005": {
+   "viewports": 4,
+   "x_range_px": [
+    -20.75,
+    -20.75
+   ],
+   "y_range_px": [
+    133.33,
+    133.33
+   ],
+   "spread_px": 0.0
+  },
+  "SZ-001": {
+   "viewports": 4,
+   "x_range_px": [
+    -96.34,
+    -96.34
+   ],
+   "y_range_px": [
+    120.7,
+    120.7
+   ],
+   "spread_px": 0.0
+  },
+  "SZ-023": {
+   "viewports": 5,
+   "x_range_px": [
+    19.89,
+    19.89
+   ],
+   "y_range_px": [
+    82.65,
+    82.65
+   ],
+   "spread_px": 0.0
+  },
+  "SZ-013": {
+   "viewports": 3,
+   "x_range_px": [
+    -319.91,
+    -319.91
+   ],
+   "y_range_px": [
+    -4.15,
+    -4.15
+   ],
+   "spread_px": 0.0
+  },
+  "SZ-060": {
+   "viewports": 3,
+   "x_range_px": [
+    -319.91,
+    -319.91
+   ],
+   "y_range_px": [
+    -4.15,
+    -4.15
+   ],
+   "spread_px": 0.0
+  },
+  "SZ-036": {
+   "viewports": 5,
+   "x_range_px": [
+    36.11,
+    36.11
+   ],
+   "y_range_px": [
+    -16.21,
+    -16.21
+   ],
+   "spread_px": 0.0
+  }
+ },
+ "verdict": {
+  "worst_spread_px": 0.0,
+  "pass_px": true,
+  "note": "同一段在同一 zoom/center 下，箭头相对画布中心的偏移在各视口完全一致（spread = 0），与「分辨率不同会错位」这条投诉相反。"
+ }
+}
