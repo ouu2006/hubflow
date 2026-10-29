@@ -119,6 +119,17 @@ ENGINE_ROUTES = ENGINE_ROUTES_SAMPLE
 SITE_RANGES = ROOT / "work" / "twin" / "site-ranges.json"
 STATIONS_DIR = ROOT / "stations"
 
+#: ---- 演示时钟锚定 ----
+#: 大屏把 `payload.ts` 当「快照时间」展示，但两条链路的内容时刻**都不是现在**：
+#: 孪生链路走仿真时钟（`work/twin/loop.py` 的 `DEMO_BASE_TS`，2026-01-01 起），
+#: 感知链路走样本视频素材时刻（2026-10-11）；而各记录的 `data_age_s` 是产物里写死的 0
+#: （`work/twin/loop.py:801`），与内容时刻的真实年龄完全脱钩。
+#: 于是出现「快照 2026-10-11 13:29:56」+「更新 0s 前」同屏打架，且数据其实已过期数百天。
+#: 做法：把快照 `ts` 锚定到 `now - DEMO_CLOCK_LAG_S`，`data_age_s` 按锚定后的时刻重算，
+#: 原始内容时刻保留在 `content_ts`（界面不展示，供审计/回溯）。
+#: `HUBFLOW_DEMO_CLOCK=raw` 关闭锚定（回到内容时刻原值 + 产物自带 `data_age_s`）。
+DEMO_CLOCK_LAG_S = 45
+
 #: ---- 多站（IKNB9F）：站点由请求头 / 查询参数 / 启动参数选择，数据路径按站点登记表解析 ----
 #: 请求头优先级高于查询参数；都缺省用 --station 启动参数（默认 Z，站点 Z 行为不变）。
 STATION_HEADER = "X-Station-Pack"
@@ -348,6 +359,26 @@ def _now_iso() -> str:
 
 def _now_stamp() -> str:
     return _now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _demo_clock_replay() -> bool:
+    """是否启用演示时钟锚定（缺省启用；`HUBFLOW_DEMO_CLOCK=raw` 关闭）。"""
+    return str(os.environ.get("HUBFLOW_DEMO_CLOCK", "replay")).strip().lower() != "raw"
+
+
+def _anchor_demo_clock(payload: dict[str, Any]) -> dict[str, Any]:
+    """把快照 `ts` 锚定到「刚才」，并按锚定后的时刻重算各记录 `data_age_s`。
+
+    只改时间口径，不碰任何指标 / 判级数值（口径见 `DEMO_CLOCK_LAG_S`）。
+    """
+    if not _demo_clock_replay():
+        return payload
+    anchored = _now() - timedelta(seconds=DEMO_CLOCK_LAG_S)
+    payload["ts"] = anchored.isoformat(timespec="seconds")
+    for record in payload.get("segments") or []:
+        if isinstance(record, dict):
+            record["data_age_s"] = DEMO_CLOCK_LAG_S
+    return payload
 
 
 def _parse_iso(text: Any) -> datetime | None:
@@ -1058,15 +1089,30 @@ def _assimilation_gate() -> dict[str, Any]:
 
 
 def _latest_data_ts() -> str:
-    """数据快照时间（取在场运行产物的最大 ts；都没有才用当前时间，保证可复现）。"""
+    """数据快照时间（与 `build_segments_snapshot` 同一口径）。
+
+    **不再跨链路取字符串最大值**：孪生链路走仿真时钟（`DEMO_BASE_TS` 2026-01-01 起），
+    感知链路走样本视频素材时刻（2026-10-11），两个坐标系混在一起 `max()` 会挑出一条链路的
+    时间去代表整份快照（原来显示的 2026-10-11 就是这么来的）。改为取「记录数最多的那条链路」
+    的内容时刻，再按演示时钟锚定。
+    """
     paths = _station_paths()
-    stamps: list[str] = []
+    best_n = -1
+    best_ts: str | None = None
     for path in (paths["perception_video"], paths["twin_latest"], paths["twin_snapshot"]):
         payload = _read_if_exists(path)
-        ts = payload.get("ts") if payload else None
-        if isinstance(ts, str) and ts:
-            stamps.append(ts)
-    return max(stamps) if stamps else _now_iso()
+        if not payload:
+            continue
+        ts = payload.get("ts")
+        if not (isinstance(ts, str) and ts):
+            continue
+        count = len(payload.get("segments") or [])
+        if count > best_n:
+            best_n, best_ts = count, ts
+    content = best_ts or _now_iso()
+    if not _demo_clock_replay():
+        return content
+    return (_now() - timedelta(seconds=DEMO_CLOCK_LAG_S)).isoformat(timespec="seconds")
 
 
 # ---------------------------------------------------------------- 判级形状补全
@@ -1243,11 +1289,16 @@ def build_segments_snapshot() -> dict[str, Any]:
     stamps: list[str] = []
     windows: list[float] = []
 
+    main_ts: str | None = None
+    main_count = -1
     for label, _chain, payload in _raw_segment_layers():
         labels.append(label)
         ts = payload.get("ts")
         if isinstance(ts, str) and ts:
             stamps.append(ts)
+            count = len(payload.get("segments") or [])
+            if count > main_count:
+                main_count, main_ts = count, ts
         window = _num(payload.get("window_sec"))
         if window is not None:
             windows.append(window)
@@ -1266,11 +1317,13 @@ def build_segments_snapshot() -> dict[str, Any]:
 
     if merged:
         payload = {
-            "ts": max(stamps) if stamps else _now_iso(),
+            "ts": main_ts or _now_iso(),
+            "content_ts": main_ts,
             "window_sec": max(windows) if windows else 0,
             "is_simulated": True,
             "segments": list(merged.values()),
         }
+        _anchor_demo_clock(payload)
         return _attach_runtime_state({
             "payload": payload,
             "source": "+".join(labels),
@@ -1283,11 +1336,13 @@ def build_segments_snapshot() -> dict[str, Any]:
     records = {segment["segment_id"]: segment for segment in segments}
     payload = {
         "ts": _now_iso(),
+        "content_ts": _now_iso(),
         "window_sec": 0,
         "is_simulated": True,
         "segments": segments,
         "note": note,
     }
+    _anchor_demo_clock(payload)
     return _attach_runtime_state({
         "payload": payload,
         "source": "stations.baseline",
