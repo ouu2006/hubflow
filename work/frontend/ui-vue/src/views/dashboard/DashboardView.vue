@@ -3658,7 +3658,6 @@ function onCommandChanged(): void {
           </p>
         </div>
       </section>
-      </div>
     </div>
 
     <!-- 底部告警条 -->
