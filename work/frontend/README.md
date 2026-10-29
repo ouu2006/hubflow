@@ -613,6 +613,40 @@ python scripts/doc_gate.py   # 仓库根:文档与契约门禁(本地跑,唯一�
 
 `vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.18s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
 
+### 13.5c 三栏区与底部热力带之间可上下拉（2026-10-28，业主追问「上下可以那样拉吗」）
+
+**一句话口径**：13.5b 只解决了「左右挤」，业主紧接着问「上下能不能也那样」——三栏区（含地图）和底部那条热力带之间加一条**可拖的分隔条**，往上拖地图变高、往下拖热力带变高；分隔条右端带一个「⌄ 收起 / ⌃ 展开」键。
+
+| 项 | 值 |
+|---|---|
+| 拖条位置 | 三栏区底边、热力带顶边之间（`.band-drag`），在 `el-splitter` 之外、`.heat-band` 之前 |
+| 视觉 | 中间一根 40×3 的把手（`.band-drag-grip`，hover 变 64 px 品牌蓝）；**整条 16 px 都是拖拽热区**（视觉 10 px + 上下各 3 px padding），10 px 一根线太细按不住 |
+| 高度范围 | `BAND_MIN_H` 96 / `BAND_DEFAULT_H` 196 / `BAND_MAX_H` 460，`clampBand()` 统一钳制 |
+| 记忆 | `localStorage` 键 `hubflow.dashboard.bandHeight`（纯数字 px）；与 13.5 的 `colWidth`、13.5b 的 `colCollapsed` **三个键互不覆盖** |
+| 收起键 | `.band-drag-fold` 贴右端，`bandCollapsed` 由 `bandHeight <= BAND_MIN_H + 1` 推导；收起前记住高度到 `BAND_RECALL_H` |
+| 复位 | 拖条上**双击** = 回 `BAND_DEFAULT_H`（`onBandDblClick` → `resetBand()`），与左右栏双击分隔条复位同习惯 |
+| 与全国视角 | `.band-drag` 和 `.heat-band` 一样 `v-if="mapScope === 'station'"` —— 全国视角整条收起，没有拖条 |
+
+**踩过的坑（改这块必看）**：
+
+- **`.heat-band` 的高度不能再用 `flex` 撑**：原来是 `flex: 0 0 auto` 由内容决定高度，改成固定 `height: var(--band-h, 196px)` + `min-height: 0` + `overflow: hidden`。否则拉条改高度会被三张卡的内容 `min-height` 顶回去，拖起来毫无反应。
+- **必须用 pointer 事件 + `setPointerCapture`，不能用 mousedown**：用 mousedown/mousemove 时鼠标拖出条外、或拖到窗口外松手会收不到 mouseup，拖条「粘手」跟着鼠标不走。pointer 捕获保证拖出条外继续拖、松手一定收到 `pointerup`（模板还挂了 `@pointercancel="onBandDragUp"` 兜底）。
+- **方向是 `startH - dy` 不是 `startH + dy`**：拖条在热力带**上方**，鼠标上移（`clientY` 变小）= 热力带变高。写成 `+` 会上下颠倒。
+- **`:global(body.is-vdrag)` 在 Vue 3 scoped 里会编译错**，正确写法是 `:global(body).is-vdrag`（`<style scoped>` 在 `DashboardView.vue:3174`）。
+- 拖动期间给 `body` 挂 `is-vdrag` 禁 `user-select`，否则上下拖会顺手把页面文字刷蓝。
+- 收起键必须 `@pointerdown.stop`，否则按下收起键会先触发拖条的 `pointerdown` 进入拖状态。
+
+**实测记录（2026-10-28，Edge + 浏览器内 CDP，`--mode remote` 对真接口 8000，站区视角）**：
+
+| 步骤 | 结果 |
+|---|---|
+| 点「⌄ 收起」 | 热力带从 460 px 收到 96 px、地图同步变高；按钮文案变「⌃ 展开」 |
+| 再点「⌃ 展开」 | 热力带回到收起前的高度、地图缩回；按钮变回「⌄ 收起」 |
+| 刷新同 URL | **高度记忆生效**（刷新后仍是上次拖/收起后的高度），说明 `bandHeight` 读写 localStorage 正常 |
+| 拖动手感 | **未能在自动化里验证**：本机浏览器工具注入的合成鼠标（`Input.dispatchMouseEvent`）不会让页面收到 `pointermove`；用同样 pointer-capture 写法的最小对照页也拖不动，属工具限制而非本功能缺陷。**该步需人工拖一次确认**（鼠标按住那根短横线上下拖即可）。 |
+
+`vue-tsc --noEmit -p tsconfig.app.json` exit 0、`vite build` exit 0（`✓ built in 1.29s`）、`python scripts/doc_gate.py` 8/8、`python scripts/frontend_gate.py` 12/12。
+
 ### 13.6 告警判级取当前路段快照（Issue #75 第④条 / 回归修复 IKLLXG）
 
 **一句话口径**：告警自带的 `level` 是**派生时的记录值**（站点包预置剧本），与**当前路段快照**可能不同步——页面上**一律按快照判级**显示，快照缺该路段时**退回告警记录值**，不编造。
@@ -2107,7 +2141,7 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 # 大屏 → 点顶栏「肇庆东站」进站区 → 路线卡应有 4 张（推荐 + 备选 1 + 备选 2 + 离站）
 # 点备选 1 → 卡片与图例都变成「已选中：备选 1」；再点一次 → 全部回三档蓝
 ```
-> 取证截图时要先关「摄像头」和「箭头」两层：摄像头蓝圈编号、方向箭头的紫/深蓝会与三档蓝混在一起，
+> 取证截图时要先关「摄像头」和「箭头」两层：摄像头蓝圈编号、方向箭头的深蓝会与三档蓝混在一起，
 > 看图容易误判成「备选的暗蓝画到了别的路上」。
 
 ## 三十三、落客点 / 场区显示开关（2026-10-28）
@@ -2126,15 +2160,67 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 - 落客区圈是**演示范围圈**（35 m 示意），不是实地划线；
 - 图钉用容器 class（`.dropoffs-off` / `.zones-off`）CSS 隐藏，地图图层用 `setLayoutProperty('visibility')`；
   样式重建后由 `ready` 钩子补一次，避免切底图后开关失效。
-## 三十四、大屏区域收起 / 展开（2026-10-28）
+## 三十四、自定义起终点：点图选起终点 → 开始 → 一主两备 + 离站单算（IKVQX6，2026-10-28 重做）
 
-左右两栏已有「‹ 收起」；本次把其余区域补齐，全部落 `localStorage`：
+### 34.1 业主原话与要改掉的东西
+
+> 「可以直接选择图上的任意坐标点，然后跟最近的路段进行匹配，**不要在右边那个什么选项那里做选择**，
+> 直接点击图来标记启动终点，选右边那些选项太难抉择了，**先选择起点再选择终点**，选完后右边点击开始，
+> **下面才是推荐路线显示**，直接显示三条推荐路线，按主推荐，备用 1，备用 2 显示，**离站另外计算**」
+
+所以右侧路线卡里那个 `<select class="route-select">`（`selectedSession` + 4 条写死 OD + `onRouteSessionChange`）
+连同它下面的 trip-summary 摘要条一起**整块删掉**，换成「点图 → 吸附回显 → 开始 → 三条卡 + 离站」。
+
+### 34.2 交互四步（`DashboardView.vue`）
+
+1. **第 1 步**：`odPicking = 'origin'`，在地图上点一下 → `MapLibreViewer` 用 `pickMode` 拦下点击，只 `emit('pick-point', {lon,lat})`，
+   **不切站、不改选中路段**（`onMapMouseMove` 在拾取态只把光标设成 `crosshair` 就 return，否则悬停会一路改 `selectedId`，右侧段信息乱跳）。
+2. **吸附回显**：前端拿坐标打 `POST /api/traffic/route/snap`，回显「路段 SZ-035（停车场内部通道（N-022→N-027））· 偏移 22.4 m · 吸附距离 0.7 m」。
+   `matched: false` 就直接用后端 `note`（「离最近路段 4863 m（超过 60 m 吸附阈值）：不硬吸附，请点得靠近路网一些」），**不偷偷吸**。
+3. **第 2 步**：起点已定才认终点（起点未定时点图只认起点，`odStep` 文案会说明）。
+4. **开始**：起终点都在才可点。请求体传 `{segment_id, offset_m}`（不让后端二次吸附）、`with_departure: true`。
+   **结果卡片在「开始」下面**，按 `routes[]` 顺序渲染 `主推荐 / 备用 1 / 备用 2`（`r.role` → 名字），
+   卡头 `eta_min`，卡内里程 km · 段数 · 均速 km/h（按 `r.segments` 逐段取 `v_kmh` 求均值，取不到就不显示、不拿 0 充数），
+   备选卡多一行「较主推荐 +0.11 km / +0.2 min」，`r.reason` 原样展示（引擎给的「差异 5 段 · 分岔点 N-031 …」）。
+
+### 34.3 三条线怎么画：复用既有蓝色系，不画自绘 polyline
+
+业主另一句口径（2026-10-28）：「**发你的 html 的路线段是没有数据的，我们的路线段是注入数据的**，所以这样子才可以生成出我们的路线推荐」。
+所以这里**不吃参考 demo 的画法**（它是 OSRM 返回一条 geometry 自己描线），而是把 `routes[i].segments`（真段号 `SZ-###`）
+喂给 `MapLibreViewer` 既有的路线图层：主推荐走 `${SRC}-route`（品牌蓝 `#0052D9`）、备用走 `-route-alt1` / `-route-alt2`（暗蓝 `#1E3A8A`、靠虚实节律区分），
+离站走 `-route-dep`（紫 `#7B61FF`）；点卡片 → `pickRoute()` → 那条变天蓝 `#38BDF8` 压最上层（见第三十三章）。
+图层与配色一行没改，本轮只是把数据源从「4 条写死 OD」换成「自定义起终点的算路结果」。
+
+### 34.4 三件「如实」的事
+
+| 情况 | 页面行为 |
+|---|---|
+| 备选不足（`alternatives_status = single_path / no_diverse_path`、`count < 3`） | 有几条显示几条，并优先拼引擎 `reason` 说明为什么少（例：「引擎只找到一条可行路径（single_path）：起点与终点在同一节点/同一段上，只有一条直连路径」） |
+| 不可达（`reachable: false`） | `.cod-unreachable` 写「起点到该终点不可达（引擎如实告知）」+ `note`，**地图一条线都不画**，不弹红、不当异常 |
+| 离站 | 单独 `.cod-dep` 一块，标「另外计算」，`departure.segments` 走紫线；`departure` 为 `null` 时写「引擎本次未给离站路线：如实空窗」 |
+
+### 34.5 浏览器点验记录（Tabbit / Playwright，2026-10-28）
+
+```
+node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5173 --mode remote   # 另起 python work/assembly/traffic.py --port 8000
+# 打开 http://127.0.0.1:5173/#/dashboard（Z 站 · 61 段）
+# 地图上点 (SZ-035 中点) → 起点「已吸附 路段 SZ-035 · 偏移 22.4 m · 吸附距离 0.7 m」
+# 再点 (SZ-053 中点) → 终点「已吸附 路段 SZ-053 · 偏移 8.5 m · 吸附距离 0.6 m」，「开始」变可点
+# 点「开始」→ 3 张卡：主推荐 0.18 min / 0.12 km / 7 段 / 32.5 km/h、
+#   备用 1 0.34 min（较主推荐 +0.11 km / +0.2 min，差异 5 段 · 分岔点 N-031）、
+#   备用 2 0.37 min（差异 6 段 · 分岔点 N-029）；离站 0.08 km / 2 段 SZ-053 → SZ-026
+# 反例：SZ-003 → SZ-004 有向真网不可达 → 如实空窗；离路网 10 km 处点击 → 「不硬吸附」
+```
+
+## 三十五、大屏 KPI 条收起 / 展开（IKRANO，2026-10-28）
+
+左右两栏已有「‹ 收起」；本次补 KPI 条：
 
 | 区域 | 入口 | 收起后 | 键 |
 |---|---|---|---|
 | 左右两栏（已有） | 栏头「‹ 收起」/ 地图左上「› 展开」 | 栏宽归零，地图变宽 | `hubflow.dashboard.colCollapsed` |
-| **KPI 条** | KPI 右上「收起 ▴」 | 只留一条细栏「关键指标已收起 + 展开指标 ▾」 | `hubflow.dashboard.regionFolded`（`kpi`） |
-| **底部热力带** | 带上方「收起 ▴」 | 三块（档位分布 / 热力矩阵 / CI 色阶）整条隐藏，地图变高 | 同上（`heat`） |
+| **KPI 条** | KPI 右上「收起 ▴」 | 只留一条细栏「关键指标已收起 + 展开指标 ▾」 | `hubflow.dashboard.regionFolded`（`{kpi:true}`） |
+| 底部热力带 | 三栏区与热力带之间的上下拉条 `.band-drag`（!95） | 拖条上的箭头键收到底 / 回记住高度，高度落 `hubflow.dashboard.bandHeight` | 见第三十四章 |
 
 口径：
 
@@ -2142,3 +2228,5 @@ node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 5340 --strictMode --m
 - 读不到或坏值静默退回「展开」，不抛错；
 - 全国视角下左/右栏与热力带本来就不渲染（既有口径），收起键随之不可见；
 - KPI 收起后仍保留「展开指标」入口，不会出现"收起来找不回"。
+- **热力带为什么不在本单**：!95 的上下拉条已带「收到底 / 展开」键；同一块区域两套收起键会出现两个按钮，
+  故合并 main 时删除本单原有的 `heatFolded` / `band-head` 实现，只保留 KPI 条这一半。

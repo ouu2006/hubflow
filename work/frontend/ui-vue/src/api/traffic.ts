@@ -18,6 +18,10 @@ import type {
   RecommendResult,
   ReportCompare,
   RouteOptionsSnapshot,
+  RoutePlanAnchor,
+  RoutePlanResult,
+  RoutePointsSnapshot,
+  RouteSnapResult,
   ScenarioInput,
   ScenarioResult,
   SegmentRecord,
@@ -71,6 +75,39 @@ export function postRouteRecommend(body: { session_id: string; location: { segme
 // 供大屏「整条路线规划」选择器；缺产物时接口层如实 404，页面按空窗 + note 降级（不编 ETA）。
 export function getTrafficRouteOptions(): Promise<RouteOptionsSnapshot> {
   return request<RouteOptionsSnapshot>('GET', '/api/traffic/route/options')
+}
+
+// =====================================================================================
+// 自定义起终点算路（业主 2026-10-28 当面要求；非契约辅助端点，真接口才有）
+// 口径：**页面不选段号、不做地图匹配**——点图给坐标，吸附 / 算路 / ETA / 备选全在后端；
+// 前端只负责「问 → 原样显示」。不可达时后端仍回 HTTP 200 + reachable:false，**不是错误**。
+// =====================================================================================
+
+/**
+ * POST /api/traffic/route/snap → 点击坐标吸附到最近路段。
+ * `site` 省略 = 按请求头 `X-Station-Pack` 的当前站点包（与其余接口同口径）。
+ */
+export function postRouteSnap(body: { site?: string; lon: number; lat: number }): Promise<RouteSnapResult> {
+  return request<RouteSnapResult>('POST', '/api/traffic/route/snap', { body })
+}
+
+/**
+ * POST /api/traffic/route/plan → 一主二备（+ 离站单独算）。
+ * 起 / 终点传 `{lon,lat}`（后端吸附），也支持 `{point_id}` / `{segment_id,offset_m}` 两种形态。
+ */
+export function postRoutePlan(body: {
+  site?: string
+  origin: RoutePlanAnchor
+  destination: RoutePlanAnchor
+  with_departure?: boolean
+}): Promise<RoutePlanResult> {
+  return request<RoutePlanResult>('POST', '/api/traffic/route/plan', { body })
+}
+
+// GET /api/traffic/route/points?site= → 候选点位清单（辅助；页面选点走地图点击，不用这份）
+export function getRoutePoints(site?: string): Promise<RoutePointsSnapshot> {
+  const q = site ? `?site=${encodeURIComponent(site)}` : ''
+  return request<RoutePointsSnapshot>('GET', `/api/traffic/route/points${q}`)
 }
 
 // POST /api/traffic/locate → 一期定位结果（Issue IKP5C6；非契约辅助端点，真接口才有）
