@@ -2103,11 +2103,27 @@ def build_ci_history(
     return payload
 
 
+def _capacity_model() -> dict[str, Any]:
+    """读容量标定表（`work/twin/capacity-model.json`，与孪生侧 `capacity.py` 同一份文件）。
+
+    为什么统一走这一个入口：标定表挪过位置（`stations/` → `work/twin/`，见 !98/24bcea1），
+    读不到的后果是**接口仍 200、阶段名与容量块却整块留空** —— 前端色带空着、容量块空着，
+    HTTP 层没有任何异常。「缺产物不编造」的降级是对的（数据自治），但必须留一条可辨认的
+    告警，否则这类"接口正常、数据全空"的故障只能靠肉眼发现。
+    """
+    model = read_json_cached(CAPACITY_MODEL) or {}
+    if not (model.get("phase_capacity_factor") or {}):
+        _warn(f"容量标定表缺失或没有 phase_capacity_factor：{CAPACITY_MODEL}（阶段色带 / 容量块会整块留空）")
+        return {}
+    return model
+
+
 def _phase_timeline(
     stamps: list[str],
     window_sec: float,
     offset: int = 0,
     base_ts: Any = None,
+    model: dict[str, Any] | None = None,
 ) -> list[str]:
     """按孪生侧同一口径给每个时序点打运营阶段标签（cycle 优先，否则按钟点）。
 
@@ -2122,8 +2138,11 @@ def _phase_timeline(
     每个切换点多错一拍 —— 同一张图上就会出现「c_vph 已按平峰涨到 3600、色带还说早高峰」。
     `offset` 只在拿不到 `base_ts` 时兜底：`limit` 截断后序号不再从 0 起，
     不把截掉的点数加回去，整条色带会跟着 limit 平移。
+    `model` 由调用方传入时复用：同一请求里容量块和色带读的是同一张表，别读两遍、
+    也别让"读不到标定表"这条告警刷两遍。
     """
-    model = read_json_cached(STATIONS_DIR / "capacity-model.json") or {}
+    if model is None:
+        model = _capacity_model()
     factors = model.get("phase_capacity_factor") or {}
     order = [str(name) for name in factors.keys()]
     if not order:
@@ -2237,7 +2256,9 @@ def build_segment_series(segment_id: str | None, limit: int | None = None) -> di
             source_index = offset + index
             point[field] = _num(column[source_index]) if isinstance(column, list) and source_index < len(column) else None
         points.append(point)
-    labels = _phase_timeline(stamps, window_sec, offset=offset, base_ts=payload.get("base_ts"))
+    model = _capacity_model()
+    # 阶段色带与容量块读同一张标定表：一个请求内只读一次，读不到也只告警一次
+    labels = _phase_timeline(stamps, window_sec, offset=offset, base_ts=payload.get("base_ts"), model=model)
     for index, point in enumerate(points):
         if index < len(labels):
             point["phase"] = labels[index]
@@ -2246,7 +2267,6 @@ def build_segment_series(segment_id: str | None, limit: int | None = None) -> di
         values = [point[field] for point in points if isinstance(point.get(field), (int, float))]
         return {"min": min(values) if values else None, "max": max(values) if values else None}
 
-    model = read_json_cached(STATIONS_DIR / "capacity-model.json") or {}
     return {
         "segment_id": segment_id,
         "is_simulated": True,
